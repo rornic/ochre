@@ -86,9 +86,11 @@ stands past a rim's crest on ground falling away beyond it. The same holds for t
 where the smooth ground is, by as much as it is up to `HOLD`, and over it by as much where it's over.
 The detail laid on the ground can't poke an island through the water or dig a dry pit under its
 level beside it. The hold on the dry side is looked up beyond the water (`still_by`) and fades by
-`near`, so it does not stop at a cell edge. Lake shore smoothing extends over one more map cell,
-with a gradual falloff. This eases the transition into deep detail gullies outside a lake rather
-than forcing the whole drop into one cell. Sea smoothing retains its original reach. Detail is
+`near`, so it does not stop at a cell edge. A lake's hold is measured in blocks,
+not cells. `lake_field` gives each map cell its distance to the nearest lake cell's centre and that
+lake's level. `near` is 1 out to 32 blocks and eases to 0 over the next 96, so deep gullies return
+gradually instead of at a cell edge. Where two lakes are within reach only the nearer holds the
+ground. The sea keeps its one-cell reach. Detail is
 also calmed to nothing at the water's edge over `CALM` blocks, for smooth shores.
 
 Inland, out of any lake, the ground is never under the sea (`LAND_ABOVE_SEA`).

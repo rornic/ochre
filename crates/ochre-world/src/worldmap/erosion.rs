@@ -179,7 +179,7 @@ fn hydraulic_round(grid: &mut [f32], map: &WorldMap, round: u32, shift: usize) {
             .filter(|&(tx, tz)| (tx % 2) + 2 * (tz % 2) == phase)
             .collect();
         let results: Vec<_> = std::thread::scope(|scope| {
-            let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+            let threads = super::worker_threads();
             let per = jobs.len().div_ceil(threads).max(1);
             let handles: Vec<_> = jobs
                 .chunks(per)

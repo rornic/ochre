@@ -2,7 +2,9 @@ use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
 use super::flora::flora_at;
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
-use super::terrain::{block_gradient, column_block, cut_cliff, ground_top, under_grass};
+use super::terrain::{
+    block_gradient, column_block, cut_cliff, ground_top, rocked, soil_depth, under_grass,
+};
 use crate::chunk::ChunkCoordinate;
 use crate::chunk::ChunkData;
 use crate::chunk::CHUNK_SIZE;
@@ -128,10 +130,7 @@ pub fn generate_chunk_with(
             // a spring's rim and the bed of its pool are the biome's own block
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
-            cells.extend((world_y..world_y + size).map(|y| {
-                if y < regions.terrain().bounds().min_y + 16 {
-                    return BlockType::CompactedStone;
-                }
+            let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
                 }
@@ -141,7 +140,7 @@ pub fn generate_chunk_with(
                         biome,
                         y,
                         column_height,
-                        gradient,
+                        slope,
                         temperature,
                         water_top,
                     ),
@@ -149,6 +148,7 @@ pub fn generate_chunk_with(
                     column_height,
                     1,
                     snowy,
+                    soil_depth(slope),
                 );
                 // cliffs are cut from the ground before the water fills what they open
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
@@ -157,6 +157,21 @@ pub fn generate_chunk_with(
                 let density = (column_height - y) as f64 - 0.5
                     + cliff * cliff_density(seed, world_x, y, world_z);
                 cut_cliff(block, density > 0.0, y, temperature, flood_top)
+            };
+            let (mut rock, mut bed) = (None, (0, 0, BlockType::Stone));
+            cells.extend((world_y..world_y + size).map(|y| {
+                if y < regions.terrain().bounds().min_y + 16 {
+                    return BlockType::CompactedStone;
+                }
+                // stone is the rock the geology has there, found a bed at a time
+                rocked(column_block_at(y), || {
+                    if !(bed.0..bed.1).contains(&y) {
+                        bed = rock
+                            .get_or_insert_with(|| regions.terrain().rock_column(world_x, world_z))
+                            .bed(y);
+                    }
+                    bed.2
+                })
             }));
         }
     }

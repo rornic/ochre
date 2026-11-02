@@ -364,8 +364,6 @@ impl Plugin for SkyPlugin {
                     .after(TransformSystems::Propagate)
                     .before(SimulationLightSystems::UpdateDirectionalLightCascades),
                 aim_sun_light.after(SimulationLightSystems::UpdateDirectionalLightCascades),
-                crate::shadow::prune_shadow_casters
-                    .after(SimulationLightSystems::CheckLightVisibility),
             ),
         );
     }

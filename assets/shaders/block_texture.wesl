@@ -7,7 +7,7 @@
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> material_fade: vec4<f32>;
 
 // textures in blocks.png, see `Tile` in block.rs
-const ATLAS_CELLS: f32 = 22.0;
+const ATLAS_CELLS: f32 = 35.0;
 const TILE_INSET: f32 = 0.002;
 
 // Just the alpha of `block_sample`, at full detail: without screen-space derivatives, so
@@ -61,7 +61,7 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
 // order. `gen_atlas` prints these and the block-textures skill's `pack.py`
 // rewrites them, and `material.rs`'s tests check them against blocks.png.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
-    var means = array<vec3<f32>, 22>(
+    var means = array<vec3<f32>, 35>(
         vec3<f32>(0.1182, 0.1186, 0.1186), // stone
         vec3<f32>(0.5003, 0.5003, 0.5003), // grass top
         vec3<f32>(0.4776, 0.3611, 0.1822), // sand
@@ -77,7 +77,20 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.6696, 0.5261, 0.2962), // sandstone top
         vec3<f32>(0.4256, 0.3341, 0.2906), // snow side
-        vec3<f32>(0.0414, 0.0436, 0.0504), // compacted stone
+        vec3<f32>(0.0773, 0.0811, 0.0958), // compacted stone
+        vec3<f32>(0.5443, 0.5019, 0.3697), // limestone
+        vec3<f32>(0.4338, 0.1889, 0.0758), // clay
+        vec3<f32>(0.0532, 0.0565, 0.0665), // basalt
+        vec3<f32>(0.7332, 0.7184, 0.6751), // marble
+        vec3<f32>(0.3801, 0.3507, 0.2589), // compacted limestone
+        vec3<f32>(0.3022, 0.1332, 0.0547), // compacted clay
+        vec3<f32>(0.0388, 0.0410, 0.0484), // compacted basalt
+        vec3<f32>(0.5083, 0.4980, 0.4672), // compacted marble
+        vec3<f32>(0.4670, 0.3667, 0.2079), // compacted sandstone
+        vec3<f32>(0.4168, 0.3179, 0.2743), // granite
+        vec3<f32>(0.1081, 0.0994, 0.0904), // shale
+        vec3<f32>(0.2922, 0.2238, 0.1924), // compacted granite
+        vec3<f32>(0.0777, 0.0713, 0.0650), // compacted shale
         vec3<f32>(0.5186, 0.5186, 0.5186), // tall grass
         vec3<f32>(0.3112, 0.3112, 0.3112), // fern
         vec3<f32>(0.2675, 0.0986, 0.0166), // poppy

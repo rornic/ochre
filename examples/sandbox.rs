@@ -18,9 +18,11 @@ use ochre_world::sky::SkyPlugin;
 #[derive(Resource)]
 struct SandboxSettings(Settings);
 
+#[allow(clippy::too_many_arguments)]
 fn setup_scene(
     mut commands: Commands,
     settings: Res<SandboxSettings>,
+    game_world: Res<ochre_terrain::world::World>,
     mut images: ResMut<Assets<Image>>,
     mut terrain: TerrainAssets,
     mut player_assets: PlayerAssets,
@@ -36,11 +38,9 @@ fn setup_scene(
         layout.max_level
     );
 
-    let game_world = ochre_world::load_world(layout.region_reach() as u32, settings.world);
     let world_bounds = game_world.bounds;
     info!("world seed is {}", game_world.seed());
     let spawn = game_world.spawn();
-    commands.insert_resource(game_world);
     info!("spawned at {:?}, {:?}, {:?}", spawn.x, spawn.y, spawn.z);
 
     spawn_player(
@@ -68,6 +68,9 @@ fn main() {
     let settings = Settings::read("assets/settings.toml").expect("Failed to read settings.toml");
     let renderer = settings.renderer;
     let flythrough = std::env::var_os("OCHRE_FLYTHROUGH").is_some();
+    // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell
+    let game_world =
+        ochre_world::load_world(renderer.lod_layout().region_reach() as u32, settings.world);
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
@@ -104,6 +107,7 @@ fn main() {
         BirdPlugin,
     ))
     .insert_resource(SandboxSettings(settings))
+    .insert_resource(game_world)
     .insert_resource(winit_settings())
     .insert_resource(ClearColor(Color::BLACK))
     .add_systems(Startup, setup_scene)

@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
 use super::climate::{BiomeKind, LAPSE_PER_BLOCK};
-use super::detail::{
-    detail, dunes, foothill_weight, gully_relief, scarps, terraced, FOOTHILL_RELIEF,
-};
+use super::detail::{detail, dunes, foothill_weight, gully_relief, FOOTHILL_RELIEF};
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
 use ochre_base::biome::{BiomeId, Biomes, Climate};
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::perlin;
-use ochre_base::terrain_source::{SpringPart, TerrainSample, TerrainSource, WaterKind};
+use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 
 // How far a biome's cover is wobbled, so its edge wanders off the lines between the cells.
@@ -27,6 +25,12 @@ const SHORE_SMOOTH: f64 = 5.0;
 // the water's edge, so a shore and the bed out from it are smooth.
 pub(super) const HOLD: f64 = 1.5;
 const CALM: f64 = 8.0;
+
+// A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
+// to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
+// and a gully is never cut off at a cell's edge.
+const LAKE_NEAR: f64 = 32.0;
+const LAKE_FADE: f64 = 96.0;
 
 // How far over still water's level, in blocks, ground surrounded by its cells is still under it: the water
 // is drawn a whole block, under the level its cells were found by, so ground just over that would stand
@@ -162,6 +166,11 @@ pub struct WorldTerrain {
     profiles: RiverProfiles,
     // by map cell, where a river rises in it: the spring's middle and level
     springs: Vec<Option<(f64, f64, f32)>>,
+    // by map cell, whether any sea or lake cell is in the window `still_near` scans from it
+    near_still: Vec<bool>,
+    // by map cell, the distance in blocks to the nearest lake cell's centre (capped past its reach) and that lake's level
+    lake_distance: Vec<f32>,
+    lake_level: Vec<f32>,
 }
 
 impl WorldTerrain {
@@ -183,12 +192,43 @@ impl WorldTerrain {
             tangents,
             profiles: RiverProfiles::default(),
             springs: Vec::new(),
+            near_still: Vec::new(),
+            lake_distance: Vec::new(),
+            lake_level: Vec::new(),
         };
+        terrain.near_still = terrain.near_still();
+        (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
         terrain.profiles = terrain.river_profiles();
         // looked up from the point before it's meandered, as well as after
         terrain.profiles.index(&terrain.map, MEANDER_REACH as f64);
         terrain.springs = terrain.springs();
         terrain
+    }
+
+    // Whether each cell has sea or lake in the 4x4 window `still_near` reaches from it (cells 1 back to 2 on),
+    // so open land skips the scan. Separable max, clamped as the scan is.
+    fn near_still(&self) -> Vec<bool> {
+        let map = &self.map;
+        let n = map.dim();
+        let wet: Vec<bool> = map
+            .water_kind
+            .iter()
+            .map(|&k| matches!(WaterCell::from_u8(k), WaterCell::Ocean | WaterCell::Lake))
+            .collect();
+        let spread =
+            |src: &[bool], along_x: bool| -> Vec<bool> {
+                let at = |x: usize, z: usize| src[map.index(x, z)];
+                let mut out = vec![false; n * n];
+                for z in 0..n {
+                    for x in 0..n {
+                        let c = if along_x { x } else { z };
+                        out[map.index(x, z)] = (c.saturating_sub(1)..=(c + 2).min(n - 1))
+                            .any(|k| if along_x { at(k, z) } else { at(x, k) });
+                    }
+                }
+                out
+            };
+        spread(&spread(&wet, true), false)
     }
 
     // Where each river rises: a river cell no river drains into and no lake spills into.
@@ -264,70 +304,133 @@ impl WorldTerrain {
         let (cx, cz) = (u.floor() as i64, v.floor() as i64);
         let (fx, fz) = (u - u.floor(), v - v.floor());
         let max = map.dim() as i64 - 1;
+        if !self.near_still[map.index(cx.clamp(0, max) as usize, cz.clamp(0, max) as usize)] {
+            return [None; 4];
+        }
         let mut still: [Option<Still>; 4] = [None; 4];
-        // Nearer cells fill the limited lake slots first, before the outer smoothing band.
-        let mut corners = [[0.0f64; 4]; 4];
+        // which of the four cells round the point are within a cell of each water's cells
+        let mut corners = [[false; 4]; 4];
         // and which are each water's own cells
         let mut owns = [[false; 4]; 4];
-        let inner = reach.min(2);
-        let offsets = (1 - inner..=inner)
-            .flat_map(|dz| (1 - inner..=inner).map(move |dx| (dx, dz)))
-            .chain((1 - reach..=reach).flat_map(|dz| {
-                (1 - reach..=reach)
-                    .filter(move |&dx| dx < 1 - inner || dx > inner || dz < 1 - inner || dz > inner)
-                    .map(move |dx| (dx, dz))
-            }));
-        for (dx, dz) in offsets {
-            let i = map.index(
-                (cx + dx).clamp(0, max) as usize,
-                (cz + dz).clamp(0, max) as usize,
-            );
-            let (slot, level, kind) = match WaterCell::from_u8(map.water_kind[i]) {
-                WaterCell::Ocean => {
-                    if dx < 1 - inner || dx > inner || dz < 1 - inner || dz > inner {
-                        continue;
+        for dz in 1 - reach..=reach {
+            for dx in 1 - reach..=reach {
+                let i = map.index(
+                    (cx + dx).clamp(0, max) as usize,
+                    (cz + dz).clamp(0, max) as usize,
+                );
+                let (slot, level, kind) = match WaterCell::from_u8(map.water_kind[i]) {
+                    WaterCell::Ocean => (0, WATER_LEVEL as f64, WaterKind::Ocean),
+                    WaterCell::Lake => {
+                        let level = map.water_surface[i].floor() as f64;
+                        let Some(slot) =
+                            (1..4).find(|&k| still[k].is_none_or(|w: Still| w.level == level))
+                        else {
+                            continue;
+                        };
+                        (slot, level, WaterKind::Lake)
                     }
-                    (0, WATER_LEVEL as f64, WaterKind::Ocean)
-                }
-                WaterCell::Lake => {
-                    let level = map.water_surface[i].floor() as f64;
-                    let Some(slot) =
-                        (1..4).find(|&k| still[k].is_none_or(|w: Still| w.level == level))
-                    else {
-                        continue;
-                    };
-                    (slot, level, WaterKind::Lake)
-                }
-                _ => continue,
-            };
-            still[slot] = Some(Still {
-                level,
-                kind,
-                near: 0.0,
-                cover: 0.0,
-            });
-            for (c, (a, b)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
-                let distance = (dx - a).abs().max((dz - b).abs());
-                let weight = match distance {
-                    0 | 1 => 1.0,
-                    2 if reach >= 3 && kind == WaterKind::Lake => 0.5,
-                    _ => 0.0,
+                    _ => continue,
                 };
-                corners[slot][c] = corners[slot][c].max(weight);
-                owns[slot][c] |= dx == a && dz == b;
+                still[slot] = Some(Still {
+                    level,
+                    kind,
+                    near: 0.0,
+                    cover: 0.0,
+                });
+                for (c, (a, b)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+                    corners[slot][c] |= (dx - a).abs() <= 1 && (dz - b).abs() <= 1;
+                    owns[slot][c] |= dx == a && dz == b;
+                }
             }
         }
-        let blend = |weights: [f64; 4]| {
-            (weights[0] * (1.0 - fx) + weights[1] * fx) * (1.0 - fz)
-                + (weights[2] * (1.0 - fx) + weights[3] * fx) * fz
+        let blend = |bits: [bool; 4]| {
+            let at = |c: usize| if bits[c] { 1.0 } else { 0.0 };
+            (at(0) * (1.0 - fx) + at(1) * fx) * (1.0 - fz) + (at(2) * (1.0 - fx) + at(3) * fx) * fz
         };
         for ((w, near), own) in still.iter_mut().zip(corners).zip(owns) {
             if let Some(w) = w {
                 w.near = blend(near);
-                w.cover = blend(own.map(|v| if v { 1.0 } else { 0.0 }));
+                w.cover = blend(own);
             }
         }
         still
+    }
+
+    // For each map cell, how far in blocks it is from the nearest lake cell's centre, and that lake's level:
+    // a two-pass chamfer distance carrying the level along. Distances are capped past the lake's reach.
+    fn lake_field(&self) -> (Vec<f32>, Vec<f32>) {
+        let map = &self.map;
+        let n = map.dim();
+        let cell = map.config.map_cell as f32;
+        let cap = (LAKE_NEAR + LAKE_FADE) as f32 + cell;
+        let mut distance = vec![cap; n * n];
+        let mut level = vec![0.0f32; n * n];
+        for i in 0..n * n {
+            if map.water_kind[i] == WaterCell::Lake as u8 {
+                (distance[i], level[i]) = (0.0, map.water_surface[i].floor());
+            }
+        }
+        let mut relax = |x: usize, z: usize, dx: i64, dz: i64| {
+            let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+            if nx < 0 || nz < 0 || nx >= n as i64 || nz >= n as i64 {
+                return;
+            }
+            let (i, j) = (map.index(x, z), map.index(nx as usize, nz as usize));
+            let step = if dx != 0 && dz != 0 {
+                cell * std::f32::consts::SQRT_2
+            } else {
+                cell
+            };
+            if distance[j] + step < distance[i] {
+                (distance[i], level[i]) = (distance[j] + step, level[j]);
+            }
+        };
+        for z in 0..n {
+            for x in 0..n {
+                for (dx, dz) in [(-1, 0), (0, -1), (-1, -1), (1, -1)] {
+                    relax(x, z, dx, dz);
+                }
+            }
+        }
+        for z in (0..n).rev() {
+            for x in (0..n).rev() {
+                for (dx, dz) in [(1, 0), (0, 1), (1, 1), (-1, 1)] {
+                    relax(x, z, dx, dz);
+                }
+            }
+        }
+        (distance, level)
+    }
+
+    // The nearest lake's hold on a point, if it is within reach: `near` falls smoothly with the distance in
+    // blocks, from the field's four cells round the point, and the lake is the one nearest of them. Where
+    // two lakes are within reach only the nearer holds the ground, as in the field.
+    fn lake_near(&self, x: f64, z: f64) -> Option<Still> {
+        let map = &self.map;
+        let (u, v) = map.to_cell(x, z);
+        let (cx, cz) = (u.floor() as i64, v.floor() as i64);
+        let (fx, fz) = (u - u.floor(), v - v.floor());
+        let max = map.dim() as i64 - 1;
+        let cap = (LAKE_NEAR + LAKE_FADE) as f32 + map.config.map_cell as f32;
+        let (mut distance, mut nearest) = (0.0, (f32::MAX, 0.0f32));
+        for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = map.index(
+                (cx + dx).clamp(0, max) as usize,
+                (cz + dz).clamp(0, max) as usize,
+            );
+            let weight =
+                (if dx == 0 { 1.0 - fx } else { fx }) * (if dz == 0 { 1.0 - fz } else { fz });
+            distance += self.lake_distance[i] as f64 * weight;
+            if self.lake_distance[i] < nearest.0 {
+                nearest = (self.lake_distance[i], self.lake_level[i]);
+            }
+        }
+        (nearest.0 < cap).then(|| Still {
+            level: nearest.1 as f64,
+            kind: WaterKind::Lake,
+            near: 1.0 - smoothstep(LAKE_NEAR, LAKE_NEAR + LAKE_FADE, distance),
+            cover: 0.0,
+        })
     }
 
     // The still water a point can be in: that of the four cells round it. Two lakes' cells are never side
@@ -339,21 +442,39 @@ impl WorldTerrain {
         self.still_near(x, z, 1)
     }
 
-    // Include an additional cell for a gradual transition back to the surrounding terrain.
+    // The still water whose shore a point may be near: the sea within a cell more each way than `still_round`,
+    // and the nearest lake by its distance, so the ground is held and calmed on past the farthest the water reaches.
     fn still_by(&self, x: f64, z: f64) -> [Option<Still>; 4] {
-        self.still_near(x, z, 3)
+        let mut by = self.still_near(x, z, 2);
+        by[1..].fill(None);
+        by[1] = self.lake_near(x, z);
+        by
     }
 
-    // The ground at a point with no river or lake water on it: the map's smooth height with the
-    // detail laid over it, and terraced, calmed by `calm`, 0..1.
+    // The ground at a point with no river or lake water on it: the landform ground, and dunes over it
+    // where the climate is desert.
     fn ground_dry(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
+        let ground = self.landform_ground(x, z, cell, base, calm);
+        let desert = self.kind_cover(BiomeKind::Desert, x, z);
+        if desert <= 0.0 {
+            return ground;
+        }
+        let sea = WATER_LEVEL as f64;
+        let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
+        ground + dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea) * desert * shore
+    }
+
+    // The map's smooth height with the detail laid over it, and terraced, calmed by `calm`, 0..1. It
+    // reads the map's height, range, roughness and landform alone, never climate or biome: this is the
+    // ground water is routed over, see `landform`.
+    fn landform_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let map = &self.map;
         let sea = WATER_LEVEL as f64;
         let smooth = base
             + self.detail_at(x, z, cell, base) * smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
-        let mountain = self.kind_cover(BiomeKind::Mountain, x, z) * calm;
+        let mountain = self.landform_cover(x, z) * calm;
         if mountain > 0.0 {
-            smooth + (terraced(map.seed, x, z, true, smooth, base - sea) - smooth) * mountain
+            smooth + (map.terraced(x, z, smooth, base - sea) - smooth) * mountain
         } else {
             smooth
         }
@@ -407,6 +528,16 @@ impl WorldTerrain {
     // How much of the ground round a point is `kind`, 0..1: smooth across the map's cells, and
     // wobbled so a biome's edge wanders off the lines between them.
     fn kind_cover(&self, kind: BiomeKind, x: f64, z: f64) -> f64 {
+        self.cover(|i| self.map.biome[i] == kind as u8, kind as u32, x, z)
+    }
+
+    // The same for mountain landform, wobbled as the mountain biome was before it.
+    fn landform_cover(&self, x: f64, z: f64) -> f64 {
+        let mountain = |i: usize| self.map.landform[i] == super::landform::MOUNTAIN;
+        self.cover(mountain, BiomeKind::Mountain as u32, x, z)
+    }
+
+    fn cover(&self, is: impl Fn(usize) -> bool, salt: u32, x: f64, z: f64) -> f64 {
         let map = &self.map;
         let (u, v) = map.to_cell(x, z);
         let (cx, cz) = (u.floor() as i64, v.floor() as i64);
@@ -418,7 +549,7 @@ impl WorldTerrain {
                 (cx + dx).clamp(0, max) as usize,
                 (cz + dz).clamp(0, max) as usize,
             );
-            if map.biome[i] == kind as u8 {
+            if is(i) {
                 cover +=
                     (if dx == 0 { 1.0 - fx } else { fx }) * (if dz == 0 { 1.0 - fz } else { fz });
             }
@@ -426,7 +557,7 @@ impl WorldTerrain {
         if cover <= 0.0 || cover >= 1.0 {
             return cover;
         }
-        let wobble = perlin(map.seed ^ 0xB107 ^ kind as u32, x / 60.0, z / 60.0) * BIOME_WOBBLE;
+        let wobble = perlin(map.seed ^ 0xB107 ^ salt, x / 60.0, z / 60.0) * BIOME_WOBBLE;
         smoothstep(0.25, 0.75, cover + wobble)
     }
 
@@ -438,20 +569,12 @@ impl WorldTerrain {
         let sea = WATER_LEVEL as f64;
         let roughness = map.bilinear_bytes(&map.roughness, x, z) as f64 / 255.0;
         let mut detail = detail(seed, x, z, cell, roughness, base - sea);
-        // a biome's ground is blended in by how much of it there is, which is smooth across the
-        // map's cells: switched on at the biome's edge it would step the ground there
-        let desert = self.kind_cover(BiomeKind::Desert, x, z);
-        if desert > 0.0 {
-            detail += dunes(seed ^ 0xD05E, x, z, cell, base - sea) * desert;
-        }
-        // the ground round a range is weathered: small scarps stepping up it and gullies and sharp
-        // ridges cut into it, as the range's own faces are
-        let mountain = self.kind_cover(BiomeKind::Mountain, x, z);
+        // the ground round a range is weathered: gullies and sharp ridges cut into it, as the range's own faces are
+        let mountain = self.landform_cover(x, z);
         let near_range = map.bilinear_bytes(&map.range, x, z) as f64 / 255.0;
         let foothills =
             (1.0 - mountain) * FOOTHILL_RELIEF * foothill_weight(near_range, base - sea);
         let rough = mountain + foothills;
-        detail += scarps(seed, x, z, foothills, base + detail) - (base + detail);
         detail += gully_relief(
             seed,
             x,
@@ -482,14 +605,22 @@ impl WorldTerrain {
         })
     }
 
+    // A point moved a little to one side by a wandering offset, to look up what the map holds by cell
+    // without following the cells' squares.
+    fn wandered(&self, x: f64, z: f64) -> (f64, f64) {
+        let seed = self.map.seed;
+        let wander = self.map.config.map_cell as f64 * 0.6;
+        (
+            x + perlin(seed ^ 0x51A7, x / 40.0, z / 40.0) * wander,
+            z + perlin(seed ^ 0xB10E, x / 40.0, z / 40.0) * wander,
+        )
+    }
+
     // The biome of the cell nearest a point, found a little to one side by a wandering offset so
     // the edges between biomes wander too, rather than following the cells' squares.
     fn biome_at(&self, x: f64, z: f64) -> BiomeId {
-        let seed = self.map.seed;
-        let wander = self.map.config.map_cell as f64 * 0.6;
-        let jx = perlin(seed ^ 0x51A7, x / 40.0, z / 40.0) * wander;
-        let jz = perlin(seed ^ 0xB10E, x / 40.0, z / 40.0) * wander;
-        let (u, v) = self.map.to_cell(x + jx, z + jz);
+        let (x, z) = self.wandered(x, z);
+        let (u, v) = self.map.to_cell(x, z);
         let max = (self.map.dim() - 1) as f64;
         let i = self.map.index(
             u.round().clamp(0.0, max) as usize,
@@ -748,6 +879,11 @@ impl TerrainSource for WorldTerrain {
 
     // How warm it is at the ground here, which falls with height at the rate snow lines climb at,
     // so trees and grass higher up are cooler, and pines grow on the slopes of a range.
+    fn rock_column(&self, x: i64, z: i64) -> Box<dyn RockColumn + '_> {
+        let (x, z) = self.wandered(x as f64, z as f64);
+        Box::new(self.map.rock_column(x, z))
+    }
+
     fn climate(&self, x: f64, z: f64) -> Climate {
         let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0);
         Climate {
@@ -856,45 +992,106 @@ mod river_bank_tests {
     use super::*;
 
     #[test]
-    fn nearby_lake_takes_priority_over_outer_smoothing_band() {
+    fn lake_hold_eases_with_distance_and_the_nearer_lake_wins() {
         let config = super::super::WorldConfig {
             size: 1024,
             ..Default::default()
         };
         let mut map = super::super::WorldMap::empty(1, config);
-        for (x, z, level) in [
-            (14, 14, 10.0),
-            (15, 14, 20.0),
-            (16, 14, 30.0),
-            (16, 16, 40.0),
-        ] {
-            let i = map.index(x, z);
+        for (x, level) in [(8, 10.0), (24, 40.0)] {
+            let i = map.index(x, 16);
             map.water_kind[i] = WaterCell::Lake as u8;
             map.water_surface[i] = level;
         }
-        let (x, z) = map.cell_centre(16, 16);
+        let (x0, z) = map.cell_centre(8, 16);
         let terrain = WorldTerrain::new(Arc::new(map));
-        assert!(terrain
-            .still_by(x, z)
-            .iter()
-            .flatten()
-            .any(|w| w.level == 40.0));
+        let hold = |dx: f64| terrain.still_by(x0 + dx, z)[1];
+        assert_eq!(hold(0.0).unwrap().near, 1.0);
+        // full within `LAKE_NEAR`, then easing out without a step
+        let mut last = 1.0;
+        for d in (0..=128).step_by(4) {
+            let near = hold(d as f64).map_or(0.0, |w| w.near);
+            assert!(near <= last + 1e-9, "near rises at {d}: {last} to {near}");
+            assert!(last - near < 0.12, "near steps at {d}: {last} to {near}");
+            last = near;
+        }
+        assert!(last < 1e-6, "still held {last} at {} blocks", 128);
+        // the second lake is sixteen cells on: past the midpoint it, not the first, is the one that holds
+        assert_eq!(hold(100.0).map(|w| w.level), Some(10.0));
+        assert_eq!(hold(16.0 * 32.0 - 100.0).map(|w| w.level), Some(40.0));
     }
 
     #[test]
-    fn lake_bank_eases_into_deep_adjacent_gully() {
-        let map = Arc::new(super::super::generate(300059728, Default::default()));
-        let terrain = WorldTerrain::new(map);
-        assert_eq!(terrain.sample(-8284.0, 3108.0).water_kind, WaterKind::Lake);
-        let mut previous = terrain.sample(-8340.0, 3108.0).height;
-        for x in (-8336..=-8312).step_by(4) {
-            let height = terrain.sample(x as f64, 3108.0).height;
-            assert!(
-                (height - previous).abs() < 3.0,
-                "bank step at {x}: {previous} to {height}"
-            );
-            previous = height;
+    fn lake_banks_stay_over_the_water_for_eight_blocks_from_the_shore() {
+        for seed in [1, 42, 300059728] {
+            let terrain = super::super::test_terrain(seed);
+            let map = &terrain.map;
+            let lakes = (0..map.water_kind.len())
+                .filter(|&i| map.water_kind[i] == WaterCell::Lake as u8)
+                .step_by(7)
+                .take(80);
+            let mut checked = 0;
+            for i in lakes {
+                let (x0, z0) = map.cell_centre(i % map.dim(), i / map.dim());
+                for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                    let at = |k: f64| terrain.sample(x0 + dx * k, z0 + dz * k);
+                    let shore = (0..100)
+                        .map(|k| k as f64 * 2.0)
+                        .find(|&k| at(k).water_kind != WaterKind::Lake);
+                    let Some(shore) = shore else { continue };
+                    let level = at(shore - 2.0).water_surface as f64;
+                    for k in 0..4 {
+                        let bank = at(shore + k as f64 * 2.0);
+                        if bank.water_kind != WaterKind::None {
+                            break;
+                        }
+                        assert!(
+                            bank.height >= level - 0.5,
+                            "seed {seed}: bank {} under the lake's {level} at ({}, {})",
+                            bank.height,
+                            x0 + dx * (shore + k as f64 * 2.0),
+                            z0 + dz * (shore + k as f64 * 2.0),
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+            assert!(checked > 200, "seed {seed}: only {checked} bank samples");
         }
+    }
+
+    #[test]
+    fn landform_ground_ignores_climate_and_biome() {
+        let config = super::super::WorldConfig {
+            size: 8192,
+            ..Default::default()
+        };
+        let map = super::super::generate(5, config);
+        let mut scrambled = map.clone();
+        scrambled.biome.fill(BiomeKind::Desert as u8);
+        scrambled.moisture.fill(0.0);
+        scrambled.temperature.fill(0.0);
+        scrambled.trees.fill(0);
+        let (a, b) = (
+            WorldTerrain::new(Arc::new(map)),
+            WorldTerrain::new(Arc::new(scrambled)),
+        );
+        let mut moved = 0;
+        for i in 0..400 {
+            let (x, z) = (
+                (i % 20) as f64 * 280.0 - 2800.0,
+                (i / 20) as f64 * 280.0 - 2800.0,
+            );
+            let base = a.map.height_at(x, z) as f64;
+            let ground = a.landform_ground(x, z, 1.0, base, 1.0);
+            assert_eq!(
+                ground,
+                b.landform_ground(x, z, 1.0, base, 1.0),
+                "at {x},{z}"
+            );
+            moved += ((ground - base).abs() > 0.5) as usize;
+        }
+        assert!(moved > 50, "only {moved} of 400 points carry any detail");
     }
 
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {
@@ -952,7 +1149,7 @@ mod river_bank_tests {
     fn mountain_ground_far_from_a_river_keeps_its_own_height() {
         let map = Arc::new(super::super::generate(3942325500, Default::default()));
         let terrain = WorldTerrain::new(map);
-        let (x, z) = (20749.0, -1920.0);
+        let (x, z) = (20700.0, -1920.0);
         let ground = terrain.sample(x, z);
         let dry = terrain.dry_ground(x, z, 1.0);
         assert_eq!(ground.water_kind, WaterKind::None);
@@ -1107,6 +1304,7 @@ mod river_bank_tests {
         super::super::hydrology::scatter(&mut map);
         super::super::hydrology::run(&mut map, true);
         map.height.iter_mut().for_each(|h| *h = h.max(floor));
+        super::super::landform::run(&mut map);
         super::super::climate::run(&mut map);
         super::super::detail::roughness_layer(&mut map);
         super::super::gameplay::label(&mut map);

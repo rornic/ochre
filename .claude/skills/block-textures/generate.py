@@ -37,7 +37,21 @@ TILES = [
     dict(name="SandstoneSide", derive="strata", body="SandstoneTop"),
     dict(name="SandstoneTop", prompt="pale tan sandstone, smooth fine grain", avoid="orange, red, brown, bricks, terracotta", mean=(214, 192, 148)),
     dict(name="SnowSide", derive="fringe", body="Dirt", top="Snow", depth=(3, 5)),
-    dict(name="CompactedStone", derive="shade", body="Stone", factor=0.62, tint=(0.96, 0.98, 1.06)),  # stone packed hard, darker and cooler; breaks only to explosives
+    dict(name="CompactedStone", derive="shade", body="Stone", factor=0.85, tint=(0.96, 0.98, 1.06)),  # stone packed hard, darker and cooler; breaks only to explosives
+    dict(name="Limestone", prompt="pale cream limestone, fine pitted surface, tiny pores and faint cracks", avoid="orange, red, brown, bricks, tiles", mean=(196, 189, 165)),
+    dict(name="Clay", prompt="smooth ochre clay, soft dried earth, fine shallow cracks", avoid="bricks, tiles, pottery, red, pink, grid", mean=(176, 120, 78), std=11),
+    dict(name="Basalt", prompt="dark grey basalt, fine grained volcanic rock, tiny pits and specks", avoid="brown, red, bricks, tiles, columns", mean=(64, 66, 72)),
+    dict(name="Marble", prompt="white marble with fine grey veins", avoid="tiles, floor, grid, bricks, pink, gold", mean=(222, 220, 214), std=10),
+    # each rock packed hard, as CompactedStone is stone
+    dict(name="CompactedLimestone", derive="shade", body="Limestone", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="CompactedClay", derive="shade", body="Clay", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="CompactedBasalt", derive="shade", body="Basalt", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="CompactedMarble", derive="shade", body="Marble", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="CompactedSandstone", derive="shade", body="SandstoneTop", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="Granite", prompt="pinkish grey granite, coarse speckled grain, black and white flecks", avoid="tiles, floor, grid, bricks, marble veins, red", mean=(172, 152, 142)),
+    dict(name="Shale", prompt="dark grey shale, thin flaky layers, fine fissile rock", avoid="bricks, tiles, brown, grid, blue", mean=(92, 88, 84)),
+    dict(name="CompactedGranite", derive="shade", body="Granite", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    dict(name="CompactedShale", derive="shade", body="Shale", factor=0.85, tint=(1.0, 1.0, 1.0)),
     # ground flora, drawn by flora.py; grass and fern are greyscale for the climate's tint
     dict(name="TallGrass", derive="sprite", grey=187),  # as bright as GrassTop, so it tints alike
     dict(name="Fern", derive="sprite", grey=150),

@@ -16,7 +16,9 @@ use super::shading::{
     WATER_SPREAD_REACH,
 };
 use super::source::{water_depth, BlockSource, ChunkNeighbourhood};
-use super::terrain::{freeze_cell, terrain_block, under_grass, FREEZE_TEMPERATURE};
+use super::terrain::{
+    freeze_cell, soil_depth, terrain_block, under_grass, FREEZE_TEMPERATURE, SAND_DEPTH, SOIL_DEPTH,
+};
 use crate::chunk::{neighbor_26_index, ChunkCoordinate, ChunkData, CHUNK_SIZE};
 use crate::generate::light::SkyLight;
 use crate::generate::region_store::RegionStore;
@@ -343,11 +345,11 @@ fn test_polar_lowlands_are_snow_covered_and_deep_ice_gives_way_to_snow() {
     );
     assert_eq!(
         BlockType::Snow,
-        under_grass(BlockType::Ice, ground - 3, ground, 1, false)
+        under_grass(BlockType::Ice, ground - 3, ground, 1, false, SOIL_DEPTH)
     );
     assert_eq!(
         BlockType::Ice,
-        under_grass(BlockType::Ice, ground - 1, ground, 1, false)
+        under_grass(BlockType::Ice, ground - 1, ground, 1, false, SOIL_DEPTH)
     );
 }
 
@@ -787,19 +789,19 @@ fn test_grass_sides_carry_their_untinted_shade() {
 fn test_only_full_detail_grass_below_the_top_layer_is_dirt() {
     assert_eq!(
         BlockType::Dirt,
-        under_grass(BlockType::Grass, 16, 20, 1, false)
+        under_grass(BlockType::Grass, 18, 20, 1, false, SOIL_DEPTH)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 19, 20, 1, false)
+        under_grass(BlockType::Grass, 19, 20, 1, false, SOIL_DEPTH)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 10, 20, 4, false)
+        under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH)
     );
     assert_eq!(
         BlockType::Stone,
-        under_grass(BlockType::Stone, 16, 20, 1, false)
+        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH)
     );
 }
 
@@ -1540,28 +1542,32 @@ fn test_canopy_shade_leaves_bare_columns_and_other_lods_alone() {
 fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
     use crate::generate::trees::trees_near;
     use bevy::math::I64Vec2;
-    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
-    let mut heights = regions.sampler();
-    let trees = trees_near(
-        regions.terrain(),
-        &mut heights,
-        sparse_at(5) - I64Vec2::splat(700),
-        sparse_at(5) + I64Vec2::splat(700),
-    );
-    let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
-        (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
-    };
-    let tree = trees
-        .iter()
-        .find(|t| {
-            let crown = t.base + I64Vec3::Y * (t.trunk - 1);
-            let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 2);
-            let (min, max) = t.bounds();
-            let low = key.min_block();
-            let high = low + I64Vec3::splat(64);
-            trees.iter().filter(|o| near(t, o)).count() == 1
-                && min.cmpge(low + I64Vec3::Y * 8).all()
-                && max.cmplt(high - I64Vec3::Y * 8).all()
+    // a world changes with the geology, so the first seed with a tree standing alone and clear of its cell's edges
+    let (regions, tree) = (1..40u32)
+        .find_map(|seed| {
+            let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(seed)));
+            let mut heights = regions.sampler();
+            let mut trees = trees_near(
+                regions.terrain(),
+                &mut heights,
+                sparse_at(seed) - I64Vec2::splat(700),
+                sparse_at(seed) + I64Vec2::splat(700),
+            );
+            let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
+                (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
+            };
+            let at = trees.iter().position(|t| {
+                let crown = t.base + I64Vec3::Y * (t.trunk - 1);
+                let key =
+                    LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 2);
+                let (min, max) = t.bounds();
+                let low = key.min_block();
+                let high = low + I64Vec3::splat(64);
+                trees.iter().filter(|o| near(t, o)).count() == 1
+                    && min.cmpge(low + I64Vec3::Y * 8).all()
+                    && max.cmplt(high - I64Vec3::Y * 8).all()
+            })?;
+            Some((regions, trees.swap_remove(at)))
         })
         .expect("no interior lone tree");
     let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
@@ -2067,7 +2073,15 @@ fn seam_leaks(regions: &Arc<RegionStore>, fine: LodKey, coarse: LodKey) -> (usiz
     // Cover the actual vertical terrain range in each column, rather than a fixed three
     // nodes around one sample. Taller relief can cross many fine-node layers here.
     let mut triangles = Vec::new();
-    for key in [fine, coarse] {
+    // with the nodes beside them along the seam, or a ray grazing down a steep face would leave the loaded area
+    // before meeting the ground, which is no crack
+    let keys = [fine, coarse].into_iter().flat_map(|key| {
+        [-1, 0, 1].map(|dz| LodKey {
+            coord: key.coord + I64Vec3::new(0, 0, dz),
+            ..key
+        })
+    });
+    for key in keys {
         let grid = regions.column_grid(key);
         let mut low = f64::INFINITY;
         let mut high = f64::NEG_INFINITY;
@@ -2107,9 +2121,8 @@ fn seam_leaks(regions: &Arc<RegionStore>, fine: LodKey, coarse: LodKey) -> (usiz
         Vec3::new(0.2, -1.0, -0.3),
     ] {
         let direction = direction.normalize();
-        // clear of the node's z edges, past which the next node isn't loaded here
-        let mut z = z0 + 8.713;
-        while z < z1 - 8.0 {
+        let mut z = z0 + 0.713;
+        while z < z1 - 0.5 {
             for dx in [-2.7f32, -1.77, -0.93, 0.21, 0.83, 1.61, 2.9] {
                 let x = seam_x + dx;
                 let y = sampler.height(x as i64, z as i64) as f32;
@@ -2289,10 +2302,25 @@ fn test_ground_well_under_a_lake_is_under_its_water() {
 }
 
 #[test]
-fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surface() {
-    use super::terrain::{COMPACTED_DEPTH, SOIL_DEPTH};
+fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
+    assert_eq!(SOIL_DEPTH, soil_depth(0.0));
+    assert_eq!(1, soil_depth(1.2));
     let top = 600;
-    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false);
+    assert_eq!(
+        BlockType::Stone,
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2))
+    );
+    assert_eq!(
+        BlockType::Dirt,
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(0.0))
+    );
+}
+
+#[test]
+fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surface() {
+    use super::terrain::COMPACTED_DEPTH;
+    let top = 600;
+    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false, SOIL_DEPTH);
     assert_eq!(BlockType::Grass, at(BlockType::Grass, 0));
     for depth in 1..SOIL_DEPTH {
         assert_eq!(
@@ -2300,6 +2328,8 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
             at(BlockType::Grass, depth),
             "depth {depth}"
         );
+    }
+    for depth in 1..SAND_DEPTH {
         assert_eq!(BlockType::Sand, at(BlockType::Sand, depth));
     }
     for depth in SOIL_DEPTH..COMPACTED_DEPTH {
@@ -2308,7 +2338,9 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
             at(BlockType::Grass, depth),
             "depth {depth}"
         );
-        assert_eq!(BlockType::Stone, at(BlockType::Sand, depth));
+        if depth >= SAND_DEPTH {
+            assert_eq!(BlockType::Stone, at(BlockType::Sand, depth));
+        }
         assert_eq!(BlockType::Stone, at(BlockType::Stone, depth));
     }
     for depth in [COMPACTED_DEPTH, COMPACTED_DEPTH + 1, 40] {
@@ -2328,7 +2360,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     // water is never packed, and wide cells keep to the surface's block
     assert_eq!(BlockType::Water, at(BlockType::Water, 9));
     // snow lies deep: full blocks of it, stone after, and packed stone only under that
-    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true);
+    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true, SOIL_DEPTH);
     for depth in 1..super::terrain::SNOW_DEPTH {
         assert_eq!(
             BlockType::Snow,
@@ -2346,7 +2378,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, top - 20, top, 4, false)
+        under_grass(BlockType::Grass, top - 20, top, 4, false, SOIL_DEPTH)
     );
 }
 
@@ -2385,12 +2417,12 @@ fn test_compacted_stone_follows_the_local_surface_not_a_fixed_height() {
         } else {
             COMPACTED_DEPTH
         };
-        assert_eq!(
-            BlockType::CompactedStone,
-            below(packed),
-            "({x}, {z}) at {ground}"
+        assert!(
+            below(packed).is_compacted(),
+            "({x}, {z}) at {ground}: {:?}",
+            below(packed)
         );
-        assert_ne!(BlockType::CompactedStone, below(packed - 1));
+        assert!(!below(packed - 1).is_compacted());
     }
     assert!(seen >= 2, "only {seen} dry columns found");
 }
@@ -2650,7 +2682,7 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     let biomes = Biomes::new(1);
     let mountain = biomes.id("mountain").unwrap();
     let above = WATER_LEVEL + 110;
-    let steep = 2.2;
+    let steep = 4.4;
     let (mut meadow, mut rock) = (0, 0);
     for i in 0..3000 {
         let (x, z) = (i * 23, i * 7 - 9000);
@@ -2680,7 +2712,7 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     assert!(meadow > 500 && rock > 1000, "{meadow} meadow, {rock} rock");
     // gentle ground and other biomes are left as they were
     let gentle = super::terrain::block_gradient(&biomes, mountain, 1, 5, 5, 0.3);
-    assert_eq!(0.3, gentle);
+    assert!(gentle <= 0.3, "{gentle}: eased, or at most an outcrop");
     let plain = ochre_base::biome::BiomeId::BASE;
     assert_eq!(
         steep,
@@ -3209,4 +3241,26 @@ fn test_a_steep_rivers_water_is_drawn_over_its_bed() {
         }
     }
     assert!(checked > 100, "only {checked} river vertices checked");
+}
+
+#[test]
+fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
+    use super::terrain::rocked;
+    let rock = || BlockType::Limestone;
+    assert_eq!(BlockType::Limestone, rocked(BlockType::Stone, rock));
+    assert_eq!(
+        BlockType::CompactedLimestone,
+        rocked(BlockType::CompactedStone, rock)
+    );
+    assert_eq!(BlockType::Dirt, rocked(BlockType::Dirt, || unreachable!()));
+    // a world's mountains show more than one rock
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let terrain = regions.terrain();
+    let rocks: std::collections::HashSet<_> = (0..4000)
+        .map(|i| {
+            let (x, z) = (i * 53 - 100_000, (i * 97) % 40_000 - 20_000);
+            terrain.rock_column(x, z).at(300) as u8
+        })
+        .collect();
+    assert!(rocks.len() >= 3, "only {rocks:?}");
 }

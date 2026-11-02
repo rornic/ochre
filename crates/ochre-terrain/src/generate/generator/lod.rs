@@ -7,7 +7,8 @@ use super::chunk::{sky_above, trees_may_reach};
 use super::mesh::mesh_blocks;
 use super::source::{water_depth, BlockSource, BoxFaces, TreeBox};
 use super::terrain::{
-    block_gradient, column_block, freeze_cell, ground_top, is_solid, under_grass, underwater,
+    block_gradient, column_block, freeze_cell, ground_top, is_solid, rocked, under_grass,
+    underwater,
 };
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::columns::ColumnGrid;
@@ -33,7 +34,10 @@ use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
 use std::sync::Arc;
 
+// A skirt hangs this many cells under its edge's ground on gentle ground, and as many more as the ground is steep, up to
+// the maximum, since a coarser neighbour's ground can sit that much lower beside it.
 pub(crate) const SKIRT_CELLS: i32 = 3;
+pub(crate) const MAX_SKIRT_CELLS: i32 = 40;
 
 // How far the tops of crown boxes are drawn in: a ball's, and a pine's nearer a cone's.
 const CROWN_TAPER: f32 = 0.5;
@@ -198,6 +202,7 @@ impl LodBlocks {
                     forest[Self::column(size, cx, cz)] =
                         (grid.trees(cx, cz) * FOREST_COVER).min(1.0) as f32;
                 }
+                let mut rock = None;
                 fill_column(
                     &mut cells,
                     noise.biomes(),
@@ -205,6 +210,10 @@ impl LodBlocks {
                     (cx, cz),
                     biome,
                     (height, gradient, temperature, water_top),
+                    &mut |y| {
+                        rock.get_or_insert_with(|| noise.rock_column(world_x, world_z))
+                            .at(y)
+                    },
                 );
             }
         }
@@ -347,6 +356,7 @@ impl LodBlocks {
                 water_tops[Self::column(size, cx, cz)] = water_top;
 
                 tops[Self::column(size, cx, cz)] = ground_top(column_height);
+                let mut rock = None;
                 fill_column(
                     &mut cells,
                     biomes,
@@ -354,6 +364,10 @@ impl LodBlocks {
                     (cx, cz),
                     biome,
                     (column_height, combined_gradient, temperature, water_top),
+                    &mut |y| {
+                        rock.get_or_insert_with(|| noise.rock_column(world_x, world_z))
+                            .at(y)
+                    },
                 );
             }
         }
@@ -447,6 +461,20 @@ impl LodBlocks {
     pub(super) fn surface_top(&self, coord: IVec3) -> Option<f32> {
         let coord = coord.clamp(IVec3::splat(-1), IVec3::splat(self.size));
         self.surface_tops[Self::index(self.size, coord)]
+    }
+
+    // How many cells deep the skirt hangs under the column at (`x`, `z`): more the steeper its ground.
+    fn skirt_cells(&self, x: i32, z: i32) -> i32 {
+        let top = |x: i32, z: i32| {
+            self.tops[Self::column(self.size, x.clamp(-1, self.size), z.clamp(-1, self.size))]
+        };
+        let here = top(x, z);
+        let rise = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .map(|&(dx, dz)| (here - top(x + dx, z + dz)).abs())
+            .max()
+            .unwrap_or(0);
+        (SKIRT_CELLS + (2 * rise / self.cell) as i32).min(MAX_SKIRT_CELLS)
     }
 
     pub(super) fn column(size: i32, cx: i32, cz: i32) -> usize {
@@ -569,9 +597,10 @@ impl BlockSource for LodBlocks {
                 coord.y,
                 coord.z.clamp(0, self.size - 1),
             );
+            let depth = self.skirt_cells(inner.x, inner.z);
             for cell in [inner, coord] {
                 if is_solid(self.raw(cell)) {
-                    for dy in 1..=SKIRT_CELLS {
+                    for dy in 1..=depth {
                         let above = self.raw(cell + IVec3::new(0, dy, 0));
                         if !is_solid(above) {
                             return above;
@@ -584,9 +613,7 @@ impl BlockSource for LodBlocks {
             // node's ground is far above it, so it grows no walls.
             let ground = self.tops[Self::column(self.size, inner.x, inner.z)];
             let bottom = self.base_y + inner.y as i64 * self.cell;
-            if is_solid(self.raw(inner))
-                && bottom + self.cell > ground - SKIRT_CELLS as i64 * self.cell
-            {
+            if is_solid(self.raw(inner)) && bottom + self.cell > ground - depth as i64 * self.cell {
                 return BlockType::Air;
             }
         }
@@ -662,6 +689,7 @@ fn fill_column(
     (cx, cz): (i32, i32),
     biome: BiomeId,
     (height, gradient, temperature, water_top): (i64, f64, f32, i64),
+    rock: &mut dyn FnMut(i64) -> BlockType,
 ) {
     let size = CHUNK_SIZE as i32;
     let block_at = |y| column_block(biomes, biome, y, height, gradient, temperature, water_top);
@@ -669,7 +697,7 @@ fn fill_column(
     for cy in -1..=size {
         let bottom = base.y + cy as i64 * cell;
         let middle = bottom + cell / 2;
-        let mut block = under_grass(block_at(middle), middle, height, cell, false);
+        let mut block = under_grass(block_at(middle), middle, height, cell, false, 0);
         block = freeze_cell(block, temperature, middle + cell / 2, (cell, water_top));
         if block == BlockType::Air && bottom < top {
             // the ground's own block fills the cell, except under water, where the water drawn over
@@ -694,6 +722,7 @@ fn fill_column(
                 (cell, water_top),
             );
         }
+        block = rocked(block, || rock(middle));
         cells[LodBlocks::index(size, IVec3::new(cx, cy, cz))] =
             underwater(block, bottom, cell, (height, water_top));
     }

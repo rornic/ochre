@@ -45,6 +45,25 @@ pub enum SpringPart {
 
 /// Where the ground, its biomes and its water come from. Chunk generation and LOD read terrain
 /// only through this.
+/// The rocks down one column.
+pub trait RockColumn {
+    /// The blocks `y` is among that are all one rock, as `start..end`, and the block stone is drawn as in them.
+    fn bed(&mut self, y: i64) -> (i64, i64, crate::block::BlockType);
+
+    /// The block stone is drawn as at height `y`.
+    fn at(&mut self, y: i64) -> crate::block::BlockType {
+        self.bed(y).2
+    }
+}
+
+struct StoneColumn;
+
+impl RockColumn for StoneColumn {
+    fn bed(&mut self, _y: i64) -> (i64, i64, crate::block::BlockType) {
+        (i64::MIN, i64::MAX, crate::block::BlockType::Stone)
+    }
+}
+
 pub trait TerrainSource: Send + Sync {
     fn seed(&self) -> u32;
 
@@ -57,6 +76,11 @@ pub trait TerrainSource: Send + Sync {
     /// The terrain as a cell `cell` blocks wide, sampled at its centre, should see it: features
     /// too fine for cells that wide fade to their average. The same as `sample` for single blocks.
     fn sample_for_cell(&self, x: f64, z: f64, cell: f64) -> TerrainSample;
+
+    /// The rock down the column at (x, z), `Stone` throughout where the source has no geology.
+    fn rock_column(&self, _x: i64, _z: i64) -> Box<dyn RockColumn + '_> {
+        Box::new(StoneColumn)
+    }
 
     /// How hot and wet the column at (x, z) is.
     fn climate(&self, x: f64, z: f64) -> Climate;
@@ -119,6 +143,10 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn sample_for_cell(&self, x: f64, z: f64, cell: f64) -> TerrainSample {
         (**self).sample_for_cell(x, z, cell)
+    }
+
+    fn rock_column(&self, x: i64, z: i64) -> Box<dyn RockColumn + '_> {
+        (**self).rock_column(x, z)
     }
 
     fn climate(&self, x: f64, z: f64) -> Climate {

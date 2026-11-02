@@ -59,13 +59,6 @@ const RIPARIAN_COOLING: f32 = 0.14;
 const MODE_RADIUS: usize = 2;
 const MODE_PASSES: usize = 2;
 const MIN_BIOME_CELLS: usize = 400;
-// Land this many blocks over the sea is mountain, or this many with ground at least this steep.
-const MOUNTAIN_ABOVE: f32 = 150.0;
-const MOUNTAIN_STEEP_ABOVE: f32 = 70.0;
-const MOUNTAIN_STEEP: f32 = 0.4;
-// High or steep ground is only mountain if a real peak, this far above the sea, stands within `PEAK_REACH` cells; rougher ground short of one is hills, which keep the climate's biome.
-const MOUNTAIN_PEAK: f32 = 300.0;
-const PEAK_REACH: usize = 10;
 // Conifers on a mountain's lower slopes, this thick, thinning out between these heights over the
 // sea to nothing: the treeline.
 const ALPINE_FOREST: f64 = 0.3;
@@ -259,8 +252,6 @@ pub fn run(map: &mut WorldMap) {
         }
     }
 
-    let slope = super::gameplay::slope_layer(map);
-    let peaks = window_max(&map.height, dim, PEAK_REACH);
     let mut kinds = vec![BiomeKind::Sea as u8; dim * dim];
     for i in 0..dim * dim {
         let h = map.height[i];
@@ -270,13 +261,8 @@ pub fn run(map: &mut WorldMap) {
         // what a cell grows depends on how warm it is at its height
         let warmth = (temperature[i] - (h - sea) * LAPSE_PER_BLOCK).max(0.0);
         kinds[i] = classify(warmth, moisture[i]) as u8;
-        // high or steep ground is mountain whatever the climate, but for the ice on top of it
-        let above = h - sea;
-        if kinds[i] != BiomeKind::Glacier as u8
-            && peaks[i] - sea >= MOUNTAIN_PEAK
-            && (above >= MOUNTAIN_ABOVE
-                || (above >= MOUNTAIN_STEEP_ABOVE && slope[i] >= MOUNTAIN_STEEP))
-        {
+        // mountain landform is mountain whatever the climate, but for the ice on top of it
+        if kinds[i] != BiomeKind::Glacier as u8 && map.landform[i] == super::landform::MOUNTAIN {
             kinds[i] = BiomeKind::Mountain as u8;
         }
     }
@@ -378,7 +364,7 @@ fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
 
 // A box blur of `radius` cells each way along both axes.
 // The highest of `values` within `reach` cells of each cell, along each row and then each column.
-fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
+pub(super) fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
     let pass = |src: &[f32], stride: usize, step: usize| {
         let mut out = vec![f32::MIN; src.len()];
         for line in 0..dim {
@@ -422,7 +408,7 @@ pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
 // Biomes with ragged edges and specks tidied: each land cell takes the most common biome in the
 // cells round it, then any patch left smaller than MIN_BIOME_CELLS is given to the biome it
 // borders most. The sea is left alone.
-fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
+pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
     let sea = BiomeKind::Sea as u8;
     let mut kinds = kinds.to_vec();
     for _ in 0..MODE_PASSES {
@@ -508,6 +494,12 @@ fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // climate reads the landform, which is laid first
+    fn run(map: &mut WorldMap) {
+        super::super::landform::run(map);
+        super::run(map);
+    }
     use crate::worldmap::WorldConfig;
 
     // Sea in the west, then land with a ridge across it north to south, then flat land beyond.

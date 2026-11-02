@@ -5,8 +5,7 @@
 // `check_dir_light_mesh_visibility` does, against what the camera's own view draws. Run with:
 //   cargo run --release --example shadow_cull -- [shadow distance in blocks] [cascades] [camera pitch in degrees]
 // Counts are CPU-side submissions, so they say how much geometry the shadow pass is given, not
-// how long the GPU takes over it. It also counts what would be left if each cascade kept only the
-// casters that can shadow something in its slice of the view, swept toward the sun.
+// how long the GPU takes over it.
 use std::time::{Duration, Instant};
 
 use bevy::camera::primitives::{Aabb, Frustum};
@@ -14,10 +13,8 @@ use bevy::camera::{PerspectiveProjection, Projection};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::light::cascade::build_directional_light_cascades;
 use bevy::light::{
-    CascadeShadowConfig, CascadeShadowConfigBuilder, Cascades, DirectionalLight,
-    DirectionalLightShadowMap,
+    CascadeShadowConfigBuilder, Cascades, DirectionalLight, DirectionalLightShadowMap,
 };
-use bevy::math::Vec3A;
 use bevy::mesh::{Indices, VertexAttributeValues};
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
@@ -31,7 +28,6 @@ use ochre_terrain::material::{
     ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
 };
 use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::shadow::CasterHull;
 use ochre_world::worldmap::WorldConfig;
 
 // The game's camera, see `spawn_player`.
@@ -179,19 +175,10 @@ struct Tally {
     by_class: [usize; LEVELS + 1],
 }
 
-fn tally(
-    casters: &[Caster],
-    frustum: &Frustum,
-    near: bool,
-    hull: Option<(&CasterHull, Vec3A, f32)>,
-) -> Tally {
+fn tally(casters: &[Caster], frustum: &Frustum, near: bool) -> Tally {
     let mut tally = Tally::default();
     for caster in casters {
-        if frustum.intersects_obb(&caster.aabb, &caster.transform.affine(), near, true)
-            && hull.is_none_or(|(hull, eye, margin)| {
-                hull.intersects(&caster.aabb, &caster.transform.affine(), eye, margin)
-            })
-        {
+        if frustum.intersects_obb(&caster.aabb, &caster.transform.affine(), near, true) {
             tally.meshes += 1;
             tally.triangles += caster.triangles;
             if caster.non_cutout {
@@ -318,7 +305,6 @@ fn main() {
         &casters,
         &Frustum(ViewFrustum::from_clip_from_world(&clip_from_world)),
         true,
-        None,
     );
     println!(
         "\ncamera view: {} meshes, {:.0}k triangles ({})",
@@ -346,25 +332,8 @@ fn main() {
         ))
         .id();
 
-    let config: CascadeShadowConfig = app
-        .world()
-        .get::<CascadeShadowConfig>(light)
-        .unwrap()
-        .clone();
-    // each cascade's slice of the view, as `build_directional_light_cascades` takes them
-    let overlap = 1.0 - config.overlap_proportion;
-    let nears =
-        std::iter::once(config.minimum_distance).chain(config.bounds.iter().map(|b| overlap * b));
-    let slices: Vec<[Vec3A; 8]> = nears
-        .zip(config.bounds.iter())
-        .map(|(near, &far)| {
-            let corners = projection.get_frustum_corners(-near, -far);
-            corners.map(|c| view.affine().matrix3 * c)
-        })
-        .collect();
-
     // the camera looks along +x: the sun ahead, to the side, and behind
-    let mut sums = vec![(0usize, 0usize, 0usize, 0usize, 0usize); cascades];
+    let mut sums = vec![(0usize, 0usize, 0usize, 0usize); cascades];
     let mut scenarios = 0;
     for (name, azimuth) in [("ahead", 0.0f32), ("side", 90.0), ("behind", 180.0)] {
         for elevation in [5.0f32, 15.0, 30.0, 60.0, 85.0] {
@@ -381,71 +350,52 @@ fn main() {
             let built = &world.get::<Cascades>(light).unwrap().cascades[&camera];
             println!("\nsun {name}, {elevation:.0} degrees up");
             scenarios += 1;
-            let (mut all, mut kept_all) = (0, 0);
+            let mut all = 0;
             for (i, cascade) in built.iter().enumerate() {
                 let frustum = Frustum(ViewFrustum::from_clip_from_world(&cascade.clip_from_world));
                 // a caster can lie before the near plane, as Bevy's visibility check allows
-                let t = tally(&casters, &frustum, false, None);
-                // Use the runtime hull, including its bias, sway and shadow-filter margin.
-                let sun = Vec3A::from(toward_sun);
-                let hull = CasterHull::new(slices[i], sun);
-                let light = world.get::<DirectionalLight>(light).unwrap();
-                let margin = (4.0 + light.shadow_normal_bias.abs()) * cascade.texel_size
-                    + light.shadow_depth_bias.abs()
-                    + 0.3;
-                let kept = tally(
-                    &casters,
-                    &frustum,
-                    false,
-                    Some((&hull, view.translation().into(), margin)),
-                );
+                let t = tally(&casters, &frustum, false);
                 all += t.triangles;
-                kept_all += kept.triangles;
                 sums[i].0 += t.triangles;
-                sums[i].1 += kept.triangles;
-                sums[i].2 += t.leaves + t.flora;
-                sums[i].3 += t.meshes;
-                sums[i].4 += kept.fragment_free;
+                sums[i].1 += t.leaves + t.flora;
+                sums[i].2 += t.meshes;
+                sums[i].3 += t.fragment_free;
                 println!(
-                    "  cascade {i}: texel {:5.2} blocks, {:5} meshes, {:7.0}k triangles ({}), swept hull keeps {:.0}k ({:.0}%)",
+                    "  cascade {i}: texel {:5.2} blocks, {:5} meshes, {:7.0}k triangles ({})",
                     cascade.texel_size,
                     t.meshes,
                     t.triangles as f32 / 1000.0,
                     classes(&t),
-                    kept.triangles as f32 / 1000.0,
-                    100.0 * kept.triangles as f32 / t.triangles.max(1) as f32,
                 );
             }
             println!(
-                "  shadows {:.0}k triangles in all, {:.2}x the camera's view; {:.0}k with the swept hull",
+                "  shadows {:.0}k triangles in all, {:.2}x the camera's view",
                 all as f32 / 1000.0,
                 all as f32 / main.triangles.max(1) as f32,
-                kept_all as f32 / 1000.0,
             );
         }
     }
     let n = scenarios as f32;
     println!("\nmean over {scenarios} suns, shadow distance {shadow_distance}, {cascades} cascades (camera view: {:.0}k triangles):", main.triangles as f32 / 1000.0);
-    let (mut total, mut total_kept) = (0.0, 0.0);
-    let mut fragment_free = 0.0;
-    for (i, (t, kept, cutout, meshes, solid)) in sums.iter().enumerate() {
+    let (mut total, mut fragment_free) = (0.0, 0.0);
+    for (i, (t, cutout, meshes, solid)) in sums.iter().enumerate() {
         println!(
-            "  cascade {i}: {:7.0}k triangles ({:.0}% leaves or flora), {:5.0} meshes; swept hull {:.0}k",
+            "  cascade {i}: {:7.0}k triangles ({:.0}% leaves or flora), {:5.0} meshes",
             *t as f32 / n / 1000.0,
             100.0 * *cutout as f32 / (*t).max(1) as f32,
             *meshes as f32 / n,
-            *kept as f32 / n / 1000.0
         );
         total += *t as f32 / n;
-        total_kept += *kept as f32 / n;
         fragment_free += *solid as f32 / n;
     }
     println!(
-        "  all: {:.0}k triangles ({:.2}x the view), {:.0}k with the swept hull ({:.2}x)",
+        "  all: {:.0}k triangles ({:.2}x the view)",
         total / 1000.0,
         total / main.triangles as f32,
-        total_kept / 1000.0,
-        total_kept / main.triangles as f32
     );
-    println!("  {:.0}k retained triangles ({:.1}%) use fragment-free shadow pipelines on native depth-clip GPUs", fragment_free / 1000.0, 100.0 * fragment_free / total_kept.max(1.0));
+    println!(
+        "  {:.0}k triangles ({:.1}%) use fragment-free shadow pipelines on native depth-clip GPUs",
+        fragment_free / 1000.0,
+        100.0 * fragment_free / total.max(1.0)
+    );
 }

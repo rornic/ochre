@@ -189,13 +189,14 @@ it does not substitute for looking at it from the ground.
 After the initial landform, climate and visual stages, expand the rock palette and give
 each addition a role in terrain and appearance:
 
-- **Granite:** intrusive mountain cores, domes and fractured cliffs.
+- **Granite:** intrusive mountain cores, domes and fractured cliffs. Done as metamorphic
+  cores, see "Granite and shale".
 - **Shale:** layered sedimentary rock alongside limestone and sandstone; retain clay as
-  a softer sediment or deposit.
+  a softer sediment or deposit. Done, see "Granite and shale".
 - **Gneiss:** banded metamorphic rock in mountain belts, alongside marble.
 - **Andesite:** volcanic rock for island arcs and volcanoes, alongside basalt.
 
-Start with granite and shale, then add gneiss and andesite as their landforms develop.
+Granite and shale are in; gneiss and andesite are next, as their landforms develop.
 Tune erosion and make the strata visible with the block texture pass; names and textures
 alone will not create distinctive landforms.
 
@@ -333,3 +334,79 @@ Fill-spill routes water on the map before block-scale detail is applied; it cann
 these later gullies. The wider fade reduces the abrupt correction but does not make
 lake routing account for detailed terrain. Generator version 46 invalidates version-45
 terrain and saved edits.
+
+## Landform layer
+
+Block-scale detail used to read the mountain biome, and the biome is made from climate, which lakes and rivers wet. Lakes were therefore fixed before the detail that shapes their shores could be known, and fill–spill could not see the gullies that later cut under the water.
+
+`landform::run` now classes each cell from the ground alone (height, nearby peaks, slope) and stores it in `WorldMap::landform`, after the final hydrology and before climate. The mountain biome is made from it, except where the climate says glacier. `roughness_layer`, `range`, mountain relief and terracing read the landform, never the biome. Dunes are the one climate-driven shape left, added after the landform ground in `ground_dry`. The desert (0.6) and glacier (0.5) roughness multipliers are gone, so steep desert and glacier ground is now as rough as other ground, and glacier peaks are no longer exempt from mountain relief. These changes have not been reviewed visually.
+
+`landform_ground_ignores_climate_and_biome` scrambles biome, moisture, temperature and trees on a copy of a map and requires identical landform ground at 400 points. Pointing the mountain cover back at the biome makes it fail. On seeds 1, 42 and 300059728 the landform and the old mountain biome differ on 0.6 to 1.3% of mountain cells. Generator version 47 invalidates earlier maps.
+
+Fine water audits on seeds 1, 42, 1337 and 300059728 found no lake or coast walls or steps, no open river block edges and no uncontained map cells. Tall river walls were 0, 1, 20 and 0, as before. Map-level hydrology is unchanged by this step, since it still reads the 32-block height alone.
+
+Lake shores now use a distance field instead of a count of cells (see [water.md](water.md)), and generator version 48 invalidates version-47 maps. The 36-cell scan and the outer-band weighting are gone.
+
+Two measurements decided what this does and does not fix. First, taking the lowest block-scale ground in each map cell as the rim, as a way to let fill–spill see detail, would collapse lakes. On the cells ringing each lake, that lowest ground is more than 2 blocks under the lake level for 13,359 of 32,011 cells on seed 300059728 (8,503 of 29,356 on seed 1, 4,206 of 18,519 on seed 42), more than 10 blocks for 6,415, 3,273 and 1,615, and more than 25 blocks for 1,938, 1,084 and 729. A per-cell minimum cannot tell a closed pit from a channel that drains the lake, so that route needs block-scale connectivity near each lake. Second, the shore hold still builds ground up. Walking outward from every fifth lake edge in 4-block steps, 691 of 2,822 walks on seed 300059728 (336 of 2,691 on seed 1, 157 of 1,592 on seed 42) have the hold raise ground more than 3 blocks above the unheld detail ground, the 99th percentile raise is 32 to 35 blocks and the largest 64 (seed 1). The distance field changes the abrupt-step count by 7 or fewer per seed against the merged wide fade (573 against 569 on seed 300059728), so it is a simplification, not a fix for the banks.
+
+Two more levers were tried on the same walks and reverted, since neither moved them. A freeboard, cutting each lake's pass down so the lake stands under its old brim by `30 * roughness^1.5` blocks (capped at half its depth), left lake area and the raised-walk share within about 10% for four strength settings. Most lakes are held under their brim by evaporation, so the brim is not what limits them. Raising the minimum lake depth from 4 to 8 and 12 removed lakes (seed 1 fell from 78,794 to 74,880 and 62,727 lake cells) without lowering the share of raised walks (12.5%, 14.8%, 17.2% on seed 1). The build-up is not a shallow-lake problem. Rim ground sits under the lake level by a median 0.5 to 7.8 blocks and a 90th percentile of 2 to 32, rising with the map's roughness (0 to 0.2: 2.1, 0.2 to 0.4: 5.6, 0.4 to 0.6: 10.1, above 0.6: about 31).
+
+The remaining candidate is a graded floor instead of a flat hold: ground near a lake may not fall under a surface rising from the lake at a graded stream slope, so gullies bottom out on a ramp. It needs a range limit with its own transition, so it has not been built. In-game review of the lake near `x=-8240, z=3068` found it acceptable, but the numbers above say the hold is still doing a lot of work. Raising `map_cell` to 16 was tried on seeds 1, 42 and 300059728 and does not remove the mismatch. It took 26 to 51 s to generate against 4 to 11 s, used about 1.7 GB in the viewer, and the share of raised lake banks rose.
+
+## Bedded terraces
+
+Mountain terraces were a staircase of the height alone: step sizes drawn per 2400-block square, patches of them by noise, tied to no rock. They are gone. A sedimentary province now holds beds (`geology::bed`): about 160 blocks thick but each boundary wanders by up to a quarter bed (80-240 thick), and each bed is clay (20%) or hard rock by a hash of its number, so the stack never repeats on a fixed cycle. The hard beds are limestone where the `facies` layer (noise, 9000-block wavelength) is high and sandstone where it is low, so about 60% of sedimentary ground is dominated by one or the other, with clay between. `rock_at_cell` reads the same beds, so erosion and the terraces agree on where each rock is.
+
+`WorldMap::terraced` steps the mountain's ground through the beds at its height: hard beds as benches ending in a face (the face climbs over 70% of the bed), clay as a slope (95%). It is a function of height and the slow drift of `strata_offset`, so rising ground climbs through the steps and never falls back (`bedded_ground_climbs_through_benches_and_faces_and_never_falls_back`). The `bedded` layer, a box blur of the sedimentary province over 4 cells either side, fades the terraces out over about 290 blocks at a province's edge, so no cliff stands on a border. Volcanic and metamorphic provinces were massive and unterraced at first (50-75% of mountain ground on the four audit seeds); see "Lava flows and no more scarps".
+
+Generator version 49. The new layers change the erosion, so every world changes, and the seed 300059728 lake bank pin (`lake_bank_eases_into_deep_adjacent_gully`, a coordinate) is gone since that spot is no longer a lake. Hard-rock faces climbing over 40% of a bed (cliffs, as the old terraces' 35%) leaked at LOD seams in `test_nothing_is_seen_through_a_seam_between_lod_levels` (2 of 5152 rays at levels 2 and 3; 50% leaked 1; 60% leaked 6 of 12096 at levels 3 and 4; with no terraces none leak), since a skirt is only three cells deep. 70% passes, and is the steepest tried that does. Cliffier faces needed the seams to cope first, see "Steeper cliffs and deeper LOD skirts". Fine audits on the four seeds found no lake or coast walls or steps and no uncontained cells. These changes have not been reviewed visually at ground level.
+
+## Rock blocks
+
+Rock reaches the blocks now. `TerrainSource::rock_column(x, z)` returns the rocks down a column as beds (`RockColumn::bed`: the run of blocks that are one rock, and the block). The chunk and LOD generators draw every stone as that rock, so limestone, clay, basalt, marble and (existing) sandstone blocks show in cliff faces, benches and the stone under soil. Province edges use the same wandering offset as biome edges (`WorldTerrain::wandered`), so they don't follow the map's cell squares. Generic ground, and any source with no geology, stays `Stone`.
+
+Compacted stone follows the rock: each rock has a compacted block (`BlockType::compacted`), unbreakable and a darker tile derived from the rock's tile, so beds show in cliff faces, which are almost all compacted. The depth rule is unchanged and independent of the rock (6 blocks, 16 under snow); only the look follows the geology. The world floor stays plain compacted stone.
+
+New tiles: Limestone, Clay, Basalt, Marble, and five compacted ones, inserted before the flora (so the flora stay the atlas's last tiles). The four rocks were generated with the block-textures skill (limestone candidate 1, clay 2, basalt 1, marble 2) and the compacted ones derived by `shade`. `out/` is scratch, so `pack.py` only writes the tiles in it.
+
+A cross-section of seed 300059728's mountains at x=-18000..-17400, z=-8080 shows compacted clay, limestone and sandstone as separate bands. Generator version 50.
+
+## Mountain cover and coherent provinces
+
+A mountain's ground is steep nearly everywhere (median block slope about 2.4 on seed 1692045686), so choosing blocks by the real gradient made about 85% of mountain tops bare. Mountain blocks are now chosen by half the gradient (`MOUNTAIN_EASE`), so grass and snow are the cover and bare rock is the steepest faces plus outcrops (`relief::outcrop_patch`: noise patches about 30 blocks across, a third of the ground, each adding 1.0 to the eased gradient). The slope that turns to rock falls with height (1.6 at 150 blocks over the sea to 1.0 at 600, `biome/mountain.rs`) and the old flat 260-block rock line is gone, so peaks are rockier but never bare for height alone. About 55% of the mountain at (1000, 11600) on that seed is rock from above, with exposed dirt where the cliff pass cuts through grass. Chunk generation also chose its surface blocks by the raw gradient, so meadow patches only reached trees and plants. It now uses the same eased gradient.
+
+A range used to show marble, basalt and limestone together, since the province follows the tectonic boundary type cell by cell. `geology::smooth_provinces` gives each cell the commonest province within 40 cells (about 2.6 km), so provinces are blobs several km across. Facies only chooses between limestone, sandstone and clay inside a sedimentary province, so it was not the cause. The change moves erosion, so generator version 51. Audits on five seeds found no uncontained cells and no lake or coast walls or steps. River walls and steps were in the baseline too (seed 1337: 125 walls and 1747 steps before, 90 and 791 after; seed 300059728: 75 and 1864 before, 88 and 2804 after). `test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide` found no interior lone tree on test seed 5 after this, so it uses seed 8.
+
+## Lava flows and no more scarps
+
+The foothill scarps (a height-only staircase of 12-34 block steps in noise patches, tied to no rock) are gone. Bedding now reaches the foothills instead: terraces fade in from 25 blocks over the sea (was 40) to full at 110 (was 130). Volcanic provinces get the same treatment with lava flows, which stack thin: layers about 50 blocks thick (`FLOW`, boundaries wandering as the beds' do), all basalt, faces climbing over 70% of the layer. A `flowed` layer, a box blur of the volcanic province like `bedded`, fades them out at its edge, and `terraced` applies beds and flows one after the other, each weighted by its own layer, so a border between the two has no jump. Both steps are functions of height and the slow drift, so the ground still never falls back (`lava_flows_step_the_ground_thinner_than_beds_and_never_fall_back`). Metamorphic and generic ground stays unterraced, with the foothill gullies and ridges still cutting it.
+
+Profiles across the basalt range of seed 1692045686 show benches (runs of 250 to 300 over several samples) between faces. Generator version 52 (the new layer is saved). Audits on five seeds changed nothing at coasts, and lake raised banks moved by a few (seed 1: 87 to 78, seed 300059728: 202 to 204); river counts were identical, so the new steps stay out of the valleys. The seam test passes.
+
+## Granite and shale
+
+Shale is a soft bed: of the 20% of beds that are soft, half are shale and half clay (a second hash of the bed number), so the stacks have a dark, flaky rock between the hard benches. Its face climbs over 85% of a bed (clay 95%, hard rock 70%), erodes and cuts a little less than clay (0.95 and 1.3 against 1.0 and 1.5).
+
+Granite is the core of a metamorphic belt: a metamorphic cell uplifted over 450 blocks becomes a fifth province (`INTRUSIVE`, saved as geology byte 4) after the provinces are smoothed, leaving marble on the belt's margins. It is the hardest rock (hydraulic 0.45, stream 0.55, basalt 0.55 and 0.65) and massive, so no terraces. Both draw as their own blocks with compacted forms and tiles (granite candidate 1, shale 2; the compacted ones derived by `shade`), the atlas now 35 tiles with the flora still last. The soft share and the harder cores move erosion, so generator version 53. Audits on five seeds: no uncontained cells and no lake or coast walls or steps, river counts moved with the new worlds (seed 300059728 tall walls 1 to 40, seed 1337 20 to 7). The one 14 block river wall of seed 300059728 probed at (-18144, -15460) is a bank, a levee built up 10 blocks beside the river, which the audit reads as a wall on its far side.
+
+## Steeper cliffs and deeper LOD skirts
+
+A skirt (the wall a LOD node hangs from its edge so a coarser neighbour's lower ground leaves no crack) was three cells deep, which capped hard-rock faces at a face over 70% of a bed. Its depth now follows the ground: `LodBlocks::skirt_cells` gives 3 cells plus twice the steepest rise to a neighbouring column in cells, up to `MAX_SKIRT_CELLS` (40), so slopes of 10 (faces of 80 degrees, seen at a face over 25% of a bed) are walled. `known_empty` and the skirt's light search use the maximum. With the old fixed three, a face over 40% of a bed leaked 4 of 5152 rays at levels 2 and 3.
+
+The seam test needed a fix: it loaded only the fine and coarse nodes, so a ray grazing down a steep face, below the quantized surface and parallel to it, left the loaded area before meeting ground and counted as a leak (34 of 12096 at a face over 40%, none of them near the seam). It now loads the nodes either side along the seam too, and takes the node's whole z extent. It passes at hard rock over 15% of a bed. Hard rock and lava flows are now 40% (faces about 2.5 times as steep as before), shale 60%, clay 95%.
+
+`bench` LOD total 240.7 ms against 235.0 before (2%), 460305 vertices against 456984 (0.7%), chunk generation and meshing unchanged. Audits on five seeds: no uncontained cells, no lake or coast walls or steps; no change at coasts, lake raised banks moved by 10 to 60 as the cliffs reshaped lake edges (seed 300059728: 204 to 148). The faces change the ground the water is worked out over, so generator version 54. These cliffs have not been reviewed visually at ground level.
+
+## Sheer walls, aprons and thin soil
+
+A bed climbed its whole thickness over 40% of itself, which on gentle ground stretched a 160 block face over 200 blocks of ground, so cliffs read as many small steps. Hard rock and lava flows now climb over 10% of a bed (shale 30%, clay still 95%): at (3200, 12000) on seed 1692045686 a wall of about 90 blocks rises in 14. Each face is footed by a scree apron (`TALUS`): below the riser the ledge climbs 30% of the non-riser share, squared, so it steepens into the cliff and the ground never falls back. Soft beds are 35% of a stack (were 20%) so walls alternate with slopes, and fade to none between 150 and 450 blocks above the sea (`SOFT_FADE`, read at a bed's bottom so a bed keeps one rock), as peaks are capped by hard rock and not clay. Beds therefore depend on height, so `bed` takes the stack's phase and the shift invariance of a stack holds only below 150.
+
+Soil follows the slope (`soil_depth`): on ground under gradient 0.3 one block of dirt lies under the grass before the rock, thinning to none at gradient 1.0, so a mountain's grass sits on bare rock. Sand and gravel keep 3 blocks. The compacted rock tiles darken their rock by 15% with no tint (a cool tint had turned compacted limestone grey), `CompactedStone` keeping its cool one.
+
+Audits on four seeds: no uncontained cells and no lake or coast walls or steps; river tall walls moved with the worlds (seed 300059728 40 to 5, seed 1 0 to 6). The lake-bank probe of `mountain_ground_far_from_a_river_keeps_its_own_height` moved 50 blocks from a river levee the terraces had put it beside. Generator version 55. `bench` was not run for this change.
+
+## Desktop freeze during first launch
+
+Launches that generated the map inside the running game froze the desktop (pointer moves, no window responds, gnome-shell has to be killed). A launch that loaded a cached map did not. On 2026-11-01 two generating launches (11.6 and 11.7 s) froze and one cached launch (245 ms) did not. The journal shows gnome-shell, not the GPU, failing: at the start of each freeze it logged thousands of "Attempting to run a JS callback during garbage collection" errors (offending signal `notify` on `MetaStage`), and none during the launch that worked. The game's `DeviceLost` and panics followed when gnome-shell was killed. This is a correlation from three runs, not a proven mechanism, and no kernel GPU errors were logged.
+
+The sandbox read the map in a `Startup` system, so its window existed while the main thread was blocked for the whole generation. It now calls `load_world` in `main` before the app and window are built, as the headless tools already did. Capping generation at two threads fewer than the logical CPUs did not stop the freeze. To test the fix, force a fresh generation with `OCHRE_WORLD_DIR=$(mktemp -d)`. One fresh-generation launch after the change (11 s, seed 300059728) did not freeze and logged no shell errors, and the lake near `x=-8240, z=3068` was judged acceptable in a ground-level look. One launch is not proof that it always holds.

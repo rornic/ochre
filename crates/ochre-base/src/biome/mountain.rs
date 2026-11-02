@@ -1,12 +1,14 @@
 use super::Biome;
 use crate::block::BlockType;
+use crate::math::smoothstep_f64;
 
-// Ground steeper than this, or higher than ALPINE_ABOVE blocks over the sea, is bare rock.
-const ROCK_GRADIENT: f64 = 1.0;
-const ALPINE_ABOVE: i64 = 260;
+// Ground steeper than this is bare rock, the limit falling with height from the first gradient at the
+// first height over the sea to the second at the second.
+const ROCK_GRADIENT: (f64, f64) = (1.6, 1.0);
+const ROCK_ABOVE: (f64, f64) = (150.0, 600.0);
 
-/// High, steep ground: bare rock where it is steep or above the treeline, meadow in the gentle
-/// pockets, scree for the sand and a few scattered trees.
+/// High, steep ground: meadow with bare rock on the steeper faces, more of it the higher it gets,
+/// scree for the sand and a few scattered trees.
 pub struct Mountain;
 
 impl Biome for Mountain {
@@ -24,13 +26,16 @@ impl Biome for Mountain {
 
     fn block(&self, base: BlockType, above_sea: i64, gradient: f64) -> BlockType {
         match base {
-            BlockType::Grass if gradient >= ROCK_GRADIENT || above_sea >= ALPINE_ABOVE => {
-                BlockType::Stone
-            }
+            BlockType::Grass if gradient >= rock_gradient(above_sea) => BlockType::Stone,
             BlockType::Sand => BlockType::Gravel,
             other => other,
         }
     }
+}
+
+fn rock_gradient(above_sea: i64) -> f64 {
+    let t = smoothstep_f64(ROCK_ABOVE.0, ROCK_ABOVE.1, above_sea as f64);
+    ROCK_GRADIENT.0 + (ROCK_GRADIENT.1 - ROCK_GRADIENT.0) * t
 }
 
 #[cfg(test)]
@@ -38,9 +43,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_steep_and_high_ground_is_rock_and_gentle_low_pockets_stay_meadow() {
-        assert_eq!(BlockType::Stone, Mountain.block(BlockType::Grass, 120, 1.6));
-        assert_eq!(BlockType::Stone, Mountain.block(BlockType::Grass, 300, 0.2));
+    fn test_steep_ground_is_rock_sooner_the_higher_it_is_and_gentle_ground_stays_meadow() {
+        assert_eq!(BlockType::Stone, Mountain.block(BlockType::Grass, 120, 1.7));
+        assert_eq!(BlockType::Grass, Mountain.block(BlockType::Grass, 300, 0.2));
+        assert_eq!(BlockType::Grass, Mountain.block(BlockType::Grass, 300, 0.9));
+        assert_eq!(BlockType::Stone, Mountain.block(BlockType::Grass, 800, 1.1));
         assert_eq!(BlockType::Grass, Mountain.block(BlockType::Grass, 200, 0.2));
         assert_eq!(BlockType::Grass, Mountain.block(BlockType::Grass, 120, 0.3));
         assert_eq!(BlockType::Gravel, Mountain.block(BlockType::Sand, 120, 0.3));

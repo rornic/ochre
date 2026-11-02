@@ -12,6 +12,7 @@ pub mod gameplay;
 pub mod geology;
 pub mod hydrology;
 pub mod io;
+pub mod landform;
 mod source;
 pub mod tectonics;
 pub mod water;
@@ -23,7 +24,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 46;
+pub const GENERATOR_VERSION: u32 = 55;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -121,6 +122,12 @@ pub struct WorldMap {
     /// Geological province and the elevation offset of its sedimentary beds.
     pub geology: Vec<u8>,
     pub strata_offset: Vec<f32>,
+    /// Noise favouring limestone where high and sandstone where low among a sedimentary province's hard beds.
+    pub facies: Vec<f32>,
+    /// How much of the way, 0..1, round each cell is sedimentary, fading the beds' terraces out at a province's edge.
+    pub bedded: Vec<f32>,
+    /// How far into a volcanic province, 0..1, fading out at its edge: where lava flows step the ground.
+    pub flowed: Vec<f32>,
     /// Background precipitation before local freshwater effects, in calibrated relative units.
     pub precipitation: Vec<f32>,
     /// Cells of land draining through each cell, itself included.
@@ -146,6 +153,8 @@ pub struct WorldMap {
     /// How near each cell is to a mountain range, 0..1 as 0..=255, reaching a few kilometres out
     /// into the land round it: where the foothills are.
     pub range: Vec<u8>,
+    /// A `landform::` class per cell (1 mountain), from the ground alone, never climate or water.
+    pub landform: Vec<u8>,
     /// 1 on the river cells that are fords, shallow however wide the river is there.
     pub ford: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
@@ -183,6 +192,9 @@ impl WorldMap {
             geological_age: vec![0; cells],
             geology: vec![0; cells],
             strata_offset: vec![0.0; cells],
+            facies: vec![0.0; cells],
+            bedded: vec![0.0; cells],
+            flowed: vec![0.0; cells],
             precipitation: vec![0.0; cells],
             flow: vec![0.0; cells],
             down: vec![NO_FLOW; cells],
@@ -195,6 +207,7 @@ impl WorldMap {
             trees: vec![0; cells],
             roughness: vec![0; cells],
             range: vec![0; cells],
+            landform: vec![0; cells],
             ford: vec![0; cells],
             features: Vec::new(),
         }
@@ -382,9 +395,14 @@ pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64
     best.expect("no forest on the test world").1
 }
 
-/// Runs `f(row, cells)` over each row of a `dim`-wide layer on all cores.
+/// Threads map generation runs on: every logical CPU but two, so the desktop keeps running meanwhile.
+pub(crate) fn worker_threads() -> usize {
+    std::thread::available_parallelism().map_or(4, |n| n.get().saturating_sub(2).max(1))
+}
+
+/// Runs `f(row, cells)` over each row of a `dim`-wide layer on `worker_threads`.
 pub(crate) fn par_rows<T: Send>(dim: usize, layer: &mut [T], f: impl Fn(usize, &mut [T]) + Sync) {
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = worker_threads();
     let rows_per_thread = dim.div_ceil(threads);
     std::thread::scope(|scope| {
         for (n, rows) in layer.chunks_mut(rows_per_thread * dim).enumerate() {
@@ -418,6 +436,7 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     for h in &mut map.height {
         *h = h.max(floor);
     }
+    landform::run(&mut map);
     climate::run(&mut map);
     detail::roughness_layer(&mut map);
     gameplay::label(&mut map);
