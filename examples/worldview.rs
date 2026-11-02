@@ -137,6 +137,19 @@ fn block_colour(b: BlockType) -> Option<Rgb> {
         Air => return None,
         Stone => [128.0, 128.0, 128.0],
         CompactedStone => [90.0, 90.0, 95.0],
+        Limestone => [200.0, 194.0, 172.0],
+        Clay => [178.0, 122.0, 80.0],
+        Basalt => [62.0, 64.0, 70.0],
+        Marble => [224.0, 222.0, 216.0],
+        CompactedLimestone => [124.0, 120.0, 107.0],
+        CompactedClay => [110.0, 76.0, 50.0],
+        CompactedBasalt => [38.0, 40.0, 43.0],
+        CompactedMarble => [139.0, 138.0, 134.0],
+        CompactedSandstone => [124.0, 105.0, 68.0],
+        Granite => [172.0, 152.0, 142.0],
+        Shale => [92.0, 88.0, 84.0],
+        CompactedGranite => [107.0, 94.0, 88.0],
+        CompactedShale => [57.0, 55.0, 52.0],
         Grass | TallGrass | Fern | ShortGrass | SeedGrass | Poppy | Dandelion => {
             [90.0, 160.0, 60.0]
         }
@@ -312,6 +325,8 @@ fn layer_pixel(w: &World, v: &View, name: &str, c: &Col) -> Option<(Rgb, f32)> {
                 Rock::Limestone => [225.0, 190.0, 120.0],
                 Rock::Clay => [165.0, 90.0, 75.0],
                 Rock::Sandstone => [205.0, 135.0, 65.0],
+                Rock::Granite => [172.0, 152.0, 142.0],
+                Rock::Shale => [92.0, 88.0, 84.0],
             };
             (colour, 1.0)
         }

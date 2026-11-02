@@ -34,6 +34,18 @@ pub fn meadow_patch(seed: u32, x: f64, z: f64) -> bool {
     perlin(seed ^ 0x3EAD, x / MEADOW_WAVELENGTH, z / MEADOW_WAVELENGTH) > MEADOW_OVER
 }
 
+const OUTCROP_WAVELENGTH: f64 = 30.0;
+const OUTCROP_OVER: f64 = 0.1;
+
+/// Whether (`x`, `z`) is on a rocky outcrop, which breaks through a mountain's cover. About a third of the ground.
+pub fn outcrop_patch(seed: u32, x: f64, z: f64) -> bool {
+    perlin(
+        seed ^ 0x0C20,
+        x / OUTCROP_WAVELENGTH,
+        z / OUTCROP_WAVELENGTH,
+    ) > OUTCROP_OVER
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +72,16 @@ mod tests {
         // runs of meadow are tens of blocks long
         let flips = patch.windows(2).filter(|w| w[0] != w[1]).count();
         assert!(flips < 4000 / 8, "{flips} changes in 12 km: speckled");
+    }
+
+    #[test]
+    fn test_outcrops_cover_a_third_in_patches_not_specks() {
+        let patch: Vec<bool> = (0..4000)
+            .map(|i| outcrop_patch(2, i as f64 * 3.0, 11.0))
+            .collect();
+        let share = patch.iter().filter(|&&p| p).count() as f64 / patch.len() as f64;
+        assert!((0.2..0.5).contains(&share), "{share}");
+        let flips = patch.windows(2).filter(|w| w[0] != w[1]).count();
+        assert!(flips < 4000 / 6, "{flips} changes in 12 km: speckled");
     }
 }

@@ -143,6 +143,10 @@ impl WorldMap {
         put_bytes(&mut out, &self.geology);
         put_layer(&mut out, &self.strata_offset);
         put_bytes(&mut out, &self.geological_age);
+        put_bytes(&mut out, &self.landform);
+        put_layer(&mut out, &self.facies);
+        put_layer(&mut out, &self.bedded);
+        put_layer(&mut out, &self.flowed);
         let sum = checksum(&out);
         out.extend(sum.to_le_bytes());
         out
@@ -200,6 +204,9 @@ impl WorldMap {
             geological_age: vec![0; cells],
             geology: vec![0; cells],
             strata_offset: vec![0.0; cells],
+            facies: Vec::new(),
+            bedded: Vec::new(),
+            flowed: Vec::new(),
             precipitation: r.layer(cells)?,
             flow: r.layer(cells)?,
             down: r.bytes(cells)?,
@@ -212,12 +219,17 @@ impl WorldMap {
             trees: r.bytes(cells)?,
             roughness: r.bytes(cells)?,
             range: r.bytes(cells)?,
+            landform: Vec::new(),
             ford: r.bytes(cells)?,
             features: r.features()?,
         };
         map.geology = r.bytes(cells)?;
         map.strata_offset = r.layer(cells)?;
         map.geological_age = r.bytes(cells)?;
+        map.landform = r.bytes(cells)?;
+        map.facies = r.layer(cells)?;
+        map.bedded = r.layer(cells)?;
+        map.flowed = r.layer(cells)?;
         if !r.0.is_empty() {
             return Err(bad("unexpected data after geology layers"));
         }

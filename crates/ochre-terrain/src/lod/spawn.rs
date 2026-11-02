@@ -127,7 +127,7 @@ pub(super) fn known_empty(key: LodKey, regions: &RegionStore) -> bool {
     };
     let (bottom, top) = (
         min.y - cell,
-        min.y + width + cell * crate::generate::generator::SKIRT_CELLS as i64,
+        min.y + width + cell * crate::generate::generator::MAX_SKIRT_CELLS as i64,
     );
     // coarse nodes' canopies stand at least a cell tall
     let above_terrain = bottom > highest.round() as i64 + 1 + TREE_HEIGHT.max(cell);

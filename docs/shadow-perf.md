@@ -6,6 +6,8 @@ Tool: `cargo run --release --example shadow_cull -- [shadow distance in blocks] 
 
 ## Implemented options 1 and 3
 
+**Option 1, the swept-hull pruning, was removed (2026-11-02).** A rendered A/B (RTX 2060, three views, `OCHRE_NO_PRUNE`) gave a shadow pass of 2.78 / 2.64 / 2.56 ms with it and 2.79 / 2.65 / 2.55 ms without, and main-world CPU of 1.50 ms with it and 1.49 without. It trimmed the CPU-side caster list but neither GPU nor CPU time moved. `ochre-world::shadow` and `CasterHull` are gone, and `shadow_cull` now counts what Bevy's frustum test hands each cascade. The text below is history.
+
 `ochre-world::shadow::prune_shadow_casters` runs after Bevy's light visibility check. Each cascade
 keeps terrain intersecting its camera slice swept indefinitely toward the fitted shadow sun.
 The unbounded sweep also covers very low sunlight and casters above the configured world height.

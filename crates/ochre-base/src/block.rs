@@ -23,6 +23,20 @@ pub enum BlockType {
     SeedGrass,
     // stone packed hard under the ground, which only explosives break
     CompactedStone,
+    // the rocks of the geology, see `TerrainSource::rock`, each with a compacted form
+    Limestone,
+    Clay,
+    Basalt,
+    Marble,
+    CompactedLimestone,
+    CompactedClay,
+    CompactedBasalt,
+    CompactedMarble,
+    CompactedSandstone,
+    Granite,
+    Shale,
+    CompactedGranite,
+    CompactedShale,
 }
 
 impl BlockType {
@@ -64,9 +78,38 @@ impl BlockType {
         !matches!(self, BlockType::Air | BlockType::Water)
     }
 
-    // Whether the player can break it. Compacted stone only gives way to explosives.
+    // Whether the player can break it. Compacted rock only gives way to explosives.
     pub fn is_breakable(&self) -> bool {
-        self.is_targetable() && *self != BlockType::CompactedStone
+        self.is_targetable() && !self.is_compacted()
+    }
+
+    pub fn is_compacted(&self) -> bool {
+        matches!(
+            self,
+            BlockType::CompactedStone
+                | BlockType::CompactedLimestone
+                | BlockType::CompactedClay
+                | BlockType::CompactedBasalt
+                | BlockType::CompactedMarble
+                | BlockType::CompactedSandstone
+                | BlockType::CompactedGranite
+                | BlockType::CompactedShale
+        )
+    }
+
+    // This rock packed hard, as it lies deep under the ground.
+    pub fn compacted(&self) -> BlockType {
+        match self {
+            BlockType::Stone => BlockType::CompactedStone,
+            BlockType::Limestone => BlockType::CompactedLimestone,
+            BlockType::Clay => BlockType::CompactedClay,
+            BlockType::Basalt => BlockType::CompactedBasalt,
+            BlockType::Marble => BlockType::CompactedMarble,
+            BlockType::Sandstone => BlockType::CompactedSandstone,
+            BlockType::Granite => BlockType::CompactedGranite,
+            BlockType::Shale => BlockType::CompactedShale,
+            other => *other,
+        }
     }
 
     pub fn name(&self) -> &'static str {
@@ -90,6 +133,19 @@ impl BlockType {
             BlockType::ShortGrass => "short grass",
             BlockType::SeedGrass => "seed grass",
             BlockType::CompactedStone => "compacted stone",
+            BlockType::Limestone => "limestone",
+            BlockType::Clay => "clay",
+            BlockType::Basalt => "basalt",
+            BlockType::Marble => "marble",
+            BlockType::CompactedLimestone => "compacted limestone",
+            BlockType::CompactedClay => "compacted clay",
+            BlockType::CompactedBasalt => "compacted basalt",
+            BlockType::CompactedMarble => "compacted marble",
+            BlockType::CompactedSandstone => "compacted sandstone",
+            BlockType::Granite => "granite",
+            BlockType::Shale => "shale",
+            BlockType::CompactedGranite => "compacted granite",
+            BlockType::CompactedShale => "compacted shale",
         }
     }
 
@@ -147,6 +203,19 @@ pub enum Tile {
     SandstoneTop,
     SnowSide,
     CompactedStone,
+    Limestone,
+    Clay,
+    Basalt,
+    Marble,
+    CompactedLimestone,
+    CompactedClay,
+    CompactedBasalt,
+    CompactedMarble,
+    CompactedSandstone,
+    Granite,
+    Shale,
+    CompactedGranite,
+    CompactedShale,
     TallGrass,
     Fern,
     Poppy,
@@ -155,7 +224,7 @@ pub enum Tile {
     SeedGrass,
 }
 
-pub const TILE_COUNT: usize = 22;
+pub const TILE_COUNT: usize = 35;
 
 impl Tile {
     // What meshes carry in vertex alpha for `block_texture.wesl`.
@@ -187,6 +256,19 @@ impl BlockType {
             (BlockType::Air, _) => Tile::Stone, // never drawn
             (BlockType::Stone, _) => Tile::Stone,
             (BlockType::CompactedStone, _) => Tile::CompactedStone,
+            (BlockType::Limestone, _) => Tile::Limestone,
+            (BlockType::Clay, _) => Tile::Clay,
+            (BlockType::Basalt, _) => Tile::Basalt,
+            (BlockType::Marble, _) => Tile::Marble,
+            (BlockType::CompactedLimestone, _) => Tile::CompactedLimestone,
+            (BlockType::CompactedClay, _) => Tile::CompactedClay,
+            (BlockType::CompactedBasalt, _) => Tile::CompactedBasalt,
+            (BlockType::CompactedMarble, _) => Tile::CompactedMarble,
+            (BlockType::CompactedSandstone, _) => Tile::CompactedSandstone,
+            (BlockType::Granite, _) => Tile::Granite,
+            (BlockType::Shale, _) => Tile::Shale,
+            (BlockType::CompactedGranite, _) => Tile::CompactedGranite,
+            (BlockType::CompactedShale, _) => Tile::CompactedShale,
             (BlockType::Grass, Face::Top) => Tile::GrassTop,
             (BlockType::Grass, Face::Side) => Tile::GrassSide,
             (BlockType::Grass, Face::Bottom) => Tile::Dirt,
@@ -291,6 +373,25 @@ mod tests {
         assert!(BlockType::CompactedStone.is_targetable());
         for passed_through in [BlockType::Air, BlockType::Water] {
             assert!(!passed_through.is_targetable() && !passed_through.is_breakable());
+        }
+    }
+
+    #[test]
+    fn test_every_rock_has_a_compacted_form_that_cannot_be_broken() {
+        for rock in [
+            BlockType::Stone,
+            BlockType::Limestone,
+            BlockType::Clay,
+            BlockType::Basalt,
+            BlockType::Marble,
+            BlockType::Sandstone,
+            BlockType::Granite,
+            BlockType::Shale,
+        ] {
+            let packed = rock.compacted();
+            assert!(rock.is_breakable() && !rock.is_compacted());
+            assert!(packed.is_compacted() && !packed.is_breakable() && packed.is_targetable());
+            assert_ne!(rock.tile(Face::Side), packed.tile(Face::Side));
         }
     }
 

@@ -1,6 +1,7 @@
 use ochre_base::biome::BiomeId;
 use ochre_base::biome::Biomes;
 use ochre_base::block::BlockType;
+use ochre_base::math::smoothstep_f64;
 use ochre_base::WATER_LEVEL;
 
 // The cell at the water's surface over ground below it is water, not ground: filled by its
@@ -143,11 +144,20 @@ pub(super) fn terrain_block(
 
 // Blocks of soil, sand or snow under the surface block before stone, and how far under the
 // ground's surface the stone is packed hard, which only explosives break.
-pub(super) const SOIL_DEPTH: i64 = 4;
+pub(super) const SOIL_DEPTH: i64 = 2;
+pub(super) const SAND_DEPTH: i64 = 4;
+// Soil is one block of dirt on flat ground (sand and gravel go deeper) and thins to none on ground this steep or steeper, the slopes shedding it.
+const SOIL_SLOPE: (f64, f64) = (0.3, 1.0);
 pub(super) const COMPACTED_DEPTH: i64 = 6;
 // Under snow the cover is thick, full blocks of it, and the packed stone begins only beneath.
 pub(super) const SNOW_DEPTH: i64 = 14;
 pub(super) const SNOW_COMPACTED_DEPTH: i64 = 16;
+
+// How deep soil lies on ground of gradient `slope`, as `under_grass` takes it.
+pub(super) fn soil_depth(slope: f64) -> i64 {
+    let t = smoothstep_f64(SOIL_SLOPE.0, SOIL_SLOPE.1, slope);
+    (SOIL_DEPTH as f64 + (1 - SOIL_DEPTH) as f64 * t).round() as i64
+}
 
 // The ground in layers: grass is only the top block, over dirt, glacier ice over snow, then the
 // soil gives way to stone and the stone to compacted stone a fixed depth under this column's own
@@ -159,6 +169,7 @@ pub(super) fn under_grass(
     column_height: i64,
     cell: i64,
     snowy: bool,
+    soil_depth: i64,
 ) -> BlockType {
     let depth = column_height - 1 - world_y;
     if cell != 1 || depth <= 0 {
@@ -175,12 +186,23 @@ pub(super) fn under_grass(
     );
     let (soil_depth, compacted_depth) = if snowy {
         (SNOW_DEPTH, SNOW_COMPACTED_DEPTH)
+    } else if block == BlockType::Dirt {
+        (soil_depth, COMPACTED_DEPTH)
     } else {
-        (SOIL_DEPTH, COMPACTED_DEPTH)
+        (SAND_DEPTH, COMPACTED_DEPTH)
     };
     match block {
         _ if depth >= compacted_depth && is_solid(block) => BlockType::CompactedStone,
         _ if depth >= soil_depth && soil => BlockType::Stone,
+        other => other,
+    }
+}
+
+// Stone as the rock it is there, `rock` being asked only when the block is stone.
+pub(super) fn rocked(block: BlockType, rock: impl FnOnce() -> BlockType) -> BlockType {
+    match block {
+        BlockType::Stone => rock(),
+        BlockType::CompactedStone => rock().compacted(),
         other => other,
     }
 }
@@ -218,9 +240,14 @@ pub(super) fn cut_cliff(
 // The steepest ground a patch of meadow still takes grass on: past it even meadow is rock.
 const MEADOW_GRADIENT: f64 = 0.9;
 
+// A mountain's ground is steep nearly everywhere, so blocks are chosen by its gradient eased by this,
+// leaving bare rock to the steepest faces and the outcrops, which add `OUTCROP_GRADIENT` to it.
+const MOUNTAIN_EASE: f64 = 0.5;
+const OUTCROP_GRADIENT: f64 = 1.0;
+
 // The gradient to choose a column's blocks by: on a mountain, in a patch of meadow, as gentle as
 // MEADOW_GRADIENT at most, so grass and the trees and flora on it cling to the face where the
-// rest of the slope is bare rock.
+// rest of the slope is bare rock, and on an outcrop steeper, so rock shows through the cover.
 pub(in crate::generate) fn block_gradient(
     biomes: &Biomes,
     biome: BiomeId,
@@ -229,13 +256,17 @@ pub(in crate::generate) fn block_gradient(
     z: i64,
     gradient: f64,
 ) -> f64 {
-    if gradient > MEADOW_GRADIENT
-        && biomes.name(biome) == Some("mountain")
-        && ochre_base::relief::meadow_patch(seed, x as f64, z as f64)
-    {
+    if biomes.name(biome) != Some("mountain") {
+        return gradient;
+    }
+    let (fx, fz) = (x as f64, z as f64);
+    let eased = gradient * MOUNTAIN_EASE;
+    if eased > MEADOW_GRADIENT && ochre_base::relief::meadow_patch(seed, fx, fz) {
         MEADOW_GRADIENT
+    } else if ochre_base::relief::outcrop_patch(seed, fx, fz) {
+        eased + OUTCROP_GRADIENT
     } else {
-        gradient
+        eased
     }
 }
 

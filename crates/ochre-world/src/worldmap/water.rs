@@ -442,7 +442,7 @@ impl WorldMap {
         // how high the ground allows the water at each point along each stretch
         let mut caps: Vec<[f32; PROFILE_POINTS + 1]> =
             vec![[0.0; PROFILE_POINTS + 1]; stretches.len()];
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = super::worker_threads();
         let per_thread = stretches.len().div_ceil(threads).max(1);
         std::thread::scope(|scope| {
             for (chunk, out) in stretches

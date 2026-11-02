@@ -442,3 +442,40 @@ Total LOD meshing was 253.0 / 267.6, 252.7 / 268.3 and 252.8 / 268.6 ms. The wid
 per-sample search is a likely contributor. The sampled scene produced 1,891,787 chunk
 and 458,029 LOD vertices in both builds, but the shore change alters terrain elsewhere.
 Frame-time p99 and GPU performance were not measured.
+
+## Lake shore search mask
+
+`still_near` scanned a 6 by 6 window of map cells for every sample after the wider lake search. A per-cell mask, built once in `WorldTerrain::new`, now skips the scan wherever no sea or lake cell lies in that window. Output is unchanged.
+
+Three alternating seed-1 release `bench` pairs (before / after) measured region generation at 143.0 / 117.5, 143.3 / 117.5 and 143.5 / 117.5 ms, below the 124 ms before the wider search. Total LOD meshing was 267.4 / 246.8, 268.9 / 247.1 and 267.6 / 246.9 ms. Chunk and LOD vertices were identical (1,891,787 and 458,029). A `perf` run of the whole `bench` (cpu-clock, 3 kHz) put `still_near` at 1.42% of samples before and 0.42% after. Frame-time p99 and GPU cost were not measured.
+
+## Landform layer
+
+Splitting the mountain class out of the biome adds one pass (`landform::run`, a window max, the slope layer and the biome tidy filter over three classes). With the mask above, two seed-1 `bench` pairs against the previous build measured regions at 115.4 and 116.6 ms against 143.4 and 143.7, and LOD meshing at 246.0 against 267.6 and 268.1 ms. Chunk vertices were 1,891,787 in both builds and LOD vertices 458,026 against 458,029. Map generation time was not isolated.
+
+## Lake distance field
+
+Replacing the 6 by 6 cell scan for lakes with a distance field built once per map (two chamfer passes over the cells) left seed-1 `bench` unchanged. Two alternating pairs against the landform build measured regions at 117.1 / 114.7 and 115.4 / 116.5 ms and LOD meshing at 246.1 / 246.0 and 245.5 / 246.2 ms. Chunk and LOD vertices were identical (1,891,787 and 458,026). That scene has no lake shore in view, so it does not show the shore change. Fine water audits on seeds 1, 42, 1337 and 300059728 were identical to the landform build.
+
+## Generation thread cap
+
+Map generation (`par_rows`, the erosion tiles and the river profile pass) now uses every logical CPU but two, 14 of 16 on an 8-core SMT machine, so the desktop keeps running during a first launch. Map generation took 4.34 and 4.32 s on seed 1, 4.43 and 4.57 s on seed 42 and 10.68 s on seed 300059728, against 4.17, 4.38 and 10.73 s with all threads, and those runs also include the landform pass. Whether it stops the reported desktop freeze during generation is not established.
+
+## Bedded terraces
+
+The terraced staircase (a height-only function with per-square flight sizes) is replaced by sedimentary beds with noise facies (see [tectonic-mvp.md](tectonic-mvp.md)). `bed` is a few integer hashes per `rock_at_cell` call in the erosion loops; map generation time was not A/B measured. Vertex counts change with the world, so `bench` has no like-for-like baseline across this change.
+
+## Rock blocks
+
+Drawing stone as its rock costs a rock column per column with stone in it (a box, the map cell and offset, one bed lookup, then the cached bed for the rest of the chunk column). `bench` generate chunks went from 191 ms to 237 ms (about 25 µs a chunk) and the other phases and every vertex count are unchanged. Of the 46 ms, about 8 ms is the wandering offset, none is per block (a run of blocks is looked up once per bed), and about 38 ms is making the column handle, which nearest-cell phase instead of a bilinear one did not reduce. Not optimised further: a chunk's columns share map cells, so a per-chunk cache is the next step if this matters.
+
+## Occlusion culling, shadow pruning and the CPU overlay (2026-11-02)
+
+`examples/visibility` software-rasterizes every terrain mesh in the frustum from eight headings into a 480x270 depth buffer. Seed 1692045686: only 13% of the meshes in the frustum have a pixel from the ground below a 130 block limestone wall, 34% and 38% from the air and from a mountain (28 to 31% of the triangles in the frustum are in meshes that are seen). Fragments per pixel passing the depth test are 0.6 to 1.3 as submitted and 0.5 to 0.9 front to back, so pixel overdraw is low and the waste is vertex work.
+
+The real GPU did not follow. With Bevy's `OcclusionCulling` on the camera (it needs `DepthPrepass`, which the camera has), `OCHRE_STATS` GPU ms over three views, three runs each: below the wall 9.4 to 8.5 (the main opaque pass 1.77 to 0.85, the early prepass 1.10 to 0.50), plateau edge 9.7 to 9.9 and mountain 9.2 to 9.7 (run to run noise is about 0.4 ms, so the mountain's +0.4 may be the depth pyramid's cost). The shadow pass, 2.5 to 2.8 ms in every configuration, did not move with the component on the sun either, or with the swept-hull pruning off (see `shadow-perf.md`, where it is removed). Occlusion culling was not kept: a 0.9 ms win in one walled view against a small cost in open ones. The frame is GPU bound (9.9 ms against 9.2 GPU, main world 1.5, render encoding 0.2), terrain passes being 5.6 ms of it and clouds, light probes, atmosphere and bloom the rest.
+
+The debug overlay (F1, or `OCHRE_STATS`) now shows `cpu:` frame time, the main world split into first, pre, update, post and last (marks laid in `Main`'s order), and the render passes' encoding time, beside the GPU passes.
+
+Shadow pass A/B (same day, below a wall and on a mountain, GPU ms of `per_view_shadow_pass`, `OCHRE_STATS` last 100 samples): shadow distance and cascades 64 chunks x 3 2.77 / 2.58, 64x2 2.24 / 2.03, 64x1 1.97 / 1.86, 64x4 3.59 / 3.14, 32x3 2.22 / 1.80, 16x3 1.51 / 1.13, 4x1 0.36 / 0.22. Shadow map size at 64x3: 1024 2.52 / 2.49, 2048 2.79 / 2.58, 4096 3.82 / 3.13. Total GPU falls 9.2 to 7.0 ms with shadows near off. `shadow_cull` (mean of 15 suns, 1024 blocks) hands the cascades 0.23M, 1.63M and 5.6M triangles, the last (texel 2 blocks) 75% of them and mostly L1 to L3; full detail is 6% of that cascade. The pass has a floor of about 2.4 ms that map size does not move, so it is mostly geometry bound, with fill adding above 2048. Lowering the map size buys 0.1 to 0.3 ms, and the lever is the far cascade's triangles or its distance.
+

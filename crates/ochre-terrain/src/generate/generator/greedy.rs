@@ -1,6 +1,6 @@
 use super::buffers::Vertex;
 use super::buffers::{FanQuad, GrassTint, InnerLeaves, MeshBuffers, MeshStyle};
-use super::lod::SKIRT_CELLS;
+use super::lod::MAX_SKIRT_CELLS;
 use super::shading::{
     axis_of, face_light, vertex_ao, vertex_light, AO_GAMMA, FACE_NORMAL_OFFSET, FACE_TANGENTS,
 };
@@ -226,7 +226,7 @@ pub(super) fn mesh_opaque_greedy(
                         coord + normal
                     };
                     let skirt_light = skirt.then(|| {
-                        let air = (0..=SKIRT_CELLS + 1)
+                        let air = (0..=MAX_SKIRT_CELLS + 1)
                             .find(|&dy| !is_solid(source.terrain(coord + IVec3::Y * dy)));
                         face_light(air.map_or(MAX_LIGHT, |dy| light.level(coord + IVec3::Y * dy)))
                     });
