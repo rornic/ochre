@@ -123,7 +123,7 @@ pub fn resolved(wavelength: f64, cell: f64) -> f64 {
         return 0.0;
     }
     let angle = std::f64::consts::PI * ratio;
-    angle.sin() / angle
+    libm::sin(angle) / angle
 }
 
 /// `fbm`, with each octave faded by `resolved` for cells `cell` blocks wide, so wide cells see

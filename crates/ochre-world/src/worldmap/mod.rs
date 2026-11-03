@@ -24,7 +24,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 55;
+pub const GENERATOR_VERSION: u32 = 56;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -397,7 +397,25 @@ pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64
 
 /// Threads map generation runs on: every logical CPU but two, so the desktop keeps running meanwhile.
 pub(crate) fn worker_threads() -> usize {
+    #[cfg(test)]
+    if let Some(n) = THREADS_FOR_TEST.get() {
+        return n;
+    }
     std::thread::available_parallelism().map_or(4, |n| n.get().saturating_sub(2).max(1))
+}
+
+// Pins the thread count so a test can check the map does not depend on it.
+#[cfg(test)]
+static THREADS_FOR_TEST: ThreadsForTest = ThreadsForTest(std::sync::atomic::AtomicUsize::new(0));
+
+#[cfg(test)]
+struct ThreadsForTest(std::sync::atomic::AtomicUsize);
+
+#[cfg(test)]
+impl ThreadsForTest {
+    fn get(&self) -> Option<usize> {
+        Some(self.0.load(std::sync::atomic::Ordering::Relaxed)).filter(|&n| n > 0)
+    }
 }
 
 /// Runs `f(row, cells)` over each row of a `dim`-wide layer on `worker_threads`.
@@ -461,6 +479,9 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     lap("label");
     map
 }
+
+#[cfg(test)]
+mod portable_maths;
 
 #[cfg(test)]
 mod tests {

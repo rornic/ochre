@@ -503,7 +503,7 @@ Straight biome edges (`worldprobe <seed> edges <x> <z> 2048`, samples every 4 bl
 
 The longest run is 140 blocks, so HEAD already passes the design's provisional limit of 200. That metric does not separate fixed from unfixed; PR 7 needs a tighter limit or a different measure before it can gate.
 
-Per-stage generation time (`OCHRE_STAGE_TIMES=1`, seed 1337, 8.6 s total): tectonics 0.32 s, geology 0.24, hydrology 0.91, erosion 2.31, carve passes 0.12, scatter 0.15, hydrology again 0.89, landform 0.18, climate 0.12, roughness 0.06, label 0.11.
+Per-stage generation time (`OCHRE_STAGE_TIMES=1`). Seed 1, 5.5 s total: tectonics 0.32 s, geology 0.24, hydrology 0.91, erosion 2.31, carve passes 0.12, scatter 0.15, hydrology again 0.89, landform 0.18, climate 0.12, roughness 0.06, label 0.11. Seed 1337, 8.6 s total: the same except carve passes 3.1 to 3.5 s and landform 0.17 to 0.23. Carve passes is the stage whose cost varies most between seeds.
 
 Census at HEAD (`scripts/census.sh 1 64`, per-seed rows in `docs/census-head.csv`; shares are of land cells, land is ground at or above sea level):
 
@@ -517,3 +517,11 @@ Census at HEAD (`scripts/census.sh 1 64`, per-seed rows in `docs/census-head.csv
 | Wet group (forest, jungle; swamp does not exist yet) with 15% or more | 64 of 64 | at least 10 seeds |
 
 Findings: cold biomes are unreachable at HEAD (the design's premise holds, so PR 1b keeps its full scope). The land-share goal is already missed by 12 seeds, all but a few under 20%, so seed-derived relief (PR 1) has to widen the range, not just keep it. Grassland, steppe and sea read 0% of land in the biome layer; only desert, forest, savanna, jungle and mountain cover land in practice.
+
+## Portable maths (GENERATOR_VERSION 56)
+
+World generation called `exp`, `powf`, `sin`, `cos` and `hypot` through the platform's maths library, which can differ in the last bit between x86-64 and ARM64. `exp`, `powf`, `sin` and `cos` now go through the `libm` crate (pure Rust, pinned by `Cargo.lock`); `hypot` became `sqrt` of the sum of squares. `powi(2)` is left alone, since both LLVM and `__powisf2` give `x * x`. Render shading (`greedy.rs`) is not world content and still uses `powf`.
+
+Measured against `main` before the change: stage times on seed 1337 are within noise (tectonics 0.328 to 0.338 s, climate 0.117 to 0.118 s, total unchanged at 8.6 s); `water_audit --fine` is identical on seeds 1, 42, 1337, 300059728 and 1692045686; whole-world hillshade, biome and water exports at 32 blocks a pixel change 3 pixels in 4 million on seed 42 and none on the others; `bench` vertex counts on the three views are identical.
+
+Guarded by `worldmap::portable_maths` (the map's hash is pinned and is the same with 1 and 7 worker threads, and a source scan fails on platform maths in `ochre-base`, `worldmap` and `generate`) and by `determinism.rs` (chunk blocks from a generated map are pinned). Not yet run on ARM64: that needs `qemu-user` and `rustup target add aarch64-unknown-linux-gnu`, then `cargo test --release --target aarch64-unknown-linux-gnu -p ochre-world -p ochre-terrain` with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER=qemu-aarch64`.

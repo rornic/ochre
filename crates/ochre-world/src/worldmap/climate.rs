@@ -36,7 +36,8 @@ impl ClimateConfig {
             || !(0.0..=1.0).contains(&self.warmth)
             || !self.wind_x.is_finite()
             || !self.wind_z.is_finite()
-            || !(0.01..=100.0).contains(&self.wind_x.hypot(self.wind_z))
+            || !(0.01..=100.0)
+                .contains(&(self.wind_x * self.wind_x + self.wind_z * self.wind_z).sqrt())
         {
             return Err("climate requires warmth in 0..=1 and a finite nonzero wind vector".into());
         }
@@ -170,7 +171,7 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
                 .clamp(0.0, 1.0);
         }
     });
-    let norm = cfg.wind_x.hypot(cfg.wind_z);
+    let norm = (cfg.wind_x * cfg.wind_x + cfg.wind_z * cfg.wind_z).sqrt();
     let ax = cfg.wind_x.abs() / norm;
     let az = cfg.wind_z.abs() / norm;
     let step = map.config.map_cell as f32 / (ax + az);
@@ -197,10 +198,11 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
             let (qz, hz) = upstream(false);
             let carried = (ax * qx + az * qz) / (ax + az);
             if map.height[i] < WATER_LEVEL as f32 {
-                vapour[i] = 1.0 - (1.0 - carried) * (-step * 0.003 * (0.3 + temperature[i])).exp();
+                vapour[i] =
+                    1.0 - (1.0 - carried) * libm::expf(-step * 0.003 * (0.3 + temperature[i]));
             } else {
                 let lift = (map.height[i] - (ax * hx + az * hz) / (ax + az)).max(0.0);
-                let fraction = 1.0 - (-0.00045 * step - lift / 700.0).exp();
+                let fraction = 1.0 - libm::expf(-0.00045 * step - lift / 700.0);
                 let falls = carried * fraction;
                 vapour[i] = (carried - falls * 0.30).max(0.0);
                 rain[i] = falls * 1000.0 / step;

@@ -23,7 +23,7 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
         let room = (ceiling * 0.15).clamp(1.0, 300.0);
         let start = ceiling - room;
         let height = if s.height > start {
-            ceiling - room * (-(s.height - start) / room).exp()
+            ceiling - room * libm::exp(-(s.height - start) / room)
         } else {
             s.height
         };
@@ -253,7 +253,7 @@ impl Tectonics {
                 let z = (unit(seed ^ 0x7102, i, candidate) * 2.0 - 1.0) * half;
                 let separation = plates
                     .iter()
-                    .map(|p| (x - p.x).hypot(z - p.z))
+                    .map(|p| ((x - p.x).powi(2) + (z - p.z).powi(2)).sqrt())
                     .fold(f64::INFINITY, f64::min);
                 if separation > best.0 {
                     best = (separation, x, z);
@@ -292,7 +292,7 @@ impl Tectonics {
         let mut distances = [f64::INFINITY; 64];
         let mut nearest = (f64::INFINITY, 0usize);
         for (i, p) in self.plates.iter().enumerate() {
-            let d = (wx - p.x).hypot(wz - p.z);
+            let d = ((wx - p.x).powi(2) + (wz - p.z).powi(2)).sqrt();
             distances[i] = d;
             if d < nearest.0 {
                 nearest = (d, i);
@@ -343,7 +343,7 @@ impl Tectonics {
                 let pb = self.plates[b];
                 let dx = pb.x - pa.x;
                 let dz = pb.z - pa.z;
-                let len = dx.hypot(dz).max(1.0);
+                let len = (dx * dx + dz * dz).sqrt().max(1.0);
                 let (nx, nz) = (dx / len, dz / len);
                 let signed = ((wx - pa.x).powi(2) + (wz - pa.z).powi(2)
                     - (wx - pb.x).powi(2)
@@ -365,13 +365,13 @@ impl Tectonics {
                 let lb = smooth(-0.14, 0.14, cb);
                 let along = -wx * nz + wz * nx;
                 let ridges = ridged(self.seed ^ 0xB02, along, signed * 2.8, 1800.0, 4);
-                let belt = (-(signed / 3600.0).powi(2)).exp();
+                let belt = libm::exp(-(signed / 3600.0).powi(2));
                 let collision_rise = la * lb * belt;
                 let mut subduction_rise = 0.0;
                 for (continental_side, strength) in
                     [(-signed, la * (1.0 - lb)), (signed, lb * (1.0 - la))]
                 {
-                    let range = (-((continental_side - 1900.0) / 2200.0).powi(2)).exp();
+                    let range = libm::exp(-((continental_side - 1900.0) / 2200.0).powi(2));
                     let plateau = 0.25
                         * smooth(2000.0, 4500.0, continental_side)
                         * (1.0 - smooth(7000.0, 12000.0, continental_side));
@@ -380,12 +380,12 @@ impl Tectonics {
                         * pair_weight
                         * strength
                         * 350.0
-                        * (-((continental_side + 1500.0) / 1000.0).powi(2)).exp();
+                        * libm::exp(-((continental_side + 1500.0) / 1000.0).powi(2));
                 }
                 // Oceanic convergence builds a chain on one side of the trench. The
                 // stable plate order keeps the overriding side fixed across the boundary.
                 let ocean_pair = (1.0 - la) * (1.0 - lb);
-                let arc = (-((signed - 2200.0) / 1400.0).powi(2)).exp();
+                let arc = libm::exp(-((signed - 2200.0) / 1400.0).powi(2));
                 let islands = smooth(0.25, 0.72, ridged(self.seed ^ 0xB03, along, 0.0, 3500.0, 3));
                 resurfacing = resurfacing.max(
                     pair_weight * (divergent * belt + active * ocean_pair * arc * islands).min(1.0),
@@ -395,18 +395,19 @@ impl Tectonics {
                     * pair_weight
                     * ocean_pair
                     * 240.0
-                    * (-((signed + 1200.0) / 900.0).powi(2)).exp();
+                    * libm::exp(-((signed + 1200.0) / 900.0).powi(2));
 
                 // Continental extension opens a trough between raised shoulders;
                 // in the ocean it creates a broad submarine spreading ridge.
-                let rift = (-(signed / 1200.0).powi(2)).exp();
-                let shoulders = (-((signed.abs() - 2600.0) / 1500.0).powi(2)).exp();
+                let rift = libm::exp(-(signed / 1200.0).powi(2));
+                let shoulders = libm::exp(-((signed.abs() - 2600.0) / 1500.0).powi(2));
                 valley += divergent * pair_weight * land * 240.0 * rift;
                 uplift += divergent * pair_weight * land * 220.0 * shoulders;
                 spreading += divergent * pair_weight * (1.0 - land) * 420.0 * belt;
                 // Strike-slip motion makes a narrower linear depression without
                 // raising an artificial wall across the drainage network.
-                valley += lateral * pair_weight * land * 150.0 * (-(signed / 850.0).powi(2)).exp();
+                valley +=
+                    lateral * pair_weight * land * 150.0 * libm::exp(-(signed / 850.0).powi(2));
                 let rise =
                     (collision_rise + subduction_rise) * (650.0 + 1050.0 * ridges.powi(2)) * land;
                 uplift += active * pair_weight * rise;
@@ -430,7 +431,8 @@ impl Tectonics {
             }
         }
         // The region is an island/continental fragment, retaining the existing open ocean edge.
-        let rounded = (x.abs().powf(2.4) + z.abs().powf(2.4)).powf(1.0 / 2.4) / self.half;
+        let rounded =
+            libm::pow(libm::pow(x.abs(), 2.4) + libm::pow(z.abs(), 2.4), 1.0 / 2.4) / self.half;
         let wander = fbm(self.seed ^ 0xED6E, x, z, 4500.0, 3) * 0.10;
         let edge = smooth(0.70, 0.94, rounded + wander);
         let relief = self.config.relief as f64;

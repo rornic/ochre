@@ -144,7 +144,8 @@ impl Tree {
             let out = spread * 0.75;
             let drop = spread * (0.25 + ((h >> 10) % 100) as f64 / 400.0);
             Blob {
-                centre: crown.centre + DVec3::new(angle.cos() * out, -drop, angle.sin() * out),
+                centre: crown.centre
+                    + DVec3::new(libm::cos(angle) * out, -drop, libm::sin(angle) * out),
                 radius: spread * 0.6,
                 squash: 0.75,
             }

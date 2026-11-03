@@ -15,6 +15,7 @@ bevy.workspace = true
 noise.workspace = true
 rand.workspace = true
 serde.workspace = true
+libm.workspace = true
 tracing.workspace = true
 
 [features]
