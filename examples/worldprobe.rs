@@ -199,11 +199,34 @@ fn longest_straight_edge(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> S
     let vertical = longest(&|i, j| grid[j][i] != grid[j][i + 1]);
     let horizontal = longest(&|j, i| grid[j][i] != grid[j + 1][i]);
     let blocks = |r: usize| r as i64 * STEP;
+    // a crossing is the flips along a row within 48 blocks of each other: one flip is a hard edge, three or more a mix
+    let mut crossings: Vec<(usize, i64)> = Vec::new();
+    for row in &grid {
+        let flips: Vec<usize> = (0..n - 1).filter(|&i| row[i] != row[i + 1]).collect();
+        let mut at = 0;
+        while at < flips.len() {
+            let mut end = at;
+            while end + 1 < flips.len() && (flips[end + 1] - flips[end]) as i64 * STEP <= 48 {
+                end += 1;
+            }
+            crossings.push((end - at + 1, (flips[end] - flips[at]) as i64 * STEP));
+            at = end + 1;
+        }
+    }
+    let share = |keep: &dyn Fn(usize) -> bool| {
+        100 * crossings.iter().filter(|c| keep(c.0)).count() / crossings.len().max(1)
+    };
+    let mut spans: Vec<i64> = crossings.iter().map(|c| c.1).collect();
+    spans.sort();
     format!(
-        "longest straight edge: {} blocks (vertical {}, horizontal {})",
+        "longest straight edge: {} blocks (vertical {}, horizontal {})\ncrossings {}: {}% hard (one flip), {}% mixed (three or more), median span {} blocks",
         blocks(vertical.max(horizontal)),
         blocks(vertical),
-        blocks(horizontal)
+        blocks(horizontal),
+        crossings.len(),
+        share(&|f| f == 1),
+        share(&|f| f >= 3),
+        spans.get(spans.len() / 2).copied().unwrap_or(0)
     )
 }
 
