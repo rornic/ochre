@@ -173,10 +173,44 @@ fn describe(
     )
 }
 
+// Longest run of biome-boundary samples (4 blocks apart) in one axis-aligned line, in blocks.
+fn longest_straight_edge(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
+    const STEP: i64 = 4;
+    let n = (2 * half / STEP) as usize;
+    let at = |i: usize, j: usize| {
+        terrain.biome(
+            (x - half) as f64 + (i as i64 * STEP) as f64,
+            (z - half) as f64 + (j as i64 * STEP) as f64,
+        )
+    };
+    let grid: Vec<Vec<_>> = (0..n).map(|j| (0..n).map(|i| at(i, j)).collect()).collect();
+    // a boundary sample differs from its east neighbour (a vertical edge) or south neighbour (a horizontal one)
+    let longest = |differs: &dyn Fn(usize, usize) -> bool| {
+        let mut best = 0;
+        for a in 0..n - 1 {
+            let mut run = 0;
+            for b in 0..n - 1 {
+                run = if differs(a, b) { run + 1 } else { 0 };
+                best = best.max(run);
+            }
+        }
+        best
+    };
+    let vertical = longest(&|i, j| grid[j][i] != grid[j][i + 1]);
+    let horizontal = longest(&|j, i| grid[j][i] != grid[j + 1][i]);
+    let blocks = |r: usize| r as i64 * STEP;
+    format!(
+        "longest straight edge: {} blocks (vertical {}, horizontal {})",
+        blocks(vertical.max(horizontal)),
+        blocks(vertical),
+        blocks(horizontal)
+    )
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 4 {
-        eprintln!("usage: worldprobe <seed> info|line|grid|png|route <x> <z> ...");
+        eprintln!("usage: worldprobe <seed> info|line|grid|png|route|edges <x> <z> ...");
         std::process::exit(2);
     }
     let seed: u32 = args[0].parse().unwrap();
@@ -219,6 +253,10 @@ fn main() {
                 let Some(n) = next else { break };
                 i = n;
             }
+        }
+        "edges" => {
+            let half: i64 = args[4].parse().unwrap();
+            println!("{}", longest_straight_edge(&terrain, x, z, half));
         }
         "line" => {
             let along_x = args[4] == "x";

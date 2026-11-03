@@ -21,6 +21,7 @@ use ochre_base::terrain_source::{TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 use ochre_terrain::generate::generator::surface_block;
 use ochre_terrain::generate::region_store::RegionStore;
+use ochre_world::worldmap::climate::BiomeKind;
 use ochre_world::worldmap::{
     FeatureKind, WaterCell, WorldConfig, WorldMap, WorldTerrain, NEIGHBOURS,
 };
@@ -823,14 +824,30 @@ fn handle(server: &Server, mut stream: TcpStream) {
             let mut high = f32::NEG_INFINITY;
             let mut peak = 0;
             let mut land = 0;
+            let mut land_height = 0.0f64;
+            let mut biomes = [0usize; BiomeKind::ALL.len()];
             for (i, &height) in map.height.iter().enumerate() {
                 low = low.min(height);
                 if height > high {
                     high = height;
                     peak = i;
                 }
-                land += (height >= WATER_LEVEL as f32) as usize;
+                if height >= WATER_LEVEL as f32 {
+                    land += 1;
+                    land_height += (height - WATER_LEVEL as f32) as f64;
+                    biomes[map.biome[i] as usize % biomes.len()] += 1;
+                }
             }
+            let mut shares = String::new();
+            for kind in BiomeKind::ALL {
+                let share = biomes[kind as usize] as f64 / land.max(1) as f64;
+                shares += &format!("biome_{kind:?}: {share:.3}\n").to_lowercase();
+            }
+            let spawns = map
+                .features
+                .iter()
+                .filter(|f| f.kind == FeatureKind::Spawn)
+                .count();
             let (x, z) = map.cell_centre(peak % map.dim(), peak / map.dim());
             let river = map
                 .river_width
@@ -841,7 +858,7 @@ fn handle(server: &Server, mut stream: TcpStream) {
                 .unwrap_or(0);
             let (rx, rz) = map.cell_centre(river % map.dim(), river / map.dim());
             let river_cells = map.river_width.iter().filter(|&&w| w > 0.0).count();
-            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\n", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0);
+            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64);
             reply(stream, "200 OK", "text/plain", "", body.as_bytes());
         }
         "/seed" => {

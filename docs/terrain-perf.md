@@ -479,3 +479,41 @@ The debug overlay (F1, or `OCHRE_STATS`) now shows `cpu:` frame time, the main w
 
 Shadow pass A/B (same day, below a wall and on a mountain, GPU ms of `per_view_shadow_pass`, `OCHRE_STATS` last 100 samples): shadow distance and cascades 64 chunks x 3 2.77 / 2.58, 64x2 2.24 / 2.03, 64x1 1.97 / 1.86, 64x4 3.59 / 3.14, 32x3 2.22 / 1.80, 16x3 1.51 / 1.13, 4x1 0.36 / 0.22. Shadow map size at 64x3: 1024 2.52 / 2.49, 2048 2.79 / 2.58, 4096 3.82 / 3.13. Total GPU falls 9.2 to 7.0 ms with shadows near off. `shadow_cull` (mean of 15 suns, 1024 blocks) hands the cascades 0.23M, 1.63M and 5.6M triangles, the last (texel 2 blocks) 75% of them and mostly L1 to L3; full detail is 6% of that cascade. The pass has a floor of about 2.4 ms that map size does not move, so it is mostly geometry bound, with fill adding above 2048. Lowering the map size buys 0.1 to 0.3 ms, and the lever is the far cascade's triangles or its distance.
 
+
+## Measurement baseline (PR 0, tectonic remaining work)
+
+Recorded before any change from `docs/designs/tectonic-world-plan.md`; later PRs compare to these. The design's PR 0 needed no generation change, so these are HEAD's numbers.
+
+View set (seed 1692045686, `OCHRE_SPAWN=x,z,lift`, vertex counts from `BENCH_AT=x,z cargo run --release --example bench -- 1692045686`, single thread, region and LOD stages measured while a census ran, so times are loose and counts exact). GPU ms are the three-run `OCHRE_STATS` medians logged above under occlusion culling (culling off).
+
+| View | Spawn and look | GPU ms | Chunk vertices | LOD vertices |
+| --- | --- | --- | --- | --- |
+| below_wall | (3000, 12000, 2) looking (1, 0.05, 0) | 9.4 | 881,683 | 514,786 |
+| plateau_edge | (3195, 12000, 1) looking (-1, -0.1, 0) | 9.7 | 530,460 | 444,094 |
+| mountain | (1000, 11600, 1) looking (1, 0.05, 0) | 9.2 | 636,501 | 530,055 |
+
+Straight biome edges (`worldprobe <seed> edges <x> <z> 2048`, samples every 4 blocks, longest run in one axis-aligned line), windows at (0, 0) and (+-12000, +-12000):
+
+| Seed | (0,0) | (12000,12000) | (12000,-12000) | (-12000,12000) | (-12000,-12000) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 44 | 92 | 84 | 88 | 0 |
+| 42 | 100 | 0 | 132 | 92 | 140 |
+| 1337 | 108 | 60 | 0 | 88 | 80 |
+| 300059728 | 56 | 100 | 120 | 84 | 84 |
+
+The longest run is 140 blocks, so HEAD already passes the design's provisional limit of 200. That metric does not separate fixed from unfixed; PR 7 needs a tighter limit or a different measure before it can gate.
+
+Per-stage generation time (`OCHRE_STAGE_TIMES=1`, seed 1337, 8.6 s total): tectonics 0.32 s, geology 0.24, hydrology 0.91, erosion 2.31, carve passes 0.12, scatter 0.15, hydrology again 0.89, landform 0.18, climate 0.12, roughness 0.06, label 0.11.
+
+Census at HEAD (`scripts/census.sh 1 64`, per-seed rows in `docs/census-head.csv`; shares are of land cells, land is ground at or above sea level):
+
+| Measure | Result | Design goal |
+| --- | --- | --- |
+| Land share | 10% to 39%, median 27%; 52 of 64 seeds in 20% to 70% | 90% of seeds (58 of 64) |
+| Spawn region found | 64 of 64 | 95% |
+| Largest single biome | mountain, 53% on one seed; none over 70% | none over 70% on more than 10% of seeds |
+| Cold group (glacier, tundra, taiga) with 15% or more of land | 0 of 64 (largest 0.6%; 10 seeds show any) | at least 10 seeds |
+| Hot and dry group (desert, savanna, steppe) with 15% or more | 64 of 64 | at least 10 seeds |
+| Wet group (forest, jungle; swamp does not exist yet) with 15% or more | 64 of 64 | at least 10 seeds |
+
+Findings: cold biomes are unreachable at HEAD (the design's premise holds, so PR 1b keeps its full scope). The land-share goal is already missed by 12 seeds, all but a few under 20%, so seed-derived relief (PR 1) has to widen the range, not just keep it. Grassland, steppe and sea read 0% of land in the biome layer; only desert, forest, savanna, jungle and mountain cover land in practice.
