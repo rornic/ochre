@@ -23,6 +23,8 @@ const SALT_TABLELAND: u32 = 0xC4A0_0008;
 const SALT_DUNES: u32 = 0xC4A0_0009;
 const SALT_CLIFFS: u32 = 0xC4A0_000A;
 const SALT_FJORDS: u32 = 0xC4A0_000D;
+const SALT_CONES: u32 = 0xC4A0_000B;
+const CONE_SHARE: (f64, f64) = (0.0, 0.25);
 const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
 const DUNE_SCALE: (f64, f64) = (0.7, 1.5);
@@ -51,6 +53,8 @@ pub struct LandformKnobs {
     pub cliff_boost: f64,
     /// The share of the mouths its mountainous coast has room for that are fjords, 0 to 0.3.
     pub fjord_share: f64,
+    /// The share of the cone sites its volcanic ground has room for that are raised, 0 to 0.25.
+    pub cone_share: f64,
 }
 
 impl LandformKnobs {
@@ -60,6 +64,7 @@ impl LandformKnobs {
             dune_scale: round(draw(seed, SALT_DUNES, DUNE_SCALE), 2),
             cliff_boost: round(draw(seed, SALT_CLIFFS, CLIFF_BOOST), 2),
             fjord_share: round(draw(seed, SALT_FJORDS, FJORD_SHARE), 3),
+            cone_share: round(draw(seed, SALT_CONES, CONE_SHARE), 3),
         }
     }
 }
@@ -169,6 +174,11 @@ mod tests {
             .collect();
         assert!(boosts.iter().all(|&b| (0.0..=1.0).contains(&b)));
         assert!(boosts.iter().any(|&b| b < 0.03) && boosts.iter().any(|&b| b > 0.97));
+        let cones: Vec<f64> = (0..1000)
+            .map(|s| LandformKnobs::from_seed(s).cone_share)
+            .collect();
+        assert!(cones.iter().all(|&c| (0.0..=CONE_SHARE.1).contains(&c)));
+        assert!(cones.iter().any(|&c| c < 0.01) && cones.iter().any(|&c| c > 0.24));
         assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
     }
 

@@ -30,6 +30,8 @@ const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
 const TABLE_WAVELENGTH: f64 = 20000.0;
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
+// Land this many blocks over the sea on a volcanic province is the volcanic biome.
+const VOLCANIC_FROM: f64 = 120.0;
 
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
@@ -196,6 +198,8 @@ pub struct WorldTerrain {
     dunes: Dunes,
     // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
     cliff_boost: f64,
+    // the biome of high ground on a volcanic province, see `biome_at`
+    volcanic: BiomeId,
 }
 
 impl WorldTerrain {
@@ -233,7 +237,12 @@ impl WorldTerrain {
             tableland_share: knobs.tableland_share,
             dunes,
             cliff_boost: knobs.cliff_boost,
+            volcanic: BiomeId::BASE,
         };
+        terrain.volcanic = terrain
+            .biomes
+            .id("volcanic")
+            .expect("volcanic in the biome table");
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
         terrain.profiles = terrain.river_profiles();
@@ -689,6 +698,12 @@ impl WorldTerrain {
             u.round().clamp(0.0, max) as usize,
             v.round().clamp(0.0, max) as usize,
         );
+        // high ground on a volcanic province is volcanic whatever the climate: bare basalt on its slopes
+        if self.map.geology[i] == super::geology::VOLCANIC
+            && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
+        {
+            return self.volcanic;
+        }
         self.kinds[self.map.biome[i] as usize]
     }
 
@@ -1270,6 +1285,51 @@ mod river_bank_tests {
         assert_eq!((0, 0), (off, over));
         terrain.cliff_boost = 0.0;
         assert_eq!(0.0, terrain.cliff_boost(0.0, 0.0));
+    }
+
+    #[test]
+    fn high_ground_on_a_volcanic_province_is_the_volcanic_biome_and_nothing_else_is() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1337, config)));
+        let (mut volcanic_high, mut wrong, mut elsewhere) = (0, 0, 0);
+        for i in 0..120 {
+            for j in 0..120 {
+                let (x, z) = (i as f64 * 540.0 - 32400.0, j as f64 * 540.0 - 32400.0);
+                let cell = terrain.map.index(
+                    terrain.map.to_cell(x, z).0.round().clamp(0.0, 511.0) as usize,
+                    terrain.map.to_cell(x, z).1.round().clamp(0.0, 511.0) as usize,
+                );
+                let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+                let biome = terrain.biome_at(x, z);
+                if terrain.map.geology[cell] == super::super::geology::VOLCANIC
+                    && above >= VOLCANIC_FROM + 20.0
+                {
+                    volcanic_high += 1;
+                    wrong += (biome != terrain.volcanic) as usize;
+                } else if above < VOLCANIC_FROM - 20.0
+                    || terrain.map.geology[cell] != super::super::geology::VOLCANIC
+                {
+                    elsewhere += (biome == terrain.volcanic) as usize;
+                }
+            }
+        }
+        assert!(
+            volcanic_high > 30,
+            "only {volcanic_high} high volcanic points"
+        );
+        // the wander moves the cell a little, so a point at the edge of a province can fall either side
+        assert!(
+            wrong * 10 <= volcanic_high,
+            "{wrong} of {volcanic_high} high volcanic points are not volcanic"
+        );
+        assert!(
+            elsewhere * 20 <= 120 * 120,
+            "{elsewhere} points outside it are volcanic"
+        );
     }
 
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {

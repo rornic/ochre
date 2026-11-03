@@ -1,9 +1,10 @@
-//! Shapes laid into the map's ground that erosion does not make: fjords cut into a mountainous coast. They
-//! are laid after erosion and before the mountain passes, so the thermal slumping that follows cannot
-//! soften their walls.
+//! Shapes laid into the map's ground that erosion does not make: fjords cut into a mountainous coast and
+//! volcanic cones raised on volcanic provinces. They are laid after erosion and before the mountain passes,
+//! so the thermal slumping that follows cannot soften their walls.
 
 use super::climate::blur_box;
 use super::WorldMap;
+use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{hash, perlin, unit};
 
 // Cells of the map's edge no shape is laid within.
@@ -30,6 +31,17 @@ const MEANDER: (f64, f64) = (6.0, 14.0);
 const RAGGED: (f64, f64) = (2.0, 12.0);
 const WALL_PER_CELL: f64 = 40.0;
 const ASCENT_SMOOTHING: usize = 2;
+
+// A cone is this many cells across the radius (a crater of at most 300 cells, the smallest lake hydrology
+// keeps) and this many blocks tall, with a crater a quarter as wide and a quarter of the height deep under its rim, its flanks and rim pushed in and out by up to CONE_RAGGED of its radius.
+const CONE_RADIUS: (u32, u32) = (16, 36);
+const CONE_HEIGHT: (f64, f64) = (150.0, 400.0);
+const CRATER_WIDTH: f64 = 0.25;
+const CRATER_DEPTH: f64 = 0.25;
+const CONE_RAGGED: f64 = 0.18;
+// A cone stands on volcanic ground over this height, and cones are packed this many cells apart for counting.
+const CONE_FROM: f32 = -200.0;
+const CONE_APART: f64 = 90.0;
 
 fn in_range((lo, hi): (u32, u32), u: f64) -> u32 {
     lo + ((hi - lo + 1) as f64 * u).floor().min((hi - lo) as f64) as u32
@@ -229,6 +241,89 @@ pub(super) fn fjords(map: &mut WorldMap, share: f64) -> Vec<Vec<(usize, usize)>>
     lines
 }
 
+/// Raises volcanic cones with craters on the map's volcanic provinces: `share` of the sites the provinces have room
+/// for, so a world with a lot of volcanic ground has more of them.
+pub(super) fn cones(map: &mut WorldMap, share: f64) -> Vec<(usize, usize, f64)> {
+    let mut sites: Vec<(usize, usize, f64)> = Vec::new();
+    if share <= 0.0 {
+        return sites;
+    }
+    let dim = map.dim();
+    let volcanic: Vec<usize> = (EDGE..dim - EDGE)
+        .flat_map(|cz| (EDGE..dim - EDGE).map(move |cx| cz * dim + cx))
+        .filter(|&i| map.geology[i] == super::geology::VOLCANIC && map.height[i] > CONE_FROM)
+        .collect();
+    // the sites the volcanic ground has room for, packed CONE_APART apart in a seeded order
+    let mut order = volcanic.clone();
+    order.sort_by_key(|&i| hash(map.seed ^ 0xC04E_0003, i as i32, 0));
+    let mut room: Vec<(f64, f64)> = Vec::new();
+    for i in order {
+        let (x, z) = ((i % dim) as f64, (i / dim) as f64);
+        if room
+            .iter()
+            .all(|&(sx, sz)| ((x - sx).powi(2) + (z - sz).powi(2)).sqrt() >= CONE_APART)
+        {
+            room.push((x, z));
+        }
+    }
+    let count = (room.len() as f64 * share).round() as usize;
+    for n in 0..count as i32 {
+        let radius = in_range(CONE_RADIUS, unit(map.seed ^ 0xC04E_0000, n, 0)) as f64;
+        let height =
+            CONE_HEIGHT.0 + (CONE_HEIGHT.1 - CONE_HEIGHT.0) * unit(map.seed ^ 0xC04E_0001, n, 0);
+        // the highest of the candidates, clear of the cones already raised
+        let site = (0..CANDIDATES)
+            .map(|k| volcanic[hash(map.seed ^ 0xC04E_0002, n, k as i32) as usize % volcanic.len()])
+            .filter(|&i| {
+                sites.iter().all(|&(x, z, r)| {
+                    let (dx, dz) = ((i % dim) as f64 - x as f64, (i / dim) as f64 - z as f64);
+                    (dx * dx + dz * dz).sqrt() > 1.5 * (r + radius)
+                })
+            })
+            .max_by(|&a, &b| map.height[a].total_cmp(&map.height[b]).then(b.cmp(&a)));
+        let Some(site) = site else { continue };
+        let (sx, sz) = (site % dim, site / dim);
+        sites.push((sx, sz, radius));
+        let reach = (radius * (1.0 + CONE_RAGGED)).ceil() as i64;
+        for cz in (sz as i64 - reach).max(0)..=(sz as i64 + reach).min(dim as i64 - 1) {
+            for cx in (sx as i64 - reach).max(0)..=(sx as i64 + reach).min(dim as i64 - 1) {
+                let (dx, dz) = ((cx - sx as i64) as f64, (cz - sz as i64) as f64);
+                // flanks and rim pushed in and out, so a cone is not a round heap
+                let wavelength = (radius * 0.6).max(4.0);
+                let ragged = CONE_RAGGED
+                    * radius
+                    * (perlin(
+                        map.seed ^ 0xC04E_0004,
+                        cx as f64 / wavelength,
+                        cz as f64 / wavelength,
+                    ) + 0.5
+                        * perlin(
+                            map.seed ^ 0xC04E_0004,
+                            cx as f64 / (wavelength / 3.0),
+                            cz as f64 / (wavelength / 3.0),
+                        ));
+                let d = (dx * dx + dz * dz).sqrt() + ragged;
+                let t = d / radius;
+                if !(0.0..1.0).contains(&t) {
+                    continue;
+                }
+                // inside the crater the cone is cut back to a bowl under its rim: the design's cone minus a quarter of its
+                // height leaves the middle higher than the rim, which is a bump and not a crater
+                let rim = CRATER_WIDTH;
+                let flank = |t: f64| height * libm::pow(1.0 - t, 1.5);
+                let shape = if t < rim {
+                    flank(rim) - CRATER_DEPTH * height * (1.0 - smoothstep(0.5, 1.0, t / rim))
+                } else {
+                    flank(t)
+                };
+                let i = cz as usize * dim + cx as usize;
+                map.height[i] += shape as f32;
+            }
+        }
+    }
+    sites
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,6 +454,86 @@ mod tests {
         fjords(&mut a, 0.3);
         fjords(&mut b, 0.3);
         assert_eq!(a.height, b.height);
+    }
+
+    // Flat land 50 blocks up, volcanic in its east half and plain in the west.
+    fn half_volcanic_plain() -> WorldMap {
+        let config = WorldConfig {
+            size: 500 * 32,
+            map_cell: 32,
+            ..Default::default()
+        };
+        let dim = config.dim();
+        let mut map = WorldMap::empty(3, config);
+        for cz in 0..dim {
+            for cx in 0..dim {
+                let i = cz * dim + cx;
+                map.height[i] = 50.0;
+                map.geology[i] = if cx >= dim / 2 {
+                    super::super::geology::VOLCANIC
+                } else {
+                    1
+                };
+            }
+        }
+        map
+    }
+
+    #[test]
+    fn cones_stand_only_on_volcanic_ground_with_a_crater_under_the_rim_and_only_raise() {
+        let before = half_volcanic_plain();
+        let mut map = before.clone();
+        let sites = cones(&mut map, 0.5);
+        assert!(sites.len() >= 3, "{} cones", sites.len());
+        let dim = map.dim();
+        let mut moved = 0;
+        for i in 0..map.height.len() {
+            assert!(map.height[i] >= before.height[i], "lowered ground at {i}");
+            moved += (map.height[i] > before.height[i]) as usize;
+            if map.height[i] != before.height[i] {
+                assert!(
+                    i % dim >= dim / 2 - 8,
+                    "raised plain ground at column {}",
+                    i % dim
+                );
+            }
+        }
+        assert!(moved > 3000, "only {moved} cells raised");
+        for &(sx, sz, r) in &sites {
+            assert!((CONE_RADIUS.0 as f64..=CONE_RADIUS.1 as f64).contains(&r));
+            assert!(sx >= dim / 2, "a cone on the plain at {sx}");
+            // a bowl: the middle is lower than the highest of the rim
+            let centre = map.height[sz * dim + sx];
+            let rim = (0..24)
+                .map(|k| {
+                    let a = k as f64 * std::f64::consts::TAU / 24.0;
+                    let (x, z) = (
+                        sx as f64 + 0.27 * r * libm::cos(a),
+                        sz as f64 + 0.27 * r * libm::sin(a),
+                    );
+                    map.height[z as usize * dim + x as usize]
+                })
+                .fold(0.0f32, f32::max);
+            assert!(
+                centre + 20.0 < rim,
+                "cone at ({sx},{sz}) r {r}: centre {centre}, rim {rim}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_cone_share_leaves_the_map_alone_and_the_same_seed_raises_the_same() {
+        let mut map = half_volcanic_plain();
+        assert!(cones(&mut map, 0.0).is_empty());
+        assert_eq!(half_volcanic_plain().height, map.height);
+        let (mut a, mut b) = (half_volcanic_plain(), half_volcanic_plain());
+        cones(&mut a, 0.4);
+        cones(&mut b, 0.4);
+        assert_eq!(a.height, b.height);
+        // and with no volcanic ground there is nothing to raise one on
+        let mut plain = half_volcanic_plain();
+        plain.geology.fill(1);
+        assert!(cones(&mut plain, 0.5).is_empty());
     }
 
     #[test]

@@ -3,6 +3,7 @@ mod forest;
 mod glacier;
 mod mountain;
 mod plain;
+mod volcanic;
 
 use bevy::color::{ColorToComponents, LinearRgba, Srgba};
 use bevy::math::Vec3;
@@ -13,6 +14,7 @@ pub use forest::Forest;
 pub use glacier::Glacier;
 pub use mountain::Mountain;
 pub use plain::Plain;
+pub use volcanic::Volcanic;
 
 // How hot and how wet a column is, each 0..1. See `TerrainSource::climate`.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -81,6 +83,7 @@ impl Biomes {
             Box::new(Plain::new("savanna", 0.03)),
             Box::new(Plain::new("jungle", 0.4)),
             Box::new(Mountain),
+            Box::new(Volcanic),
         ])
     }
 

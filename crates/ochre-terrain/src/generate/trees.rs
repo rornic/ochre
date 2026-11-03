@@ -479,7 +479,7 @@ pub fn grows_into(existing: BlockType, block: BlockType) -> bool {
 pub(crate) fn tree_kind(biome: Option<&str>, above_sea: i64, warmth: f32) -> TreeKind {
     let hot = matches!(biome, Some("savanna" | "jungle" | "desert"));
     let cold = matches!(biome, Some("taiga" | "tundra" | "glacier"));
-    let alpine = above_sea >= ALPINE_PINES_ABOVE && biome == Some("mountain");
+    let alpine = above_sea >= ALPINE_PINES_ABOVE && matches!(biome, Some("mountain" | "volcanic"));
     if !hot && (cold || alpine || warmth < PINE_TEMPERATURE) {
         TreeKind::Pine
     } else {
@@ -766,6 +766,7 @@ mod tests {
             (None, 10, 0.4),
             (Some("forest"), 100, 0.4),
             (Some("mountain"), 150, 0.9),
+            (Some("volcanic"), 150, 0.9),
         ] {
             assert_eq!(
                 TreeKind::Pine,

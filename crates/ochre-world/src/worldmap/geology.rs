@@ -75,7 +75,7 @@ impl Rock {
 // volcanic and metamorphic provinces are treated as massive rock for this first iteration.
 const GENERIC: u8 = 0;
 const SEDIMENTARY: u8 = 1;
-const VOLCANIC: u8 = 2;
+pub(super) const VOLCANIC: u8 = 2;
 const METAMORPHIC: u8 = 3;
 // Where a metamorphic belt is uplifted this much (blocks) its core is granite, the marble being the margin.
 const INTRUSIVE: u8 = 4;
