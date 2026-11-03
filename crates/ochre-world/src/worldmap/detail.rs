@@ -14,7 +14,7 @@ const DETAIL_OCTAVES: u32 = 6;
 pub(crate) const GENTLE_DETAIL: f64 = 3.0;
 pub(crate) const ROUGH_DETAIL: f64 = 38.0;
 
-// Rows of dunes driven by a wind along +x: a long gentle slope up to each crest, and a steep
+// Rows of dunes driven by the wind: a long gentle slope up to each crest, and a steep
 // face falling away behind it.
 const DUNE_SPACING: f64 = 90.0;
 const DUNE_HEIGHT: f64 = 16.0;
@@ -71,10 +71,28 @@ pub fn detail(seed: u32, x: f64, z: f64, cell: f64, roughness: f64, above_sea: f
     fbm_filtered(seed, x, z, DETAIL_WAVELENGTH, DETAIL_OCTAVES, cell) * amplitude * shore
 }
 
+/// How a world's dunes are laid out: `scale` multiplies their spacing and height, and the rows run
+/// across `wind`, a unit vector pointing the way the air travels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Dunes {
+    pub scale: f64,
+    pub wind: (f64, f64),
+}
+
+impl Default for Dunes {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            wind: (1.0, 0.0),
+        }
+    }
+}
+
 // 0..1 along the rows of dunes, 1 on each crest.
-fn dune(seed: u32, x: f64, z: f64) -> f64 {
+fn dune(seed: u32, x: f64, z: f64, style: Dunes) -> f64 {
     let bend = perlin(seed, x / CREST_BEND_WAVELENGTH, z / CREST_BEND_WAVELENGTH) * CREST_BEND;
-    let t = (x / DUNE_SPACING + bend).rem_euclid(1.0);
+    let along = x * style.wind.0 + z * style.wind.1;
+    let t = (along / (DUNE_SPACING * style.scale) + bend).rem_euclid(1.0);
     if t < WINDWARD {
         smoothstep(0.0, WINDWARD, t)
     } else {
@@ -84,7 +102,7 @@ fn dune(seed: u32, x: f64, z: f64) -> f64 {
 
 /// Height the dunes add on desert `above_sea` blocks up. Cells too wide to see the rows of dunes
 /// see their average height, half a crest.
-pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64) -> f64 {
+pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64, style: Dunes) -> f64 {
     let room = smoothstep(DUNE_SHORE.0, DUNE_SHORE.1, above_sea)
         * smoothstep(DUNE_HIGH_GROUND.1, DUNE_HIGH_GROUND.0, above_sea);
     if room <= 0.0 {
@@ -102,10 +120,10 @@ pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64) -> f64 {
     let resolved = if cell <= 1.0 {
         1.0
     } else {
-        ochre_base::noise::resolved(DUNE_SPACING, cell)
+        ochre_base::noise::resolved(DUNE_SPACING * style.scale, cell)
     };
-    let shape = 0.5 + (dune(seed, x, z) - 0.5) * resolved;
-    shape * DUNE_HEIGHT * (0.4 + 0.6 * field) * room
+    let shape = 0.5 + (dune(seed, x, z, style) - 0.5) * resolved;
+    shape * DUNE_HEIGHT * style.scale * (0.4 + 0.6 * field) * room
 }
 
 /// Fills the roughness layer: steep and high ground is rough, plains and flat biomes are not.
@@ -160,7 +178,7 @@ mod tests {
     fn test_dunes_rise_inland_but_not_on_beaches_or_mountains() {
         let rise = |above_sea: f64| {
             (0..200)
-                .map(|x| dunes(1, x as f64 * 3.0, 0.0, 1.0, above_sea))
+                .map(|x| dunes(1, x as f64 * 3.0, 0.0, 1.0, above_sea, Dunes::default()))
                 .fold(0.0, f64::max)
         };
         assert_eq!(0.0, rise(1.0));
@@ -174,10 +192,59 @@ mod tests {
     }
 
     #[test]
+    fn test_dunes_scale_in_spacing_and_height_and_run_across_the_wind() {
+        let crests = |style: Dunes, along: (f64, f64)| {
+            (0..6000)
+                .filter(|&i| {
+                    let (x, z) = (i as f64 * along.0, i as f64 * along.1);
+                    dune(1, x, z, style) > 0.999 && dune(1, x + along.0, z + along.1, style) < 0.999
+                })
+                .count()
+        };
+        let plain = Dunes::default();
+        let wide = Dunes {
+            scale: 1.5,
+            ..plain
+        };
+        assert!(crests(wide, (1.0, 0.0)) < crests(plain, (1.0, 0.0)) * 3 / 4);
+        let rise = |style: Dunes| {
+            (0..400)
+                .map(|x| dunes(1, x as f64 * 3.0, 0.0, 1.0, 30.0, style))
+                .fold(0.0, f64::max)
+        };
+        assert!(
+            rise(wide) > rise(plain) * 1.2,
+            "{} {}",
+            rise(wide),
+            rise(plain)
+        );
+        // rows across a wind along +z change along z and hardly at all along x
+        let north = Dunes {
+            wind: (0.0, 1.0),
+            ..plain
+        };
+        let change = |dx: f64, dz: f64| {
+            (0..400)
+                .map(|i| {
+                    let (x, z) = (i as f64 * 7.0, i as f64 * 3.0);
+                    (dune(1, x + dx, z + dz, north) - dune(1, x, z, north)).abs()
+                })
+                .sum::<f64>()
+        };
+        assert!(
+            change(0.0, 20.0) > change(20.0, 0.0) * 3.0,
+            "{} {}",
+            change(0.0, 20.0),
+            change(20.0, 0.0)
+        );
+    }
+
+    #[test]
     fn test_dunes_rise_gently_and_fall_steeply() {
         let (mut up, mut down) = (0.0f64, 0.0f64);
         for x in 0..2000 {
-            let step = dune(1, x as f64 + 1.0, 0.0) - dune(1, x as f64, 0.0);
+            let step = dune(1, x as f64 + 1.0, 0.0, Dunes::default())
+                - dune(1, x as f64, 0.0, Dunes::default());
             (up, down) = (up.max(step), down.min(step));
         }
         assert!(-down > up * 1.3, "steepest rise {up}, steepest fall {down}");

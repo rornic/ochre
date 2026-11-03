@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::climate::{BiomeKind, LAPSE_PER_BLOCK};
-use super::detail::{detail, dunes, foothill_weight, gully_relief, FOOTHILL_RELIEF};
+use super::detail::{detail, dunes, foothill_weight, gully_relief, Dunes, FOOTHILL_RELIEF};
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
@@ -176,6 +176,8 @@ pub struct WorldTerrain {
     lake_level: Vec<f32>,
     // what share of the sedimentary lowland this seed makes tableland, see `tableland`
     tableland_share: f64,
+    // how this world's dunes are laid out, see `Dunes`
+    dunes: Dunes,
 }
 
 impl WorldTerrain {
@@ -190,7 +192,16 @@ impl WorldTerrain {
             })
             .collect();
         let tangents = map.river_tangents();
-        let tableland_share = super::character::LandformKnobs::from_seed(map.seed).tableland_share;
+        let knobs = super::character::LandformKnobs::from_seed(map.seed);
+        let (wx, wz) = (
+            map.config.climate.wind_x as f64,
+            map.config.climate.wind_z as f64,
+        );
+        let wind_length = (wx * wx + wz * wz).sqrt();
+        let dunes = Dunes {
+            scale: knobs.dune_scale,
+            wind: (wx / wind_length, wz / wind_length),
+        };
         let mut terrain = Self {
             map,
             biomes,
@@ -201,7 +212,8 @@ impl WorldTerrain {
             near_still: Vec::new(),
             lake_distance: Vec::new(),
             lake_level: Vec::new(),
-            tableland_share,
+            tableland_share: knobs.tableland_share,
+            dunes,
         };
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
@@ -462,13 +474,18 @@ impl WorldTerrain {
     // where the climate is desert.
     fn ground_dry(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let ground = self.landform_ground(x, z, cell, base, calm);
+        ground + self.dune_height(x, z, cell, base, calm)
+    }
+
+    // How high the dunes rise over the ground at a point: only on desert, calmed at the shore.
+    fn dune_height(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let desert = self.kind_cover(BiomeKind::Desert, x, z);
         if desert <= 0.0 {
-            return ground;
+            return 0.0;
         }
         let sea = WATER_LEVEL as f64;
         let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
-        ground + dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea) * desert * shore
+        dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea, self.dunes) * desert * shore
     }
 
     // The map's smooth height with the detail laid over it, and terraced, calmed by `calm`, 0..1. It
@@ -1151,6 +1168,39 @@ mod river_bank_tests {
         assert_eq!(0.0, terrain.tableland(0.0, 0.0, 20.0, 0.0));
         assert_eq!(0.0, terrain.tableland(0.0, 0.0, 500.0, 0.0));
         assert_eq!(0.0, terrain.tableland(0.0, 0.0, 150.0, 1.0));
+    }
+
+    // PR 4a check, as measured not as hoped: fewer than 1 in 100 dune points over 2 blocks tall are within 30
+    // blocks of river or lake water. The rest follow the biome's own wetting round wide water, see `climate`.
+    #[test]
+    fn almost_no_tall_dunes_are_within_30_blocks_of_river_or_lake_water() {
+        for seed in [1u32, 42, 1337, 300059728] {
+            let config = super::super::character::world_config(seed, Default::default());
+            let terrain = WorldTerrain::new(Arc::new(super::super::generate(seed, config)));
+            let (mut tall, mut near) = (0, 0);
+            for i in 0..1400 {
+                for j in 0..1400 {
+                    let (x, z) = (i as f64 * 47.0 - 32800.0, j as f64 * 47.0 - 32800.0);
+                    let base = terrain.map.height_at(x, z) as f64;
+                    if terrain.dune_height(x, z, 1.0, base, 1.0) <= 2.0 {
+                        continue;
+                    }
+                    tall += 1;
+                    let wet = (0..12).any(|k| {
+                        let a = k as f64 * std::f64::consts::TAU / 12.0;
+                        [10.0, 20.0, 30.0].iter().any(|d| {
+                            let s = terrain.sample(x + d * libm::cos(a), z + d * libm::sin(a));
+                            matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
+                        })
+                    });
+                    near += wet as usize;
+                }
+            }
+            eprintln!(
+                "DUNECHECK seed {seed}: {tall} tall dune points, {near} within 30 blocks of water"
+            );
+            assert!(near * 100 <= tall, "seed {seed}: {near} of {tall}");
+        }
     }
 
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {

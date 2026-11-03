@@ -20,6 +20,8 @@ const SALT_GRADIENT_ANGLE: u32 = 0xC4A0_0005;
 const SALT_CONTINENTALITY: u32 = 0xC4A0_0006;
 const SALT_WIND: u32 = 0xC4A0_0007;
 const SALT_TABLELAND: u32 = 0xC4A0_0008;
+const SALT_DUNES: u32 = 0xC4A0_0009;
+const DUNE_SCALE: (f64, f64) = (0.7, 1.5);
 const TABLELAND_SHARE: (f64, f64) = (0.2, 0.8);
 const SALT_HUMIDITY: u32 = 0xC4A0_000C;
 
@@ -39,12 +41,15 @@ fn round(value: f64, decimals: i32) -> f64 {
 pub struct LandformKnobs {
     /// About how much of the sedimentary lowland is tableland.
     pub tableland_share: f64,
+    /// Multiplies the spacing and height of dunes.
+    pub dune_scale: f64,
 }
 
 impl LandformKnobs {
     pub fn from_seed(seed: u32) -> Self {
         Self {
             tableland_share: round(draw(seed, SALT_TABLELAND, TABLELAND_SHARE), 3),
+            dune_scale: round(draw(seed, SALT_DUNES, DUNE_SCALE), 2),
         }
     }
 }
@@ -142,6 +147,13 @@ mod tests {
         );
         assert!(min >= TABLELAND_SHARE.0 && min < 0.23, "min {min}");
         assert!(max <= TABLELAND_SHARE.1 && max > 0.77, "max {max}");
+        let scales: Vec<f64> = (0..1000)
+            .map(|s| LandformKnobs::from_seed(s).dune_scale)
+            .collect();
+        assert!(scales
+            .iter()
+            .all(|&s| (DUNE_SCALE.0..=DUNE_SCALE.1).contains(&s)));
+        assert!(scales.iter().any(|&s| s < 0.75) && scales.iter().any(|&s| s > 1.45));
         assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
     }
 
