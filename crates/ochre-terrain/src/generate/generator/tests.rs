@@ -995,13 +995,18 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
         forest_at(5) - bevy::math::I64Vec2::splat(300),
         forest_at(5) + bevy::math::I64Vec2::splat(300),
     );
-    let tree = &trees[0];
-    let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
-    let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
-    assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
-    let opaque = super::lod::generate_lod_mesh(regions, key)
-        .expect("no mesh")
-        .opaque;
+    // a LOD node's coarse ground can put a tree on a terrace a few blocks off its true foot, in another node
+    // (the deferred LOD fidelity work), so take the first tree whose crown node has a mesh
+    let (_, mesh) = trees
+        .iter()
+        .find_map(|tree| {
+            let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
+            let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
+            assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
+            Some((tree, super::lod::generate_lod_mesh(regions.clone(), key)?))
+        })
+        .expect("no tree has a mesh");
+    let opaque = mesh.opaque;
     let flags = untextured_flags(&opaque);
     let VertexAttributeValues::Float32x2(uvs) = opaque.attribute(Mesh::ATTRIBUTE_UV_0).unwrap()
     else {

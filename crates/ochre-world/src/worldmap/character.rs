@@ -19,6 +19,8 @@ const SALT_GRADIENT: u32 = 0xC4A0_0004;
 const SALT_GRADIENT_ANGLE: u32 = 0xC4A0_0005;
 const SALT_CONTINENTALITY: u32 = 0xC4A0_0006;
 const SALT_WIND: u32 = 0xC4A0_0007;
+const SALT_TABLELAND: u32 = 0xC4A0_0008;
+const TABLELAND_SHARE: (f64, f64) = (0.2, 0.8);
 const SALT_HUMIDITY: u32 = 0xC4A0_000C;
 
 // Each knob has its own salt, so the order of draws never matters.
@@ -29,6 +31,22 @@ fn draw(seed: u32, salt: u32, (lo, hi): (f64, f64)) -> f64 {
 fn round(value: f64, decimals: i32) -> f64 {
     let scale = 10f64.powi(decimals);
     (value * scale).round() / scale
+}
+
+/// What a seed decides about its landforms, worked out where it is used rather than stored in the
+/// config or the map file, so a new landform adds no file format change. `OCHRE_CHARACTER=off` does not touch them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LandformKnobs {
+    /// About how much of the sedimentary lowland is tableland.
+    pub tableland_share: f64,
+}
+
+impl LandformKnobs {
+    pub fn from_seed(seed: u32) -> Self {
+        Self {
+            tableland_share: round(draw(seed, SALT_TABLELAND, TABLELAND_SHARE), 3),
+        }
+    }
 }
 
 /// `config` with the knobs a seed decides replaced by that seed's draws.
@@ -111,6 +129,20 @@ mod tests {
         spread(&|c| c.climate.humidity as f64, HUMIDITY);
         spread(&|c| c.climate.gradient as f64, GRADIENT);
         spread(&|c| c.climate.continentality as f64, CONTINENTALITY);
+    }
+
+    #[test]
+    fn test_landform_knobs_fill_their_range() {
+        let shares: Vec<f64> = (0..1000)
+            .map(|s| LandformKnobs::from_seed(s).tableland_share)
+            .collect();
+        let (min, max) = (
+            shares.iter().copied().fold(f64::INFINITY, f64::min),
+            shares.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        );
+        assert!(min >= TABLELAND_SHARE.0 && min < 0.23, "min {min}");
+        assert!(max <= TABLELAND_SHARE.1 && max > 0.77, "max {max}");
+        assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
     }
 
     #[test]

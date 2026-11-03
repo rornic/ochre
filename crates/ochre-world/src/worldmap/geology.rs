@@ -83,8 +83,11 @@ const GRANITE_UPLIFT: f32 = 450.0;
 // Beds average this thick, each boundary wandering by up to `BED_WANDER` of it from an even spacing.
 const BED: f64 = 160.0;
 const BED_WANDER: f64 = 0.5;
-// The share of beds that are soft (half clay, half shale); the rest are limestone or sandstone as the facies noise favours.
-const CLAY: f64 = 0.35;
+// The share of beds that are soft (half clay, half shale) runs between these over a few hundred kilometres: mostly
+// hard benches at the first (mesa country), mostly clay and shale slopes at the second (badlands). The rest are
+// limestone or sandstone as the facies noise favours.
+const SOFT_SHARE: (f64, f64) = (0.30, 0.70);
+const BADLAND_WAVELENGTH: f64 = 12000.0;
 // The facies noise is over this many blocks, and sways from sandstone to limestone between these two values.
 const FACIES_WAVELENGTH: f64 = 9000.0;
 const FACIES_SWAY: (f64, f64) = (-0.1, 0.1);
@@ -126,12 +129,23 @@ fn layer(seed: u32, scale: f64, y: f64) -> (i32, f64, f64) {
     (k, bottom, top)
 }
 
+/// The share of soft beds in the stack at (`x`, `z`) before the highest ground hardens them: it drifts between
+/// mesa country and badlands, so a world's sedimentary lands differ from place to place.
+pub(super) fn base_soft(seed: u32, x: f64, z: f64) -> f64 {
+    let badland = smoothstep(
+        0.4,
+        0.6,
+        (fbm(seed ^ 0x7AB2, x, z, BADLAND_WAVELENGTH, 2) + 1.0) / 2.0,
+    );
+    SOFT_SHARE.0 + (SOFT_SHARE.1 - SOFT_SHARE.0) * badland
+}
+
 // The bed at height `y` of a stack: uneven in thickness, and clay or hard rock by a hash of its number alone, so
 // the stack never repeats, the hard rock being limestone where `facies` is high and sandstone where it is low.
-fn bed(seed: u32, facies: f64, y: f64, phase: f64) -> Bed {
+fn bed(seed: u32, facies: f64, y: f64, phase: f64, base_soft: f64) -> Bed {
     let (k, bottom, top) = layer(seed, BED, y);
     let r = unit(seed ^ 0xBED6, k, 0);
-    let soft = CLAY * (1.0 - smoothstep(SOFT_FADE.0, SOFT_FADE.1, bottom + phase));
+    let soft = base_soft * (1.0 - smoothstep(SOFT_FADE.0, SOFT_FADE.1, bottom + phase));
     let rock = if r < soft {
         if unit(seed ^ 0x54A1, k, 0) < 0.5 {
             Rock::Clay
@@ -238,11 +252,12 @@ fn stepped(height: f64, phase: f64, weight: f64, bounds: (f64, f64), riser: f64)
 impl WorldMap {
     /// Rock at a map cell and elevation, including beds below the surface.
     pub fn rock_at_cell(&self, i: usize, y: f32) -> Rock {
-        self.rock_in(i, y, self.strata_offset[i])
+        let (x, z) = self.cell_centre(i % self.dim(), i / self.dim());
+        self.rock_in(i, y, self.strata_offset[i], base_soft(self.seed, x, z))
     }
 
     // The rock at `y` in cell `i`'s province, its beds `phase` blocks up.
-    fn rock_in(&self, i: usize, y: f32, phase: f32) -> Rock {
+    fn rock_in(&self, i: usize, y: f32, phase: f32, soft: f64) -> Rock {
         match self.geology[i] {
             VOLCANIC => Rock::Basalt,
             METAMORPHIC => Rock::Marble,
@@ -253,6 +268,7 @@ impl WorldMap {
                     self.facies[i] as f64,
                     (y - phase) as f64,
                     phase as f64,
+                    soft,
                 )
                 .rock
             }
@@ -271,7 +287,13 @@ impl WorldMap {
         let mut height = height;
         if beds > 0.0 {
             // the bed's rock is its shape, so the facies need not be known
-            let bed = bed(self.seed, 0.0, height - phase, phase);
+            let bed = bed(
+                self.seed,
+                0.0,
+                height - phase,
+                phase,
+                base_soft(self.seed, x, z),
+            );
             height = stepped(height, phase, beds, (bed.bottom, bed.top), bed.rock.riser());
         }
         if flows > 0.0 {
@@ -284,7 +306,7 @@ impl WorldMap {
     /// Rock at world coordinates: the province of the nearest map cell, its beds drifting smoothly with the map's stack offset.
     pub fn rock_at(&self, x: f64, y: f32, z: f64) -> Rock {
         let (i, phase) = self.rock_cell(x, z);
-        self.rock_in(i, y, phase)
+        self.rock_in(i, y, phase, base_soft(self.seed, x, z))
     }
 
     // The nearest map cell to a point, and the offset of its beds there.
@@ -301,10 +323,12 @@ impl WorldMap {
     /// The rocks down the column at (`x`, `z`), as blocks.
     pub fn rock_column(&self, x: f64, z: f64) -> RockColumn<'_> {
         let (i, phase) = self.rock_cell(x, z);
-        let fixed = (self.geology[i] != SEDIMENTARY).then(|| self.rock_in(i, 0.0, phase));
+        let soft = base_soft(self.seed, x, z);
+        let fixed = (self.geology[i] != SEDIMENTARY).then(|| self.rock_in(i, 0.0, phase, soft));
         RockColumn {
             map: self,
             i,
+            soft,
             phase: phase as f64,
             bed: (f64::NAN, f64::NAN, fixed.unwrap_or(Rock::Stone)),
             fixed: fixed.is_some(),
@@ -316,6 +340,7 @@ impl WorldMap {
 pub struct RockColumn<'a> {
     map: &'a WorldMap,
     i: usize,
+    soft: f64,
     phase: f64,
     bed: (f64, f64, Rock),
     fixed: bool,
@@ -345,6 +370,7 @@ impl RockColumn<'_> {
                 self.map.facies[self.i] as f64,
                 y - self.phase,
                 self.phase,
+                self.soft,
             );
             self.bed = (b.bottom, b.top, b.rock);
         }
@@ -356,6 +382,9 @@ impl RockColumn<'_> {
 mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
+
+    // the share of soft beds before tableland varied it
+    const DEFAULT_SOFT: f64 = 0.35;
 
     // far below the sea, where soft beds are at their full share
     const LOW: f64 = -1.0e6;
@@ -374,13 +403,75 @@ mod tests {
         map
     }
 
+    // The two points of a wide sweep with the least and the most soft rock.
+    fn softest_and_hardest(seed: u32) -> ((f64, f64), (f64, f64)) {
+        let points: Vec<(f64, f64)> = (0..60)
+            .flat_map(|i| {
+                (0..60).map(move |j| (i as f64 * 1100.0 - 32000.0, j as f64 * 1100.0 - 32000.0))
+            })
+            .collect();
+        let soft = |p: &&(f64, f64)| base_soft(seed, p.0, p.1);
+        let key = |a: &&(f64, f64), b: &&(f64, f64)| soft(a).total_cmp(&soft(b));
+        (
+            *points.iter().max_by(key).unwrap(),
+            *points.iter().min_by(key).unwrap(),
+        )
+    }
+
+    #[test]
+    fn the_soft_share_stays_in_its_range_and_varies_across_the_world() {
+        let (badlands, mesas) = softest_and_hardest(1);
+        let (hi, lo) = (
+            base_soft(1, badlands.0, badlands.1),
+            base_soft(1, mesas.0, mesas.1),
+        );
+        assert!(
+            hi <= SOFT_SHARE.1 + 1e-9 && lo >= SOFT_SHARE.0 - 1e-9,
+            "{lo} {hi}"
+        );
+        assert!(hi - lo > 0.25, "badland {hi} against mesa {lo}");
+    }
+
+    #[test]
+    fn terraced_ground_never_falls_back_in_mesa_or_badland_country() {
+        let map = column(0.0);
+        for (x, z) in [
+            softest_and_hardest(map.seed).0,
+            softest_and_hardest(map.seed).1,
+        ] {
+            let rise = 0.5;
+            let profile: Vec<f64> = (0..8000)
+                .map(|i| map.terraced(x, z, 300.0 + i as f64 * rise, 200.0 + i as f64 * rise))
+                .collect();
+            let worst_fall = profile.windows(2).map(|w| w[0] - w[1]).fold(0.0, f64::max);
+            assert!(worst_fall <= 1e-9, "fell {worst_fall} at {x},{z}");
+        }
+    }
+
+    #[test]
+    fn a_columns_rock_agrees_with_the_rock_at_a_point() {
+        let map = column(7.0);
+        let mut disagree = 0;
+        for k in 0..1000 {
+            let (x, z) = (
+                unit(3, k, 1) * 60000.0 - 30000.0,
+                unit(3, k, 2) * 60000.0 - 30000.0,
+            );
+            let y = unit(3, k, 3) * 600.0;
+            if map.rock_at(x, y as f32, z) != map.rock_column(x, z).rock(y) {
+                disagree += 1;
+            }
+        }
+        assert_eq!(0, disagree);
+    }
+
     #[test]
     fn beds_are_uneven_continuous_and_never_repeat_on_a_cycle() {
         let map = column(0.0);
         let mut thicknesses = Vec::new();
         let mut y = -1000.0;
         while y < 3000.0 {
-            let b = bed(map.seed, 0.0, y, LOW);
+            let b = bed(map.seed, 0.0, y, LOW, DEFAULT_SOFT);
             assert!(
                 b.bottom <= y && y < b.top,
                 "{y} outside {}..{}",
@@ -388,7 +479,7 @@ mod tests {
                 b.top
             );
             // the next bed starts where this one ends
-            assert_eq!(bed(map.seed, 0.0, b.top, LOW).bottom, b.top);
+            assert_eq!(bed(map.seed, 0.0, b.top, LOW, DEFAULT_SOFT).bottom, b.top);
             thicknesses.push(b.top - b.bottom);
             y = b.top;
         }
@@ -398,7 +489,7 @@ mod tests {
         assert!(min < BED * 0.8 && max > BED * 1.2, "thickness {min}..{max}");
         let rocks = |y: f64| {
             (0..8)
-                .map(|i| bed(map.seed, 0.0, y + i as f64 * BED, LOW).rock)
+                .map(|i| bed(map.seed, 0.0, y + i as f64 * BED, LOW, DEFAULT_SOFT).rock)
                 .collect::<Vec<_>>()
         };
         assert_ne!(rocks(0.0), rocks(4.0 * BED));
@@ -409,7 +500,7 @@ mod tests {
         let share = |facies: f64, rock: Rock| {
             let n = 2000;
             (0..n)
-                .filter(|&i| bed(1, facies, i as f64 * BED + 3.0, LOW).rock == rock)
+                .filter(|&i| bed(1, facies, i as f64 * BED + 3.0, LOW, DEFAULT_SOFT).rock == rock)
                 .count() as f64
                 / n as f64
         };
@@ -508,7 +599,7 @@ mod tests {
     #[test]
     fn soft_beds_are_clay_or_shale_and_shale_cliffs_between_the_two() {
         let found: Vec<Rock> = (0..400)
-            .map(|k| bed(3, 0.0, k as f64 * BED, LOW).rock)
+            .map(|k| bed(3, 0.0, k as f64 * BED, LOW, DEFAULT_SOFT).rock)
             .collect();
         assert!(found.contains(&Rock::Clay) && found.contains(&Rock::Shale));
         assert!(Rock::Shale.riser() > Rock::Limestone.riser());
@@ -542,7 +633,7 @@ mod tests {
         let steepest = |rock: Rock| {
             (0..20_000)
                 .map(|i| 300.0 + i as f64 * 0.1)
-                .filter(|&h| bed(map.seed, 0.0, h, 0.0).rock == rock)
+                .filter(|&h| bed(map.seed, 0.0, h, 0.0, DEFAULT_SOFT).rock == rock)
                 .map(|h| {
                     let at = |h: f64| map.terraced(50.0, 50.0, h, 300.0);
                     (at(h + 0.1) - at(h)) / 0.1

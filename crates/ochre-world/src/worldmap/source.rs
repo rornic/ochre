@@ -7,7 +7,7 @@ use super::FeatureKind;
 use super::{WaterCell, WorldMap};
 use ochre_base::biome::{BiomeId, Biomes, Climate};
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::perlin;
+use ochre_base::noise::{fbm, perlin};
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 
@@ -25,6 +25,9 @@ const SHORE_SMOOTH: f64 = 5.0;
 // the water's edge, so a shore and the bed out from it are smooth.
 pub(super) const HOLD: f64 = 1.5;
 const CALM: f64 = 8.0;
+// Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
+const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
+const TABLE_WAVELENGTH: f64 = 20000.0;
 
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
@@ -171,6 +174,8 @@ pub struct WorldTerrain {
     // by map cell, the distance in blocks to the nearest lake cell's centre (capped past its reach) and that lake's level
     lake_distance: Vec<f32>,
     lake_level: Vec<f32>,
+    // what share of the sedimentary lowland this seed makes tableland, see `tableland`
+    tableland_share: f64,
 }
 
 impl WorldTerrain {
@@ -185,6 +190,7 @@ impl WorldTerrain {
             })
             .collect();
         let tangents = map.river_tangents();
+        let tableland_share = super::character::LandformKnobs::from_seed(map.seed).tableland_share;
         let mut terrain = Self {
             map,
             biomes,
@@ -195,6 +201,7 @@ impl WorldTerrain {
             near_still: Vec::new(),
             lake_distance: Vec::new(),
             lake_level: Vec::new(),
+            tableland_share,
         };
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
@@ -472,12 +479,28 @@ impl WorldTerrain {
         let sea = WATER_LEVEL as f64;
         let smooth = base
             + self.detail_at(x, z, cell, base) * smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
-        let mountain = self.landform_cover(x, z) * calm;
-        if mountain > 0.0 {
-            smooth + (map.terraced(x, z, smooth, base - sea) - smooth) * mountain
+        let mountain = self.landform_cover(x, z);
+        let weight = mountain.max(self.tableland(x, z, base - sea, mountain)) * calm;
+        if weight > 0.0 {
+            smooth + (map.terraced(x, z, smooth, base - sea) - smooth) * weight
         } else {
             smooth
         }
+    }
+
+    // How much of the ground at a point is tableland, 0..1: the terraced beds of sedimentary country that
+    // isn't mountain, between `TABLE_WINDOW` heights, in patches that cover about `tableland_share` of it.
+    // Like mountain it reads height, rock province and noise alone, never climate or biome.
+    fn tableland(&self, x: f64, z: f64, above_sea: f64, mountain: f64) -> f64 {
+        let window = smoothstep(TABLE_WINDOW.0, TABLE_WINDOW.1, above_sea)
+            * (1.0 - smoothstep(TABLE_WINDOW.2, TABLE_WINDOW.3, above_sea));
+        if window <= 0.0 || mountain >= 1.0 {
+            return 0.0;
+        }
+        let n = (fbm(self.map.seed ^ 0x7AB1, x, z, TABLE_WAVELENGTH, 2) + 1.0) / 2.0;
+        // the noise sits between about 0.3 and 0.65, so the cut that leaves `share` of it above runs from 0.59 down to 0.41
+        let cut = 0.5 - 0.3 * (self.tableland_share - 0.5);
+        (1.0 - mountain) * window * smoothstep(cut - 0.04, cut + 0.04, n)
     }
 
     // `ground` held to the still water round a point, `base` being the map's smooth ground there, and
@@ -1092,6 +1115,42 @@ mod river_bank_tests {
             moved += ((ground - base).abs() > 0.5) as usize;
         }
         assert!(moved > 50, "only {moved} of 400 points carry any detail");
+    }
+
+    #[test]
+    fn tableland_covers_about_its_share_of_the_eligible_lowland_and_only_there() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let mut terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        let sea = WATER_LEVEL as f64;
+        let points: Vec<(f64, f64, f64)> = (0..90)
+            .flat_map(|i| {
+                (0..90).map(move |j| (i as f64 * 700.0 - 31500.0, j as f64 * 700.0 - 31500.0))
+            })
+            .map(|(x, z)| (x, z, terrain.map.height_at(x, z) as f64 - sea))
+            .filter(|&(x, z, above)| {
+                (100.0..250.0).contains(&above) && terrain.landform_cover(x, z) == 0.0
+            })
+            .collect();
+        assert!(points.len() > 300, "only {} eligible points", points.len());
+        let mut coverage = |share: f64| {
+            terrain.tableland_share = share;
+            let on = points
+                .iter()
+                .filter(|&&(x, z, above)| terrain.tableland(x, z, above, 0.0) > 0.5)
+                .count();
+            on as f64 / points.len() as f64
+        };
+        let (few, many) = (coverage(0.2), coverage(0.8));
+        assert!(few > 0.05 && few < 0.4, "share 0.2 covers {few}");
+        assert!(many > 0.6 && many < 0.95, "share 0.8 covers {many}");
+        // none under the window, over it, or where mountain already is
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 20.0, 0.0));
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 500.0, 0.0));
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 150.0, 1.0));
     }
 
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {
