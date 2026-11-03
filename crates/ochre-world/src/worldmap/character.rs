@@ -9,10 +9,15 @@ const PLATES: (f64, f64) = (8.0, 17.0);
 const RELIEF: (f64, f64) = (0.7, 1.4);
 const WARMTH: (f64, f64) = (0.20, 0.80);
 const HUMIDITY: (f64, f64) = (0.8, 1.6);
+const GRADIENT: (f64, f64) = (0.10, 0.30);
+const CONTINENTALITY: (f64, f64) = (-0.12, 0.12);
 
 const SALT_PLATES: u32 = 0xC4A0_0001;
 const SALT_RELIEF: u32 = 0xC4A0_0002;
 const SALT_WARMTH: u32 = 0xC4A0_0003;
+const SALT_GRADIENT: u32 = 0xC4A0_0004;
+const SALT_GRADIENT_ANGLE: u32 = 0xC4A0_0005;
+const SALT_CONTINENTALITY: u32 = 0xC4A0_0006;
 const SALT_WIND: u32 = 0xC4A0_0007;
 const SALT_HUMIDITY: u32 = 0xC4A0_000C;
 
@@ -32,6 +37,11 @@ pub fn derive(seed: u32, mut config: WorldConfig) -> WorldConfig {
     config.tectonics.relief = round(draw(seed, SALT_RELIEF, RELIEF), 2) as f32;
     config.climate.warmth = round(draw(seed, SALT_WARMTH, WARMTH), 3) as f32;
     config.climate.humidity = round(draw(seed, SALT_HUMIDITY, HUMIDITY), 2) as f32;
+    config.climate.gradient = round(draw(seed, SALT_GRADIENT, GRADIENT), 3) as f32;
+    let degrees = draw(seed, SALT_GRADIENT_ANGLE, (0.0, 360.0)).floor();
+    config.climate.gradient_angle = round(degrees.to_radians(), 4) as f32;
+    config.climate.continentality =
+        round(draw(seed, SALT_CONTINENTALITY, CONTINENTALITY), 3) as f32;
     // whole degrees, stored as a unit vector: `climate_fields` only uses the direction
     let angle = draw(seed, SALT_WIND, (0.0, 360.0)).floor().to_radians();
     config.climate.wind_x = round(libm::cos(angle), 4) as f32;
@@ -99,6 +109,8 @@ mod tests {
         spread(&|c| c.tectonics.relief as f64, RELIEF);
         spread(&|c| c.climate.warmth as f64, WARMTH);
         spread(&|c| c.climate.humidity as f64, HUMIDITY);
+        spread(&|c| c.climate.gradient as f64, GRADIENT);
+        spread(&|c| c.climate.continentality as f64, CONTINENTALITY);
     }
 
     #[test]

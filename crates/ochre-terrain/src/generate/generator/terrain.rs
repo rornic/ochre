@@ -12,7 +12,9 @@ pub(super) fn underwater(
     cell: i64,
     (column_height, water_top): (i64, i64),
 ) -> BlockType {
+    // ice is the frozen top of the water, so it stays
     if is_solid(block)
+        && block != BlockType::Ice
         && bottom < water_top
         && water_top <= bottom + cell
         && ground_top(column_height) < water_top
@@ -67,7 +69,8 @@ pub(super) fn freeze_cell(
     cell_top: i64,
     (cell, water_top): (i64, i64),
 ) -> BlockType {
-    if cell > 1 && block == BlockType::Water && cell_top > water_top - ice_depth(temperature) {
+    let depth = ice_depth(temperature);
+    if cell > 1 && block == BlockType::Water && depth > 0 && cell_top > water_top - depth {
         BlockType::Ice
     } else {
         block

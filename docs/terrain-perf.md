@@ -548,3 +548,27 @@ Guarded by `worldmap::portable_maths` (the map's hash is pinned and is the same 
 Land share does not follow the drawn knobs (correlation with relief -0.14, warmth 0.16, plates -0.01): it comes from where tectonics puts the sea. The two seeds below 15% land are 49 (9.9%) and 3 (13.3%); the design's floor is 15%.
 
 `water_audit --fine` with `OCHRE_CHARACTER=off` is identical to main on seeds 1, 42, 1337, 300059728 and 1692045686. With the character on (measured before humidity, which changes lakes and rivers a little; the same gates held with it on seeds 1, 42 and 1337; no uncontained cells and no lake or coast walls or steps on any seed): rivers walls / tall walls / steps are 27 / 0 / 595 (seed 1), 177 / 30 / 3740 (42), 111 / 9 / 1564 (1337), 32 / 9 / 1273 (300059728) and 11 / 0 / 130 (1692045686). `lod_sim` and `flight` on seed 13 show no holes and no frames below ground.
+
+## Temperature gradient, continentality and the warmth-driven treeline (GENERATOR_VERSION 58)
+
+Before this, a world's lowland warmth was its drawn baseline plus 0.06 of noise, so a cold world had a narrow temperature band and read as one cold biome pair (taiga and tundra; steppe, grassland and forest never appeared below warmth 0.26). `ClimateConfig` gains `gradient` (drawn 0.10 to 0.30), `gradient_angle` and `continentality` (drawn -0.12 to +0.12); the map file's config grows by 12 bytes. Regional warmth is `warmth + gradient * u + continentality * inland`, where `u` is the signed position along the gradient direction with warped coordinates (worked out every 8 cells and interpolated, so it costs about 0.01 s) and `inland` is the 3-4 chamfer distance from the sea over 375 cells. The design capped the gradient at `warmth - 0.12` so the cold edge never reached glacier; that cap is dropped, because it left a cold world only 0.08 of spread, and a polar glacier region is a feature of a cold world. With both fields 0 the temperature is bit-for-bit the old one (tested).
+
+`treeline(R)` replaces the fixed 1100 to 1650 m: it moves 3500 blocks per unit of regional warmth (`LAPSE_PER_BLOCK`), is exactly 1100 to 1650 at the default warmth, starts at 50 m at the lowest, and ends at least 100 m above its start. A cold world's mountains are bare above a low line; a hot world's forest climbs.
+
+64-seed census (`docs/census-1b.csv`) against the previous commit's:
+
+| Measure | Humidity only | With gradient |
+| --- | --- | --- |
+| Lowland biomes at 5% or more of non-mountain land, mean | 3.8 | 4.5 |
+| Same, cold worlds (warmth under 0.35, 15 seeds) | 4.1 | 4.7 |
+| Cold worlds with 15% or more non-cold lowland | 7 of 15 | 11 of 15 |
+| Non-cold share of a cold world's lowland, mean (min) | 0.25 (0.00) | 0.40 (0.05) |
+| Seeds with one biome over 70% of land | 0 | 0 |
+| Seeds with 15% or more cold biomes | 15 | 19 |
+| Slowest generation; climate stage | 11.8 s | 11.3 s; 0.19 s |
+
+On seed 12 (warmth 0.213) the biome layer went from taiga and tundra only to taiga, tundra, steppe and grassland on the warm north-west coast, with the south-east island under glacier. `water_audit --fine` on seeds 1, 42 and 1337 shows no uncontained cells and no lake or coast walls or steps, and with `OCHRE_CHARACTER=off` seed 1 is identical to main.
+
+## Cold-world surfaces (GENERATOR_VERSION 59)
+
+Three problems seen walking cold worlds. (1) Glaciers were edged and faced with rock: the glacier biome turned only gentle grass to ice, so steep faces, sea cliffs, shores and river banks were stone, gravel and sand. They are ice now, with snow on moderate slopes. (2) A river or lake cooled its banks by up to 0.14 whatever the climate, so in a world at warmth 0.3 to 0.4 the bank fell under the snowy-grass line (0.25) and the biome cut: a strip of snow or glacier along every river, with temperate ground beside it (a bank at 0.236 against 0.336 away from it in the test). Cooling now fades out below a ground temperature of 0.55 and is gone at 0.30. (3) LODs lost the top layer of snow and ice: a wider cell is sampled at its middle, which misses the top block that holds snowy grass, and `underwater` turned the frozen surface cell of a lake or sea (ice counts as solid) back into water. A cell now takes snow from the ground's top block, and `underwater` leaves ice alone. Each fix has a test that fails without it.

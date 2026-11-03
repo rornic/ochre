@@ -1,7 +1,7 @@
 use super::Biome;
 use crate::block::BlockType;
 
-// Ground gentler than this is ice, gentler than the next snow, and rougher gravel.
+// Ground gentler than this is ice, gentler than the next snow, and rougher ice again.
 const ICE_GRADIENT: f64 = 0.4;
 const SNOW_GRADIENT: f64 = 1.6;
 
@@ -24,7 +24,8 @@ impl Biome for Glacier {
         match base {
             BlockType::Grass | BlockType::Snow if gradient < ICE_GRADIENT => BlockType::Ice,
             BlockType::Grass if gradient < SNOW_GRADIENT => BlockType::Snow,
-            BlockType::Grass | BlockType::Sand => BlockType::Gravel,
+            // steep faces, banks and shores are ice too: the ice under them is what a glacier is made of
+            BlockType::Grass | BlockType::Sand | BlockType::Stone => BlockType::Ice,
             other => other,
         }
     }
@@ -38,8 +39,9 @@ mod tests {
     fn test_glacier_ground_follows_the_slope() {
         assert_eq!(BlockType::Ice, Glacier.block(BlockType::Grass, 20, 0.1));
         assert_eq!(BlockType::Snow, Glacier.block(BlockType::Grass, 20, 1.0));
-        assert_eq!(BlockType::Gravel, Glacier.block(BlockType::Grass, 20, 2.5));
-        assert_eq!(BlockType::Stone, Glacier.block(BlockType::Stone, 20, 2.5));
+        assert_eq!(BlockType::Ice, Glacier.block(BlockType::Grass, 20, 2.5));
+        assert_eq!(BlockType::Ice, Glacier.block(BlockType::Sand, 2, 0.1));
+        assert_eq!(BlockType::Ice, Glacier.block(BlockType::Stone, 20, 2.5));
         assert_eq!(BlockType::Water, Glacier.block(BlockType::Water, -5, 0.0));
     }
 }

@@ -20,6 +20,11 @@ pub struct ClimateConfig {
     pub wind_z: f32,
     /// Scales the rain that biome moisture sees (rivers and lakes are unaffected).
     pub humidity: f32,
+    /// How much warmer one side of the world is than the other, along `gradient_angle` (radians).
+    pub gradient: f32,
+    pub gradient_angle: f32,
+    /// How much warmer (or colder, if negative) the far interior is than the coast.
+    pub continentality: f32,
 }
 
 impl Default for ClimateConfig {
@@ -29,6 +34,9 @@ impl Default for ClimateConfig {
             wind_x: 1.0,
             wind_z: 0.15,
             humidity: 1.0,
+            gradient: 0.0,
+            gradient_angle: 0.0,
+            continentality: 0.0,
         }
     }
 }
@@ -42,6 +50,9 @@ impl ClimateConfig {
             || !(0.01..=100.0)
                 .contains(&(self.wind_x * self.wind_x + self.wind_z * self.wind_z).sqrt())
             || !(0.1..=3.0).contains(&self.humidity)
+            || !self.gradient_angle.is_finite()
+            || !(0.0..=0.5).contains(&self.gradient)
+            || !(-0.3..=0.3).contains(&self.continentality)
         {
             return Err(
                 "climate requires warmth in 0..=1, humidity in 0.1..=3 and a finite nonzero wind vector"
@@ -62,6 +73,8 @@ const RIPARIAN_WIDTHS: (f32, f32, f32) = (20.0, 38.0, 65.0);
 const DRY_BELOW: (f64, f64) = (0.2, 0.45);
 const RIPARIAN_MOISTURE: f32 = 1.0;
 const RIPARIAN_COOLING: f32 = 0.14;
+// Water cools its banks only where the ground is warmer than this: none at the first, in full at the second.
+const RIPARIAN_COOLS_FROM: (f64, f64) = (0.30, 0.55);
 // A cell takes the most common biome within this many cells, MODE_PASSES times, and a patch of
 // fewer cells than MIN_BIOME_CELLS joins a neighbour.
 const MODE_RADIUS: usize = 2;
@@ -70,7 +83,109 @@ const MIN_BIOME_CELLS: usize = 400;
 // Conifers on a mountain's lower slopes, this thick, thinning out between these heights over the
 // sea to nothing: the treeline.
 const ALPINE_FOREST: f64 = 0.3;
+// The treeline over the sea at the default warmth: it rises and falls with a world's warmth.
 const TREELINE: (f64, f64) = (1100.0, 1650.0);
+const DEFAULT_WARMTH: f32 = 0.68;
+
+/// Heights over the sea between which conifers thin to nothing, where the regional warmth is `warmth`.
+pub fn treeline(warmth: f32) -> (f64, f64) {
+    let shift = ((warmth - DEFAULT_WARMTH) / LAPSE_PER_BLOCK) as f64;
+    let start = (TREELINE.0 + shift).max(50.0);
+    (start, (TREELINE.1 + shift).max(start + 100.0))
+}
+
+// Cells between nearest-sea samples at which the warp and the gradient are worked out, then
+// interpolated: both vary over kilometres.
+const COARSE: usize = 8;
+// Cells of distance from the sea at which the interior is fully inland (12 km at 32 m a cell).
+const INLAND_CELLS: f32 = 375.0;
+
+// Distance in cells from each cell to the nearest sea cell, by the 3-4 chamfer.
+fn sea_distance(map: &WorldMap) -> Vec<f32> {
+    let dim = map.dim();
+    let far = i32::MAX / 2;
+    let mut d: Vec<i32> = map
+        .continentalness
+        .iter()
+        .map(|&c| if c < 0.0 { 0 } else { far })
+        .collect();
+    let at = |x: i64, z: i64| (0..dim as i64).contains(&x) && (0..dim as i64).contains(&z);
+    for z in 0..dim as i64 {
+        for x in 0..dim as i64 {
+            let i = z as usize * dim + x as usize;
+            for (dx, dz, w) in [(-1, -1, 4), (0, -1, 3), (1, -1, 4), (-1, 0, 3)] {
+                if at(x + dx, z + dz) {
+                    d[i] = d[i].min(d[(z + dz) as usize * dim + (x + dx) as usize] + w);
+                }
+            }
+        }
+    }
+    for z in (0..dim as i64).rev() {
+        for x in (0..dim as i64).rev() {
+            let i = z as usize * dim + x as usize;
+            for (dx, dz, w) in [(1, 1, 4), (0, 1, 3), (-1, 1, 4), (1, 0, 3)] {
+                if at(x + dx, z + dz) {
+                    d[i] = d[i].min(d[(z + dz) as usize * dim + (x + dx) as usize] + w);
+                }
+            }
+        }
+    }
+    d.into_iter().map(|v| v as f32 / 3.0).collect()
+}
+
+// Position along the gradient direction, -1 to 1, with the coordinates warped so a line of equal
+// warmth wanders instead of running straight, worked out on a coarse grid and interpolated.
+fn gradient_position(map: &WorldMap) -> Vec<f32> {
+    let dim = map.dim();
+    let cfg = map.config.climate;
+    let (sin, cos) = (
+        libm::sin(cfg.gradient_angle as f64),
+        libm::cos(cfg.gradient_angle as f64),
+    );
+    let half = map.config.half_size() as f64;
+    let nodes = dim.div_ceil(COARSE) + 1;
+    let mut coarse = vec![0.0f32; nodes * nodes];
+    par_rows(nodes, &mut coarse, |row, out| {
+        for (col, u) in out.iter_mut().enumerate() {
+            let (x, z) = map.cell_centre((col * COARSE).min(dim - 1), (row * COARSE).min(dim - 1));
+            let wx = x + 1500.0 * fbm(map.seed ^ 0x7E01, x, z, 8000.0, 2);
+            let wz = z + 1500.0 * fbm(map.seed ^ 0x7E02, x, z, 8000.0, 2);
+            *u = ((wx * cos + wz * sin) / half).clamp(-1.0, 1.0) as f32;
+        }
+    });
+    let mut out = vec![0.0f32; dim * dim];
+    par_rows(dim, &mut out, |row, cells| {
+        let (fz, z0) = (row as f32 / COARSE as f32, row / COARSE);
+        let tz = fz - z0 as f32;
+        for (col, u) in cells.iter_mut().enumerate() {
+            let (fx, x0) = (col as f32 / COARSE as f32, col / COARSE);
+            let tx = fx - x0 as f32;
+            let at = |x: usize, z: usize| coarse[z * nodes + x];
+            let top = at(x0, z0) * (1.0 - tx) + at(x0 + 1, z0) * tx;
+            let bottom = at(x0, z0 + 1) * (1.0 - tx) + at(x0 + 1, z0 + 1) * tx;
+            *u = top * (1.0 - tz) + bottom * tz;
+        }
+    });
+    out
+}
+
+/// Each cell's sea-level warmth from the config alone: the baseline, the gradient and how far
+/// inland it is, before local variation, height or water. The treeline follows it.
+pub(super) fn regional_warmth(map: &WorldMap) -> Vec<f32> {
+    let cfg = map.config.climate;
+    let mut warmth = vec![cfg.warmth; map.height.len()];
+    if cfg.gradient != 0.0 {
+        for (w, u) in warmth.iter_mut().zip(gradient_position(map)) {
+            *w += cfg.gradient * u;
+        }
+    }
+    if cfg.continentality != 0.0 {
+        for (w, d) in warmth.iter_mut().zip(sea_distance(map)) {
+            *w += cfg.continentality * (d / INLAND_CELLS).min(1.0);
+        }
+    }
+    warmth
+}
 
 /// What grows on a stretch of land, stored in `WorldMap::biome`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -170,11 +285,13 @@ fn tree_density(kind: BiomeKind, biomes: &Biomes) -> f64 {
 fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let dim = map.dim();
     let cfg = map.config.climate;
+    let regional = regional_warmth(map);
     let mut temperature = vec![0.0; dim * dim];
     par_rows(dim, &mut temperature, |row, out| {
         for (col, t) in out.iter_mut().enumerate() {
             let (x, z) = map.cell_centre(col, row);
-            *t = (cfg.warmth + fbm(map.seed ^ 0xC11A, x, z, 18000.0, 2) as f32 * 0.06)
+            *t = (regional[row * dim + col]
+                + fbm(map.seed ^ 0xC11A, x, z, 18000.0, 2) as f32 * 0.06)
                 .clamp(0.0, 1.0);
         }
     });
@@ -257,7 +374,14 @@ pub fn run(map: &mut WorldMap) {
     for i in 0..dim * dim {
         if map.height[i] >= sea {
             moisture[i] = (moisture[i] + RIPARIAN_MOISTURE * near_water[i]).min(1.0);
-            temperature[i] = (temperature[i] - RIPARIAN_COOLING * near_water[i]).max(0.0);
+            // not in cold country, where it would cut strips of snow along every bank
+            let warm = smoothstep(
+                RIPARIAN_COOLS_FROM.0,
+                RIPARIAN_COOLS_FROM.1,
+                temperature[i] as f64,
+            );
+            temperature[i] =
+                (temperature[i] - RIPARIAN_COOLING * near_water[i] * warm as f32).max(0.0);
         }
     }
 
@@ -277,6 +401,7 @@ pub fn run(map: &mut WorldMap) {
     }
     let kinds = tidy_biomes(&kinds, dim);
 
+    let regional = regional_warmth(map);
     let mut trees = vec![0u8; dim * dim];
     for i in 0..dim * dim {
         if map.height[i] < sea {
@@ -290,9 +415,10 @@ pub fn run(map: &mut WorldMap) {
         // a mountain's slopes are forested with conifers below the treeline, thinning out into
         // bare rock above it, instead of the few scattered trees the table gives the biome
         let density = if kind == BiomeKind::Mountain {
+            let line = treeline(regional[i].clamp(0.0, 1.0));
             ALPINE_FOREST
                 * smoothstep(15.0, 60.0, above)
-                * (1.0 - smoothstep(TREELINE.0, TREELINE.1, above))
+                * (1.0 - smoothstep(line.0, line.1, above))
                 + 0.02
         } else {
             tree_density(kind, &biomes)
@@ -647,6 +773,22 @@ mod tests {
     }
 
     #[test]
+    fn test_a_big_river_does_not_cool_cold_ground_into_snow() {
+        let mut map = with_river(70.0, 150..252);
+        map.config.climate.warmth = 0.34;
+        let (dim, row) = (map.dim(), map.dim() / 2);
+        run(&mut map);
+        let t = |x: usize, z: usize| map.temperature[z * dim + x];
+        // beside the river against the same row well away from it: no more than a hair colder
+        assert!(
+            t(190, row + 2) > t(190, row + 40) - 0.02,
+            "{} vs {}",
+            t(190, row + 2),
+            t(190, row + 40)
+        );
+    }
+
+    #[test]
     fn test_a_narrow_stream_leaves_the_biome_round_it_alone() {
         let (mut with, mut without) = (with_river(12.0, 90..120), ridge_world());
         let (dim, row) = (with.dim(), with.dim() / 2);
@@ -795,5 +937,117 @@ mod tests {
                 assert!(biomes.id(name).is_some(), "{name} missing");
             }
         }
+    }
+
+    // Sea in the west to column 40, land beyond, over a flat 256-cell world.
+    fn coast_world(config: ClimateConfig) -> WorldMap {
+        let world = WorldConfig {
+            size: 256 * 32,
+            map_cell: 32,
+            climate: config,
+            ..Default::default()
+        };
+        let dim = world.dim();
+        let mut map = WorldMap::empty(1, world);
+        for z in 0..dim {
+            for x in 0..dim {
+                let sea = x < 40;
+                map.height[z * dim + x] = if sea { -68.0 } else { 4.0 };
+                map.continentalness[z * dim + x] = if sea { -1.0 } else { 1.0 };
+            }
+        }
+        map
+    }
+
+    fn row_mean(field: &[f32], dim: usize, xs: std::ops::Range<usize>) -> f32 {
+        let n = xs.len() * dim;
+        (0..dim)
+            .flat_map(|z| xs.clone().map(move |x| (z, x)))
+            .map(|(z, x)| field[z * dim + x])
+            .sum::<f32>()
+            / n as f32
+    }
+
+    #[test]
+    fn test_the_default_config_has_the_old_temperature_and_treeline() {
+        let map = coast_world(ClimateConfig::default());
+        let dim = map.dim();
+        let (temperature, _) = moisture_field(&map);
+        for (x, z) in [(50, 3), (120, 90), (200, 200)] {
+            let (wx, wz) = map.cell_centre(x, z);
+            let old =
+                (0.68 + fbm(map.seed ^ 0xC11A, wx, wz, 18000.0, 2) as f32 * 0.06).clamp(0.0, 1.0);
+            assert_eq!(old, temperature[z * dim + x]);
+        }
+        assert_eq!((1100.0, 1650.0), treeline(ClimateConfig::default().warmth));
+    }
+
+    #[test]
+    fn test_a_gradient_makes_one_side_warmer_along_its_angle_and_wanders() {
+        let map = coast_world(ClimateConfig {
+            gradient: 0.2,
+            gradient_angle: 0.0,
+            ..Default::default()
+        });
+        let dim = map.dim();
+        let regional = regional_warmth(&map);
+        let west = row_mean(&regional, dim, 0..64);
+        let east = row_mean(&regional, dim, dim - 64..dim);
+        assert!(east - west > 0.12, "east {east} west {west}");
+        // the line where it crosses the baseline is not a straight north-south run
+        let crossing: Vec<usize> = (0..dim)
+            .map(|z| {
+                (0..dim)
+                    .find(|&x| regional[z * dim + x] >= 0.68)
+                    .unwrap_or(dim)
+            })
+            .collect();
+        let (lo, hi) = (
+            crossing.iter().min().unwrap(),
+            crossing.iter().max().unwrap(),
+        );
+        assert!(hi - lo >= 4, "crossing columns {lo} to {hi}");
+    }
+
+    #[test]
+    fn test_continentality_warms_the_interior_against_the_coast() {
+        let map = coast_world(ClimateConfig {
+            continentality: 0.1,
+            ..Default::default()
+        });
+        let dim = map.dim();
+        let regional = regional_warmth(&map);
+        let coast = row_mean(&regional, dim, 41..46);
+        let inland = row_mean(&regional, dim, dim - 5..dim);
+        assert!(inland - coast > 0.04, "coast {coast} inland {inland}");
+        let cold = coast_world(ClimateConfig {
+            continentality: -0.1,
+            ..Default::default()
+        });
+        let regional = regional_warmth(&cold);
+        assert!(row_mean(&regional, dim, dim - 5..dim) < row_mean(&regional, dim, 41..46));
+    }
+
+    #[test]
+    fn test_treeline_follows_warmth_within_its_clamps() {
+        let mut last = (0.0, 0.0);
+        for step in 0..=100 {
+            let line = treeline(step as f32 / 100.0);
+            assert!(line.0 >= 50.0 && line.1 >= line.0 + 100.0, "{line:?}");
+            assert!(line.0 >= last.0 && line.1 >= last.1);
+            last = line;
+        }
+        assert_eq!((50.0, 150.0), treeline(0.1));
+    }
+
+    #[test]
+    fn test_every_run_of_the_temperature_field_agrees() {
+        let map = coast_world(ClimateConfig {
+            gradient: 0.15,
+            gradient_angle: 2.0,
+            continentality: -0.05,
+            ..Default::default()
+        });
+        assert_eq!(moisture_field(&map).0, moisture_field(&map).0);
     }
 }
