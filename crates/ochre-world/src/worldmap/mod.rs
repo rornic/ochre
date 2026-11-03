@@ -419,27 +419,46 @@ pub(crate) fn par_rows<T: Send>(dim: usize, layer: &mut [T], f: impl Fn(usize, &
 /// Makes the whole map for `seed`.
 pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     config.validate().expect("invalid world config");
+    let timed = std::env::var_os("OCHRE_STAGE_TIMES").is_some();
+    let mut clock = std::time::Instant::now();
+    let mut lap = |stage: &str| {
+        if timed {
+            eprintln!("stage {stage}: {:.3} s", clock.elapsed().as_secs_f64());
+            clock = std::time::Instant::now();
+        }
+    };
     let mut map = tectonics::generate(seed, config);
+    lap("tectonics");
     geology::generate(&mut map);
+    lap("geology");
     // water first, so basins are cut open before the rain wears the ground, then again over the
     // eroded ground, where the rivers really run
     hydrology::run(&mut map, false);
+    lap("hydrology 1");
     erosion::run(&mut map);
+    lap("erosion");
     let floor = (config.bounds.min_y + 16) as f32;
     for h in &mut map.height {
         *h = h.max(floor);
     }
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
+    lap("carve passes");
     hydrology::scatter(&mut map);
+    lap("scatter");
     hydrology::run(&mut map, true);
+    lap("hydrology 2");
     for h in &mut map.height {
         *h = h.max(floor);
     }
     landform::run(&mut map);
+    lap("landform");
     climate::run(&mut map);
+    lap("climate");
     detail::roughness_layer(&mut map);
+    lap("roughness");
     gameplay::label(&mut map);
+    lap("label");
     map
 }
 
