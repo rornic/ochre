@@ -88,6 +88,11 @@ pub trait TerrainSource: Send + Sync {
     /// How hot the column at (x, z) is, 0..1.
     fn temperature(&self, x: f64, z: f64) -> f32;
 
+    /// How much more 3D relief than usual the ground at (x, z) has, 0..1: it lengthens the reach of its cliffs.
+    fn cliff_boost(&self, _x: f64, _z: f64) -> f32 {
+        0.0
+    }
+
     /// The nearest lowland column to the world centre.
     fn find_spawn(&self) -> (i64, i64, f64);
 
@@ -155,6 +160,10 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn temperature(&self, x: f64, z: f64) -> f32 {
         (**self).temperature(x, z)
+    }
+
+    fn cliff_boost(&self, x: f64, z: f64) -> f32 {
+        (**self).cliff_boost(x, z)
     }
 
     fn find_spawn(&self) -> (i64, i64, f64) {

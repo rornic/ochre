@@ -2,7 +2,7 @@ use super::Biome;
 use crate::block::BlockType;
 
 // Ground gentler than this is ice, gentler than the next snow, and rougher ice again.
-const ICE_GRADIENT: f64 = 0.4;
+const ICE_GRADIENT: f64 = 0.8;
 const SNOW_GRADIENT: f64 = 1.6;
 
 pub struct Glacier;

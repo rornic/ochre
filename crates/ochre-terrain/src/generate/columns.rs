@@ -151,6 +151,9 @@ impl ColumnGrid {
 pub struct ChunkColumns {
     heights: Vec<i64>,
     gradients: Vec<f64>,
+    // how far each column stands over its lowest neighbour of the four, in blocks
+    exposed: Vec<i64>,
+    boosts: Vec<f32>,
     biomes: Vec<BiomeId>,
     temperatures: Vec<f32>,
     water_tops: Vec<i64>,
@@ -167,6 +170,8 @@ impl ChunkColumns {
         let mut columns = Self {
             heights: Vec::with_capacity(cells),
             gradients: Vec::with_capacity(cells),
+            exposed: Vec::with_capacity(cells),
+            boosts: Vec::with_capacity(cells),
             biomes: Vec::with_capacity(cells),
             temperatures: Vec::with_capacity(cells),
             water_tops: Vec::with_capacity(cells),
@@ -181,6 +186,15 @@ impl ChunkColumns {
                 let (gradient_x, gradient_z) = heights.gradient(world_x, world_z);
                 columns.heights.push(height);
                 columns.gradients.push(gradient_x.abs() + gradient_z.abs());
+                let lowest_beside = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .map(|(dx, dz)| heights.ground_top(world_x + dx, world_z + dz))
+                    .into_iter()
+                    .min()
+                    .unwrap_or(height);
+                columns.exposed.push((height - lowest_beside).max(0));
+                columns
+                    .boosts
+                    .push(noise.cliff_boost(world_x as f64, world_z as f64));
                 columns.biomes.push(heights.biome(world_x, world_z));
                 columns.water_tops.push(heights.water_top(world_x, world_z));
                 columns.springs.push(heights.spring(world_x, world_z));
@@ -206,6 +220,16 @@ impl ChunkColumns {
     /// The slope there, as `terrain_block` takes it.
     pub fn gradient(&self, cx: i64, cz: i64) -> f64 {
         self.gradients[Self::index(cx, cz)]
+    }
+
+    /// How many blocks of the column's side show over its lowest neighbour: 0 on level ground, the height of the face on a cliff's edge.
+    pub fn exposed(&self, cx: i64, cz: i64) -> i64 {
+        self.exposed[Self::index(cx, cz)]
+    }
+
+    /// How much longer than usual the cliffs in the column reach, 0..1.
+    pub fn cliff_boost(&self, cx: i64, cz: i64) -> f64 {
+        self.boosts[Self::index(cx, cz)] as f64
     }
 
     pub fn biome(&self, cx: i64, cz: i64) -> BiomeId {

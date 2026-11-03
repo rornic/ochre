@@ -16,6 +16,14 @@ pub fn cliff_reach(gradient: f64) -> f64 {
     CLIFF_REACH * smoothstep_f64(CLIFF_GRADIENT.0, CLIFF_GRADIENT.1, gradient)
 }
 
+/// The most `cliff_reach_boosted` can move the surface: a boost of 1 doubles `CLIFF_REACH`.
+pub const MAX_CLIFF_REACH: f64 = CLIFF_REACH * 2.0;
+
+/// `cliff_reach` for ground a world has given more 3D relief, `boost` 0..1 (0 is `cliff_reach`).
+pub fn cliff_reach_boosted(gradient: f64, boost: f64) -> f64 {
+    cliff_reach(gradient) * (1.0 + boost.clamp(0.0, 1.0))
+}
+
 /// Noise in -1..1 that cliffs and overhangs are cut from: the surface in a column is wherever
 /// `height - y + reach * cliff_density` crosses zero, which is a different height at each y, so
 /// ledges overhang and caves open in the face.
@@ -49,6 +57,21 @@ pub fn outcrop_patch(seed: u32, x: f64, z: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_boost_lengthens_the_reach_of_steep_ground_and_never_past_the_maximum() {
+        for g in [0.0, 0.5, 1.0, 1.5, 2.0, 2.8, 5.0] {
+            assert_eq!(cliff_reach(g), cliff_reach_boosted(g, 0.0));
+            assert!(cliff_reach_boosted(g, 1.0) <= MAX_CLIFF_REACH);
+            assert!(
+                cliff_reach_boosted(g, 7.0) <= MAX_CLIFF_REACH,
+                "a boost is held to 1"
+            );
+        }
+        assert_eq!(0.0, cliff_reach_boosted(0.9, 1.0));
+        assert!(cliff_reach_boosted(3.0, 1.0) > cliff_reach_boosted(3.0, 0.0) + 8.0);
+        assert_eq!(MAX_CLIFF_REACH, cliff_reach_boosted(3.0, 1.0));
+    }
 
     #[test]
     fn test_cliffs_only_on_steep_ground_and_never_past_their_reach() {

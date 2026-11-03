@@ -21,6 +21,8 @@ const SALT_CONTINENTALITY: u32 = 0xC4A0_0006;
 const SALT_WIND: u32 = 0xC4A0_0007;
 const SALT_TABLELAND: u32 = 0xC4A0_0008;
 const SALT_DUNES: u32 = 0xC4A0_0009;
+const SALT_CLIFFS: u32 = 0xC4A0_000A;
+const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
 const DUNE_SCALE: (f64, f64) = (0.7, 1.5);
 const TABLELAND_SHARE: (f64, f64) = (0.2, 0.8);
 const SALT_HUMIDITY: u32 = 0xC4A0_000C;
@@ -43,6 +45,8 @@ pub struct LandformKnobs {
     pub tableland_share: f64,
     /// Multiplies the spacing and height of dunes.
     pub dune_scale: f64,
+    /// How much longer than usual cliffs on mountains and tableland reach, 0..1.
+    pub cliff_boost: f64,
 }
 
 impl LandformKnobs {
@@ -50,6 +54,7 @@ impl LandformKnobs {
         Self {
             tableland_share: round(draw(seed, SALT_TABLELAND, TABLELAND_SHARE), 3),
             dune_scale: round(draw(seed, SALT_DUNES, DUNE_SCALE), 2),
+            cliff_boost: round(draw(seed, SALT_CLIFFS, CLIFF_BOOST), 2),
         }
     }
 }
@@ -154,6 +159,11 @@ mod tests {
             .iter()
             .all(|&s| (DUNE_SCALE.0..=DUNE_SCALE.1).contains(&s)));
         assert!(scales.iter().any(|&s| s < 0.75) && scales.iter().any(|&s| s > 1.45));
+        let boosts: Vec<f64> = (0..1000)
+            .map(|s| LandformKnobs::from_seed(s).cliff_boost)
+            .collect();
+        assert!(boosts.iter().all(|&b| (0.0..=1.0).contains(&b)));
+        assert!(boosts.iter().any(|&b| b < 0.03) && boosts.iter().any(|&b| b > 0.97));
         assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
     }
 

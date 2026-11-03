@@ -155,6 +155,23 @@ pub(super) const COMPACTED_DEPTH: i64 = 6;
 // Under snow the cover is thick, full blocks of it, and the packed stone begins only beneath.
 pub(super) const SNOW_DEPTH: i64 = 14;
 pub(super) const SNOW_COMPACTED_DEPTH: i64 = 16;
+// How far down a cliff face each surface material clings, in blocks: turf only near the top, ice and snow the
+// whole way, sand and gravel a little.
+const SKIN_GRASS: i64 = 8;
+const SKIN_ICE: i64 = 40;
+const SKIN_LOOSE: i64 = 4;
+
+// How many blocks under the surface block are still that material, in a column standing `exposed` blocks over
+// its lowest neighbour: the blocks the face shows. Level ground has none, so its layers stay under the surface.
+pub(super) fn skin_depth(surface: BlockType, exposed: i64) -> i64 {
+    let clings = match surface {
+        BlockType::Grass => SKIN_GRASS,
+        BlockType::Ice | BlockType::Snow => SKIN_ICE,
+        BlockType::Sand | BlockType::Gravel => SKIN_LOOSE,
+        _ => 0,
+    };
+    exposed.min(clings)
+}
 
 // How deep soil lies on ground of gradient `slope`, as `under_grass` takes it.
 pub(super) fn soil_depth(slope: f64) -> i64 {
@@ -173,9 +190,14 @@ pub(super) fn under_grass(
     cell: i64,
     snowy: bool,
     soil_depth: i64,
+    exposed: i64,
 ) -> BlockType {
     let depth = column_height - 1 - world_y;
     if cell != 1 || depth <= 0 {
+        return block;
+    }
+    // what a cliff's face shows is the surface material, as far down as it clings
+    if depth <= skin_depth(block, exposed) {
         return block;
     }
     let block = match block {

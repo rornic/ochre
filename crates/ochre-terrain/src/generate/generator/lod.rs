@@ -697,7 +697,7 @@ fn fill_column(
     for cy in -1..=size {
         let bottom = base.y + cy as i64 * cell;
         let middle = bottom + cell / 2;
-        let mut block = under_grass(block_at(middle), middle, height, cell, false, 0);
+        let mut block = under_grass(block_at(middle), middle, height, cell, false, 0, 0);
         // snow lies on the ground's top block only, which a cell's middle usually misses
         if block == BlockType::Grass
             && top > bottom

@@ -333,7 +333,7 @@ fn test_wide_cells_freeze_when_they_reach_the_ice() {
 }
 
 #[test]
-fn test_polar_lowlands_are_snow_covered_and_deep_ice_gives_way_to_snow() {
+fn test_polar_lowlands_are_snow_covered_and_glacier_ice_runs_deep_before_stone() {
     let ground = WATER_LEVEL + 20;
     assert_eq!(
         BlockType::Snow,
@@ -343,13 +343,70 @@ fn test_polar_lowlands_are_snow_covered_and_deep_ice_gives_way_to_snow() {
         BlockType::Grass,
         terrain_block(ground - 1, ground, 0.0, 0.5, WATER_LEVEL)
     );
-    assert_eq!(
-        BlockType::Snow,
-        under_grass(BlockType::Ice, ground - 3, ground, 1, false, SOIL_DEPTH)
-    );
+    // level glacier ice is a crust over snow
     assert_eq!(
         BlockType::Ice,
-        under_grass(BlockType::Ice, ground - 1, ground, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Ice, ground - 1, ground, 1, false, SOIL_DEPTH, 0)
+    );
+    assert_eq!(
+        BlockType::Snow,
+        under_grass(BlockType::Ice, ground - 3, ground, 1, false, SOIL_DEPTH, 0)
+    );
+    // but a cliff of it shows ice from its top to its foot, and only then snow and stone
+    assert_eq!(
+        BlockType::Ice,
+        under_grass(
+            BlockType::Ice,
+            ground - 30,
+            ground,
+            1,
+            false,
+            SOIL_DEPTH,
+            30
+        )
+    );
+    assert_eq!(
+        BlockType::CompactedStone,
+        under_grass(
+            BlockType::Ice,
+            ground - 50,
+            ground,
+            1,
+            false,
+            SOIL_DEPTH,
+            30
+        )
+    );
+}
+
+#[test]
+fn test_a_cliff_face_shows_its_surface_material_as_far_down_as_it_clings() {
+    use super::terrain::skin_depth;
+    let ground = WATER_LEVEL + 40;
+    // level ground has none; a face shows as much as it stands over its neighbour, up to what clings
+    assert_eq!(0, skin_depth(BlockType::Grass, 0));
+    assert_eq!(5, skin_depth(BlockType::Grass, 5));
+    assert_eq!(8, skin_depth(BlockType::Grass, 60));
+    assert_eq!(40, skin_depth(BlockType::Ice, 60));
+    assert_eq!(0, skin_depth(BlockType::Stone, 60));
+    // a 12-block grassy face: grass for 8 blocks, then packed stone, not dirt and stone from the first block
+    let at = |depth| {
+        under_grass(
+            BlockType::Grass,
+            ground - 1 - depth,
+            ground,
+            1,
+            false,
+            2,
+            12,
+        )
+    };
+    assert_eq!(BlockType::Grass, at(8));
+    assert_eq!(BlockType::CompactedStone, at(9));
+    // gentle ground is as before: one block of grass over dirt
+    assert_eq!(
+        BlockType::Dirt,
+        under_grass(BlockType::Grass, ground - 2, ground, 1, false, 2, 0)
     );
 }
 
@@ -789,19 +846,19 @@ fn test_grass_sides_carry_their_untinted_shade() {
 fn test_only_full_detail_grass_below_the_top_layer_is_dirt() {
     assert_eq!(
         BlockType::Dirt,
-        under_grass(BlockType::Grass, 18, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 18, 20, 1, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 19, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 19, 20, 1, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Stone,
-        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH, 0)
     );
 }
 
@@ -2313,11 +2370,11 @@ fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
     let top = 600;
     assert_eq!(
         BlockType::Stone,
-        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2))
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2), 0)
     );
     assert_eq!(
         BlockType::Dirt,
-        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(0.0))
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(0.0), 0)
     );
 }
 
@@ -2325,7 +2382,7 @@ fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
 fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surface() {
     use super::terrain::COMPACTED_DEPTH;
     let top = 600;
-    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false, SOIL_DEPTH);
+    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false, SOIL_DEPTH, 0);
     assert_eq!(BlockType::Grass, at(BlockType::Grass, 0));
     for depth in 1..SOIL_DEPTH {
         assert_eq!(
@@ -2365,7 +2422,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     // water is never packed, and wide cells keep to the surface's block
     assert_eq!(BlockType::Water, at(BlockType::Water, 9));
     // snow lies deep: full blocks of it, stone after, and packed stone only under that
-    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true, SOIL_DEPTH);
+    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true, SOIL_DEPTH, 0);
     for depth in 1..super::terrain::SNOW_DEPTH {
         assert_eq!(
             BlockType::Snow,
@@ -2383,7 +2440,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, top - 20, top, 4, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, top - 20, top, 4, false, SOIL_DEPTH, 0)
     );
 }
 

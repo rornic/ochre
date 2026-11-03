@@ -133,6 +133,8 @@ pub(super) fn known_empty(key: LodKey, regions: &RegionStore) -> bool {
     let above_terrain = bottom > highest.round() as i64 + 1 + TREE_HEIGHT.max(cell);
     let in_air = bottom > WATER_LEVEL;
     let under_water = top < WATER_LEVEL - 1;
-    let buried = top < lowest.round() as i64 - 1;
+    // a cliff can cut as far under the lowest ground as it reaches
+    let buried =
+        top < lowest.round() as i64 - 1 - ochre_base::relief::MAX_CLIFF_REACH.ceil() as i64;
     above_terrain && (in_air || under_water) || buried
 }

@@ -28,6 +28,8 @@ const CALM: f64 = 8.0;
 // Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
 const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
 const TABLE_WAVELENGTH: f64 = 20000.0;
+// Beds step ground as a cell this wide sees it, see `landform_ground`.
+const TERRACE_CELL: f64 = 32.0;
 
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
@@ -178,6 +180,8 @@ pub struct WorldTerrain {
     tableland_share: f64,
     // how this world's dunes are laid out, see `Dunes`
     dunes: Dunes,
+    // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
+    cliff_boost: f64,
 }
 
 impl WorldTerrain {
@@ -214,6 +218,7 @@ impl WorldTerrain {
             lake_level: Vec::new(),
             tableland_share: knobs.tableland_share,
             dunes,
+            cliff_boost: knobs.cliff_boost,
         };
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
@@ -494,15 +499,19 @@ impl WorldTerrain {
     fn landform_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let map = &self.map;
         let sea = WATER_LEVEL as f64;
-        let smooth = base
-            + self.detail_at(x, z, cell, base) * smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
+        let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
+        let fine = self.detail_at(x, z, cell, base) * shore;
+        let smooth = base + fine;
         let mountain = self.landform_cover(x, z);
         let weight = mountain.max(self.tableland(x, z, base - sea, mountain)) * calm;
-        if weight > 0.0 {
-            smooth + (map.terraced(x, z, smooth, base - sea) - smooth) * weight
-        } else {
-            smooth
+        if weight <= 0.0 {
+            return smooth;
         }
+        // the beds step the ground by its broad shape: stepping the finest detail too made a dip over a
+        // ledge's edge fall a whole bed, a narrow pit tens of blocks deep. The fine detail rides on top.
+        let broad = self.detail_at(x, z, cell.max(TERRACE_CELL), base) * shore;
+        let stepped = map.terraced(x, z, base + broad, base - sea) + (fine - broad);
+        smooth + (stepped - smooth) * weight
     }
 
     // How much of the ground at a point is tableland, 0..1: the terraced beds of sedimentary country that
@@ -942,6 +951,13 @@ impl TerrainSource for WorldTerrain {
         self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0
     }
 
+    // The seed's cliff boost, where there is mountain or tableland to carry it: 0 on other ground.
+    fn cliff_boost(&self, x: f64, z: f64) -> f32 {
+        let mountain = self.landform_cover(x, z);
+        let above_sea = self.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+        (self.cliff_boost * mountain.max(self.tableland(x, z, above_sea, mountain))) as f32
+    }
+
     // The spawn region nearest the world's middle.
     // The spawn region nearest the world's middle.
     fn find_spawn(&self) -> (i64, i64, f64) {
@@ -1201,6 +1217,38 @@ mod river_bank_tests {
             );
             assert!(near * 100 <= tall, "seed {seed}: {near} of {tall}");
         }
+    }
+
+    #[test]
+    fn the_cliff_boost_is_the_seeds_on_mountain_and_tableland_and_nothing_elsewhere() {
+        use ochre_base::terrain_source::TerrainSource;
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let mut terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        terrain.cliff_boost = 1.0;
+        let (mut on, mut off, mut over) = (0, 0, 0);
+        for i in 0..90 {
+            for j in 0..90 {
+                let (x, z) = (i as f64 * 700.0 - 31500.0, j as f64 * 700.0 - 31500.0);
+                let boost = terrain.cliff_boost(x, z);
+                let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+                let mountain = terrain.landform_cover(x, z);
+                let carries = mountain > 0.5 || terrain.tableland(x, z, above, mountain) > 0.5;
+                over += (!(0.0..=1.0).contains(&boost)) as usize;
+                if carries {
+                    on += (boost > 0.5) as usize;
+                } else if mountain == 0.0 && terrain.tableland(x, z, above, mountain) == 0.0 {
+                    off += (boost != 0.0) as usize;
+                }
+            }
+        }
+        assert!(on > 100, "only {on} boosted points");
+        assert_eq!((0, 0), (off, over));
+        terrain.cliff_boost = 0.0;
+        assert_eq!(0.0, terrain.cliff_boost(0.0, 0.0));
     }
 
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {

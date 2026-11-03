@@ -18,7 +18,7 @@ use crate::generate::trees::TREE_HEIGHT;
 use bevy::math::I64Vec2;
 use bevy::math::IVec3;
 use ochre_base::block::BlockType;
-use ochre_base::relief::{cliff_density, cliff_reach};
+use ochre_base::relief::{cliff_density, cliff_reach_boosted};
 use ochre_base::terrain_source::SpringPart;
 use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
@@ -79,7 +79,7 @@ pub fn generate_chunk_with(
             let cliff = if !passes.cliffs || dunes || fresh_water {
                 0.0
             } else {
-                cliff_reach(gradient)
+                cliff_reach_boosted(gradient, columns.cliff_boost(x, z))
             };
             // a bank's cliffs are only cut, not built up: built up they leave a dry ledge between the water and the ground
             let water_by = if cliff > 0.0 {
@@ -130,6 +130,7 @@ pub fn generate_chunk_with(
             // a spring's rim and the bed of its pool are the biome's own block
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
+            let ice_cliffs = biomes.block(biome, BlockType::Stone, 20, 0.0) == BlockType::Ice;
             let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
@@ -149,6 +150,7 @@ pub fn generate_chunk_with(
                     1,
                     snowy,
                     soil_depth(slope),
+                    columns.exposed(x, z),
                 );
                 // cliffs are cut from the ground before the water fills what they open
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
@@ -156,7 +158,13 @@ pub fn generate_chunk_with(
                 }
                 let density = (column_height - y) as f64 - 0.5
                     + cliff * cliff_density(seed, world_x, y, world_z);
-                cut_cliff(block, density > 0.0, y, temperature, flood_top)
+                let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top);
+                // a glacier's built-up faces are ice, not the stone a cliff builds elsewhere
+                if cut == BlockType::Stone && block != BlockType::Stone && ice_cliffs {
+                    BlockType::Ice
+                } else {
+                    cut
+                }
             };
             let (mut rock, mut bed) = (None, (0, 0, BlockType::Stone));
             cells.extend((world_y..world_y + size).map(|y| {
@@ -207,7 +215,9 @@ pub fn generate_chunk_with(
         for z in 0..size {
             let column_height = columns.height(x, z);
             let local_y = column_height - world_y;
-            if !(0..size).contains(&local_y) || cliff_reach(columns.gradient(x, z)) > 0.0 {
+            if !(0..size).contains(&local_y)
+                || cliff_reach_boosted(columns.gradient(x, z), columns.cliff_boost(x, z)) > 0.0
+            {
                 continue;
             }
             let (gradient, biome, temperature) = (
