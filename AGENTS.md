@@ -46,6 +46,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 
 - Verify output is unchanged with `cargo run --release --example bench`: vertex counts must match exactly before and after a refactor.
 - Terrain is deterministic per seed. Don't introduce thread-order or hash-order dependence in generation (`generate/generator/determinism.rs` guards it).
+- World generation takes `exp`, `powf`, `sin`, `cos` and the like from the `libm` crate, never `f32::exp` and friends, so a seed gives the same world on x86-64 and ARM64 (`worldmap/portable_maths.rs` scans for it).
 - Perf work follows the `profile` skill and is logged in `docs/terrain-perf.md`. A phase that regresses p99 frame time needs a recorded reason.
 - Debug the world with the `worldview` skill, not ad hoc probe scripts.
 - Large test modules (`generator/tests.rs`, `lod/tests.rs`) run real generation, so expect slow `cargo test`.

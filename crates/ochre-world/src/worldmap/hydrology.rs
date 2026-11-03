@@ -73,7 +73,7 @@ const MAX_RIVER_DEPTH: f32 = 12.0;
 /// Blocks across a river draining `area` square blocks of land: a stream a block or two wide where
 /// it starts, ten at a few square kilometres, close to a hundred where a whole range drains.
 pub fn river_width(area: f32) -> f32 {
-    (1.5 * (area / RIVER_MIN_AREA).max(1.0).powf(0.9)).max(MIN_RIVER_WIDTH)
+    (1.5 * libm::powf((area / RIVER_MIN_AREA).max(1.0), 0.9)).max(MIN_RIVER_WIDTH)
 }
 
 /// Blocks deep, at the middle of a river draining `area` square blocks of land.

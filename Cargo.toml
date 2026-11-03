@@ -15,6 +15,7 @@ ochre-terrain = { path = "crates/ochre-terrain" }
 ochre-world = { path = "crates/ochre-world" }
 ochre-gameplay = { path = "crates/ochre-gameplay" }
 noise = "0.9.0"
+libm = "0.2"
 rand = "0.10"
 toml = "1"
 serde = { version = "1.0", features = ["serde_derive"] }

@@ -11,3 +11,4 @@ repository.workspace = true
 [dependencies]
 bevy.workspace = true
 serde.workspace = true
+libm.workspace = true

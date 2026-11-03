@@ -4112,6 +4112,7 @@ name = "ochre-base"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "libm",
  "serde",
 ]
 
@@ -4147,6 +4148,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "image",
+ "libm",
  "ochre-base",
  "ochre-world",
  "serde",
@@ -4158,6 +4160,7 @@ name = "ochre-world"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "libm",
  "noise",
  "ochre-base",
  "ochre-terrain",

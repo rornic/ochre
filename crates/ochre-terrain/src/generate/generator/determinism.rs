@@ -1,10 +1,10 @@
 //! Separate machines will build the same chunks from the same map and seed, and any difference
 //! shows as ghost blocks where their chunks meet. This pins the blocks of a fixed set of chunks.
 //!
-//! The map is made here from integer-hash noise and arithmetic alone, not by `worldmap::generate`:
-//! generation may use `exp` and `powf`, which can differ in the last bit between x86 and ARM, and
-//! it is the map, not its generation, that machines share. So this test gives the same answer
-//! on every machine, and fails on any where chunk generation from a map is not exact.
+//! The first test builds its map here from integer-hash noise and arithmetic alone, so it checks
+//! chunk generation from a map and nothing upstream. The second runs `worldmap::generate`, which
+//! reaches `exp`, `powf`, `sin` and `cos` only through the `libm` crate, so it is the same on x86-64
+//! and ARM64 too.
 
 use std::sync::Arc;
 
@@ -110,22 +110,30 @@ fn hash_chunks(regions: &Arc<RegionStore>, chunks: &[(i64, i64, i64)]) -> u64 {
 // Chunks over each kind of ground: the lake, the river's reaches, a range, each biome and the coast,
 // each as the surface chunk and the one under it.
 fn chunk_set(map: &WorldMap) -> Vec<(i64, i64, i64)> {
-    let cells = [
-        (66, 106),
-        (100, 106),
-        (150, 106),
-        (200, 60),
-        (200, 5),
-        (30, 30),
-        (200, 30),
-        (30, 200),
-        (200, 200),
-        (128, 128),
-        (20, 8),
-        (230, 12),
-    ];
+    chunks_over(
+        map,
+        &[
+            (66, 106),
+            (100, 106),
+            (150, 106),
+            (200, 60),
+            (200, 5),
+            (30, 30),
+            (200, 30),
+            (30, 200),
+            (200, 200),
+            (128, 128),
+            (20, 8),
+            (230, 12),
+        ],
+    )
+}
+
+// The surface chunk and the one under it at each of `cells`.
+fn chunks_over(map: &WorldMap, cells: &[(usize, usize)]) -> Vec<(i64, i64, i64)> {
     cells
-        .into_iter()
+        .iter()
+        .copied()
         .flat_map(|(cx, cz)| {
             let (x, z) = map.cell_centre(cx, cz);
             let top = (map.height[map.index(cx, cz)] as i64)
@@ -169,4 +177,21 @@ fn test_chunks_from_a_fixed_map_and_seed_hash_the_same_on_every_machine() {
     // pinned: a change here means every machine's chunks changed, and with them any edits stored
     // as deltas against generated terrain, so bump `worldmap::GENERATOR_VERSION` with it
     assert_eq!(4_695_548_326_307_094_811, first, "chunk hash changed");
+}
+
+#[test]
+fn test_chunks_from_a_generated_map_hash_the_same_on_every_machine() {
+    let map = Arc::new(ochre_world::worldmap::generate(1, WorldConfig::default()));
+    let cells: Vec<_> = [300, 700, 1100, 1500]
+        .into_iter()
+        .flat_map(|cz| [400, 900, 1400].map(|cx| (cx, cz)))
+        .collect();
+    let chunks = chunks_over(&map, &cells);
+    let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
+    // pinned: see the note on the test above
+    assert_eq!(
+        10_692_646_237_938_861_417,
+        hash_chunks(&regions, &chunks),
+        "chunk hash changed"
+    );
 }

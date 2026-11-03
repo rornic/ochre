@@ -91,8 +91,8 @@ impl Window<'_> {
             if len < 1e-6 {
                 // on a flat: pick a way to go
                 let angle = rng.unit() * std::f32::consts::TAU;
-                dx = angle.cos();
-                dz = angle.sin();
+                dx = libm::cosf(angle);
+                dz = libm::sinf(angle);
             } else {
                 dx /= len;
                 dz /= len;

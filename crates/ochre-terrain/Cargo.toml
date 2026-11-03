@@ -12,6 +12,7 @@ repository.workspace = true
 ochre-base.workspace = true
 bevy.workspace = true
 serde.workspace = true
+libm.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

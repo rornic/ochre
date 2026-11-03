@@ -677,9 +677,10 @@ fn sites(map: &mut WorldMap, slope: &[f32]) {
                 .into_iter()
                 .filter(|&i| {
                     let (x, z) = map.cell_centre(i % dim, i / dim);
-                    spawn_points
-                        .iter()
-                        .all(|&(sx, sz)| (sx - x as f32).hypot(sz - z as f32) >= HOTSPOT_CLEARANCE)
+                    spawn_points.iter().all(|&(sx, sz)| {
+                        let (dx, dz) = (sx - x as f32, sz - z as f32);
+                        (dx * dx + dz * dz).sqrt() >= HOTSPOT_CLEARANCE
+                    })
                 })
                 .collect()
         } else {
