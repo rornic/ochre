@@ -525,3 +525,26 @@ World generation called `exp`, `powf`, `sin`, `cos` and `hypot` through the plat
 Measured against `main` before the change: stage times on seed 1337 are within noise (tectonics 0.328 to 0.338 s, climate 0.117 to 0.118 s, total unchanged at 8.6 s); `water_audit --fine` is identical on seeds 1, 42, 1337, 300059728 and 1692045686; whole-world hillshade, biome and water exports at 32 blocks a pixel change 3 pixels in 4 million on seed 42 and none on the others; `bench` vertex counts on the three views are identical.
 
 Guarded by `worldmap::portable_maths` (the map's hash is pinned and is the same with 1 and 7 worker threads, and a source scan fails on platform maths in `ochre-base`, `worldmap` and `generate`) and by `determinism.rs` (chunk blocks from a generated map are pinned). Not yet run on ARM64: that needs `qemu-user` and `rustup target add aarch64-unknown-linux-gnu`, then `cargo test --release --target aarch64-unknown-linux-gnu -p ochre-world -p ochre-terrain` with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER=qemu-aarch64`.
+
+## Seed-derived plates, relief, warmth, humidity and wind (GENERATOR_VERSION 57)
+
+`worldmap/character.rs` draws `plates` (8 to 16), `relief` (0.7 to 1.4), `warmth` (0.20 to 0.80), `humidity` (0.8 to 1.6) and the wind direction (whole degrees) from the seed. `load_world` and the tools that build a map by seed use it; `OCHRE_CHARACTER=off` keeps the config as given. `bench` and the pinned hash tests use `WorldConfig::default()` and are unchanged.
+
+`humidity` is new in `ClimateConfig` (default 1.0, appended to the map file's config) and multiplies the rain that biome moisture sees: `moisture = rain * humidity / demand`. Hydrology reads the same moisture field for how much ground soaks up, so humid worlds shed more water to rivers and lakes; lake outlines and deep-cell counts change (seed 1: deep14 1703 to 2615), while uncontained cells stay 0 and lake and coast walls and steps stay 0. The first plan, changing the vapour entering at the upwind edge, has no effect (vapour over the sea rebuilds toward saturation; a 24-seed census with that value at 0.90 was identical). Without humidity, hot-dry was the largest lowland group on 32 of 64 seeds (wet 20, cold 12) because moisture demand grows with warmth.
+
+64-seed census with the character on (seeds 1 to 64, rows in `docs/census-pr1.csv`) against HEAD's census above:
+
+| Measure | HEAD | Character on | Goal |
+| --- | --- | --- | --- |
+| Land share, seeds in 15% to 70% | 62 of 64 | 62 of 64 (53 in 20% to 70%) | 58 of 64 |
+| Spawn region found | 64 | 64 | 61 |
+| Seeds with one biome over 70% of land | 0 | 0 | at most 6 |
+| Cold group (glacier, tundra, taiga) at 15% or more | 0 | 15 | 10 |
+| Hot and dry group at 15% or more | 64 | 43 | 10 |
+| Wet group (forest, jungle) at 15% or more | 64 | 52 | 10 |
+| Largest lowland group per seed: hot-dry / wet / cold | 64 / 0 / 0 | 23 / 29 / 12 | |
+| Slowest generation | 11.4 s (seed 46) | 11.8 s | 15 s |
+
+Land share does not follow the drawn knobs (correlation with relief -0.14, warmth 0.16, plates -0.01): it comes from where tectonics puts the sea. The two seeds below 15% land are 49 (9.9%) and 3 (13.3%); the design's floor is 15%.
+
+`water_audit --fine` with `OCHRE_CHARACTER=off` is identical to main on seeds 1, 42, 1337, 300059728 and 1692045686. With the character on (measured before humidity, which changes lakes and rivers a little; the same gates held with it on seeds 1, 42 and 1337; no uncontained cells and no lake or coast walls or steps on any seed): rivers walls / tall walls / steps are 27 / 0 / 595 (seed 1), 177 / 30 / 3740 (42), 111 / 9 / 1564 (1337), 32 / 9 / 1273 (300059728) and 11 / 0 / 130 (1692045686). `lod_sim` and `flight` on seed 13 show no holes and no frames below ground.

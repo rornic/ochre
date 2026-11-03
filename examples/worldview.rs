@@ -47,7 +47,10 @@ impl Server {
             }
         }
         let start = Instant::now();
-        let map = Arc::new(ochre_world::worldmap::generate(seed, self.config));
+        let map = Arc::new(ochre_world::worldmap::generate(
+            seed,
+            ochre_world::worldmap::character::world_config(seed, self.config),
+        ));
         let terrain = Arc::new(WorldTerrain::new(map.clone()));
         let regions = RegionStore::new(terrain.clone()).with_resident_cap(512);
         println!("seed {seed} generated in {:.1?}", start.elapsed());
@@ -858,7 +861,7 @@ fn handle(server: &Server, mut stream: TcpStream) {
                 .unwrap_or(0);
             let (rx, rz) = map.cell_centre(river % map.dim(), river / map.dim());
             let river_cells = map.river_width.iter().filter(|&&w| w > 0.0).count();
-            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64);
+            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\nplates: {}\nrelief: {}\nwarmth: {}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64, map.config.tectonics.plates, map.config.tectonics.relief, map.config.climate.warmth);
             reply(stream, "200 OK", "text/plain", "", body.as_bytes());
         }
         "/seed" => {

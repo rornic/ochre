@@ -4,6 +4,7 @@
 //! A `WorldMap` is a plain value that saves to disk and loads back, so one machine can make it
 //! and share it with the rest: nothing downstream depends on the float maths that made it.
 
+pub mod character;
 pub mod climate;
 pub mod detail;
 pub mod erosion;
@@ -24,7 +25,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 56;
+pub const GENERATOR_VERSION: u32 = 57;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]

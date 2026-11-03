@@ -18,6 +18,7 @@ fn put_config(out: &mut Vec<u8>, config: WorldConfig) {
         config.climate.warmth,
         config.climate.wind_x,
         config.climate.wind_z,
+        config.climate.humidity,
     ] {
         out.extend(value.to_le_bytes());
     }
@@ -188,6 +189,7 @@ impl WorldMap {
                 warmth: r.f32()?,
                 wind_x: r.f32()?,
                 wind_z: r.f32()?,
+                humidity: r.f32()?,
             },
         };
         config.validate().map_err(bad)?;
@@ -354,11 +356,12 @@ mod tests {
     fn cache_identity_includes_vertical_tectonic_and_climate_settings() {
         let base = WorldConfig::default();
         let original = cache_path(Path::new("worlds"), 42, base);
-        let mut variants = [base; 4];
+        let mut variants = [base; 5];
         variants[0].bounds.min_y = -2048;
         variants[1].tectonics.plates = 16;
         variants[2].tectonics.relief = 1.5;
         variants[3].climate.wind_x = -1.0;
+        variants[4].climate.humidity = 1.3;
         for config in variants {
             assert_ne!(original, cache_path(Path::new("worlds"), 42, config));
         }

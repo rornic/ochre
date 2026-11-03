@@ -25,6 +25,20 @@ pub fn load_world(region_distance: u32, config: WorldConfig) -> World {
     let dir = std::env::var("OCHRE_WORLD_DIR").unwrap_or_else(|_| "worlds".into());
     let start = std::time::Instant::now();
     let seed = fixed.unwrap_or_else(rand::random);
+    let config = worldmap::character::world_config(seed, config);
+    tracing::info!(
+        "world {seed}: {} plates, relief {}, warmth {}, wind ({}, {}), character {}",
+        config.tectonics.plates,
+        config.tectonics.relief,
+        config.climate.warmth,
+        config.climate.wind_x,
+        config.climate.wind_z,
+        if std::env::var("OCHRE_CHARACTER").is_ok_and(|v| v == "off") {
+            "off"
+        } else {
+            "on"
+        }
+    );
     let map = load_or_generate(std::path::Path::new(&dir), seed, config);
     tracing::info!("world map for seed {seed} ready in {:.1?}", start.elapsed());
     World::with_terrain(

@@ -30,3 +30,5 @@ relief = 1.0
 warmth = 0.68
 wind_x = 1.0
 wind_z = 0.15
+# Multiplies the rain biome moisture sees (1 = unchanged).
+humidity = 1.0

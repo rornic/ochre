@@ -18,6 +18,8 @@ pub struct ClimateConfig {
     pub warmth: f32,
     pub wind_x: f32,
     pub wind_z: f32,
+    /// Scales the rain that biome moisture sees (rivers and lakes are unaffected).
+    pub humidity: f32,
 }
 
 impl Default for ClimateConfig {
@@ -26,6 +28,7 @@ impl Default for ClimateConfig {
             warmth: 0.68,
             wind_x: 1.0,
             wind_z: 0.15,
+            humidity: 1.0,
         }
     }
 }
@@ -38,8 +41,12 @@ impl ClimateConfig {
             || !self.wind_z.is_finite()
             || !(0.01..=100.0)
                 .contains(&(self.wind_x * self.wind_x + self.wind_z * self.wind_z).sqrt())
+            || !(0.1..=3.0).contains(&self.humidity)
         {
-            return Err("climate requires warmth in 0..=1 and a finite nonzero wind vector".into());
+            return Err(
+                "climate requires warmth in 0..=1, humidity in 0.1..=3 and a finite nonzero wind vector"
+                    .into(),
+            );
         }
         Ok(())
     }
@@ -217,7 +224,7 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
         }
         let surface = (temperature[i] - map.height[i].max(0.0) * LAPSE_PER_BLOCK).max(0.0);
         let demand = 0.20 + 0.50 * surface;
-        moisture[i] = (rain[i] / demand).clamp(0.0, 1.0);
+        moisture[i] = (rain[i] * cfg.humidity / demand).clamp(0.0, 1.0);
     }
     (temperature, moisture, rain)
 }

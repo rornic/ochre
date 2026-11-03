@@ -396,7 +396,10 @@ fn main() {
         ..Default::default()
     };
     let start = std::time::Instant::now();
-    let map = std::sync::Arc::new(ochre_world::worldmap::generate(args.seed, config));
+    let map = std::sync::Arc::new(ochre_world::worldmap::generate(
+        args.seed,
+        ochre_world::worldmap::character::world_config(args.seed, config),
+    ));
     println!("generated the world map in {:.1?}", start.elapsed());
     let world_map = Some(map.clone());
     let noise: Box<dyn TerrainSource> = Box::new(WorldTerrain::new(map));
