@@ -668,3 +668,11 @@ A cone raised on a volcanic province had meadow on its slopes and grass-skinned 
 **An unrelated bug found on the way** (from tableland, PR 3): `rock_at_cell` computed `base_soft`, a noise call, on every lookup, and erosion makes millions of them: erosion went from 2.2 s to 6.1 s on seed 1337. The soft share per cell is now cached by `geology::generate` (`WorldMap::soft`, not saved, never part of map equality) and erosion is back to 2.2 s.
 
 `bench` on seed 1: region 114 to 117 ms (+3%), LOD total 247 to 261 ms (+5.7%, a hair over the +5% gate: the biome table now has an indirection per block), chunk vertices 1,895,637 to 1,896,445.
+
+## Jungle canopy: emergent giants (GENERATOR_VERSION 72)
+
+Jungle trees were capped at 14 blocks of reach and 32 of height, so a jungle was a low roof. `TREE_HEIGHT` is now 48 and `TREE_REACH` 14, jungle density 0.45 to 0.6, and `TreeScale` gains `giants`: the share of a biome's trees that stand out. Jungle's is 0.1, and a giant is 2.3 times the trunk height and 1.35 times the crown spread of an ordinary tree there (about 45 blocks, held to the 48 cap by `scaled_tree`). Every other biome has 0, so their trees are unchanged. Undergrowth is left to PR 8.
+
+Two tests assumed things that no longer hold. The thin-trunk tinted-leaves test now builds two thin trees directly (a jungle's trunks are all thick, and the test world's densest forest is jungle), and the lone-tree test takes a tight `Tree::extent` for "clear of the cell's edges", since `bounds` is the worst case (`TREE_REACH` and `TREE_HEIGHT`) and now spans more than a 64-block LOD cell. `tree_spot` gains `try_tree_spot`, which returns None instead of panicking.
+
+`bench` on seed 1 (A/B in one session): region 118 to 117 ms, chunk meshing 421 to 429 ms (+2%), chunk vertices 1,896,445 to 1,909,937, LOD total 263 to 300 ms (+14%). The cost is in levels 3 to 5 (57 to 66, 34 to 40, 88 to 110 ms), where crowns are drawn as boxes: giants add taller boxes and the wider search margin (`TREE_REACH`) covers more trees per node. LOD meshing is off the main thread, so no frame-time phase moved, but it is over the +5% gate; kept because the tall canopy is the point of the change.

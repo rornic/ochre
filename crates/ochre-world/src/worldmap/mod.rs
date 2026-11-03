@@ -26,7 +26,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 71;
+pub const GENERATOR_VERSION: u32 = 72;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -384,6 +384,12 @@ pub fn forest_spot(terrain: &WorldTerrain) -> bevy::math::I64Vec2 {
 /// `WorldMap::trees` has them, everywhere round it.
 #[cfg(any(test, feature = "test-support"))]
 pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64Vec2 {
+    try_tree_spot(terrain, least, most).expect("no forest on the test world")
+}
+
+/// `tree_spot`, or None where the world has no such stretch of trees.
+#[cfg(any(test, feature = "test-support"))]
+pub fn try_tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> Option<bevy::math::I64Vec2> {
     let map = terrain.map();
     let dim = map.dim() as i64;
     let mut best: Option<(i64, bevy::math::I64Vec2)> = None;
@@ -408,7 +414,7 @@ pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64
             }
         }
     }
-    best.expect("no forest on the test world").1
+    best.map(|(_, spot)| spot)
 }
 
 /// Threads map generation runs on: every logical CPU but two, so the desktop keeps running meanwhile.

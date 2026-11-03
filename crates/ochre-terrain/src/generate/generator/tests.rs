@@ -918,6 +918,11 @@ fn sparse_at(seed: u32) -> bevy::math::I64Vec2 {
     ochre_world::worldmap::tree_spot(&ochre_world::worldmap::test_terrain(seed), 4, 10)
 }
 
+// The same, or None for a world with no open country with a few lone trees.
+fn try_sparse_at(seed: u32) -> Option<bevy::math::I64Vec2> {
+    ochre_world::worldmap::try_tree_spot(&ochre_world::worldmap::test_terrain(seed), 4, 10)
+}
+
 // top-face sky light at each vertex, by position
 fn top_lights(mesh: &Mesh) -> Vec<([f32; 3], f32)> {
     let Some(VertexAttributeValues::Float32x3(positions)) =
@@ -1607,13 +1612,14 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
     // a world changes with the geology, so the first seed with a tree standing alone and clear of its cell's edges
     let (regions, tree) = (1..40u32)
         .find_map(|seed| {
+            let spot = try_sparse_at(seed)?;
             let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(seed)));
             let mut heights = regions.sampler();
             let mut trees = trees_near(
                 regions.terrain(),
                 &mut heights,
-                sparse_at(seed) - I64Vec2::splat(700),
-                sparse_at(seed) + I64Vec2::splat(700),
+                spot - I64Vec2::splat(700),
+                spot + I64Vec2::splat(700),
             );
             let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
                 (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
@@ -1622,7 +1628,7 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
                 let crown = t.base + I64Vec3::Y * (t.trunk - 1);
                 let key =
                     LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 2);
-                let (min, max) = t.bounds();
+                let (min, max) = t.extent();
                 let low = key.min_block();
                 let high = low + I64Vec3::splat(64);
                 trees.iter().filter(|o| near(t, o)).count() == 1
@@ -1953,10 +1959,25 @@ fn test_trees_vary_in_colour_the_same_at_every_level() {
 #[test]
 fn test_leaves_of_differently_tinted_trees_dont_merge() {
     let mut chunk = leaf_cube_chunk();
-    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
-    let (_, trees) = forest(&regions);
-    // two trees, one each side of the cube, so it's split down the middle
-    let thin: Vec<_> = trees.iter().filter(|t| t.width() == 1).copied().collect();
+    // two thin-trunked trees, one each side of the cube, so it's split down the middle
+    let thin = [
+        crate::generate::trees::Tree::new(
+            crate::generate::trees::TreeKind::Broadleaf,
+            I64Vec3::ZERO,
+            10,
+            5.0,
+            0.7,
+            11,
+        ),
+        crate::generate::trees::Tree::new(
+            crate::generate::trees::TreeKind::Broadleaf,
+            I64Vec3::ZERO,
+            10,
+            5.0,
+            0.7,
+            29,
+        ),
+    ];
     let mut pair = vec![thin[0], thin[1]];
     pair[0].base = I64Vec3::new(4, 0, 4);
     pair[1].base = I64Vec3::new(5, 0, 4);

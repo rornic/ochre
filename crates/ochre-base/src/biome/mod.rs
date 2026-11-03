@@ -74,6 +74,8 @@ pub struct TreeScale {
     pub height: f64,
     pub spread: f64,
     pub squash: f64,
+    /// The share of broadleaf trees, 0..1, that grow as emergent giants, standing well over the rest.
+    pub giants: f64,
 }
 
 impl Default for TreeScale {
@@ -82,6 +84,7 @@ impl Default for TreeScale {
             height: 1.0,
             spread: 1.0,
             squash: 1.0,
+            giants: 0.0,
         }
     }
 }
@@ -125,9 +128,10 @@ impl Biomes {
                     .scaled(0.8, 1.2, 0.5),
             ),
             Box::new(
-                Plain::new("jungle", 0.45)
+                Plain::new("jungle", 0.6)
                     .shifted(0.0, 0.15)
-                    .scaled(1.3, 1.0, 1.0),
+                    .scaled(1.3, 1.0, 1.0)
+                    .with_giants(0.1),
             ),
             Box::new(Swamp),
         ])

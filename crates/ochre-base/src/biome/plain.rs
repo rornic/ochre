@@ -31,7 +31,14 @@ impl Plain {
             height,
             spread,
             squash,
+            giants: self.scale.giants,
         };
+        self
+    }
+
+    /// Lets `share` of the biome's broadleaf trees grow as emergent giants.
+    pub fn with_giants(mut self, share: f64) -> Self {
+        self.scale.giants = share;
         self
     }
 }
