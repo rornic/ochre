@@ -1,20 +1,22 @@
 mod desert;
 mod forest;
 mod glacier;
-mod mountain;
+mod modifier;
 mod plain;
-mod volcanic;
+mod swamp;
 
 use bevy::color::{ColorToComponents, LinearRgba, Srgba};
 use bevy::math::Vec3;
+
+use std::sync::Arc;
 
 use crate::block::BlockType;
 pub use desert::Desert;
 pub use forest::Forest;
 pub use glacier::Glacier;
-pub use mountain::Mountain;
+pub use modifier::Modifier;
 pub use plain::Plain;
-pub use volcanic::Volcanic;
+pub use swamp::Swamp;
 
 // How hot and how wet a column is, each 0..1. See `TerrainSource::climate`.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -53,6 +55,35 @@ pub trait Biome: Send + Sync {
     fn spring_block(&self) -> BlockType {
         BlockType::Gravel
     }
+
+    // Added to the temperature and humidity grass and flora are tinted by, so a biome reads lusher or
+    // drier than its climate.
+    fn climate_shift(&self) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
+    // How big the biome's trees grow against the usual.
+    fn tree_scale(&self) -> TreeScale {
+        TreeScale::default()
+    }
+}
+
+/// Multipliers on a tree's trunk height, crown spread and crown squash (1 is the usual).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct TreeScale {
+    pub height: f64,
+    pub spread: f64,
+    pub squash: f64,
+}
+
+impl Default for TreeScale {
+    fn default() -> Self {
+        Self {
+            height: 1.0,
+            spread: 1.0,
+            squash: 1.0,
+        }
+    }
 }
 
 // Which biome a column is, as an index into `Biomes`, or the base terrain.
@@ -66,9 +97,17 @@ impl BiomeId {
 // The base terrain's scattering of lone trees, see `Biome::tree_density`.
 pub(super) const BASE_TREE_DENSITY: f64 = 0.02;
 
-// Every biome a world map can name.
+// A biome in the table, or a climate biome with a modifier on it.
+struct Entry {
+    biome: Arc<dyn Biome>,
+    // the biome it is a modifier of (0 for the base terrain), or its own id
+    base: u8,
+    modifier: Modifier,
+}
+
+// Every biome a world map can name, and each of them under each modifier.
 pub struct Biomes {
-    biomes: Vec<Box<dyn Biome>>,
+    entries: Vec<Entry>,
 }
 
 impl Biomes {
@@ -77,53 +116,120 @@ impl Biomes {
             Box::new(Glacier),
             Box::new(Desert),
             Box::new(Forest),
-            Box::new(Plain::new("tundra", 0.01)),
-            Box::new(Plain::new("taiga", 0.3)),
-            Box::new(Plain::new("steppe", 0.004)),
-            Box::new(Plain::new("savanna", 0.03)),
-            Box::new(Plain::new("jungle", 0.4)),
-            Box::new(Mountain),
-            Box::new(Volcanic),
+            Box::new(Plain::new("tundra", 0.01).shifted(-0.10, -0.05)),
+            Box::new(Plain::new("taiga", 0.3).scaled(1.2, 0.8, 1.0)),
+            Box::new(Plain::new("steppe", 0.004).shifted(0.0, -0.10)),
+            Box::new(
+                Plain::new("savanna", 0.03)
+                    .shifted(0.05, -0.15)
+                    .scaled(0.8, 1.2, 0.5),
+            ),
+            Box::new(
+                Plain::new("jungle", 0.45)
+                    .shifted(0.0, 0.15)
+                    .scaled(1.3, 1.0, 1.0),
+            ),
+            Box::new(Swamp),
         ])
+        .with_modifiers()
     }
 
     pub fn with(biomes: Vec<Box<dyn Biome>>) -> Self {
-        assert!(biomes.len() < u8::MAX as usize);
-        Self { biomes }
+        assert!(biomes.len() < u8::MAX as usize / 3);
+        let entries = biomes
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| Entry {
+                biome: Arc::from(b),
+                base: i as u8 + 1,
+                modifier: Modifier::None,
+            })
+            .collect();
+        Self { entries }
     }
 
-    /// The biome called `name`.
+    // Adds each biome, and the base terrain, under the mountain and volcanic modifiers.
+    fn with_modifiers(mut self) -> Self {
+        let plain: Vec<(u8, Arc<dyn Biome>)> =
+            std::iter::once((0, Arc::new(modifier::Grassland) as Arc<dyn Biome>))
+                .chain(self.entries.iter().map(|e| (e.base, e.biome.clone())))
+                .collect();
+        for modifier in [Modifier::Mountain, Modifier::Volcanic] {
+            for (base, inner) in &plain {
+                self.entries.push(Entry {
+                    biome: Arc::new(modifier::Modified {
+                        inner: inner.clone(),
+                        modifier,
+                    }),
+                    base: *base,
+                    modifier,
+                });
+            }
+        }
+        self
+    }
+
+    // The entry for `biome`, None for the base terrain.
+    fn entry(&self, biome: BiomeId) -> Option<&Entry> {
+        biome.0.checked_sub(1).map(|i| &self.entries[i as usize])
+    }
+
+    /// The biome called `name`, not under a modifier.
     pub fn id(&self, name: &str) -> Option<BiomeId> {
-        self.biomes
+        self.entries
             .iter()
-            .position(|b| b.name() == name)
+            .position(|e| e.modifier == Modifier::None && e.biome.name() == name)
             .map(|i| BiomeId(i as u8 + 1))
+    }
+
+    /// `biome` with `modifier` on it (`Modifier::None` gives the biome itself).
+    pub fn with_modifier(&self, biome: BiomeId, modifier: Modifier) -> BiomeId {
+        let base = self.entry(biome).map_or(0, |e| e.base);
+        if modifier == Modifier::None {
+            return BiomeId(base);
+        }
+        self.entries
+            .iter()
+            .position(|e| e.base == base && e.modifier == modifier)
+            .map(|i| BiomeId(i as u8 + 1))
+            .expect("every biome has each modifier")
+    }
+
+    /// What the ground has become on top of `biome`.
+    pub fn modifier(&self, biome: BiomeId) -> Modifier {
+        self.entry(biome).map_or(Modifier::None, |e| e.modifier)
     }
 
     /// How thickly trees grow in `biome`, 0..1.
     pub fn tree_density(&self, biome: BiomeId) -> f64 {
-        match biome.0.checked_sub(1) {
-            None => BASE_TREE_DENSITY,
-            Some(i) => self.biomes[i as usize]
-                .tree_density()
-                .unwrap_or(BASE_TREE_DENSITY),
-        }
+        self.entry(biome)
+            .and_then(|e| e.biome.tree_density())
+            .unwrap_or(BASE_TREE_DENSITY)
+    }
+
+    /// What to add to the (temperature, humidity) the grass and flora of `biome` are tinted by.
+    pub fn climate_shift(&self, biome: BiomeId) -> (f32, f32) {
+        self.entry(biome)
+            .map_or((0.0, 0.0), |e| e.biome.climate_shift())
+    }
+
+    /// How big trees grow in `biome` against the usual.
+    pub fn tree_scale(&self, biome: BiomeId) -> TreeScale {
+        self.entry(biome)
+            .map_or_else(TreeScale::default, |e| e.biome.tree_scale())
     }
 
     /// What a spring's rim and pool bed are made of in `biome`.
     pub fn spring_block(&self, biome: BiomeId) -> BlockType {
-        match biome.0.checked_sub(1) {
-            None => BlockType::Gravel,
-            Some(i) => self.biomes[i as usize].spring_block(),
-        }
+        self.entry(biome)
+            .map_or(BlockType::Gravel, |e| e.biome.spring_block())
     }
 
-    // The biome's name, or None for the base terrain.
+    // The climate biome's name, or None for the base terrain, whatever modifier is on it.
     pub fn name(&self, biome: BiomeId) -> Option<&'static str> {
-        biome
-            .0
-            .checked_sub(1)
-            .map(|i| self.biomes[i as usize].name())
+        self.entry(biome)
+            .filter(|e| e.base != 0)
+            .map(|e| e.biome.name())
     }
 
     // The block `biome` uses in place of the base terrain's `base`.
@@ -134,10 +240,8 @@ impl Biomes {
         above_sea: i64,
         gradient: f64,
     ) -> BlockType {
-        match biome.0 {
-            0 => base,
-            i => self.biomes[i as usize - 1].block(base, above_sea, gradient),
-        }
+        self.entry(biome)
+            .map_or(base, |e| e.biome.block(base, above_sea, gradient))
     }
 }
 

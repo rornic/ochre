@@ -281,7 +281,7 @@ pub(in crate::generate) fn block_gradient(
     z: i64,
     gradient: f64,
 ) -> f64 {
-    if biomes.name(biome) != Some("mountain") {
+    if biomes.modifier(biome) != ochre_base::biome::Modifier::Mountain {
         return gradient;
     }
     let (fx, fz) = (x as f64, z as f64);

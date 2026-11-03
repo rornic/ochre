@@ -325,8 +325,18 @@ fn layers(terrain: &dyn TerrainSource, args: &Args) -> [(&'static str, image::Rg
                 Some("steppe") => [190, 180, 100],
                 Some("savanna") => [205, 165, 65],
                 Some("jungle") => [10, 85, 30],
-                Some("mountain") => [135, 125, 115],
+                Some("swamp") => [70, 95, 55],
                 Some(_) => [255, 0, 255],
+            };
+            // mountain and volcanic ground is the climate biome greyed
+            let rgb = match terrain.biomes().modifier(sample.biome) {
+                ochre_base::biome::Modifier::None => rgb,
+                ochre_base::biome::Modifier::Mountain => std::array::from_fn(|k| {
+                    (rgb[k] as f32 * 0.45 + [135.0, 125.0, 115.0][k] * 0.55) as u8
+                }),
+                ochre_base::biome::Modifier::Volcanic => std::array::from_fn(|k| {
+                    (rgb[k] as f32 * 0.3 + [50.0, 45.0, 45.0][k] * 0.7) as u8
+                }),
             };
             biome.put_pixel(
                 x,

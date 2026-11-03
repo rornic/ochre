@@ -2742,7 +2742,10 @@ fn test_a_stream_joining_a_river_has_water_all_the_way_to_it() {
 fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     use ochre_base::biome::Biomes;
     let biomes = Biomes::new(1);
-    let mountain = biomes.id("mountain").unwrap();
+    let mountain = biomes.with_modifier(
+        ochre_base::biome::BiomeId::BASE,
+        ochre_base::biome::Modifier::Mountain,
+    );
     let above = WATER_LEVEL + 110;
     let steep = 4.4;
     let (mut meadow, mut rock) = (0, 0);
@@ -2785,7 +2788,6 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
 #[test]
 fn test_pines_grow_on_a_mountains_lower_slopes() {
     use crate::generate::trees::{trees_near, TreeKind};
-    use ochre_world::worldmap::climate::BiomeKind;
     let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
         ochre_world::worldmap::generate(
             3,
@@ -2806,7 +2808,7 @@ fn test_pines_grow_on_a_mountains_lower_slopes() {
             (-4..=4).step_by(2).all(|dz| {
                 (-4..=4).step_by(2).all(|dx| {
                     let i = map.index((x as i64 + dx) as usize, (z as i64 + dz) as usize);
-                    BiomeKind::from_u8(map.biome[i]) == BiomeKind::Mountain
+                    map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
                         && (130.0..260.0).contains(&(map.height[i] - WATER_LEVEL as f32))
                         && map.water_kind[i] == 0
                 })
@@ -2861,7 +2863,13 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
                     .terrain()
                     .biomes()
                     .name(heights.biome(tree.base.x, tree.base.z));
-                if matches!(name, Some("savanna" | "jungle" | "desert")) {
+                // a mountain's upper slopes grow pines in any climate, so only the lowlands are checked
+                let lowland = regions
+                    .terrain()
+                    .biomes()
+                    .modifier(heights.biome(tree.base.x, tree.base.z))
+                    == ochre_base::biome::Modifier::None;
+                if lowland && matches!(name, Some("savanna" | "jungle" | "desert")) {
                     hot_trees += 1;
                     high_hot_trees += (tree.base.y - WATER_LEVEL >= 110) as usize;
                     assert_ne!(
@@ -2883,7 +2891,6 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
 
 #[test]
 fn test_the_foothills_round_a_range_are_much_rougher_than_the_lowland_far_from_one() {
-    use ochre_world::worldmap::climate::BiomeKind;
     let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
         ochre_world::worldmap::generate(1, ochre_world::worldmap::WorldConfig::default()),
     ));
@@ -2896,7 +2903,7 @@ fn test_the_foothills_round_a_range_are_much_rougher_than_the_lowland_far_from_o
             let above = map.height[i] - WATER_LEVEL as f32;
             if !(40.0..200.0).contains(&above)
                 || map.water_kind[i] != 0
-                || BiomeKind::from_u8(map.biome[i]) == BiomeKind::Mountain
+                || map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
             {
                 continue;
             }

@@ -26,7 +26,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 70;
+pub const GENERATOR_VERSION: u32 = 71;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -161,6 +161,19 @@ pub struct WorldMap {
     pub ford: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
+    /// The share of soft beds at each cell, worked out by geology and not saved: erosion asks for it millions
+    /// of times, and it can be worked out again from the seed (empty on a map that was loaded or not generated).
+    pub(crate) soft: SoftCache,
+}
+
+/// A layer that is only a cache: not saved, and never a difference between two maps.
+#[derive(Debug, Clone, Default)]
+pub struct SoftCache(pub(crate) Vec<f32>);
+
+impl PartialEq for SoftCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// The eight cells around one, as (dx, dz), in the order `WorldMap::down` indexes them.
@@ -212,6 +225,7 @@ impl WorldMap {
             landform: vec![0; cells],
             ford: vec![0; cells],
             features: Vec::new(),
+            soft: SoftCache::default(),
         }
     }
 

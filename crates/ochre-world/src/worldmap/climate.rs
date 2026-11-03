@@ -80,6 +80,12 @@ const RIPARIAN_COOLS_FROM: (f64, f64) = (0.30, 0.55);
 const MODE_RADIUS: usize = 2;
 const MODE_PASSES: usize = 2;
 const MIN_BIOME_CELLS: usize = 400;
+// Swamp: grassland, forest or jungle no higher than this over the sea, on ground flatter than this, at least this
+// wet and within about 13 cells of a river or lake (`closeness` there).
+const SWAMP_BELOW: f32 = 40.0;
+const SWAMP_SLOPE: f32 = 0.2;
+const SWAMP_MOISTURE: f32 = 0.65;
+const SWAMP_NEAR: f32 = 0.02;
 // Conifers on a mountain's lower slopes, this thick, thinning out between these heights over the
 // sea to nothing: the treeline.
 const ALPINE_FOREST: f64 = 0.3;
@@ -202,12 +208,15 @@ pub enum BiomeKind {
     Jungle = 8,
     /// The sea floor, which has no land biome.
     Sea = 9,
-    /// High, steep ground, whatever the climate.
+    /// Only a scratch value while landform is worked out: the biome layer never holds it, since a mountain is
+    /// the climate biome under it with the mountain modifier on, see `Modifier`.
     Mountain = 10,
+    /// Flat, low, wet ground by fresh water.
+    Swamp = 11,
 }
 
 impl BiomeKind {
-    pub const ALL: [BiomeKind; 11] = [
+    pub const ALL: [BiomeKind; 12] = [
         Self::Grassland,
         Self::Glacier,
         Self::Desert,
@@ -219,6 +228,7 @@ impl BiomeKind {
         Self::Jungle,
         Self::Sea,
         Self::Mountain,
+        Self::Swamp,
     ];
 
     pub fn from_u8(v: u8) -> Self {
@@ -231,7 +241,7 @@ impl BiomeKind {
     /// The name in `Biomes`, or None for the base terrain.
     pub fn name(self) -> Option<&'static str> {
         match self {
-            Self::Grassland | Self::Sea => None,
+            Self::Grassland | Self::Sea | Self::Mountain => None,
             Self::Glacier => Some("glacier"),
             Self::Desert => Some("desert"),
             Self::Forest => Some("forest"),
@@ -240,7 +250,7 @@ impl BiomeKind {
             Self::Steppe => Some("steppe"),
             Self::Savanna => Some("savanna"),
             Self::Jungle => Some("jungle"),
-            Self::Mountain => Some("mountain"),
+            Self::Swamp => Some("swamp"),
         }
     }
 }
@@ -394,12 +404,39 @@ pub fn run(map: &mut WorldMap) {
         // what a cell grows depends on how warm it is at its height
         let warmth = (temperature[i] - (h - sea) * LAPSE_PER_BLOCK).max(0.0);
         kinds[i] = classify(warmth, moisture[i]) as u8;
-        // mountain landform is mountain whatever the climate, but for the ice on top of it
-        if kinds[i] != BiomeKind::Glacier as u8 && map.landform[i] == super::landform::MOUNTAIN {
-            kinds[i] = BiomeKind::Mountain as u8;
+    }
+    // flat, low, wet ground by fresh water is swamp, before the tidying removes the specks of it
+    let climate_kinds = kinds.clone();
+    let slope = super::gameplay::slope_layer(map);
+    let fresh = closeness(map, |i| {
+        map.water_kind[i] == WaterCell::Lake as u8 || map.water_kind[i] == WaterCell::River as u8
+    });
+    for i in 0..dim * dim {
+        let above = map.height[i] - sea;
+        let eligible = matches!(
+            BiomeKind::from_u8(kinds[i]),
+            BiomeKind::Grassland | BiomeKind::Forest | BiomeKind::Jungle
+        );
+        if eligible
+            && map.height[i] >= sea
+            && map.landform[i] != super::landform::MOUNTAIN
+            && above <= SWAMP_BELOW
+            && slope[i] < SWAMP_SLOPE
+            && moisture[i] >= SWAMP_MOISTURE
+            && fresh[i] >= SWAMP_NEAR
+        {
+            kinds[i] = BiomeKind::Swamp as u8;
         }
     }
-    let kinds = tidy_biomes(&kinds, dim);
+    let mut kinds = tidy_biomes(&kinds, dim);
+    // the tidying can move a swamp's edge onto ground that is too high, or mountain: that ground is its climate's again
+    for i in 0..dim * dim {
+        if kinds[i] == BiomeKind::Swamp as u8
+            && (map.height[i] - sea > SWAMP_BELOW || map.landform[i] == super::landform::MOUNTAIN)
+        {
+            kinds[i] = climate_kinds[i];
+        }
+    }
 
     let regional = regional_warmth(map);
     let mut trees = vec![0u8; dim * dim];
@@ -412,14 +449,15 @@ pub fn run(map: &mut WorldMap) {
             || map.water_kind[i] == WaterCell::River as u8;
         let kind = BiomeKind::from_u8(kinds[i]);
         let above = (map.height[i] - sea) as f64;
-        // a mountain's slopes are forested with conifers below the treeline, thinning out into
-        // bare rock above it, instead of the few scattered trees the table gives the biome
-        let density = if kind == BiomeKind::Mountain {
+        // a mountain's slopes are forested with conifers below the treeline where it is wet enough, thinning
+        // out into bare rock above it, instead of the few scattered trees the table gives the biome
+        let density = if map.landform[i] == super::landform::MOUNTAIN {
             let line = treeline(regional[i].clamp(0.0, 1.0));
-            ALPINE_FOREST
+            let belt = ALPINE_FOREST
                 * smoothstep(15.0, 60.0, above)
                 * (1.0 - smoothstep(line.0, line.1, above))
-                + 0.02
+                * smoothstep(0.15, 0.5, moisture[i] as f64);
+            (belt + 0.02).max(tree_density(kind, &biomes).min(0.04))
         } else {
             tree_density(kind, &biomes)
         } * if wet { 0.0 } else { 1.0 };
@@ -789,6 +827,50 @@ mod tests {
     }
 
     #[test]
+    fn test_flat_low_wet_ground_by_a_big_river_is_swamp_and_nowhere_else_is() {
+        let mut map = with_river(70.0, 150..252);
+        let (dim, row) = (map.dim(), map.dim() / 2);
+        run(&mut map);
+        let kind = |x: usize, z: usize| BiomeKind::from_u8(map.biome[z * dim + x]);
+        // the flat plain beside the river, low and wet
+        let swamp_by_river = (170..230)
+            .flat_map(|x| (row - 6..row + 6).map(move |z| (x, z)))
+            .filter(|&(x, z)| kind(x, z) == BiomeKind::Swamp)
+            .count();
+        assert!(
+            swamp_by_river > 100,
+            "only {swamp_by_river} swamp cells beside the river"
+        );
+        // and every swamp cell is low, flat and near the water, never mountain
+        let sea = WATER_LEVEL as f32;
+        for i in 0..map.biome.len() {
+            if BiomeKind::from_u8(map.biome[i]) == BiomeKind::Swamp {
+                assert!(
+                    map.height[i] - sea <= SWAMP_BELOW,
+                    "swamp at {} up",
+                    map.height[i]
+                );
+                assert_ne!(super::super::landform::MOUNTAIN, map.landform[i]);
+                let (x, z) = (i % dim, i / dim);
+                assert!(
+                    (row as i64 - z as i64).abs() <= 16,
+                    "swamp {} cells from the river",
+                    row as i64 - z as i64
+                );
+                assert!(x >= 120, "swamp at column {x}, before the plain");
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_biome_layer_never_holds_the_mountain_scratch_kind() {
+        let mut map = ridge_world();
+        run(&mut map);
+        assert!(map.landform.contains(&super::super::landform::MOUNTAIN));
+        assert!(map.biome.iter().all(|&k| k != BiomeKind::Mountain as u8));
+    }
+
+    #[test]
     fn test_a_narrow_stream_leaves_the_biome_round_it_alone() {
         let (mut with, mut without) = (with_river(12.0, 90..120), ridge_world());
         let (dim, row) = (with.dim(), with.dim() / 2);
@@ -820,7 +902,7 @@ mod tests {
         let sea = WATER_LEVEL as f32;
         let (mut lower, mut thick, mut high, mut bare) = (0, 0, 0, 0);
         for i in 0..map.biome.len() {
-            if BiomeKind::from_u8(map.biome[i]) != BiomeKind::Mountain || map.water_kind[i] != 0 {
+            if map.landform[i] != super::super::landform::MOUNTAIN || map.water_kind[i] != 0 {
                 continue;
             }
             let above = map.height[i] - sea;

@@ -230,6 +230,7 @@ impl WorldMap {
             landform: Vec::new(),
             ford: r.bytes(cells)?,
             features: r.features()?,
+            soft: Default::default(),
         };
         map.geology = r.bytes(cells)?;
         map.strata_offset = r.layer(cells)?;

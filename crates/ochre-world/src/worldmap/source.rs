@@ -5,7 +5,7 @@ use super::detail::{detail, dunes, foothill_weight, gully_relief, Dunes, FOOTHIL
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
-use ochre_base::biome::{BiomeId, Biomes, Climate};
+use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm, perlin};
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
@@ -30,7 +30,7 @@ const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
 const TABLE_WAVELENGTH: f64 = 20000.0;
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
-// Land this many blocks over the sea on a volcanic province is the volcanic biome.
+// Land this many blocks over the sea on a volcanic province has the volcanic modifier.
 const VOLCANIC_FROM: f64 = 120.0;
 
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
@@ -179,8 +179,10 @@ fn meander(seed: u32, x: f64, z: f64) -> (f64, f64) {
 pub struct WorldTerrain {
     map: Arc<WorldMap>,
     biomes: Biomes,
-    // the biome each `BiomeKind` is, indexed by kind
+    // the biome each `BiomeKind` is, indexed by kind, and the same under the mountain and volcanic modifiers
     kinds: Vec<BiomeId>,
+    mountain_kinds: Vec<BiomeId>,
+    volcanic_kinds: Vec<BiomeId>,
     // the way each river cell's water leaves it, see `WorldMap::river_tangents`
     tangents: Vec<[f32; 2]>,
     // each river stretch's water level every few blocks along it, under the ground it runs over
@@ -198,14 +200,12 @@ pub struct WorldTerrain {
     dunes: Dunes,
     // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
     cliff_boost: f64,
-    // the biome of high ground on a volcanic province, see `biome_at`
-    volcanic: BiomeId,
 }
 
 impl WorldTerrain {
     pub fn new(map: Arc<WorldMap>) -> Self {
         let biomes = Biomes::new(map.seed);
-        let kinds = BiomeKind::ALL
+        let kinds: Vec<BiomeId> = BiomeKind::ALL
             .iter()
             .map(|k| {
                 k.name().map_or(BiomeId::BASE, |name| {
@@ -213,6 +213,14 @@ impl WorldTerrain {
                 })
             })
             .collect();
+        let under = |modifier| -> Vec<BiomeId> {
+            kinds
+                .iter()
+                .map(|&kind| biomes.with_modifier(kind, modifier))
+                .collect()
+        };
+        let (mountain_kinds, volcanic_kinds) =
+            (under(Modifier::Mountain), under(Modifier::Volcanic));
         let tangents = map.river_tangents();
         let knobs = super::character::LandformKnobs::from_seed(map.seed);
         let (wx, wz) = (
@@ -228,6 +236,8 @@ impl WorldTerrain {
             map,
             biomes,
             kinds,
+            mountain_kinds,
+            volcanic_kinds,
             tangents,
             profiles: RiverProfiles::default(),
             springs: Vec::new(),
@@ -237,12 +247,7 @@ impl WorldTerrain {
             tableland_share: knobs.tableland_share,
             dunes,
             cliff_boost: knobs.cliff_boost,
-            volcanic: BiomeId::BASE,
         };
-        terrain.volcanic = terrain
-            .biomes
-            .id("volcanic")
-            .expect("volcanic in the biome table");
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
         terrain.profiles = terrain.river_profiles();
@@ -698,13 +703,18 @@ impl WorldTerrain {
             u.round().clamp(0.0, max) as usize,
             v.round().clamp(0.0, max) as usize,
         );
-        // high ground on a volcanic province is volcanic whatever the climate: bare basalt on its slopes
+        // the climate biome, with the ground's modifier on it: high ground on a volcanic province is volcanic
+        // whatever the climate, bare basalt on its slopes, and mountain landform is mountain
+        let kind = self.map.biome[i] as usize;
         if self.map.geology[i] == super::geology::VOLCANIC
             && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
         {
-            return self.volcanic;
+            return self.volcanic_kinds[kind];
         }
-        self.kinds[self.map.biome[i] as usize]
+        if self.map.landform[i] == super::landform::MOUNTAIN {
+            return self.mountain_kinds[kind];
+        }
+        self.kinds[kind]
     }
 
     #[cfg(test)]
@@ -971,9 +981,12 @@ impl TerrainSource for WorldTerrain {
 
     fn climate(&self, x: f64, z: f64) -> Climate {
         let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0);
+        // a biome reads lusher or drier than its climate, in grass and flora tint
+        let (warmer, wetter) = self.biomes.climate_shift(self.biome_at(x, z));
         Climate {
-            temperature: (self.temperature(x, z) - above_sea * LAPSE_PER_BLOCK).clamp(0.0, 1.0),
-            humidity: self.map.bilinear(&self.map.moisture, x, z).clamp(0.0, 1.0),
+            temperature: (self.temperature(x, z) - above_sea * LAPSE_PER_BLOCK + warmer)
+                .clamp(0.0, 1.0),
+            humidity: (self.map.bilinear(&self.map.moisture, x, z) + wetter).clamp(0.0, 1.0),
         }
     }
 
@@ -1288,47 +1301,48 @@ mod river_bank_tests {
     }
 
     #[test]
-    fn high_ground_on_a_volcanic_province_is_the_volcanic_biome_and_nothing_else_is() {
+    fn modifiers_sit_on_the_climate_biome_by_landform_and_province() {
         let config = super::super::WorldConfig {
             size: 65536,
             map_cell: 128,
             ..Default::default()
         };
         let terrain = WorldTerrain::new(Arc::new(super::super::generate(1337, config)));
-        let (mut volcanic_high, mut wrong, mut elsewhere) = (0, 0, 0);
+        let biomes = terrain.biomes();
+        let (mut volcanic, mut mountain, mut plain, mut wrong) = (0, 0, 0, 0);
         for i in 0..120 {
             for j in 0..120 {
                 let (x, z) = (i as f64 * 540.0 - 32400.0, j as f64 * 540.0 - 32400.0);
+                let (u, v) = terrain.map.to_cell(x, z);
                 let cell = terrain.map.index(
-                    terrain.map.to_cell(x, z).0.round().clamp(0.0, 511.0) as usize,
-                    terrain.map.to_cell(x, z).1.round().clamp(0.0, 511.0) as usize,
+                    u.round().clamp(0.0, 511.0) as usize,
+                    v.round().clamp(0.0, 511.0) as usize,
                 );
                 let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
-                let biome = terrain.biome_at(x, z);
-                if terrain.map.geology[cell] == super::super::geology::VOLCANIC
-                    && above >= VOLCANIC_FROM + 20.0
-                {
-                    volcanic_high += 1;
-                    wrong += (biome != terrain.volcanic) as usize;
-                } else if above < VOLCANIC_FROM - 20.0
-                    || terrain.map.geology[cell] != super::super::geology::VOLCANIC
-                {
-                    elsewhere += (biome == terrain.volcanic) as usize;
+                let modifier = biomes.modifier(terrain.biome_at(x, z));
+                let on_volcanic = terrain.map.geology[cell] == super::super::geology::VOLCANIC;
+                if on_volcanic && above >= VOLCANIC_FROM + 20.0 {
+                    volcanic += 1;
+                    wrong += (modifier != Modifier::Volcanic) as usize;
+                } else if above < VOLCANIC_FROM - 20.0 || !on_volcanic {
+                    if terrain.map.landform[cell] == super::super::landform::MOUNTAIN {
+                        mountain += 1;
+                        wrong += (modifier != Modifier::Mountain) as usize;
+                    } else {
+                        plain += 1;
+                        wrong += (modifier != Modifier::None) as usize;
+                    }
                 }
             }
         }
         assert!(
-            volcanic_high > 30,
-            "only {volcanic_high} high volcanic points"
+            volcanic > 30 && mountain > 100 && plain > 1000,
+            "{volcanic} {mountain} {plain}"
         );
-        // the wander moves the cell a little, so a point at the edge of a province can fall either side
+        // the wander moves the cell a little, so a point at the edge of a landform can fall either side
         assert!(
-            wrong * 10 <= volcanic_high,
-            "{wrong} of {volcanic_high} high volcanic points are not volcanic"
-        );
-        assert!(
-            elsewhere * 20 <= 120 * 120,
-            "{elsewhere} points outside it are volcanic"
+            wrong * 20 <= volcanic + mountain + plain,
+            "{wrong} points have the wrong modifier"
         );
     }
 

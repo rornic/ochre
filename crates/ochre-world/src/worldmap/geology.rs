@@ -197,6 +197,14 @@ pub(super) fn generate(map: &mut WorldMap) {
         map.strata_offset[i] = phase;
         map.facies[i] = facies;
     }
+    let mut soft = vec![0.0f32; map.height.len()];
+    par_rows(map.dim(), &mut soft, |row, cells| {
+        for (col, s) in cells.iter_mut().enumerate() {
+            let (x, z) = map.cell_centre(col, row);
+            *s = base_soft(map.seed, x, z) as f32;
+        }
+    });
+    map.soft = super::SoftCache(soft);
     smooth_provinces(map);
     // after the smoothing, which would otherwise move the rock of a range's flanks to a neighbour's
     one_rock_per_range(map);
@@ -302,8 +310,14 @@ fn stepped(height: f64, phase: f64, weight: f64, bounds: (f64, f64), riser: f64)
 impl WorldMap {
     /// Rock at a map cell and elevation, including beds below the surface.
     pub fn rock_at_cell(&self, i: usize, y: f32) -> Rock {
-        let (x, z) = self.cell_centre(i % self.dim(), i / self.dim());
-        self.rock_in(i, y, self.strata_offset[i], base_soft(self.seed, x, z))
+        let soft = self.soft.0.get(i).map_or_else(
+            || {
+                let (x, z) = self.cell_centre(i % self.dim(), i / self.dim());
+                base_soft(self.seed, x, z)
+            },
+            |&soft| soft as f64,
+        );
+        self.rock_in(i, y, self.strata_offset[i], soft)
     }
 
     // The rock at `y` in cell `i`'s province, its beds `phase` blocks up.
