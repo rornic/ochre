@@ -22,6 +22,7 @@ beside it (`held_over`).
 
 The last run, in order:
 
+0. Before the run, `landform::terrace` steps tableland into its beds (see `landform::tableland`), so basins, lakes and rivers form on the treads they will stand on and not on the smooth ground over them.
 1. `scatter` adds up to a block of noise to the ground, for good, so rivers on gentle ground wind
    instead of following the flood's straight lines. It used to be added for the flood and taken out
    again, which left lakes worked out on ground a block off the ground they lay in.

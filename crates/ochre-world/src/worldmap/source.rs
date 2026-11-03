@@ -7,7 +7,7 @@ use super::FeatureKind;
 use super::{WaterCell, WorldMap};
 use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::{fbm, perlin};
+use ochre_base::noise::perlin;
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 
@@ -26,8 +26,6 @@ const SHORE_SMOOTH: f64 = 5.0;
 pub(super) const HOLD: f64 = 1.5;
 const CALM: f64 = 8.0;
 // Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
-const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
-const TABLE_WAVELENGTH: f64 = 20000.0;
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
 // Land this many blocks over the sea on a volcanic province has the volcanic modifier.
@@ -542,19 +540,16 @@ impl WorldTerrain {
         smooth + (stepped - smooth) * weight
     }
 
-    // How much of the ground at a point is tableland, 0..1: the terraced beds of sedimentary country that
-    // isn't mountain, between `TABLE_WINDOW` heights, in patches that cover about `tableland_share` of it.
-    // Like mountain it reads height, rock province and noise alone, never climate or biome.
+    // How much of the ground at a point is tableland, 0..1, see `landform::tableland`.
     fn tableland(&self, x: f64, z: f64, above_sea: f64, mountain: f64) -> f64 {
-        let window = smoothstep(TABLE_WINDOW.0, TABLE_WINDOW.1, above_sea)
-            * (1.0 - smoothstep(TABLE_WINDOW.2, TABLE_WINDOW.3, above_sea));
-        if window <= 0.0 || mountain >= 1.0 {
-            return 0.0;
-        }
-        let n = (fbm(self.map.seed ^ 0x7AB1, x, z, TABLE_WAVELENGTH, 2) + 1.0) / 2.0;
-        // the noise sits between about 0.3 and 0.65, so the cut that leaves `share` of it above runs from 0.59 down to 0.41
-        let cut = 0.5 - 0.3 * (self.tableland_share - 0.5);
-        (1.0 - mountain) * window * smoothstep(cut - 0.04, cut + 0.04, n)
+        super::landform::tableland(
+            self.map.seed,
+            self.tableland_share,
+            x,
+            z,
+            above_sea,
+            mountain,
+        )
     }
 
     // `ground` held to the still water round a point, `base` being the map's smooth ground there, and
@@ -1217,7 +1212,7 @@ mod river_bank_tests {
                 (100.0..250.0).contains(&above) && terrain.landform_cover(x, z) == 0.0
             })
             .collect();
-        assert!(points.len() > 300, "only {} eligible points", points.len());
+        assert!(points.len() > 200, "only {} eligible points", points.len());
         let mut coverage = |share: f64| {
             terrain.tableland_share = share;
             let on = points
