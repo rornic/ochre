@@ -697,7 +697,15 @@ fn fill_column(
     for cy in -1..=size {
         let bottom = base.y + cy as i64 * cell;
         let middle = bottom + cell / 2;
-        let mut block = under_grass(block_at(middle), middle, height, cell, false, 0);
+        let mut block = under_grass(block_at(middle), middle, height, cell, false, 0, 0);
+        // snow lies on the ground's top block only, which a cell's middle usually misses
+        if block == BlockType::Grass
+            && top > bottom
+            && top <= bottom + cell
+            && block_at(top - 1) == BlockType::Snow
+        {
+            block = BlockType::Snow;
+        }
         block = freeze_cell(block, temperature, middle + cell / 2, (cell, water_top));
         if block == BlockType::Air && bottom < top {
             // the ground's own block fills the cell, except under water, where the water drawn over
@@ -725,5 +733,61 @@ fn fill_column(
         block = rocked(block, || rock(middle));
         cells[LodBlocks::index(size, IVec3::new(cx, cy, cz))] =
             underwater(block, bottom, cell, (height, water_top));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ochre_base::biome::Biomes;
+
+    // The cell each of `heights` puts at the water's surface and at the ground's top, for a cold column.
+    fn column(temperature: f32, biome: &str, height: i64, water_top: i64) -> Vec<(i64, BlockType)> {
+        let biomes = Biomes::new(1);
+        let size = CHUNK_SIZE as i32;
+        let (base, cell) = (I64Vec3::new(0, 64, 0), 4);
+        let mut cells = vec![BlockType::Air; ((size + 2) as usize).pow(3)];
+        let id = biomes.id(biome).unwrap();
+        fill_column(
+            &mut cells,
+            &biomes,
+            (base, cell),
+            (0, 0),
+            id,
+            (height, 0.0, temperature, water_top),
+            &mut |_| BlockType::Stone,
+        );
+        (-1..=size)
+            .map(|cy| {
+                let at = LodBlocks::index(size, IVec3::new(0, cy, 0));
+                (base.y + cy as i64 * cell, cells[at])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_a_frozen_lakes_surface_cell_is_ice_not_water() {
+        let cells = column(0.05, "glacier", 100, 105);
+        let surface = cells.iter().find(|(bottom, _)| *bottom == 104).unwrap();
+        assert_eq!(BlockType::Ice, surface.1, "{cells:?}");
+    }
+
+    #[test]
+    fn test_a_lake_in_a_warm_climate_is_water_in_a_wide_cell() {
+        let cells = column(0.6, "forest", 100, 105);
+        let surface = cells.iter().find(|(bottom, _)| *bottom == 104).unwrap();
+        assert_eq!(BlockType::Water, surface.1, "{cells:?}");
+        assert!(
+            cells.iter().all(|(_, block)| *block != BlockType::Ice),
+            "{cells:?}"
+        );
+    }
+
+    #[test]
+    fn test_snow_on_the_ground_shows_in_a_wider_cell() {
+        // cold enough for snowy grass, over ground 104 high, so its top block (103) is in the cell 100..104 and its middle (102) is under it
+        let cells = column(0.2, "forest", 104, 0);
+        let surface = cells.iter().find(|(bottom, _)| *bottom == 100).unwrap();
+        assert_eq!(BlockType::Snow, surface.1, "{cells:?}");
     }
 }

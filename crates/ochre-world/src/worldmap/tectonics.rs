@@ -63,6 +63,18 @@ pub struct Plate {
     age: f64,
 }
 
+/// The rock a plate is made of, drawn once per plate: a basin of layered sedimentary rock, an old
+/// metamorphic shield, or a volcanic plate. A range takes the rock of one plate of the pair it stands on.
+pub const ROCK_BASIN: u8 = 0;
+pub const ROCK_SHIELD: u8 = 1;
+pub const ROCK_VOLCANIC: u8 = 2;
+
+// Strength of a plate boundary's belt past which cells belong to it, not to their nearest plate, for rock.
+const BELT_OWNS: f64 = 0.001;
+// A world's land is this share basin (drawn between the two) and this share shield, the rest being volcanic.
+const BASIN_SHARE: (f64, f64) = (0.45, 0.60);
+const SHIELD_SHARE: f64 = 0.28;
+
 /// Diagnostic codes: quiet, collision, subduction, extension, shear.
 pub const COLLISION: u8 = 1;
 pub const SUBDUCTION: u8 = 2;
@@ -234,6 +246,7 @@ mod tests {
 pub struct Sample {
     pub height: f64,
     pub continentalness: f64,
+    /// The plate whose rock the cell takes: the first plate of a boundary's pair inside its belt, else the nearest plate.
     pub plate: u8,
     pub boundary: u8,
     pub uplift: f32,
@@ -275,6 +288,40 @@ impl Tectonics {
             config,
             plates,
         }
+    }
+
+    /// The rock each plate is made of, `ROCK_BASIN`, `ROCK_SHIELD` or `ROCK_VOLCANIC`, given how many land cells each
+    /// plate owns. Rock is shared out by land, so every world is about half basin, three tenths shield and two
+    /// tenths volcanic, the largest plates going to whichever rock is furthest short of its share (with some
+    /// chance in it, so the biggest continent is not always basin).
+    pub fn plate_rocks(&self, land: &[usize]) -> Vec<u8> {
+        let n = self.plates.len();
+        let total: f64 = land.iter().sum::<usize>().max(1) as f64;
+        let share = [
+            BASIN_SHARE.0 + (BASIN_SHARE.1 - BASIN_SHARE.0) * unit(self.seed ^ 0x90CA_7E10, 0, 0),
+            SHIELD_SHARE,
+            0.0,
+        ];
+        let targets = [share[0], share[1], 1.0 - share[0] - share[1]];
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&i| (std::cmp::Reverse(land.get(i).copied().unwrap_or(0)), i));
+        let mut assigned = [0.0f64; 3];
+        let mut rocks = vec![ROCK_BASIN; n];
+        for i in order {
+            let size = land.get(i).copied().unwrap_or(0) as f64;
+            let rock = (0..3)
+                .max_by(|&a, &b| {
+                    let deficit = |r: usize| {
+                        targets[r] * total - assigned[r]
+                            + 0.15 * total * unit(self.seed ^ 0x90CA_7E20, i as i32, r as i32)
+                    };
+                    deficit(a).total_cmp(&deficit(b))
+                })
+                .unwrap_or(0);
+            assigned[rock] += size;
+            rocks[i] = rock as u8;
+        }
+        rocks
     }
 
     fn crust(&self, x: f64, z: f64) -> f64 {
@@ -330,6 +377,7 @@ impl Tectonics {
         let mut valley = 0.0;
         let mut resurfacing: f64 = 0.0;
         let mut dominant = (0.0, 0);
+        let mut belt_owner = nearest.1;
         for a in 0..self.plates.len() {
             if weights[a] == 0.0 {
                 continue;
@@ -427,6 +475,8 @@ impl Tectonics {
                 };
                 if strength > dominant.0 {
                     dominant = (strength, kind);
+                    // one plate of the pair owns the range, whichever side of the boundary a cell is on
+                    belt_owner = a;
                 }
             }
         }
@@ -440,7 +490,11 @@ impl Tectonics {
             height: (base + (uplift + spreading - valley) * relief - trench) * (1.0 - edge)
                 - 700.0 * edge,
             continentalness: continentalness * (1.0 - edge) - edge,
-            plate: nearest.1 as u8,
+            plate: if dominant.0 > BELT_OWNS {
+                belt_owner
+            } else {
+                nearest.1
+            } as u8,
             boundary: if dominant.0 > 0.10 { dominant.1 } else { 0 },
             uplift: (uplift * relief * (1.0 - edge)) as f32,
             age: (inherited_age * (1.0 - resurfacing)).clamp(0.0, 1.0),

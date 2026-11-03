@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use super::climate::{BiomeKind, LAPSE_PER_BLOCK};
-use super::detail::{detail, dunes, foothill_weight, gully_relief, FOOTHILL_RELIEF};
+use super::detail::{detail, dunes, foothill_weight, gully_relief, Dunes, FOOTHILL_RELIEF};
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
-use ochre_base::biome::{BiomeId, Biomes, Climate};
+use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::perlin;
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
@@ -25,6 +25,11 @@ const SHORE_SMOOTH: f64 = 5.0;
 // the water's edge, so a shore and the bed out from it are smooth.
 pub(super) const HOLD: f64 = 1.5;
 const CALM: f64 = 8.0;
+// Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
+// Beds step ground as a cell this wide sees it, see `landform_ground`.
+const TERRACE_CELL: f64 = 32.0;
+// Land this many blocks over the sea on a volcanic province has the volcanic modifier.
+const VOLCANIC_FROM: f64 = 120.0;
 
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
@@ -58,9 +63,13 @@ const SPRING_RIM: f32 = 1.6;
 // Past the rim the ground falls away from it a block for each block out, over this far, so it stands in a mound.
 const SPRING_MOUND: f32 = 4.0;
 
+// Tableland weight over which a river runs in a gorge: its banks widen up to 4 times and rise as a wall, not a slope.
+const GORGE_FROM: f64 = 0.2;
+
 // The ground over a river's channel: a parabolic bed up to the water's edge, then the bank
-// easing out into the ground beside it.
-fn channel(ground: f32, river: RiverHit) -> f32 {
+// easing out into the ground beside it. In a gorge (`gorge` is the tableland weight there) the bank is a wide
+// floor and then a steep wall.
+fn channel(ground: f32, river: RiverHit, gorge: f64) -> f32 {
     let half = river.width / 2.0;
     if river.distance < half {
         return ground.min(bed_height(river));
@@ -70,10 +79,15 @@ fn channel(ground: f32, river: RiverHit) -> f32 {
     // where a dip would leave the water standing over it, so the water is always held in by ground
     // and over the block the water's surface lies in by at least half of it, or the water stands over the bank
     let rim = (river.surface + freeboard(river.width)).max(river.surface.ceil() - 0.4);
-    let t = ((river.distance - half) / bank_width(river)).clamp(0.0, 1.0);
+    let t = ((river.distance - half) / bank_width(river, gorge)).clamp(0.0, 1.0);
     // The bank joins the surrounding terrain over its width. Block-level containment
     // is applied separately against actual neighbouring water, after all water is known.
-    rim + (ground - rim) * t * (2.0 - t)
+    let rise = if gorge > GORGE_FROM {
+        t * t * t
+    } else {
+        t * (2.0 - t)
+    };
+    rim + (ground - rim) * rise
 }
 
 // Where the bed of the river under it is, a parabola across it.
@@ -82,8 +96,13 @@ fn bed_height(river: RiverHit) -> f32 {
     river.bed + (river.surface - river.bed) * t * t
 }
 
-fn bank_width(river: RiverHit) -> f32 {
-    2.0 + river.width * 0.25
+fn bank_width(river: RiverHit, gorge: f64) -> f32 {
+    let width = 2.0 + river.width * 0.25;
+    if gorge > GORGE_FROM {
+        width * (1.0 + 3.0 * gorge as f32)
+    } else {
+        width
+    }
 }
 
 // The sea or a lake, standing level in its basin.
@@ -158,8 +177,10 @@ fn meander(seed: u32, x: f64, z: f64) -> (f64, f64) {
 pub struct WorldTerrain {
     map: Arc<WorldMap>,
     biomes: Biomes,
-    // the biome each `BiomeKind` is, indexed by kind
+    // the biome each `BiomeKind` is, indexed by kind, and the same under the mountain and volcanic modifiers
     kinds: Vec<BiomeId>,
+    mountain_kinds: Vec<BiomeId>,
+    volcanic_kinds: Vec<BiomeId>,
     // the way each river cell's water leaves it, see `WorldMap::river_tangents`
     tangents: Vec<[f32; 2]>,
     // each river stretch's water level every few blocks along it, under the ground it runs over
@@ -171,12 +192,18 @@ pub struct WorldTerrain {
     // by map cell, the distance in blocks to the nearest lake cell's centre (capped past its reach) and that lake's level
     lake_distance: Vec<f32>,
     lake_level: Vec<f32>,
+    // what share of the sedimentary lowland this seed makes tableland, see `tableland`
+    tableland_share: f64,
+    // how this world's dunes are laid out, see `Dunes`
+    dunes: Dunes,
+    // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
+    cliff_boost: f64,
 }
 
 impl WorldTerrain {
     pub fn new(map: Arc<WorldMap>) -> Self {
         let biomes = Biomes::new(map.seed);
-        let kinds = BiomeKind::ALL
+        let kinds: Vec<BiomeId> = BiomeKind::ALL
             .iter()
             .map(|k| {
                 k.name().map_or(BiomeId::BASE, |name| {
@@ -184,17 +211,40 @@ impl WorldTerrain {
                 })
             })
             .collect();
+        let under = |modifier| -> Vec<BiomeId> {
+            kinds
+                .iter()
+                .map(|&kind| biomes.with_modifier(kind, modifier))
+                .collect()
+        };
+        let (mountain_kinds, volcanic_kinds) =
+            (under(Modifier::Mountain), under(Modifier::Volcanic));
         let tangents = map.river_tangents();
+        let knobs = super::character::LandformKnobs::from_seed(map.seed);
+        let (wx, wz) = (
+            map.config.climate.wind_x as f64,
+            map.config.climate.wind_z as f64,
+        );
+        let wind_length = (wx * wx + wz * wz).sqrt();
+        let dunes = Dunes {
+            scale: knobs.dune_scale,
+            wind: (wx / wind_length, wz / wind_length),
+        };
         let mut terrain = Self {
             map,
             biomes,
             kinds,
+            mountain_kinds,
+            volcanic_kinds,
             tangents,
             profiles: RiverProfiles::default(),
             springs: Vec::new(),
             near_still: Vec::new(),
             lake_distance: Vec::new(),
             lake_level: Vec::new(),
+            tableland_share: knobs.tableland_share,
+            dunes,
+            cliff_boost: knobs.cliff_boost,
         };
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
@@ -455,13 +505,18 @@ impl WorldTerrain {
     // where the climate is desert.
     fn ground_dry(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let ground = self.landform_ground(x, z, cell, base, calm);
+        ground + self.dune_height(x, z, cell, base, calm)
+    }
+
+    // How high the dunes rise over the ground at a point: only on desert, calmed at the shore.
+    fn dune_height(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let desert = self.kind_cover(BiomeKind::Desert, x, z);
         if desert <= 0.0 {
-            return ground;
+            return 0.0;
         }
         let sea = WATER_LEVEL as f64;
         let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
-        ground + dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea) * desert * shore
+        dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea, self.dunes) * desert * shore
     }
 
     // The map's smooth height with the detail laid over it, and terraced, calmed by `calm`, 0..1. It
@@ -470,14 +525,31 @@ impl WorldTerrain {
     fn landform_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let map = &self.map;
         let sea = WATER_LEVEL as f64;
-        let smooth = base
-            + self.detail_at(x, z, cell, base) * smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
-        let mountain = self.landform_cover(x, z) * calm;
-        if mountain > 0.0 {
-            smooth + (map.terraced(x, z, smooth, base - sea) - smooth) * mountain
-        } else {
-            smooth
+        let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
+        let fine = self.detail_at(x, z, cell, base) * shore;
+        let smooth = base + fine;
+        let mountain = self.landform_cover(x, z);
+        let weight = mountain.max(self.tableland(x, z, base - sea, mountain)) * calm;
+        if weight <= 0.0 {
+            return smooth;
         }
+        // the beds step the ground by its broad shape: stepping the finest detail too made a dip over a
+        // ledge's edge fall a whole bed, a narrow pit tens of blocks deep. The fine detail rides on top.
+        let broad = self.detail_at(x, z, cell.max(TERRACE_CELL), base) * shore;
+        let stepped = map.terraced(x, z, base + broad, base - sea) + (fine - broad);
+        smooth + (stepped - smooth) * weight
+    }
+
+    // How much of the ground at a point is tableland, 0..1, see `landform::tableland`.
+    fn tableland(&self, x: f64, z: f64, above_sea: f64, mountain: f64) -> f64 {
+        super::landform::tableland(
+            self.map.seed,
+            self.tableland_share,
+            x,
+            z,
+            above_sea,
+            mountain,
+        )
     }
 
     // `ground` held to the still water round a point, `base` being the map's smooth ground there, and
@@ -626,7 +698,18 @@ impl WorldTerrain {
             u.round().clamp(0.0, max) as usize,
             v.round().clamp(0.0, max) as usize,
         );
-        self.kinds[self.map.biome[i] as usize]
+        // the climate biome, with the ground's modifier on it: high ground on a volcanic province is volcanic
+        // whatever the climate, bare basalt on its slopes, and mountain landform is mountain
+        let kind = self.map.biome[i] as usize;
+        if self.map.geology[i] == super::geology::VOLCANIC
+            && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
+        {
+            return self.volcanic_kinds[kind];
+        }
+        if self.map.landform[i] == super::landform::MOUNTAIN {
+            return self.mountain_kinds[kind];
+        }
+        self.kinds[kind]
     }
 
     #[cfg(test)]
@@ -683,6 +766,13 @@ impl WorldTerrain {
         };
         let (still, by) = (self.still_round(x, z), self.still_by(x, z));
         let mut ground = self.ground_dry(x, z, cell, base, Self::calm(base, &by));
+        // a river over tableland runs in a gorge
+        let gorge = if rivers[0].is_some() {
+            let mountain = self.landform_cover(x, z);
+            self.tableland(x, z, base - WATER_LEVEL as f64, mountain)
+        } else {
+            0.0
+        };
         // a river runs in a valley with a graded floor, the map's smooth ground, which it eases out
         // of into the land's detail and terraces across the valley's sides: so its water, held under
         // that floor, never needs a bank built up, whatever the ground's steps and hollows. Not under
@@ -691,7 +781,7 @@ impl WorldTerrain {
             .iter()
             .flatten()
             .map(|r| {
-                let edge = r.width as f64 / 2.0 + bank_width(*r) as f64;
+                let edge = r.width as f64 / 2.0 + bank_width(*r, gorge) as f64;
                 1.0 - smoothstep(edge, edge + VALLEY_WIDTH, r.distance as f64)
             })
             .fold(0.0, f64::max);
@@ -720,7 +810,7 @@ impl WorldTerrain {
                     ground
                 }
             } else {
-                channel(ground as f32, river) as f64
+                channel(ground as f32, river, gorge) as f64
             };
         }
         // a river the nearest one meets still has its bed cut where its water is, so a stream is
@@ -886,9 +976,12 @@ impl TerrainSource for WorldTerrain {
 
     fn climate(&self, x: f64, z: f64) -> Climate {
         let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0);
+        // a biome reads lusher or drier than its climate, in grass and flora tint
+        let (warmer, wetter) = self.biomes.climate_shift(self.biome_at(x, z));
         Climate {
-            temperature: (self.temperature(x, z) - above_sea * LAPSE_PER_BLOCK).clamp(0.0, 1.0),
-            humidity: self.map.bilinear(&self.map.moisture, x, z).clamp(0.0, 1.0),
+            temperature: (self.temperature(x, z) - above_sea * LAPSE_PER_BLOCK + warmer)
+                .clamp(0.0, 1.0),
+            humidity: (self.map.bilinear(&self.map.moisture, x, z) + wetter).clamp(0.0, 1.0),
         }
     }
 
@@ -900,6 +993,13 @@ impl TerrainSource for WorldTerrain {
 
     fn tree_bound(&self, x: f64, z: f64) -> f64 {
         self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0
+    }
+
+    // The seed's cliff boost, where there is mountain or tableland to carry it: 0 on other ground.
+    fn cliff_boost(&self, x: f64, z: f64) -> f32 {
+        let mountain = self.landform_cover(x, z);
+        let above_sea = self.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+        (self.cliff_boost * mountain.max(self.tableland(x, z, above_sea, mountain))) as f32
     }
 
     // The spawn region nearest the world's middle.
@@ -1094,6 +1194,153 @@ mod river_bank_tests {
         assert!(moved > 50, "only {moved} of 400 points carry any detail");
     }
 
+    #[test]
+    fn tableland_covers_about_its_share_of_the_eligible_lowland_and_only_there() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let mut terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        let sea = WATER_LEVEL as f64;
+        let points: Vec<(f64, f64, f64)> = (0..90)
+            .flat_map(|i| {
+                (0..90).map(move |j| (i as f64 * 700.0 - 31500.0, j as f64 * 700.0 - 31500.0))
+            })
+            .map(|(x, z)| (x, z, terrain.map.height_at(x, z) as f64 - sea))
+            .filter(|&(x, z, above)| {
+                (100.0..250.0).contains(&above) && terrain.landform_cover(x, z) == 0.0
+            })
+            .collect();
+        assert!(points.len() > 200, "only {} eligible points", points.len());
+        let mut coverage = |share: f64| {
+            terrain.tableland_share = share;
+            let on = points
+                .iter()
+                .filter(|&&(x, z, above)| terrain.tableland(x, z, above, 0.0) > 0.5)
+                .count();
+            on as f64 / points.len() as f64
+        };
+        let (few, many) = (coverage(0.2), coverage(0.8));
+        assert!(few > 0.05 && few < 0.4, "share 0.2 covers {few}");
+        assert!(many > 0.6 && many < 0.95, "share 0.8 covers {many}");
+        // none under the window, over it, or where mountain already is
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 20.0, 0.0));
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 500.0, 0.0));
+        assert_eq!(0.0, terrain.tableland(0.0, 0.0, 150.0, 1.0));
+    }
+
+    // PR 4a check, as measured not as hoped: fewer than 1 in 100 dune points over 2 blocks tall are within 30
+    // blocks of river or lake water. The rest follow the biome's own wetting round wide water, see `climate`.
+    #[test]
+    fn almost_no_tall_dunes_are_within_30_blocks_of_river_or_lake_water() {
+        for seed in [1u32, 42, 1337, 300059728] {
+            let config = super::super::character::world_config(seed, Default::default());
+            let terrain = WorldTerrain::new(Arc::new(super::super::generate(seed, config)));
+            let (mut tall, mut near) = (0, 0);
+            for i in 0..1400 {
+                for j in 0..1400 {
+                    let (x, z) = (i as f64 * 47.0 - 32800.0, j as f64 * 47.0 - 32800.0);
+                    let base = terrain.map.height_at(x, z) as f64;
+                    if terrain.dune_height(x, z, 1.0, base, 1.0) <= 2.0 {
+                        continue;
+                    }
+                    tall += 1;
+                    let wet = (0..12).any(|k| {
+                        let a = k as f64 * std::f64::consts::TAU / 12.0;
+                        [10.0, 20.0, 30.0].iter().any(|d| {
+                            let s = terrain.sample(x + d * libm::cos(a), z + d * libm::sin(a));
+                            matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
+                        })
+                    });
+                    near += wet as usize;
+                }
+            }
+            eprintln!(
+                "DUNECHECK seed {seed}: {tall} tall dune points, {near} within 30 blocks of water"
+            );
+            assert!(near * 100 <= tall, "seed {seed}: {near} of {tall}");
+        }
+    }
+
+    #[test]
+    fn the_cliff_boost_is_the_seeds_on_mountain_and_tableland_and_nothing_elsewhere() {
+        use ochre_base::terrain_source::TerrainSource;
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let mut terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        terrain.cliff_boost = 1.0;
+        let (mut on, mut off, mut over) = (0, 0, 0);
+        for i in 0..90 {
+            for j in 0..90 {
+                let (x, z) = (i as f64 * 700.0 - 31500.0, j as f64 * 700.0 - 31500.0);
+                let boost = terrain.cliff_boost(x, z);
+                let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+                let mountain = terrain.landform_cover(x, z);
+                let carries = mountain > 0.5 || terrain.tableland(x, z, above, mountain) > 0.5;
+                over += (!(0.0..=1.0).contains(&boost)) as usize;
+                if carries {
+                    on += (boost > 0.5) as usize;
+                } else if mountain == 0.0 && terrain.tableland(x, z, above, mountain) == 0.0 {
+                    off += (boost != 0.0) as usize;
+                }
+            }
+        }
+        assert!(on > 100, "only {on} boosted points");
+        assert_eq!((0, 0), (off, over));
+        terrain.cliff_boost = 0.0;
+        assert_eq!(0.0, terrain.cliff_boost(0.0, 0.0));
+    }
+
+    #[test]
+    fn modifiers_sit_on_the_climate_biome_by_landform_and_province() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1337, config)));
+        let biomes = terrain.biomes();
+        let (mut volcanic, mut mountain, mut plain, mut wrong) = (0, 0, 0, 0);
+        for i in 0..120 {
+            for j in 0..120 {
+                let (x, z) = (i as f64 * 540.0 - 32400.0, j as f64 * 540.0 - 32400.0);
+                let (u, v) = terrain.map.to_cell(x, z);
+                let cell = terrain.map.index(
+                    u.round().clamp(0.0, 511.0) as usize,
+                    v.round().clamp(0.0, 511.0) as usize,
+                );
+                let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
+                let modifier = biomes.modifier(terrain.biome_at(x, z));
+                let on_volcanic = terrain.map.geology[cell] == super::super::geology::VOLCANIC;
+                if on_volcanic && above >= VOLCANIC_FROM + 20.0 {
+                    volcanic += 1;
+                    wrong += (modifier != Modifier::Volcanic) as usize;
+                } else if above < VOLCANIC_FROM - 20.0 || !on_volcanic {
+                    if terrain.map.landform[cell] == super::super::landform::MOUNTAIN {
+                        mountain += 1;
+                        wrong += (modifier != Modifier::Mountain) as usize;
+                    } else {
+                        plain += 1;
+                        wrong += (modifier != Modifier::None) as usize;
+                    }
+                }
+            }
+        }
+        assert!(
+            volcanic > 30 && mountain > 100 && plain > 1000,
+            "{volcanic} {mountain} {plain}"
+        );
+        // the wander moves the cell a little, so a point at the edge of a landform can fall either side
+        assert!(
+            wrong * 20 <= volcanic + mountain + plain,
+            "{wrong} points have the wrong modifier"
+        );
+    }
+
     fn river_edge(terrain: &WorldTerrain, centre: (i64, i64)) -> (i64, i64, f32, f64) {
         for z in centre.1 - 96..=centre.1 + 96 {
             for x in centre.0 - 96..=centre.0 + 96 {
@@ -1140,9 +1387,66 @@ mod river_bank_tests {
             surface: 100.0,
             bed: 99.0,
         };
-        assert!(channel(80.0, river) >= 100.2);
+        assert!(channel(80.0, river, 0.0) >= 100.2);
         river.distance = 100.0;
-        assert_eq!(channel(80.0, river), 80.0);
+        assert_eq!(channel(80.0, river, 0.0), 80.0);
+    }
+
+    #[test]
+    fn a_gorge_widens_the_bank_to_a_floor_and_a_wall_and_only_cuts() {
+        let mut river = RiverHit {
+            distance: 0.0,
+            width: 8.0,
+            surface: 100.0,
+            bed: 98.0,
+        };
+        // no tableland, or too little: today's bank, width and profile
+        assert_eq!(bank_width(river, 0.0), bank_width(river, GORGE_FROM));
+        assert_eq!(4.0, bank_width(river, 0.0));
+        // full tableland: four times as wide
+        assert_eq!(16.0, bank_width(river, 1.0));
+        let ground = 160.0;
+        let mut last = 0.0;
+        for step in 0..=40 {
+            river.distance = river.width / 2.0 + step as f32 * 0.5;
+            let plain = channel(ground, river, 0.0);
+            let gorge = channel(ground, river, 1.0);
+            // the bank is cut down to the land, never above it, and over the water's rim
+            assert!(
+                gorge <= ground && gorge >= river.surface,
+                "{gorge} at {step}"
+            );
+            // and it climbs, with a flat floor by the water and the steepest rise out at the wall
+            assert!(gorge >= last);
+            last = gorge;
+            if step == 8 {
+                assert!(
+                    gorge < plain,
+                    "the floor is lower than the plain bank: {gorge} {plain}"
+                );
+            }
+        }
+        river.distance = river.width / 2.0 + 15.0;
+        let wall = channel(ground, river, 1.0)
+            - channel(
+                ground,
+                RiverHit {
+                    distance: river.distance - 1.0,
+                    ..river
+                },
+                1.0,
+            );
+        river.distance = river.width / 2.0 + 2.0;
+        let floor = channel(ground, river, 1.0)
+            - channel(
+                ground,
+                RiverHit {
+                    distance: river.distance - 1.0,
+                    ..river
+                },
+                1.0,
+            );
+        assert!(wall > floor * 5.0, "wall {wall} against floor {floor}");
     }
 
     #[test]

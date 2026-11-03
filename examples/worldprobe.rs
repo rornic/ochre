@@ -217,7 +217,7 @@ fn main() {
     let (x, z): (i64, i64) = (args[2].parse().unwrap(), args[3].parse().unwrap());
     let map = Arc::new(ochre_world::worldmap::generate(
         seed,
-        WorldConfig::default(),
+        ochre_world::worldmap::character::world_config(seed, WorldConfig::default()),
     ));
     let terrain = Arc::new(WorldTerrain::new(map.clone()));
     let regions = Arc::new(RegionStore::new(terrain.clone()));

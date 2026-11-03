@@ -176,7 +176,7 @@ fn main() {
     let start = Instant::now();
     let map = Arc::new(ochre_world::worldmap::generate(
         seed as _,
-        WorldConfig::default(),
+        ochre_world::worldmap::character::world_config(seed as _, WorldConfig::default()),
     ));
     println!("map {:.2?}", start.elapsed());
     let start = Instant::now();

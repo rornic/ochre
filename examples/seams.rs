@@ -8,7 +8,7 @@ fn main() {
     let seed: u64 = std::env::args().nth(1).unwrap().parse().unwrap();
     let map = Arc::new(ochre_world::worldmap::generate(
         seed as _,
-        WorldConfig::default(),
+        ochre_world::worldmap::character::world_config(seed as _, WorldConfig::default()),
     ));
     let t = WorldTerrain::new(map.clone());
     let dim = map.dim();

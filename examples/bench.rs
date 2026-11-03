@@ -45,8 +45,7 @@ fn main() {
             .find(|&(x, z)| {
                 (-6..=6).step_by(3).all(|d| {
                     let i = map.index((x as i64 + d) as usize, (z as i64 + d) as usize);
-                    ochre_world::worldmap::climate::BiomeKind::from_u8(map.biome[i])
-                        == ochre_world::worldmap::climate::BiomeKind::Mountain
+                    map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
                         && map.height[i] > ochre_base::WATER_LEVEL as f32 + 150.0
                 })
             })

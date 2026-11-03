@@ -30,3 +30,10 @@ relief = 1.0
 warmth = 0.68
 wind_x = 1.0
 wind_z = 0.15
+# Multiplies the rain biome moisture sees (1 = unchanged).
+humidity = 1.0
+# How much warmer one side of the world is (along gradient_angle, radians), and how much warmer
+# the far interior is than the coast.
+gradient = 0.0
+gradient_angle = 0.0
+continentality = 0.0

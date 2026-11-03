@@ -333,7 +333,7 @@ fn test_wide_cells_freeze_when_they_reach_the_ice() {
 }
 
 #[test]
-fn test_polar_lowlands_are_snow_covered_and_deep_ice_gives_way_to_snow() {
+fn test_polar_lowlands_are_snow_covered_and_glacier_ice_runs_deep_before_stone() {
     let ground = WATER_LEVEL + 20;
     assert_eq!(
         BlockType::Snow,
@@ -343,13 +343,70 @@ fn test_polar_lowlands_are_snow_covered_and_deep_ice_gives_way_to_snow() {
         BlockType::Grass,
         terrain_block(ground - 1, ground, 0.0, 0.5, WATER_LEVEL)
     );
-    assert_eq!(
-        BlockType::Snow,
-        under_grass(BlockType::Ice, ground - 3, ground, 1, false, SOIL_DEPTH)
-    );
+    // level glacier ice is a crust over snow
     assert_eq!(
         BlockType::Ice,
-        under_grass(BlockType::Ice, ground - 1, ground, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Ice, ground - 1, ground, 1, false, SOIL_DEPTH, 0)
+    );
+    assert_eq!(
+        BlockType::Snow,
+        under_grass(BlockType::Ice, ground - 3, ground, 1, false, SOIL_DEPTH, 0)
+    );
+    // but a cliff of it shows ice from its top to its foot, and only then snow and stone
+    assert_eq!(
+        BlockType::Ice,
+        under_grass(
+            BlockType::Ice,
+            ground - 30,
+            ground,
+            1,
+            false,
+            SOIL_DEPTH,
+            30
+        )
+    );
+    assert_eq!(
+        BlockType::CompactedStone,
+        under_grass(
+            BlockType::Ice,
+            ground - 50,
+            ground,
+            1,
+            false,
+            SOIL_DEPTH,
+            30
+        )
+    );
+}
+
+#[test]
+fn test_a_cliff_face_shows_its_surface_material_as_far_down_as_it_clings() {
+    use super::terrain::skin_depth;
+    let ground = WATER_LEVEL + 40;
+    // level ground has none; a face shows as much as it stands over its neighbour, up to what clings
+    assert_eq!(0, skin_depth(BlockType::Grass, 0));
+    assert_eq!(5, skin_depth(BlockType::Grass, 5));
+    assert_eq!(8, skin_depth(BlockType::Grass, 60));
+    assert_eq!(40, skin_depth(BlockType::Ice, 60));
+    assert_eq!(0, skin_depth(BlockType::Stone, 60));
+    // a 12-block grassy face: grass for 8 blocks, then packed stone, not dirt and stone from the first block
+    let at = |depth| {
+        under_grass(
+            BlockType::Grass,
+            ground - 1 - depth,
+            ground,
+            1,
+            false,
+            2,
+            12,
+        )
+    };
+    assert_eq!(BlockType::Grass, at(8));
+    assert_eq!(BlockType::CompactedStone, at(9));
+    // gentle ground is as before: one block of grass over dirt
+    assert_eq!(
+        BlockType::Dirt,
+        under_grass(BlockType::Grass, ground - 2, ground, 1, false, 2, 0)
     );
 }
 
@@ -789,19 +846,19 @@ fn test_grass_sides_carry_their_untinted_shade() {
 fn test_only_full_detail_grass_below_the_top_layer_is_dirt() {
     assert_eq!(
         BlockType::Dirt,
-        under_grass(BlockType::Grass, 18, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 18, 20, 1, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 19, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 19, 20, 1, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
         BlockType::Stone,
-        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH)
+        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH, 0)
     );
 }
 
@@ -859,6 +916,11 @@ fn forest_at(seed: u32) -> bevy::math::I64Vec2 {
 // The middle of open country with a few lone trees on the test world with this seed.
 fn sparse_at(seed: u32) -> bevy::math::I64Vec2 {
     ochre_world::worldmap::tree_spot(&ochre_world::worldmap::test_terrain(seed), 4, 10)
+}
+
+// The same, or None for a world with no open country with a few lone trees.
+fn try_sparse_at(seed: u32) -> Option<bevy::math::I64Vec2> {
+    ochre_world::worldmap::try_tree_spot(&ochre_world::worldmap::test_terrain(seed), 4, 10)
 }
 
 // top-face sky light at each vertex, by position
@@ -995,13 +1057,18 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
         forest_at(5) - bevy::math::I64Vec2::splat(300),
         forest_at(5) + bevy::math::I64Vec2::splat(300),
     );
-    let tree = &trees[0];
-    let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
-    let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
-    assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
-    let opaque = super::lod::generate_lod_mesh(regions, key)
-        .expect("no mesh")
-        .opaque;
+    // a LOD node's coarse ground can put a tree on a terrace a few blocks off its true foot, in another node
+    // (the deferred LOD fidelity work), so take the first tree whose crown node has a mesh
+    let (_, mesh) = trees
+        .iter()
+        .find_map(|tree| {
+            let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
+            let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
+            assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
+            Some((tree, super::lod::generate_lod_mesh(regions.clone(), key)?))
+        })
+        .expect("no tree has a mesh");
+    let opaque = mesh.opaque;
     let flags = untextured_flags(&opaque);
     let VertexAttributeValues::Float32x2(uvs) = opaque.attribute(Mesh::ATTRIBUTE_UV_0).unwrap()
     else {
@@ -1545,13 +1612,14 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
     // a world changes with the geology, so the first seed with a tree standing alone and clear of its cell's edges
     let (regions, tree) = (1..40u32)
         .find_map(|seed| {
+            let spot = try_sparse_at(seed)?;
             let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(seed)));
             let mut heights = regions.sampler();
             let mut trees = trees_near(
                 regions.terrain(),
                 &mut heights,
-                sparse_at(seed) - I64Vec2::splat(700),
-                sparse_at(seed) + I64Vec2::splat(700),
+                spot - I64Vec2::splat(700),
+                spot + I64Vec2::splat(700),
             );
             let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
                 (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
@@ -1560,7 +1628,7 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
                 let crown = t.base + I64Vec3::Y * (t.trunk - 1);
                 let key =
                     LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 2);
-                let (min, max) = t.bounds();
+                let (min, max) = t.extent();
                 let low = key.min_block();
                 let high = low + I64Vec3::splat(64);
                 trees.iter().filter(|o| near(t, o)).count() == 1
@@ -1891,10 +1959,25 @@ fn test_trees_vary_in_colour_the_same_at_every_level() {
 #[test]
 fn test_leaves_of_differently_tinted_trees_dont_merge() {
     let mut chunk = leaf_cube_chunk();
-    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
-    let (_, trees) = forest(&regions);
-    // two trees, one each side of the cube, so it's split down the middle
-    let thin: Vec<_> = trees.iter().filter(|t| t.width() == 1).copied().collect();
+    // two thin-trunked trees, one each side of the cube, so it's split down the middle
+    let thin = [
+        crate::generate::trees::Tree::new(
+            crate::generate::trees::TreeKind::Broadleaf,
+            I64Vec3::ZERO,
+            10,
+            5.0,
+            0.7,
+            11,
+        ),
+        crate::generate::trees::Tree::new(
+            crate::generate::trees::TreeKind::Broadleaf,
+            I64Vec3::ZERO,
+            10,
+            5.0,
+            0.7,
+            29,
+        ),
+    ];
     let mut pair = vec![thin[0], thin[1]];
     pair[0].base = I64Vec3::new(4, 0, 4);
     pair[1].base = I64Vec3::new(5, 0, 4);
@@ -2308,11 +2391,11 @@ fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
     let top = 600;
     assert_eq!(
         BlockType::Stone,
-        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2))
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2), 0)
     );
     assert_eq!(
         BlockType::Dirt,
-        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(0.0))
+        under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(0.0), 0)
     );
 }
 
@@ -2320,7 +2403,7 @@ fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
 fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surface() {
     use super::terrain::COMPACTED_DEPTH;
     let top = 600;
-    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false, SOIL_DEPTH);
+    let at = |block, depth| under_grass(block, top - 1 - depth, top, 1, false, SOIL_DEPTH, 0);
     assert_eq!(BlockType::Grass, at(BlockType::Grass, 0));
     for depth in 1..SOIL_DEPTH {
         assert_eq!(
@@ -2360,7 +2443,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     // water is never packed, and wide cells keep to the surface's block
     assert_eq!(BlockType::Water, at(BlockType::Water, 9));
     // snow lies deep: full blocks of it, stone after, and packed stone only under that
-    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true, SOIL_DEPTH);
+    let snow_at = |block, depth| under_grass(block, top - 1 - depth, top, 1, true, SOIL_DEPTH, 0);
     for depth in 1..super::terrain::SNOW_DEPTH {
         assert_eq!(
             BlockType::Snow,
@@ -2378,7 +2461,7 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     );
     assert_eq!(
         BlockType::Grass,
-        under_grass(BlockType::Grass, top - 20, top, 4, false, SOIL_DEPTH)
+        under_grass(BlockType::Grass, top - 20, top, 4, false, SOIL_DEPTH, 0)
     );
 }
 
@@ -2680,7 +2763,10 @@ fn test_a_stream_joining_a_river_has_water_all_the_way_to_it() {
 fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     use ochre_base::biome::Biomes;
     let biomes = Biomes::new(1);
-    let mountain = biomes.id("mountain").unwrap();
+    let mountain = biomes.with_modifier(
+        ochre_base::biome::BiomeId::BASE,
+        ochre_base::biome::Modifier::Mountain,
+    );
     let above = WATER_LEVEL + 110;
     let steep = 4.4;
     let (mut meadow, mut rock) = (0, 0);
@@ -2723,7 +2809,6 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
 #[test]
 fn test_pines_grow_on_a_mountains_lower_slopes() {
     use crate::generate::trees::{trees_near, TreeKind};
-    use ochre_world::worldmap::climate::BiomeKind;
     let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
         ochre_world::worldmap::generate(
             3,
@@ -2744,7 +2829,7 @@ fn test_pines_grow_on_a_mountains_lower_slopes() {
             (-4..=4).step_by(2).all(|dz| {
                 (-4..=4).step_by(2).all(|dx| {
                     let i = map.index((x as i64 + dx) as usize, (z as i64 + dz) as usize);
-                    BiomeKind::from_u8(map.biome[i]) == BiomeKind::Mountain
+                    map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
                         && (130.0..260.0).contains(&(map.height[i] - WATER_LEVEL as f32))
                         && map.water_kind[i] == 0
                 })
@@ -2799,7 +2884,13 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
                     .terrain()
                     .biomes()
                     .name(heights.biome(tree.base.x, tree.base.z));
-                if matches!(name, Some("savanna" | "jungle" | "desert")) {
+                // a mountain's upper slopes grow pines in any climate, so only the lowlands are checked
+                let lowland = regions
+                    .terrain()
+                    .biomes()
+                    .modifier(heights.biome(tree.base.x, tree.base.z))
+                    == ochre_base::biome::Modifier::None;
+                if lowland && matches!(name, Some("savanna" | "jungle" | "desert")) {
                     hot_trees += 1;
                     high_hot_trees += (tree.base.y - WATER_LEVEL >= 110) as usize;
                     assert_ne!(
@@ -2821,7 +2912,6 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
 
 #[test]
 fn test_the_foothills_round_a_range_are_much_rougher_than_the_lowland_far_from_one() {
-    use ochre_world::worldmap::climate::BiomeKind;
     let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
         ochre_world::worldmap::generate(1, ochre_world::worldmap::WorldConfig::default()),
     ));
@@ -2834,7 +2924,7 @@ fn test_the_foothills_round_a_range_are_much_rougher_than_the_lowland_far_from_o
             let above = map.height[i] - WATER_LEVEL as f32;
             if !(40.0..200.0).contains(&above)
                 || map.water_kind[i] != 0
-                || BiomeKind::from_u8(map.biome[i]) == BiomeKind::Mountain
+                || map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
             {
                 continue;
             }

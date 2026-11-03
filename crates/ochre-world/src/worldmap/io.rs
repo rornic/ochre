@@ -18,6 +18,10 @@ fn put_config(out: &mut Vec<u8>, config: WorldConfig) {
         config.climate.warmth,
         config.climate.wind_x,
         config.climate.wind_z,
+        config.climate.humidity,
+        config.climate.gradient,
+        config.climate.gradient_angle,
+        config.climate.continentality,
     ] {
         out.extend(value.to_le_bytes());
     }
@@ -188,6 +192,10 @@ impl WorldMap {
                 warmth: r.f32()?,
                 wind_x: r.f32()?,
                 wind_z: r.f32()?,
+                humidity: r.f32()?,
+                gradient: r.f32()?,
+                gradient_angle: r.f32()?,
+                continentality: r.f32()?,
             },
         };
         config.validate().map_err(bad)?;
@@ -222,6 +230,7 @@ impl WorldMap {
             landform: Vec::new(),
             ford: r.bytes(cells)?,
             features: r.features()?,
+            soft: Default::default(),
         };
         map.geology = r.bytes(cells)?;
         map.strata_offset = r.layer(cells)?;
@@ -354,11 +363,15 @@ mod tests {
     fn cache_identity_includes_vertical_tectonic_and_climate_settings() {
         let base = WorldConfig::default();
         let original = cache_path(Path::new("worlds"), 42, base);
-        let mut variants = [base; 4];
+        let mut variants = [base; 8];
         variants[0].bounds.min_y = -2048;
         variants[1].tectonics.plates = 16;
         variants[2].tectonics.relief = 1.5;
         variants[3].climate.wind_x = -1.0;
+        variants[4].climate.humidity = 1.3;
+        variants[5].climate.gradient = 0.2;
+        variants[6].climate.gradient_angle = 1.0;
+        variants[7].climate.continentality = 0.1;
         for config in variants {
             assert_ne!(original, cache_path(Path::new("worlds"), 42, config));
         }

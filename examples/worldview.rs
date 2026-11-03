@@ -47,7 +47,10 @@ impl Server {
             }
         }
         let start = Instant::now();
-        let map = Arc::new(ochre_world::worldmap::generate(seed, self.config));
+        let map = Arc::new(ochre_world::worldmap::generate(
+            seed,
+            ochre_world::worldmap::character::world_config(seed, self.config),
+        ));
         let terrain = Arc::new(WorldTerrain::new(map.clone()));
         let regions = RegionStore::new(terrain.clone()).with_resident_cap(512);
         println!("seed {seed} generated in {:.1?}", start.elapsed());
@@ -177,7 +180,7 @@ fn biome_colour(name: Option<&str>) -> Rgb {
         Some("steppe") => [190.0, 180.0, 100.0],
         Some("savanna") => [205.0, 165.0, 65.0],
         Some("jungle") => [10.0, 85.0, 30.0],
-        Some("mountain") => [135.0, 125.0, 115.0],
+        Some("swamp") => [70.0, 95.0, 55.0],
         Some(_) => [255.0, 0.0, 255.0],
     }
 }
@@ -365,7 +368,17 @@ fn layer_pixel(w: &World, v: &View, name: &str, c: &Col) -> Option<(Rgb, f32)> {
             let colour = if above < 0.0 {
                 [20.0, 40.0, 90.0]
             } else {
-                biome_colour(w.terrain.biomes().name(c.s.biome))
+                let colour = biome_colour(w.terrain.biomes().name(c.s.biome));
+                // mountain and volcanic ground is the climate biome greyed
+                match w.terrain.biomes().modifier(c.s.biome) {
+                    ochre_base::biome::Modifier::None => colour,
+                    ochre_base::biome::Modifier::Mountain => {
+                        std::array::from_fn(|k| colour[k] * 0.45 + [135.0, 125.0, 115.0][k] * 0.55)
+                    }
+                    ochre_base::biome::Modifier::Volcanic => {
+                        std::array::from_fn(|k| colour[k] * 0.3 + [50.0, 45.0, 45.0][k] * 0.7)
+                    }
+                }
             };
             (colour, 1.0)
         }
@@ -843,6 +856,12 @@ fn handle(server: &Server, mut stream: TcpStream) {
                 let share = biomes[kind as usize] as f64 / land.max(1) as f64;
                 shares += &format!("biome_{kind:?}: {share:.3}\n").to_lowercase();
             }
+            let mountain = map
+                .landform
+                .iter()
+                .zip(&map.height)
+                .filter(|(&l, &h)| l == 1 && h >= WATER_LEVEL as f32)
+                .count();
             let spawns = map
                 .features
                 .iter()
@@ -858,7 +877,7 @@ fn handle(server: &Server, mut stream: TcpStream) {
                 .unwrap_or(0);
             let (rx, rz) = map.cell_centre(river % map.dim(), river / map.dim());
             let river_cells = map.river_width.iter().filter(|&&w| w > 0.0).count();
-            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64);
+            let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\nmountain_share: {:.3}\nplates: {}\nrelief: {}\nwarmth: {}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64, mountain as f64 / land.max(1) as f64, map.config.tectonics.plates, map.config.tectonics.relief, map.config.climate.warmth);
             reply(stream, "200 OK", "text/plain", "", body.as_bytes());
         }
         "/seed" => {

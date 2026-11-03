@@ -4,6 +4,7 @@
 //! A `WorldMap` is a plain value that saves to disk and loads back, so one machine can make it
 //! and share it with the rest: nothing downstream depends on the float maths that made it.
 
+pub mod character;
 pub mod climate;
 pub mod detail;
 pub mod erosion;
@@ -13,6 +14,7 @@ pub mod geology;
 pub mod hydrology;
 pub mod io;
 pub mod landform;
+mod shapes;
 mod source;
 pub mod tectonics;
 pub mod water;
@@ -24,7 +26,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 56;
+pub const GENERATOR_VERSION: u32 = 74;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -159,6 +161,19 @@ pub struct WorldMap {
     pub ford: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
+    /// The share of soft beds at each cell, worked out by geology and not saved: erosion asks for it millions
+    /// of times, and it can be worked out again from the seed (empty on a map that was loaded or not generated).
+    pub(crate) soft: SoftCache,
+}
+
+/// A layer that is only a cache: not saved, and never a difference between two maps.
+#[derive(Debug, Clone, Default)]
+pub struct SoftCache(pub(crate) Vec<f32>);
+
+impl PartialEq for SoftCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// The eight cells around one, as (dx, dz), in the order `WorldMap::down` indexes them.
@@ -210,6 +225,7 @@ impl WorldMap {
             landform: vec![0; cells],
             ford: vec![0; cells],
             features: Vec::new(),
+            soft: SoftCache::default(),
         }
     }
 
@@ -368,6 +384,12 @@ pub fn forest_spot(terrain: &WorldTerrain) -> bevy::math::I64Vec2 {
 /// `WorldMap::trees` has them, everywhere round it.
 #[cfg(any(test, feature = "test-support"))]
 pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64Vec2 {
+    try_tree_spot(terrain, least, most).expect("no forest on the test world")
+}
+
+/// `tree_spot`, or None where the world has no such stretch of trees.
+#[cfg(any(test, feature = "test-support"))]
+pub fn try_tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> Option<bevy::math::I64Vec2> {
     let map = terrain.map();
     let dim = map.dim() as i64;
     let mut best: Option<(i64, bevy::math::I64Vec2)> = None;
@@ -392,7 +414,7 @@ pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64
             }
         }
     }
-    best.expect("no forest on the test world").1
+    best.map(|(_, spot)| spot)
 }
 
 /// Threads map generation runs on: every logical CPU but two, so the desktop keeps running meanwhile.
@@ -459,9 +481,17 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     for h in &mut map.height {
         *h = h.max(floor);
     }
+    // after erosion, which would wear their walls: fjords cut into mountainous coasts and volcanic cones
+    let knobs = character::LandformKnobs::from_seed(seed);
+    shapes::fjords(&mut map, knobs.fjord_share);
+    shapes::cones(&mut map, knobs.cone_share);
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");
+    // the beds before the water, or lakes and rivers stand on the smooth ground over the treads
+    landform::run(&mut map);
+    landform::terrace(&mut map, knobs.tableland_share);
+    lap("terrace");
     hydrology::scatter(&mut map);
     lap("scatter");
     hydrology::run(&mut map, true);

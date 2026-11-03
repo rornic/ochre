@@ -2,7 +2,7 @@ use bevy::math::{DVec3, I64Vec2, I64Vec3, IVec3, Vec2, Vec3};
 
 use super::generator::column_block;
 use super::region_store::{HeightSampler, SLOPE_SPAN};
-use ochre_base::biome::BiomeId;
+use ochre_base::biome::{BiomeId, Modifier, TreeScale};
 use ochre_base::block::BlockType;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_base::WATER_LEVEL;
@@ -53,9 +53,12 @@ impl TreeGround for HeightSampler<'_> {
 // Trees stand on a grid of cells this many blocks across, at most one somewhere in each cell.
 const CELL: i64 = 10;
 /// How far out from its trunk any tree reaches.
-pub const TREE_REACH: i64 = 10;
+pub const TREE_REACH: i64 = 14;
 /// How far above its ground any tree reaches.
-pub const TREE_HEIGHT: i64 = 27;
+pub const TREE_HEIGHT: i64 = 48;
+// An emergent giant is this many times as tall and as wide in the crown as the biome's trees.
+const GIANT_HEIGHT: f64 = 2.3;
+const GIANT_SPREAD: f64 = 1.35;
 // Colder than this, trees are pines.
 // Trees growing where it is cooler than this, at their height, are pines: cold lowlands, and
 // the slopes of any range higher up, where the air has cooled.
@@ -129,13 +132,20 @@ impl Blob {
 }
 
 impl Tree {
-    fn new(kind: TreeKind, base: I64Vec3, trunk: i64, spread: f64, seed: u64) -> Self {
+    pub(crate) fn new(
+        kind: TreeKind,
+        base: I64Vec3,
+        trunk: i64,
+        spread: f64,
+        squash: f64,
+        seed: u64,
+    ) -> Self {
         let width = if trunk >= THICK_TRUNK { 2 } else { 1 };
         let middle = (width - 1) as f64 / 2.0;
         let crown = Blob {
             centre: DVec3::new(middle, (trunk - 1) as f64, middle),
             radius: spread,
-            squash: 0.7,
+            squash,
         };
         let lobes = std::array::from_fn(|i| {
             let h = hash(seed, i as i64, 17);
@@ -147,7 +157,8 @@ impl Tree {
                 centre: crown.centre
                     + DVec3::new(libm::cos(angle) * out, -drop, libm::sin(angle) * out),
                 radius: spread * 0.6,
-                squash: 0.75,
+                // lobes flatten with the crown
+                squash: 0.75 * (squash / 0.7),
             }
         });
         Self {
@@ -215,6 +226,16 @@ impl Tree {
     fn axis(&self) -> DVec3 {
         let middle = (self.width() - 1) as f64 / 2.0;
         DVec3::new(middle, 0.0, middle)
+    }
+
+    // A box round this tree's own crown and trunk, far tighter than `bounds`.
+    #[cfg(test)]
+    pub(crate) fn extent(&self) -> (I64Vec3, I64Vec3) {
+        let reach = (self.spread * 1.5).ceil() as i64 + 2;
+        (
+            self.base - I64Vec3::new(reach, 0, reach),
+            self.base + I64Vec3::new(reach, self.trunk + reach, reach),
+        )
     }
 
     // The lowest and highest block the tree can fill.
@@ -476,11 +497,16 @@ pub fn grows_into(existing: BlockType, block: BlockType) -> bool {
 /// `warmth` warm up there. Pines in the cold, and on a mountain's upper slopes even in the tropics;
 /// the hot biomes keep their broadleaf trees however high the ground or cool the water's edge, so no
 /// savanna has pines in it.
-pub(crate) fn tree_kind(biome: Option<&str>, above_sea: i64, warmth: f32) -> TreeKind {
+pub(crate) fn tree_kind(
+    biome: Option<&str>,
+    mountain: bool,
+    above_sea: i64,
+    warmth: f32,
+) -> TreeKind {
     let hot = matches!(biome, Some("savanna" | "jungle" | "desert"));
     let cold = matches!(biome, Some("taiga" | "tundra" | "glacier"));
-    let alpine = above_sea >= ALPINE_PINES_ABOVE && biome == Some("mountain");
-    if !hot && (cold || alpine || warmth < PINE_TEMPERATURE) {
+    let alpine = mountain && above_sea >= ALPINE_PINES_ABOVE;
+    if alpine || (!hot && (cold || warmth < PINE_TEMPERATURE)) {
         TreeKind::Pine
     } else {
         TreeKind::Broadleaf
@@ -563,27 +589,61 @@ fn tree_in_cell(
     let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     // how warm it is up where the tree stands, which falls with height
     let warmth = noise.climate(x as f64, z as f64).temperature;
-    let kind_here = tree_kind(noise.biomes().name(biome), height - WATER_LEVEL, warmth);
-    let (kind, trunk, spread) = if kind_here == TreeKind::Pine {
-        (
-            TreeKind::Pine,
-            16 + (growth * 9.0) as i64,
-            4.5 + growth * 1.5,
-        )
-    } else {
-        (
-            TreeKind::Broadleaf,
-            10 + (growth * 6.0) as i64,
-            5.0 + growth * 2.0,
-        )
-    };
+    let mountain = noise.biomes().modifier(biome) != Modifier::None;
+    let kind_here = tree_kind(
+        noise.biomes().name(biome),
+        mountain,
+        height - WATER_LEVEL,
+        warmth,
+    );
+    // an emergent giant stands over the canopy: a few of the biome's broadleaf trees
+    let giant = kind_here == TreeKind::Broadleaf
+        && ((seed >> 20) % 1000) as f64 / 1000.0 < noise.biomes().tree_scale(biome).giants;
+    let (kind, trunk, spread, squash) =
+        scaled_tree(kind_here, growth, noise.biomes().tree_scale(biome), giant);
     Some(Tree::new(
         kind,
         I64Vec3::new(x, heights.base_height(x, z), z),
         trunk,
         spread,
+        squash,
         seed,
     ))
+}
+
+// The kind, trunk height, crown spread and crown squash of a tree that grew `growth` (0..1) of the way to its
+// largest, in a biome that scales trees by `scale`: held to `TREE_HEIGHT` and `TREE_REACH`, which the chunk and
+// LOD code size their boxes by.
+pub(crate) fn scaled_tree(
+    kind: TreeKind,
+    growth: f64,
+    scale: TreeScale,
+    giant: bool,
+) -> (TreeKind, i64, f64, f64) {
+    // the widest crown a kind may have: its lobes reach 1.35 times it from the trunk
+    let widest = match kind {
+        TreeKind::Pine => 6.0,
+        TreeKind::Broadleaf if giant => (TREE_REACH - 1) as f64 / 1.35,
+        TreeKind::Broadleaf => 7.0,
+    };
+    let (trunk, spread, squash) = match kind {
+        TreeKind::Pine => (16 + (growth * 9.0) as i64, 4.5 + growth * 1.5, 0.7),
+        TreeKind::Broadleaf => (10 + (growth * 6.0) as i64, 5.0 + growth * 2.0, 0.7),
+    };
+    let (height_scale, spread_scale) = if giant && kind == TreeKind::Broadleaf {
+        (GIANT_HEIGHT, GIANT_SPREAD)
+    } else {
+        (1.0, 1.0)
+    };
+    let spread = (spread * scale.spread * spread_scale).clamp(3.0, widest);
+    let squash = squash * scale.squash;
+    let tallest = match kind {
+        TreeKind::Pine => TREE_HEIGHT - 2,
+        // the crown's top stands `spread * squash` over the trunk's
+        TreeKind::Broadleaf => TREE_HEIGHT - 2 - (spread * squash).ceil() as i64,
+    };
+    let trunk = ((trunk as f64 * scale.height * height_scale).round() as i64).clamp(6, tallest);
+    (kind, trunk, spread, squash)
 }
 
 // splitmix64 over a seed and two coordinates
@@ -603,7 +663,85 @@ mod tests {
     use crate::generate::region_store::RegionStore;
 
     fn tree(kind: TreeKind, trunk: i64, spread: f64) -> Tree {
-        Tree::new(kind, I64Vec3::new(100, 500, -40), trunk, spread, 7)
+        Tree::new(kind, I64Vec3::new(100, 500, -40), trunk, spread, 0.7, 7)
+    }
+
+    #[test]
+    fn a_default_scale_changes_no_tree_and_every_biomes_trees_stay_inside_the_caps() {
+        for growth in [0.0, 0.3, 0.999] {
+            let (_, trunk, spread, squash) =
+                scaled_tree(TreeKind::Pine, growth, TreeScale::default(), false);
+            assert_eq!(
+                (16 + (growth * 9.0) as i64, 4.5 + growth * 1.5, 0.7),
+                (trunk, spread, squash)
+            );
+            let (_, trunk, spread, squash) =
+                scaled_tree(TreeKind::Broadleaf, growth, TreeScale::default(), false);
+            assert_eq!(
+                (10 + (growth * 6.0) as i64, 5.0 + growth * 2.0, 0.7),
+                (trunk, spread, squash)
+            );
+        }
+        let biomes = ochre_base::biome::Biomes::new(1);
+        for name in [
+            "glacier", "desert", "forest", "tundra", "taiga", "steppe", "savanna", "jungle",
+        ] {
+            let scale = biomes.tree_scale(biomes.id(name).unwrap());
+            for kind in [TreeKind::Pine, TreeKind::Broadleaf] {
+                for growth in [0.0, 0.5, 0.999] {
+                    for giant in [false, true] {
+                        let (kind, trunk, spread, squash) = scaled_tree(kind, growth, scale, giant);
+                        let (low, high) =
+                            Tree::new(kind, I64Vec3::ZERO, trunk, spread, squash, 3).bounds();
+                        // a thick trunk is two blocks wide, one past the reach on its far side
+                        assert!(
+                            low.x >= -TREE_REACH
+                                && high.x <= TREE_REACH + 1
+                                && low.z >= -TREE_REACH
+                                && high.z <= TREE_REACH + 1,
+                            "{name} {kind:?} {growth}: {low} {high}"
+                        );
+                        assert!(
+                            high.y <= TREE_HEIGHT,
+                            "{name} {kind:?} {growth}: top {}",
+                            high.y
+                        );
+                    }
+                }
+            }
+        }
+        // and the signatures differ: jungle trees taller than taiga's broadleaf, savanna crowns flatter
+        let jungle = biomes.tree_scale(biomes.id("jungle").unwrap());
+        let savanna = biomes.tree_scale(biomes.id("savanna").unwrap());
+        assert!(jungle.height > 1.0 && savanna.squash < 1.0);
+    }
+
+    #[test]
+    fn jungle_giants_stand_well_over_the_canopy_and_nothing_else_grows_giants() {
+        let biomes = ochre_base::biome::Biomes::new(1);
+        let jungle = biomes.tree_scale(biomes.id("jungle").unwrap());
+        assert!(jungle.giants > 0.0);
+        for growth in [0.0, 0.5, 0.999] {
+            let (_, canopy, _, _) = scaled_tree(TreeKind::Broadleaf, growth, jungle, false);
+            let (_, giant, wide, _) = scaled_tree(TreeKind::Broadleaf, growth, jungle, true);
+            assert!(
+                giant >= canopy + 12,
+                "giant {giant} over canopy {canopy} at {growth}"
+            );
+            assert!(giant >= 29 && wide >= 6.5, "giant {giant} wide {wide}");
+        }
+        // no other biome has any, and a pine is never a giant
+        for name in [
+            "glacier", "desert", "forest", "tundra", "taiga", "steppe", "savanna",
+        ] {
+            assert_eq!(
+                0.0,
+                biomes.tree_scale(biomes.id(name).unwrap()).giants,
+                "{name}"
+            );
+        }
+        let flat = scaled_tree(TreeKind::Pine, 0.5, jungle, true);
+        assert_eq!(flat, scaled_tree(TreeKind::Pine, 0.5, jungle, false));
     }
 
     // the smallest and largest each kind grows
@@ -748,34 +886,39 @@ mod tests {
     }
 
     #[test]
-    fn test_pines_grow_in_the_cold_and_up_mountains_but_never_in_the_hot_biomes() {
-        // savanna and jungle, however high or cool: broadleaf
+    fn test_pines_grow_in_the_cold_and_up_mountains_but_never_on_the_hot_lowlands() {
+        // savanna, jungle and desert lowlands, however cool: broadleaf
         for biome in ["savanna", "jungle", "desert"] {
             for (above, warmth) in [(0, 0.8), (200, 0.3), (300, 0.1), (150, 0.44)] {
                 assert_eq!(
                     TreeKind::Broadleaf,
-                    tree_kind(Some(biome), above, warmth),
+                    tree_kind(Some(biome), false, above, warmth),
                     "{biome} {above} {warmth}"
                 );
             }
         }
-        // cold biomes, cool forest and grassland, and the upper slopes of a mountain: pines
-        for (biome, above, warmth) in [
-            (Some("taiga"), 10, 0.9),
-            (Some("tundra"), 10, 0.9),
-            (None, 10, 0.4),
-            (Some("forest"), 100, 0.4),
-            (Some("mountain"), 150, 0.9),
+        // cold biomes, cool forest and grassland, and the upper slopes of any mountain, even in the tropics: pines
+        for (biome, mountain, above, warmth) in [
+            (Some("taiga"), false, 10, 0.9),
+            (Some("tundra"), false, 10, 0.9),
+            (None, false, 10, 0.4),
+            (Some("forest"), false, 100, 0.4),
+            (None, true, 150, 0.9),
+            (Some("jungle"), true, 150, 0.9),
+            (Some("forest"), true, 150, 0.9),
         ] {
             assert_eq!(
                 TreeKind::Pine,
-                tree_kind(biome, above, warmth),
-                "{biome:?} {above} {warmth}"
+                tree_kind(biome, mountain, above, warmth),
+                "{biome:?} {mountain} {above} {warmth}"
             );
         }
         // warm forest and a mountain's foot are broadleaf
-        assert_eq!(TreeKind::Broadleaf, tree_kind(Some("forest"), 20, 0.7));
-        assert_eq!(TreeKind::Broadleaf, tree_kind(Some("mountain"), 60, 0.7));
+        assert_eq!(
+            TreeKind::Broadleaf,
+            tree_kind(Some("forest"), false, 20, 0.7)
+        );
+        assert_eq!(TreeKind::Broadleaf, tree_kind(None, true, 60, 0.7));
     }
 
     #[test]
