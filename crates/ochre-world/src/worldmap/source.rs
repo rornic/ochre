@@ -63,9 +63,13 @@ const SPRING_RIM: f32 = 1.6;
 // Past the rim the ground falls away from it a block for each block out, over this far, so it stands in a mound.
 const SPRING_MOUND: f32 = 4.0;
 
+// Tableland weight over which a river runs in a gorge: its banks widen up to 4 times and rise as a wall, not a slope.
+const GORGE_FROM: f64 = 0.2;
+
 // The ground over a river's channel: a parabolic bed up to the water's edge, then the bank
-// easing out into the ground beside it.
-fn channel(ground: f32, river: RiverHit) -> f32 {
+// easing out into the ground beside it. In a gorge (`gorge` is the tableland weight there) the bank is a wide
+// floor and then a steep wall.
+fn channel(ground: f32, river: RiverHit, gorge: f64) -> f32 {
     let half = river.width / 2.0;
     if river.distance < half {
         return ground.min(bed_height(river));
@@ -75,10 +79,15 @@ fn channel(ground: f32, river: RiverHit) -> f32 {
     // where a dip would leave the water standing over it, so the water is always held in by ground
     // and over the block the water's surface lies in by at least half of it, or the water stands over the bank
     let rim = (river.surface + freeboard(river.width)).max(river.surface.ceil() - 0.4);
-    let t = ((river.distance - half) / bank_width(river)).clamp(0.0, 1.0);
+    let t = ((river.distance - half) / bank_width(river, gorge)).clamp(0.0, 1.0);
     // The bank joins the surrounding terrain over its width. Block-level containment
     // is applied separately against actual neighbouring water, after all water is known.
-    rim + (ground - rim) * t * (2.0 - t)
+    let rise = if gorge > GORGE_FROM {
+        t * t * t
+    } else {
+        t * (2.0 - t)
+    };
+    rim + (ground - rim) * rise
 }
 
 // Where the bed of the river under it is, a parabola across it.
@@ -87,8 +96,13 @@ fn bed_height(river: RiverHit) -> f32 {
     river.bed + (river.surface - river.bed) * t * t
 }
 
-fn bank_width(river: RiverHit) -> f32 {
-    2.0 + river.width * 0.25
+fn bank_width(river: RiverHit, gorge: f64) -> f32 {
+    let width = 2.0 + river.width * 0.25;
+    if gorge > GORGE_FROM {
+        width * (1.0 + 3.0 * gorge as f32)
+    } else {
+        width
+    }
 }
 
 // The sea or a lake, standing level in its basin.
@@ -732,6 +746,13 @@ impl WorldTerrain {
         };
         let (still, by) = (self.still_round(x, z), self.still_by(x, z));
         let mut ground = self.ground_dry(x, z, cell, base, Self::calm(base, &by));
+        // a river over tableland runs in a gorge
+        let gorge = if rivers[0].is_some() {
+            let mountain = self.landform_cover(x, z);
+            self.tableland(x, z, base - WATER_LEVEL as f64, mountain)
+        } else {
+            0.0
+        };
         // a river runs in a valley with a graded floor, the map's smooth ground, which it eases out
         // of into the land's detail and terraces across the valley's sides: so its water, held under
         // that floor, never needs a bank built up, whatever the ground's steps and hollows. Not under
@@ -740,7 +761,7 @@ impl WorldTerrain {
             .iter()
             .flatten()
             .map(|r| {
-                let edge = r.width as f64 / 2.0 + bank_width(*r) as f64;
+                let edge = r.width as f64 / 2.0 + bank_width(*r, gorge) as f64;
                 1.0 - smoothstep(edge, edge + VALLEY_WIDTH, r.distance as f64)
             })
             .fold(0.0, f64::max);
@@ -769,7 +790,7 @@ impl WorldTerrain {
                     ground
                 }
             } else {
-                channel(ground as f32, river) as f64
+                channel(ground as f32, river, gorge) as f64
             };
         }
         // a river the nearest one meets still has its bed cut where its water is, so a stream is
@@ -1297,9 +1318,66 @@ mod river_bank_tests {
             surface: 100.0,
             bed: 99.0,
         };
-        assert!(channel(80.0, river) >= 100.2);
+        assert!(channel(80.0, river, 0.0) >= 100.2);
         river.distance = 100.0;
-        assert_eq!(channel(80.0, river), 80.0);
+        assert_eq!(channel(80.0, river, 0.0), 80.0);
+    }
+
+    #[test]
+    fn a_gorge_widens_the_bank_to_a_floor_and_a_wall_and_only_cuts() {
+        let mut river = RiverHit {
+            distance: 0.0,
+            width: 8.0,
+            surface: 100.0,
+            bed: 98.0,
+        };
+        // no tableland, or too little: today's bank, width and profile
+        assert_eq!(bank_width(river, 0.0), bank_width(river, GORGE_FROM));
+        assert_eq!(4.0, bank_width(river, 0.0));
+        // full tableland: four times as wide
+        assert_eq!(16.0, bank_width(river, 1.0));
+        let ground = 160.0;
+        let mut last = 0.0;
+        for step in 0..=40 {
+            river.distance = river.width / 2.0 + step as f32 * 0.5;
+            let plain = channel(ground, river, 0.0);
+            let gorge = channel(ground, river, 1.0);
+            // the bank is cut down to the land, never above it, and over the water's rim
+            assert!(
+                gorge <= ground && gorge >= river.surface,
+                "{gorge} at {step}"
+            );
+            // and it climbs, with a flat floor by the water and the steepest rise out at the wall
+            assert!(gorge >= last);
+            last = gorge;
+            if step == 8 {
+                assert!(
+                    gorge < plain,
+                    "the floor is lower than the plain bank: {gorge} {plain}"
+                );
+            }
+        }
+        river.distance = river.width / 2.0 + 15.0;
+        let wall = channel(ground, river, 1.0)
+            - channel(
+                ground,
+                RiverHit {
+                    distance: river.distance - 1.0,
+                    ..river
+                },
+                1.0,
+            );
+        river.distance = river.width / 2.0 + 2.0;
+        let floor = channel(ground, river, 1.0)
+            - channel(
+                ground,
+                RiverHit {
+                    distance: river.distance - 1.0,
+                    ..river
+                },
+                1.0,
+            );
+        assert!(wall > floor * 5.0, "wall {wall} against floor {floor}");
     }
 
     #[test]
