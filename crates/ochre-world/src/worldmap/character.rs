@@ -22,6 +22,8 @@ const SALT_WIND: u32 = 0xC4A0_0007;
 const SALT_TABLELAND: u32 = 0xC4A0_0008;
 const SALT_DUNES: u32 = 0xC4A0_0009;
 const SALT_CLIFFS: u32 = 0xC4A0_000A;
+const SALT_FJORDS: u32 = 0xC4A0_000D;
+const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
 const DUNE_SCALE: (f64, f64) = (0.7, 1.5);
 const TABLELAND_SHARE: (f64, f64) = (0.2, 0.8);
@@ -47,6 +49,8 @@ pub struct LandformKnobs {
     pub dune_scale: f64,
     /// How much longer than usual cliffs on mountains and tableland reach, 0..1.
     pub cliff_boost: f64,
+    /// The share of the mouths its mountainous coast has room for that are fjords, 0 to 0.3.
+    pub fjord_share: f64,
 }
 
 impl LandformKnobs {
@@ -55,6 +59,7 @@ impl LandformKnobs {
             tableland_share: round(draw(seed, SALT_TABLELAND, TABLELAND_SHARE), 3),
             dune_scale: round(draw(seed, SALT_DUNES, DUNE_SCALE), 2),
             cliff_boost: round(draw(seed, SALT_CLIFFS, CLIFF_BOOST), 2),
+            fjord_share: round(draw(seed, SALT_FJORDS, FJORD_SHARE), 3),
         }
     }
 }

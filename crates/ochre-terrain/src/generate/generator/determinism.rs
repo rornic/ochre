@@ -190,7 +190,7 @@ fn test_chunks_from_a_generated_map_hash_the_same_on_every_machine() {
     let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
     // pinned: see the note on the test above
     assert_eq!(
-        6_692_581_063_080_406_964,
+        11_248_043_539_686_337_872,
         hash_chunks(&regions, &chunks),
         "chunk hash changed"
     );

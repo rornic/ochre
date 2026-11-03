@@ -162,25 +162,30 @@ fn bed(seed: u32, facies: f64, y: f64, phase: f64, base_soft: f64) -> Bed {
 
 pub(super) fn generate(map: &mut WorldMap) {
     let config = map.config;
+    // each plate is one rock, and a range takes the rock of the older plate it stands on, so a range is not split
+    let model = tectonics::Tectonics::new(map.seed, config.size, config.tectonics);
+    let mut land = vec![0usize; config.tectonics.plates as usize];
+    for i in 0..map.height.len() {
+        if map.height[i] >= 0.0 {
+            if let Some(count) = land.get_mut(map.plate[i] as usize) {
+                *count += 1;
+            }
+        }
+    }
+    let rocks = model.plate_rocks(&land);
     let mut geology = vec![(GENERIC, 0.0f32, 0.0f32); map.height.len()];
     par_rows(map.dim(), &mut geology, |row, cells| {
         for (col, output) in cells.iter_mut().enumerate() {
             let i = row * config.dim() + col;
             let (x, z) = map.cell_centre(col, row);
-            let region = fbm(map.seed ^ 0xB314_20A7, x, z, 12_000.0, 3);
-            let province = if map.continentalness[i] < -0.2
-                || ((map.boundary[i] == tectonics::SUBDUCTION
-                    || map.boundary[i] == tectonics::EXTENSION)
-                    && region > -0.05)
-            {
+            let province = if map.continentalness[i] < -0.2 {
                 VOLCANIC
-            } else if map.boundary[i] == tectonics::COLLISION
-                && map.uplift[i] > 100.0
-                && region > -0.12
-            {
-                METAMORPHIC
             } else {
-                SEDIMENTARY
+                match rocks.get(map.plate[i] as usize) {
+                    Some(&tectonics::ROCK_SHIELD) => METAMORPHIC,
+                    Some(&tectonics::ROCK_VOLCANIC) => VOLCANIC,
+                    _ => SEDIMENTARY,
+                }
             };
             let phase = fbm(map.seed ^ 0x73A9_8C4D, x, z, 18_000.0, 2) as f32 * 400.0;
             let facies = fbm(map.seed ^ 0xFAC1_E5ED, x, z, FACIES_WAVELENGTH, 3) as f32;
@@ -193,6 +198,8 @@ pub(super) fn generate(map: &mut WorldMap) {
         map.facies[i] = facies;
     }
     smooth_provinces(map);
+    // after the smoothing, which would otherwise move the rock of a range's flanks to a neighbour's
+    one_rock_per_range(map);
     for i in 0..map.geology.len() {
         if map.geology[i] == METAMORPHIC && map.uplift[i] > GRANITE_UPLIFT {
             map.geology[i] = INTRUSIVE;
@@ -210,6 +217,49 @@ pub(super) fn generate(map: &mut WorldMap) {
         .map(|&p| (p == VOLCANIC) as u8 as f32)
         .collect();
     map.flowed = blur_box(&volcanic, map.dim(), BEDDED_FADE);
+}
+
+// High ground this many blocks over the sea, before erosion, is taken as a range for rock: the landform comes later.
+const RANGE_PROXY: f32 = 200.0;
+
+// Each connected stretch of high ground is the rock most of it is, so a range stands on one rock and is not cut
+// between two where plates' belts meet or an edge of a province crosses it.
+fn one_rock_per_range(map: &mut WorldMap) {
+    let dim = map.dim();
+    let high = |i: usize| map.height[i] >= RANGE_PROXY && map.continentalness[i] >= -0.2;
+    let mut seen = vec![false; dim * dim];
+    for start in 0..dim * dim {
+        if seen[start] || !high(start) {
+            continue;
+        }
+        let (mut stack, mut cells) = (vec![start], Vec::new());
+        seen[start] = true;
+        while let Some(i) = stack.pop() {
+            cells.push(i);
+            let (x, z) = (i % dim, i / dim);
+            for (dx, dz) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                let n = nz as usize * dim + nx as usize;
+                if !seen[n] && high(n) {
+                    seen[n] = true;
+                    stack.push(n);
+                }
+            }
+        }
+        let mut votes = [0usize; 5];
+        for &i in &cells {
+            votes[map.geology[i] as usize] += 1;
+        }
+        let rock = (0..votes.len())
+            .max_by_key(|&p| (votes[p], std::cmp::Reverse(p)))
+            .unwrap_or(0);
+        for i in cells {
+            map.geology[i] = rock as u8;
+        }
+    }
 }
 
 fn smooth_provinces(map: &mut WorldMap) {
@@ -650,6 +700,91 @@ mod tests {
         assert_eq!(map.terraced(50.0, 50.0, 700.0, 10.0), 700.0);
         map.bedded.fill(0.0);
         assert_eq!(map.terraced(50.0, 50.0, 700.0, 300.0), 700.0);
+    }
+
+    #[test]
+    fn plates_share_the_land_between_basin_shield_and_volcanic_rock() {
+        for seed in [1u32, 42, 1337, 77] {
+            let model = tectonics::Tectonics::new(seed, 65_536, Default::default());
+            let land: Vec<usize> = (0..model.plates.len())
+                .map(|i| 1000 + (unit(seed, i as i32, 5) * 9000.0) as usize)
+                .collect();
+            let rocks = model.plate_rocks(&land);
+            assert_eq!(rocks, model.plate_rocks(&land), "not repeatable");
+            let total: usize = land.iter().sum();
+            for rock in [
+                tectonics::ROCK_BASIN,
+                tectonics::ROCK_SHIELD,
+                tectonics::ROCK_VOLCANIC,
+            ] {
+                let share = land
+                    .iter()
+                    .zip(&rocks)
+                    .filter(|(_, &r)| r == rock)
+                    .map(|(l, _)| *l)
+                    .sum::<usize>() as f64
+                    / total as f64;
+                assert!(
+                    (0.05..=0.75).contains(&share),
+                    "seed {seed}: rock {rock} has {share} of the land"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_range_of_high_ground_stands_on_one_rock() {
+        for seed in [1u32, 42, 1337] {
+            let config = WorldConfig {
+                size: 16_384,
+                ..Default::default()
+            };
+            let mut map = super::super::tectonics::generate(seed, config);
+            generate(&mut map);
+            let dim = map.dim();
+            let high = |i: usize| map.height[i] >= RANGE_PROXY && map.continentalness[i] >= -0.2;
+            let mut seen = vec![false; dim * dim];
+            let mut big = 0;
+            for start in 0..dim * dim {
+                if seen[start] || !high(start) {
+                    continue;
+                }
+                let (mut stack, mut cells) = (vec![start], Vec::new());
+                seen[start] = true;
+                while let Some(i) = stack.pop() {
+                    cells.push(i);
+                    let (x, z) = (i % dim, i / dim);
+                    for (nx, nz) in [
+                        (x + 1, z),
+                        (x.wrapping_sub(1), z),
+                        (x, z + 1),
+                        (x, z.wrapping_sub(1)),
+                    ] {
+                        if nx < dim && nz < dim && !seen[nz * dim + nx] && high(nz * dim + nx) {
+                            seen[nz * dim + nx] = true;
+                            stack.push(nz * dim + nx);
+                        }
+                    }
+                }
+                if cells.len() < 300 {
+                    continue;
+                }
+                big += 1;
+                let mut votes = [0usize; 5];
+                for &i in &cells {
+                    // the granite core and marble margin of a metamorphic range are one province here
+                    let p = map.geology[i];
+                    votes[if p == INTRUSIVE { METAMORPHIC } else { p } as usize] += 1;
+                }
+                let most = *votes.iter().max().unwrap();
+                assert!(
+                    most as f64 >= 0.8 * cells.len() as f64,
+                    "seed {seed}: a range of {} cells is split {votes:?}",
+                    cells.len()
+                );
+            }
+            assert!(big > 0, "seed {seed} has no range to check");
+        }
     }
 
     #[test]

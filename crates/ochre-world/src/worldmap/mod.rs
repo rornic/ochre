@@ -14,6 +14,7 @@ pub mod geology;
 pub mod hydrology;
 pub mod io;
 pub mod landform;
+mod shapes;
 mod source;
 pub mod tectonics;
 pub mod water;
@@ -25,7 +26,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 65;
+pub const GENERATOR_VERSION: u32 = 68;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -460,6 +461,11 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     for h in &mut map.height {
         *h = h.max(floor);
     }
+    // after erosion, which would wear their walls: fjords cut into mountainous coasts
+    shapes::fjords(
+        &mut map,
+        character::LandformKnobs::from_seed(seed).fjord_share,
+    );
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");
