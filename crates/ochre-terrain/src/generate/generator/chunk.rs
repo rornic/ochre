@@ -34,6 +34,7 @@ const SKIN: i64 = 3;
 
 // Added to the gradient blocks are chosen by where the ground is bare rock, so grass gives way to stone.
 const ROCK_GRADIENT: f64 = 4.0;
+const FACE_EXPOSED: i64 = 3;
 
 // Which of the passes laid over the terrain's blocks run, so a tool can tell which one made a block.
 #[derive(Clone, Copy, Debug)]
@@ -123,6 +124,12 @@ pub fn generate_chunk_with(
                 chunk_pos.0.z * size + z,
                 gradient,
             );
+            // a column standing FACE_EXPOSED over its neighbour is a cliff face: no patch of meadow eases its slope
+            let slope = if columns.exposed(x, z) >= FACE_EXPOSED {
+                slope.max(gradient)
+            } else {
+                slope
+            };
             // the top of a kopje is bare rock whatever the slope
             let slope = if columns.rocky(x, z) {
                 slope + ROCK_GRADIENT
