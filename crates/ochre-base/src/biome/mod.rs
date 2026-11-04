@@ -135,11 +135,16 @@ impl Biomes {
                     .scaled(1.2, 0.8, 1.0)
                     .with_relief(&[ReliefKind::Drumlins]),
             ),
-            Box::new(Plain::new("steppe", 0.004).shifted(0.0, -0.10)),
+            Box::new(
+                Plain::new("steppe", 0.004)
+                    .shifted(0.0, -0.10)
+                    .with_relief(&[ReliefKind::Gullies]),
+            ),
             Box::new(
                 Plain::new("savanna", 0.03)
                     .shifted(0.05, -0.15)
-                    .scaled(0.8, 1.2, 0.5),
+                    .scaled(0.8, 1.2, 0.5)
+                    .with_relief(&[ReliefKind::Kopjes]),
             ),
             Box::new(
                 Plain::new("jungle", 0.6)

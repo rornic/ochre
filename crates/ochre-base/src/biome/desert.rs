@@ -1,5 +1,6 @@
 use super::Biome;
 use crate::block::BlockType;
+use crate::features::ReliefKind;
 
 // Sand over the lowlands. Rock and snow on the heights are left as they are, and the dunes are
 // the ground's, see `worldmap::detail::dunes`.
@@ -16,6 +17,10 @@ impl Biome for Desert {
 
     fn tree_density(&self) -> Option<f64> {
         Some(0.0)
+    }
+
+    fn relief(&self) -> &'static [ReliefKind] {
+        &[ReliefKind::Yardangs]
     }
 
     fn block(&self, base: BlockType, _above_sea: i64, _gradient: f64) -> BlockType {

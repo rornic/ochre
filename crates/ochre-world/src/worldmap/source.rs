@@ -742,6 +742,14 @@ impl WorldTerrain {
             gradient,
             downhill,
             ridge_angle: map.config.climate.gradient_angle as f64,
+            wind: {
+                let (wx, wz) = (
+                    map.config.climate.wind_x as f64,
+                    map.config.climate.wind_z as f64,
+                );
+                let length = (wx * wx + wz * wz).sqrt();
+                (wx / length, wz / length)
+            },
         };
         kinds
             .iter()

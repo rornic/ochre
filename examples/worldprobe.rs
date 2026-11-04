@@ -234,6 +234,7 @@ fn longest_straight_edge(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> S
 fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
     let biomes = ochre_base::biome::Biomes::new(0);
     let mut by_kind: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut first: std::collections::BTreeMap<String, (i64, i64)> = Default::default();
     let (mut samples, mut outside) = (0usize, 0usize);
     for i in (-half..half).step_by(4) {
         for j in (-half..half).step_by(4) {
@@ -243,12 +244,21 @@ fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
             for (kind, offset) in terrain.relief_at(wx, wz) {
                 if offset.abs() >= 0.5 {
                     *by_kind.entry(format!("{kind:?}")).or_default() += 1;
+                    if offset.abs() >= 1.0 {
+                        first.entry(format!("{kind:?}")).or_insert((x + i, z + j));
+                    }
                     outside += !allowed.contains(&kind) as usize;
                 }
             }
         }
     }
-    let counts: Vec<String> = by_kind.iter().map(|(k, n)| format!("{k} {n}")).collect();
+    let counts: Vec<String> = by_kind
+        .iter()
+        .map(|(k, n)| match first.get(k) {
+            Some((fx, fz)) => format!("{k} {n} (e.g. {fx},{fz})"),
+            None => format!("{k} {n}"),
+        })
+        .collect();
     format!(
         "{samples} samples; {} ; outside their biome {outside}",
         if counts.is_empty() {

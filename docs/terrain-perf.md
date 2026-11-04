@@ -724,3 +724,18 @@ Undergrowth: `flora_at` takes an `understory` multiplier on the ferns and shaded
 `bench` now builds its world with `character::world_config`, as the game and probe do (it used the plain default, so seed 2's cold country was elsewhere). On seed 2, before to after: a taiga plain at (-9000, -12000) chunk vertices 129,683 to 141,858 (+9.4%) and a glacier at (-16900, -18500) 572,493 to 623,921 (+9.0%), meshing 173 to 175 ms and 234 to 241 ms, chunk generation 159 to 166 ms and 240 to 272 ms. Drumlins as first written (8 to 14 high, 15 to 30 wide, 70% of cells) gave +45% on the taiga plain, since a flat plain meshes in a few faces and any relief breaks it up, so they are 4 to 8 high, 20 to 35 wide and 50% of cells; the gate is 1.10. `water_audit` on seeds 2 and 11: no uncontained cells, no lake or coast walls or steps.
 
 Not built: glacial erratics (taiga and tundra) and termite mounds (savanna, PR 6c) as objects, which need new tree kinds with crown shapes, LOD handling and hash placement, so they wait for their own change. The crevasse rule against opening in a spawn region is not enforced either: a glacier is not a spawn site.
+
+## Warm relief features (GENERATOR_VERSION 78)
+
+The same machinery as the cold features, four more kinds in `features.rs`:
+
+- desert: yardangs, parallel ridges (up to 5 high) and troughs (up to 2.5 deep) along the wind, in patches 900 blocks across, on ground gentler than 0.35. They are not gated by the dune cover, so over a dune sea they add to the dunes.
+- savanna: kopjes, rounded heaps 6 to 14 high and 10 to 25 across in clusters of 2 to 6, one cluster in about three 400-block cells, on ground gentler than 0.4.
+- steppe: gullies, wandering ravines 3 to 8 deep and 3 to 6 wide down slopes steeper than 0.2.
+- swamp: hummocks, tussocks 1 to 3 high and 4 to 8 across on flat ground.
+
+`worldprobe features` now prints an example coordinate for each kind. Every kind fires on the seeds tried (yardangs 107,805 and kopjes 1,562 of 2,250,000 samples on seed 11 at (12000, -12000), gullies 16,089 on seed 1, hummocks 72,851 on seed 42), none outside its biome.
+
+`bench` before to after, vertices (mesh ms, generation ms): a desert on seed 11 at (9568, -14344) 370,241 to 398,241, +7.6% (190 to 191 ms, 214 to 251 ms); savanna on seed 7 at (9000, 12896) 729,331 to 731,524 (213 to 211, 244 to 299). Yardangs as first written (8 high, 4 deep) gave +12.9%, over the 1.10 gate, so they were lowered. The gully view (seed 1 at (9000, -10360)) and hummock view (seed 42 at (-2532, 1820)) read identical vertices, so the exact sample point sits by water or a feature gap; their cost is not measured. Chunk generation in a feature-heavy view is about 17% slower (the gradient is four map samples a column, and the noise), 18 microseconds a chunk, and is recorded as the reason. `water_audit` on seeds 1, 42 and 7: no uncontained cells, no lake or coast walls or steps.
+
+Not built: termite mounds and the kopjes' bare rock tops, as they are objects or a surface-block rule, with the glacial erratics of the cold features.

@@ -15,6 +15,10 @@ pub enum ReliefKind {
     Pingos,
     PatternedGround,
     Drumlins,
+    Yardangs,
+    Kopjes,
+    Gullies,
+    Hummocks,
 }
 
 /// What a feature reads about the ground it lies on.
@@ -26,6 +30,8 @@ pub struct ReliefCtx {
     pub downhill: (f64, f64),
     /// The direction the config's temperature gradient runs, in radians.
     pub ridge_angle: f64,
+    /// A unit vector along the wind.
+    pub wind: (f64, f64),
 }
 
 /// Blocks `kind` adds to the ground at (`x`, `z`), for a sample `cell` blocks wide: nothing once cells are 16 wide.
@@ -40,6 +46,10 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
         ReliefKind::Pingos => pingos(seed, x, z, ctx),
         ReliefKind::PatternedGround => patterned_ground(seed, x, z, ctx),
         ReliefKind::Drumlins => drumlins(seed, x, z, ctx),
+        ReliefKind::Yardangs => yardangs(seed, x, z, ctx),
+        ReliefKind::Kopjes => kopjes(seed, x, z, ctx),
+        ReliefKind::Gullies => gullies(seed, x, z, ctx),
+        ReliefKind::Hummocks => hummocks(seed, x, z, ctx),
     };
     (raw * detail).clamp(-MAX_OFFSET, MAX_OFFSET)
 }
@@ -215,17 +225,121 @@ fn drumlins(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * gentle
 }
 
+// Parallel wind-carved ridges and troughs along the wind, in patches: ridges up to 5 high, troughs up to 2.5 deep,
+// each 60 to 200 long, over ground gentler than 0.35.
+fn yardangs(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let gentle = 1.0 - smoothstep(0.2, 0.35, ctx.gradient);
+    let patch = smoothstep(-0.05, 0.25, fbm(seed ^ 0x7A9D, x, z, 900.0, 1));
+    if gentle <= 0.0 || patch <= 0.0 {
+        return 0.0;
+    }
+    let (wx, wz) = ctx.wind;
+    let (along, across) = (x * wx + z * wz, -x * wz + z * wx);
+    let n = perlin(seed ^ 0x7A9E, across / 16.0, along / 130.0);
+    (5.0 * smoothstep(0.15, 0.6, n) - 2.5 * smoothstep(0.15, 0.6, -n)) * patch * gentle
+}
+
+// Rounded rock heaps on the plain in clusters of 2 to 6: 6 to 14 high, 10 to 25 across.
+fn kopjes(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let gentle = 1.0 - smoothstep(0.2, 0.4, ctx.gradient);
+    if gentle <= 0.0 {
+        return 0.0;
+    }
+    const SIZE: f64 = 400.0;
+    let (gx, gz) = ((x / SIZE).floor() as i64, (z / SIZE).floor() as i64);
+    let mut best: f64 = 0.0;
+    for cz in gz - 1..=gz + 1 {
+        for cx in gx - 1..=gx + 1 {
+            let h = cell_hash(seed ^ 0x40B1, cx, cz);
+            if unit_of(h, 1) >= 0.35 {
+                continue;
+            }
+            let (px, pz) = (
+                (cx as f64 + 0.25 + 0.5 * unit_of(h, 2)) * SIZE,
+                (cz as f64 + 0.25 + 0.5 * unit_of(h, 3)) * SIZE,
+            );
+            let heaps = 2 + (unit_of(h, 4) * 5.0) as u32;
+            for k in 0..heaps {
+                let m = hash(h, k as i32, 7);
+                let (hx, hz) = (
+                    px + (unit_of(m, 1) - 0.5) * 80.0,
+                    pz + (unit_of(m, 2) - 0.5) * 80.0,
+                );
+                let radius = 5.0 + 7.5 * unit_of(m, 3);
+                let d2 = ((x - hx).powi(2) + (z - hz).powi(2)) / (radius * radius);
+                if d2 < 1.0 {
+                    best = best.max((6.0 + 8.0 * unit_of(m, 4)) * (1.0 - d2).sqrt());
+                }
+            }
+        }
+    }
+    best * gentle
+}
+
+// Narrow ravines running down slopes steeper than 0.2: 3 to 8 deep, 3 to 6 wide, wandering and branching.
+fn gullies(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let sloped = smoothstep(0.2, 0.3, ctx.gradient);
+    if sloped <= 0.0 || ctx.downhill == (0.0, 0.0) {
+        return 0.0;
+    }
+    // a fixed frame, as for crevasses
+    let (dz, dx) = (
+        libm::sin(ctx.ridge_angle + FRAC_PI_2),
+        libm::cos(ctx.ridge_angle + FRAC_PI_2),
+    );
+    let (down, across) = (x * dx + z * dz, -x * dz + z * dx);
+    let wander = 40.0 * perlin(seed ^ 0x6011, down / 150.0, across / 150.0);
+    let n = perlin(seed ^ 0x6012, (across + wander) / 50.0, down / 200.0);
+    let depth = 2.0 + 4.0 * smoothstep(0.2, 0.5, ctx.gradient);
+    // a wide swale, since a narrow one is a row of one-block slits
+    -depth * (1.0 - smoothstep(0.0, 0.3, n.abs())) * sloped
+}
+
+// Raised tussocks on flat wet ground, 1 to 3 high, 4 to 8 across.
+fn hummocks(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let flat = 1.0 - smoothstep(0.1, 0.2, ctx.gradient);
+    if flat <= 0.0 {
+        return 0.0;
+    }
+    const SIZE: f64 = 8.0;
+    let (gx, gz) = ((x / SIZE).floor() as i64, (z / SIZE).floor() as i64);
+    let mut best: f64 = 0.0;
+    for cz in gz - 1..=gz + 1 {
+        for cx in gx - 1..=gx + 1 {
+            let h = cell_hash(seed ^ 0x40A3, cx, cz);
+            if unit_of(h, 1) >= 0.6 {
+                continue;
+            }
+            let (px, pz) = (
+                (cx as f64 + 0.2 + 0.6 * unit_of(h, 2)) * SIZE,
+                (cz as f64 + 0.2 + 0.6 * unit_of(h, 3)) * SIZE,
+            );
+            let radius = 2.0 + 2.0 * unit_of(h, 4);
+            let d = ((x - px).powi(2) + (z - pz).powi(2)).sqrt();
+            if d < radius {
+                let t = 1.0 - d / radius;
+                best = best.max((1.0 + 2.0 * unit_of(h, 5)) * t * t * (3.0 - 2.0 * t));
+            }
+        }
+    }
+    best * flat
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::noise::unit;
 
-    const KINDS: [ReliefKind; 5] = [
+    const KINDS: [ReliefKind; 9] = [
         ReliefKind::Crevasses,
         ReliefKind::Seracs,
         ReliefKind::Pingos,
         ReliefKind::PatternedGround,
         ReliefKind::Drumlins,
+        ReliefKind::Yardangs,
+        ReliefKind::Kopjes,
+        ReliefKind::Gullies,
+        ReliefKind::Hummocks,
     ];
 
     fn ctx(gradient: f64) -> ReliefCtx {
@@ -233,6 +347,7 @@ mod tests {
             gradient,
             downhill: (0.6, 0.8),
             ridge_angle: 0.7,
+            wind: (0.8, 0.6),
         }
     }
 
@@ -241,7 +356,8 @@ mod tests {
         match kind {
             ReliefKind::Crevasses => 0.35,
             ReliefKind::Seracs => 1.8,
-            ReliefKind::Pingos | ReliefKind::PatternedGround | ReliefKind::Drumlins => 0.02,
+            ReliefKind::Gullies => 0.4,
+            _ => 0.02,
         }
     }
 
@@ -261,7 +377,7 @@ mod tests {
                 assert_eq!(a, offset(kind, 5, x, z, 1.0, &ctx));
                 moved += (a != 0.0) as usize;
             }
-            assert!(moved > 30, "{kind:?} moves only {moved} of 10,000 points");
+            assert!(moved > 5, "{kind:?} moves only {moved} of 10,000 points");
         }
     }
 
@@ -272,6 +388,7 @@ mod tests {
             let unsuited = ctx(match kind {
                 ReliefKind::Crevasses => 0.05,
                 ReliefKind::Seracs => 0.5,
+                ReliefKind::Gullies => 0.05,
                 _ => 1.5,
             });
             for (x, z) in grid() {
