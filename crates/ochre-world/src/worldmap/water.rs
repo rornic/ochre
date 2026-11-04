@@ -152,6 +152,8 @@ pub struct RiverProfiles {
     ends: Vec<f32>,
     // each profile's course
     stretches: Vec<Stretch>,
+    // the course's points `CURVE_PIECES` ways along it, which `river_hits` joins with straight pieces
+    curves: Vec<[(f64, f64); CURVE_PIECES + 1]>,
     // by map cell, the stretches whose water, banks or valley can reach into it, see `index`: the
     // cell's in `near[near_start[cell]..near_start[cell + 1]]`
     near_start: Vec<u32>,
@@ -205,6 +207,11 @@ impl RiverProfiles {
     /// line for its curve's bend and `margin` blocks more, so a point need only look at its own cell's.
     pub fn index(&mut self, map: &WorldMap, margin: f64) {
         self.stem = self.stems();
+        self.curves = self
+            .stretches
+            .iter()
+            .map(|s| std::array::from_fn(|k| s.point(k as f64 / CURVE_PIECES as f64)))
+            .collect();
         let (dim, cell) = (map.dim() as i64, map.config.map_cell as f64);
         let cells_of = |s: &Stretch| {
             let reach = super::source::river_reach(s.width.max(s.end_width)) as f64 + cell + margin;
@@ -814,9 +821,9 @@ impl WorldMap {
                 }
                 // the curve as short straight pieces, and the nearest point on them
                 let (mut best_d2, mut best_t) = (f64::MAX, 0.0);
-                let mut last = stretch.point(0.0);
-                for k in 1..=CURVE_PIECES {
-                    let next = stretch.point(k as f64 / CURVE_PIECES as f64);
+                let curve = &profiles.curves[n as usize];
+                let mut last = curve[0];
+                for (k, &next) in curve.iter().enumerate().skip(1) {
                     let (ex, ez) = (next.0 - last.0, next.1 - last.1);
                     let len2 = (ex * ex + ez * ez).max(1e-9);
                     let f = (((x - last.0) * ex + (z - last.1) * ez) / len2).clamp(0.0, 1.0);
