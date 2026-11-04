@@ -286,7 +286,10 @@ pub(in crate::generate) fn block_gradient(
     }
     let (fx, fz) = (x as f64, z as f64);
     let eased = gradient * MOUNTAIN_EASE;
-    if eased > MEADOW_GRADIENT && ochre_base::relief::meadow_patch(seed, fx, fz) {
+    if eased > MEADOW_GRADIENT
+        && biomes.name(biome).is_none()
+        && ochre_base::relief::meadow_patch(seed, fx, fz)
+    {
         MEADOW_GRADIENT
     } else if ochre_base::relief::outcrop_patch(seed, fx, fz) {
         eased + OUTCROP_GRADIENT
