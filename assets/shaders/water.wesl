@@ -36,6 +36,8 @@ const DEEP_OCEAN_END: f32 = 14.0;
 const CHUNK_SIZE: f32 = 16.0;
 
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
+// How far under a water surface the eye can be and still be in the water under it, for the back of the surface to be drawn.
+const UNDER_REACH: f32 = 12.0;
 // The water of a fall, under its streaks.
 const FALL_COLOR: vec3<f32> = vec3<f32>(0.18, 0.40, 0.62);
 const FOAM_SPEED: f32 = 0.45;
@@ -682,6 +684,10 @@ fn fragment(
         scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves);
         scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
     } else if normal.y > 0.5 {
+        // the back of a surface far over the eye is a fall's sheet seen from the air under it, not water seen from within
+        if view_position.y < world_position.y - UNDER_REACH {
+            discard;
+        }
         // seen from under it, clear, not tinted
         scene = water_below(world_position, to_eye, in.position, footprint);
     }

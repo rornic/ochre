@@ -249,6 +249,24 @@ impl<'a> ChunkNeighbourhood<'a> {
                 })
                 .collect();
             let spread = spread_water_levels(&raw, wide);
+            // a fall's sheet and the water a column round it, drawn as blocks too, so the two meet with no slope between
+            let falls: Vec<bool> = (0..wide * wide)
+                .map(|i| {
+                    let (wx, wz) = (origin.x + i / wide - pad, origin.z + i % wide - pad);
+                    !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
+                })
+                .collect();
+            let near_fall = |at: i32| {
+                let (x, z) = (at / wide, at % wide);
+                (-1..=1).any(|dx| {
+                    (-1..=1).any(|dz| {
+                        let (nx, nz) = (x + dx, z + dz);
+                        (0..wide).contains(&nx)
+                            && (0..wide).contains(&nz)
+                            && falls[(nx * wide + nz) as usize]
+                    })
+                })
+            };
             (0..span * span)
                 .map(|i| {
                     let (x, z) = (i / span, i % span);
@@ -258,7 +276,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                         level: spread[i as usize],
                         pool: sampler.spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
                             == SpringPart::Pool,
-                        sheet: sampler.fall((origin.x + x - 1) as i64, (origin.z + z - 1) as i64),
+                        sheet: near_fall(at as i32),
                     })
                 })
                 .collect()

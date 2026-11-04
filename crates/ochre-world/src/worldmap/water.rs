@@ -35,9 +35,9 @@ const LIP_HALF: f32 = 0.03;
 const LIP_SEARCH: usize = 16;
 // How many cells on a river is followed to the still water it ends in.
 const SINK_HOPS: usize = 400;
-// A river into a lake ends where its water would stand this far under the ground it was graded to: the ground
-// there is under the lake's level, and a river that cannot rise cannot feed it.
-const TRENCH: f32 = 6.0;
+// A river into a lake ends where its water would stand this far under the lake's level: the ground there is lower than
+// the lake, and a river that cannot rise cannot feed it. A gorge through higher ground is not that.
+const UNDER_LAKE: f32 = 1.0;
 // How far a river's level may sit over the lake or sea it runs into, a block of height for each
 // 20 blocks it runs back from them, and how far above that it may be and still be brought down.
 const MOUTH_SLOPE: f32 = 0.05;
@@ -559,21 +559,21 @@ impl WorldMap {
             .enumerate()
             .map(|(n, s)| (s.from, n))
             .collect();
-        // whether the river ends in a lake, which is the only still water that can stand over ground the river runs on
-        let into_lake: Vec<bool> = (0..stretches.len())
+        // the surface of the lake the river ends in, the only still water that can stand over ground the river runs on
+        let into_lake: Vec<Option<f32>> = (0..stretches.len())
             .map(|n| {
                 let mut end = stretches[n];
                 for _ in 0..SINK_HOPS {
                     let kind = self.water_kind[end.to];
                     if kind == WaterCell::Lake as u8 || kind == WaterCell::Ocean as u8 {
-                        return kind == WaterCell::Lake as u8;
+                        return (kind == WaterCell::Lake as u8).then(|| self.water_surface[end.to]);
                     }
                     match at.get(&end.to) {
                         Some(&next) => end = stretches[next],
-                        None => return false,
+                        None => return None,
                     }
                 }
-                false
+                None
             })
             .collect();
         for n in 0..stretches.len() {
@@ -732,10 +732,9 @@ impl WorldMap {
             }
         }
         for n in 0..stretches.len() {
-            if let Some(k) = (0..=PROFILE_POINTS)
-                .filter(|_| into_lake[n])
-                .find(|&k| caps[n][k] - profiles.data[n][k] > TRENCH)
-            {
+            if let Some(k) = into_lake[n].and_then(|lake| {
+                (0..=PROFILE_POINTS).find(|&k| profiles.data[n][k] < lake - UNDER_LAKE)
+            }) {
                 profiles.ends[n] = profiles.ends[n].min(k as f32 / PROFILE_POINTS as f32);
             }
         }
@@ -837,11 +836,11 @@ impl WorldMap {
                 let distance = best_d2.sqrt() as f32;
                 let width = stretch.width_at(best_t);
                 let surface = profiles.level(i, best_t as f32);
-                // the bed steps down a block before the water does, so at a lip the water stands in a column down to the lower tread's bed: the sheet of the fall
+                // the bed steps down two blocks before the water does, so at a lip the water stands in a column down to the lower tread's bed: the sheet of the fall
                 let chord = ((stretch.b.0 - stretch.a.0).powi(2)
                     + (stretch.b.1 - stretch.a.1).powi(2))
                 .sqrt();
-                let ahead = profiles.level(i, (best_t + 1.0 / chord.max(1.0)).min(1.0) as f32);
+                let ahead = profiles.level(i, (best_t + 2.0 / chord.max(1.0)).min(1.0) as f32);
                 // nearest the water first, not the centre line, so a wide river wins over a narrow one
                 let margin = distance - width / 2.0;
                 // a ford is shallow however wide the river is there
