@@ -11,7 +11,7 @@ use crate::chunk::CHUNK_SIZE;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
 use crate::generate::region_store::{HeightSampler, RegionStore};
-use crate::generate::rocks::{rocks_near, RockKind};
+use crate::generate::rocks::rocks_near;
 use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::TreeTints;
@@ -235,16 +235,11 @@ pub fn generate_chunk_with(
         for rock in rocks_near(regions.terrain(), &mut heights, min, min + size - 1) {
             rock.plant(
                 origin,
+                1,
                 (IVec3::ZERO, IVec3::splat(size as i32 - 1)),
                 |coord, block| {
                     let coord = coord.as_u16vec3();
-                    let existing = chunk_data.get_block_at(coord);
-                    let sunk = rock.kind == RockKind::Erratic
-                        && !matches!(
-                            existing,
-                            BlockType::Water | BlockType::Ice | BlockType::Log | BlockType::Leaves
-                        );
-                    if existing == BlockType::Air || sunk {
+                    if rock.fits_into(chunk_data.get_block_at(coord)) {
                         chunk_data.set_block_at(coord, block);
                     }
                 },

@@ -9,6 +9,8 @@ use ochre_base::WATER_LEVEL;
 
 // Objects stand on a grid of cells this many blocks across, at most one in each.
 const CELL: i64 = 48;
+/// The widest cell, in blocks, of a LOD mesh that shows rocks: past it one is under a pixel.
+pub const ROCK_MAX_CELL: i64 = 4;
 /// How far out from its centre any rock reaches.
 pub const ROCK_REACH: i64 = 6;
 const MAX_GRADIENT: f64 = 0.4;
@@ -128,10 +130,22 @@ impl Rock {
         }
     }
 
-    /// Calls `set` with each block of the rock inside `bounds` (chunk-local, inclusive) and its place, for a chunk at `origin`.
+    /// Whether the rock's block goes where `existing` is: a mound only into air, a boulder also sinks into the ground.
+    pub fn fits_into(&self, existing: BlockType) -> bool {
+        existing == BlockType::Air
+            || (self.kind == RockKind::Erratic
+                && !matches!(
+                    existing,
+                    BlockType::Water | BlockType::Ice | BlockType::Log | BlockType::Leaves
+                ))
+    }
+
+    /// Calls `set` with the place of each cell of the rock inside `bounds` (local, inclusive), for a chunk or LOD node at
+    /// `origin` whose cells are `scale` blocks across. A cell is the rock if its middle is.
     pub fn plant(
         &self,
         origin: I64Vec3,
+        scale: i64,
         bounds: (IVec3, IVec3),
         mut set: impl FnMut(IVec3, BlockType),
     ) {
@@ -140,43 +154,52 @@ impl Rock {
             RockKind::Erratic => reach,
             RockKind::Mound => self.height.ceil() as i64 + 1,
         };
-        for wy in self.base.y - reach..=self.base.y + up {
-            for wz in self.base.z - reach..=self.base.z + reach {
-                for wx in self.base.x - reach..=self.base.x + reach {
-                    let local = (I64Vec3::new(wx, wy, wz) - origin).as_ivec3();
-                    if local.cmplt(bounds.0).any() || local.cmpgt(bounds.1).any() {
-                        continue;
-                    }
-                    if self.holds(wx, wy, wz) {
-                        set(local, self.block());
+        let low = self.base - I64Vec3::new(reach, reach, reach);
+        let high = self.base + I64Vec3::new(reach, up, reach);
+        let first = ((low - origin).div_euclid(I64Vec3::splat(scale)))
+            .as_ivec3()
+            .max(bounds.0);
+        let last = ((high - origin).div_euclid(I64Vec3::splat(scale)))
+            .as_ivec3()
+            .min(bounds.1);
+        for cy in first.y..=last.y {
+            for cz in first.z..=last.z {
+                for cx in first.x..=last.x {
+                    let cell = origin + I64Vec3::new(cx as i64, cy as i64, cz as i64) * scale;
+                    if self.holds(cell, scale) {
+                        set(IVec3::new(cx, cy, cz), self.block());
                     }
                 }
             }
         }
     }
 
-    // Whether the block at (`x`, `y`, `z`) is part of the rock.
-    fn holds(&self, x: i64, y: i64, z: i64) -> bool {
+    // Whether the cell `scale` blocks across with its corner at `at` is part of the rock, by its middle.
+    fn holds(&self, at: I64Vec3, scale: i64) -> bool {
+        let half = scale as f64 / 2.0;
         let (dx, dz) = (
-            x as f64 + 0.5 - (self.base.x as f64 + 0.5),
-            z as f64 + 0.5 - (self.base.z as f64 + 0.5),
+            (at.x as f64 + half) - (self.base.x as f64 + 0.5),
+            (at.z as f64 + half) - (self.base.z as f64 + 0.5),
         );
+        let y = at.y as f64 + half;
         match self.kind {
             RockKind::Erratic => {
                 // half sunk, squashed, and nibbled at the rim so it is not a smooth ball
-                let dy = y as f64 + 0.5 - (self.base.y as f64 + self.radius * 0.25);
+                let dy = y - (self.base.y as f64 + self.radius * 0.25);
                 let across = self.radius;
                 let d2 =
                     (dx / across).powi(2) + (dy / (across * 0.7)).powi(2) + (dz / across).powi(2);
-                let nibble = (hash(self.seed, x ^ (y << 20), z) % 1000) as f64 / 1000.0;
+                let nibble = (hash(self.seed, at.x ^ (at.y << 20), at.z) % 1000) as f64 / 1000.0;
                 d2 <= 1.0 - 0.3 * nibble
             }
             RockKind::Mound => {
                 let t = 1.0 - libm::sqrt(dx * dx + dz * dz) / self.radius;
-                if t <= 0.0 || y < self.base.y {
+                // the cell's bottom is on or over the ground and under the cone's height there
+                if t <= 0.0 || at.y < self.base.y {
                     return false;
                 }
-                y - self.base.y < (self.height * libm::pow(t, 1.2)).round() as i64
+                let blocks = (self.height * libm::pow(t, 1.2)).round();
+                (at.y - self.base.y) as f64 + half < blocks
             }
         }
     }
@@ -199,7 +222,7 @@ mod tests {
     fn blocks(rock: &Rock) -> Vec<IVec3> {
         let mut out = Vec::new();
         let size = IVec3::splat(200);
-        rock.plant(I64Vec3::new(0, 0, -100), (IVec3::ZERO, size), |at, _| {
+        rock.plant(I64Vec3::new(0, 0, -100), 1, (IVec3::ZERO, size), |at, _| {
             out.push(at)
         });
         out
@@ -244,6 +267,7 @@ mod tests {
         let mut out = Vec::new();
         r.plant(
             I64Vec3::new(40, 100, -20),
+            1,
             (IVec3::ZERO, IVec3::splat(15)),
             |at, _| out.push(at),
         );
@@ -251,5 +275,30 @@ mod tests {
             .iter()
             .all(|at| at.cmpge(IVec3::ZERO).all() && at.cmple(IVec3::splat(15)).all()));
         assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn coarser_cells_hold_about_the_same_volume_of_rock() {
+        for r in [
+            rock(RockKind::Erratic, 4.0, 0.0),
+            rock(RockKind::Mound, 3.5, 6.0),
+        ] {
+            let count = |scale: i64| {
+                let mut n = 0;
+                r.plant(
+                    I64Vec3::new(0, 0, -100),
+                    scale,
+                    (IVec3::ZERO, IVec3::splat(200)),
+                    |_, _| n += 1,
+                );
+                (n * scale.pow(3)) as f64
+            };
+            let (fine, coarse) = (count(1), count(2));
+            assert!(
+                (coarse / fine - 1.0).abs() < 0.4,
+                "{:?} holds {fine} blocks at 1 and {coarse} at 2",
+                r.kind
+            );
+        }
     }
 }

@@ -795,3 +795,7 @@ A kopje was only a heap of height, so its top took the savanna's grass. `Terrain
 ## Boulders and termite mounds (GENERATOR_VERSION 82)
 
 `rocks_near` finds the objects that reach a chunk (a 6-block reach, so the chunk's cells and their neighbours), and `Rock::plant` sets their blocks inside the chunk's bounds, so two chunks agree at their edge. A savanna window of 400 blocks square on seed 1337 holds 21 mounds and a taiga one on seed 2 one boulder, since most of the taiga is too steep or uneven (the shares are 0.30, 0.16 and 0.20). Bench on a savanna view (`BENCH_AT=-700,-928`, seed 1337): vertices 708,372 to 709,420 (+0.15%), chunk generation 203 to 208 ms.
+
+## Boulders and mounds in LOD meshes
+
+`Rock::plant` takes the size of a cell, and a cell is rock if its middle is, so a LOD node whose cells are 4 blocks across or less draws the same boulders and mounds as the chunks, in the same place. Past 4 blocks one is under a pixel. A rock is 66 blocks at one block a cell and the same volume, within 40%, at two (a test). Bench on the savanna view (`BENCH_AT=-700,-928`, seed 1337, `lod`): level 1 gains 103 vertices (20,084 to 20,187), the other levels none, and the total is 166.8 to 168.3 ms. Chunks are unchanged (the pins hold), so no version bump.

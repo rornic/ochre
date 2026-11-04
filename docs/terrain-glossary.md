@@ -66,7 +66,7 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 
 ## Objects placed by hash
 
-Single things dropped on the ground by a hash of position, not shaped from the heightfield. Trees are the existing example. Each is built block by block when a chunk is built. They are in the chunk meshes only: LOD meshes do not show them yet.
+Single things dropped on the ground by a hash of position, not shaped from the heightfield. Trees are the existing example. Each is built block by block when a chunk is built. They are in the chunk meshes and in LOD meshes whose cells are 4 blocks across or less.
 
 **Glacial erratic.** A lone boulder carried by a glacier and left where the ice melted, of a different rock from the ground it sits on. Real ones run from a metre to house size. Here they stand on tundra and taiga, as a squashed ball of stone 4 to 10 blocks across, half sunk, about one in every 5 to 6 map cells of 48 blocks that has ground level enough for it.
 
@@ -84,7 +84,7 @@ Single things dropped on the ground by a hash of position, not shaped from the h
 
 **LOD seam.** The line where full-detail chunks meet a coarser mesh. Where the two disagree on the ground's height there is a visible step. Steep fjord walls and the reach of the cliff pass leave seams of up to about 3 blocks.
 
-**LOD pass.** Work to make far terrain agree better with near terrain: matching the cliff pass's reach, showing the height of terraces and boulders, and where it is cheap showing the cap of an undercut as a cliff. Planned.
+**LOD pass.** Work to make far terrain agree better with near terrain. Boulders and mounds are in the finest LOD meshes. Still planned: matching the cliff pass's reach at the seam, trees on terraces, and the cap of an undercut as a cliff.
 
 ## Climate and biomes
 
