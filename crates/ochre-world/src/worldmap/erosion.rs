@@ -372,25 +372,36 @@ pub(crate) fn stream_power(map: &mut WorldMap) {
         let flood = priority_flood(&map.height, dim, &ties);
         let flow = accumulate(&flood);
         let before = map.height.clone();
+        // each cell's rate is its own, so only the sweep outward from the sea is in order
+        let mut rate = vec![0.0f32; dim * dim];
+        par_rows(dim, &mut rate, |row, cells| {
+            for (col, slot) in cells.iter_mut().enumerate() {
+                let (i, d) = (row * dim + col, flood.down[row * dim + col]);
+                if d == NONE || before[i] <= sea {
+                    continue;
+                }
+                let d = d as usize;
+                let dist = cell
+                    * if (i % dim != d % dim) && (i / dim != d / dim) {
+                        std::f32::consts::SQRT_2
+                    } else {
+                        1.0
+                    };
+                *slot = STREAM_K
+                    * map.rock_at_cell(i, before[i]).stream_erodibility()
+                    * flow[i].sqrt()
+                    * cell
+                    / dist;
+            }
+        });
         for &i in &flood.order {
             let (i, d) = (i as usize, flood.down[i as usize]);
             if d == NONE || before[i] <= sea {
                 continue;
             }
-            let d = d as usize;
-            let dist = cell
-                * if (i % dim != d % dim) && (i / dim != d / dim) {
-                    std::f32::consts::SQRT_2
-                } else {
-                    1.0
-                };
-            let f = STREAM_K
-                * map.rock_at_cell(i, before[i]).stream_erodibility()
-                * flow[i].sqrt()
-                * cell
-                / dist;
+            let f = rate[i];
             // the new height can't pass the downstream cell's: that would run water uphill
-            map.height[i] = ((before[i] + f * map.height[d]) / (1.0 + f)).min(before[i]);
+            map.height[i] = ((before[i] + f * map.height[d as usize]) / (1.0 + f)).min(before[i]);
         }
     }
 }
