@@ -132,6 +132,8 @@ impl WorldMap {
         put_layer(&mut out, &self.temperature);
         put_layer(&mut out, &self.moisture);
         put_bytes(&mut out, &self.biome);
+        put_bytes(&mut out, &self.biome_alt);
+        put_bytes(&mut out, &self.biome_margin);
         put_bytes(&mut out, &self.trees);
         put_bytes(&mut out, &self.roughness);
         put_bytes(&mut out, &self.range);
@@ -224,6 +226,8 @@ impl WorldMap {
             temperature: r.layer(cells)?,
             moisture: r.layer(cells)?,
             biome: r.bytes(cells)?,
+            biome_alt: r.bytes(cells)?,
+            biome_margin: r.bytes(cells)?,
             trees: r.bytes(cells)?,
             roughness: r.bytes(cells)?,
             range: r.bytes(cells)?,

@@ -7,7 +7,7 @@ use super::FeatureKind;
 use super::{WaterCell, WorldMap};
 use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::perlin;
+use ochre_base::noise::{fbm_filtered, perlin};
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 
@@ -28,6 +28,12 @@ const CALM: f64 = 8.0;
 // Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
+// Cells this wide or wider take their own biome, not a patchwork near a class boundary, whose patches are about `ZONE_PATCH` blocks.
+const ZONE_CELL: f64 = 16.0;
+const ZONE_PATCH: f64 = 12.0;
+// How far, in blocks, and over what wavelength, the climate biome's cell is drifted at a point.
+const DRIFT: f64 = 160.0;
+const DRIFT_WAVELENGTH: f64 = 700.0;
 // Land this many blocks over the sea on a volcanic province has the volcanic modifier.
 const VOLCANIC_FROM: f64 = 120.0;
 
@@ -681,16 +687,37 @@ impl WorldTerrain {
     // without following the cells' squares.
     fn wandered(&self, x: f64, z: f64) -> (f64, f64) {
         let seed = self.map.seed;
-        let wander = self.map.config.map_cell as f64 * 0.6;
+        let wander = self.map.config.map_cell as f64 * 1.5;
         (
             x + perlin(seed ^ 0x51A7, x / 40.0, z / 40.0) * wander,
             z + perlin(seed ^ 0xB10E, x / 40.0, z / 40.0) * wander,
         )
     }
 
+    // The cell whose climate biome a point takes: the point drifted by a slow warp, so edges between climates
+    // meander over hundreds of blocks without closing into islands, or `at` where that would leave the land.
+    fn climate_cell(&self, x: f64, z: f64, at: usize) -> usize {
+        let seed = self.map.seed;
+        let (dx, dz) = (
+            perlin(seed ^ 0x3E41, x / DRIFT_WAVELENGTH, z / DRIFT_WAVELENGTH),
+            perlin(seed ^ 0x3E42, x / DRIFT_WAVELENGTH, z / DRIFT_WAVELENGTH),
+        );
+        let (u, v) = self.map.to_cell(x + dx * DRIFT, z + dz * DRIFT);
+        let max = (self.map.dim() - 1) as f64;
+        let j = self.map.index(
+            u.round().clamp(0.0, max) as usize,
+            v.round().clamp(0.0, max) as usize,
+        );
+        if self.map.height[j] < WATER_LEVEL as f32 || self.map.height[at] < WATER_LEVEL as f32 {
+            at
+        } else {
+            j
+        }
+    }
+
     // The biome of the cell nearest a point, found a little to one side by a wandering offset so
     // the edges between biomes wander too, rather than following the cells' squares.
-    fn biome_at(&self, x: f64, z: f64) -> BiomeId {
+    fn biome_at(&self, x: f64, z: f64, cell: f64) -> BiomeId {
         let (x, z) = self.wandered(x, z);
         let (u, v) = self.map.to_cell(x, z);
         let max = (self.map.dim() - 1) as f64;
@@ -698,9 +725,18 @@ impl WorldTerrain {
             u.round().clamp(0.0, max) as usize,
             v.round().clamp(0.0, max) as usize,
         );
+        let j = self.climate_cell(x, z, i);
         // the climate biome, with the ground's modifier on it: high ground on a volcanic province is volcanic
         // whatever the climate, bare basalt on its slopes, and mountain landform is mountain
-        let kind = self.map.biome[i] as usize;
+        let mut kind = self.map.biome[j] as usize;
+        // near a class boundary a block may take the biome across it, in patches that thin out with the margin
+        let margin = self.map.biome_margin[j];
+        if margin < 255 && cell < ZONE_CELL {
+            let n = (fbm_filtered(self.map.seed ^ 0xB10D, x, z, ZONE_PATCH, 1, cell) + 1.0) / 2.0;
+            if n < 0.5 * (1.0 - margin as f64 / 255.0) {
+                kind = self.map.biome_alt[j] as usize;
+            }
+        }
         if self.map.geology[i] == super::geology::VOLCANIC
             && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
         {
@@ -730,7 +766,7 @@ impl WorldTerrain {
     ) -> (TerrainSample, bool) {
         let map = &self.map;
         let seed = map.seed;
-        let biome = self.biome_at(x, z);
+        let biome = self.biome_at(x, z, cell);
         let base = map.height_at(x, z) as f64;
         // where rivers are laid, drawn off the map's lines by the meander, if any reach this cell
         let (u, v) = map.to_cell(x, z);
@@ -977,7 +1013,7 @@ impl TerrainSource for WorldTerrain {
     fn climate(&self, x: f64, z: f64) -> Climate {
         let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0);
         // a biome reads lusher or drier than its climate, in grass and flora tint
-        let (warmer, wetter) = self.biomes.climate_shift(self.biome_at(x, z));
+        let (warmer, wetter) = self.biomes.climate_shift(self.biome_at(x, z, 1.0));
         Climate {
             temperature: (self.temperature(x, z) - above_sea * LAPSE_PER_BLOCK + warmer)
                 .clamp(0.0, 1.0),
@@ -1195,6 +1231,60 @@ mod river_bank_tests {
     }
 
     #[test]
+    fn blocks_near_a_class_boundary_take_the_biome_across_it_and_wide_cells_do_not() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        let map = &terrain.map;
+        let max = (map.dim() - 1) as f64;
+        let (mut zones, mut mixed) = (0, 0);
+        for k in 0..40_000u32 {
+            let (x, z) = (
+                (k % 200) as f64 * 320.0 - 32000.0,
+                (k / 200) as f64 * 320.0 - 32000.0,
+            );
+            let (wx, wz) = terrain.wandered(x, z);
+            let (u, v) = map.to_cell(wx, wz);
+            let i = map.index(
+                u.round().clamp(0.0, max) as usize,
+                v.round().clamp(0.0, max) as usize,
+            );
+            let i = terrain.climate_cell(wx, wz, i);
+            let (fine, wide) = (
+                terrain.biome_at(x, z, 1.0),
+                terrain.biome_at(x, z, ZONE_CELL),
+            );
+            assert_eq!(
+                wide,
+                terrain.biome_at(x, z, 64.0),
+                "wide cells differ at {x},{z}"
+            );
+            assert_eq!(
+                fine,
+                terrain.biome_at(x, z, 1.0),
+                "not deterministic at {x},{z}"
+            );
+            if map.biome_margin[i] == 255 {
+                assert_eq!(
+                    fine, wide,
+                    "a cell well inside its biome takes another at {x},{z}"
+                );
+            } else {
+                zones += 1;
+                mixed += (fine != wide) as usize;
+            }
+        }
+        assert!(zones > 200, "only {zones} points in a boundary zone");
+        assert!(
+            mixed > 20,
+            "only {mixed} of {zones} zone points take the biome across"
+        );
+    }
+
+    #[test]
     fn tableland_covers_about_its_share_of_the_eligible_lowland_and_only_there() {
         let config = super::super::WorldConfig {
             size: 65536,
@@ -1314,7 +1404,7 @@ mod river_bank_tests {
                     v.round().clamp(0.0, 511.0) as usize,
                 );
                 let above = terrain.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
-                let modifier = biomes.modifier(terrain.biome_at(x, z));
+                let modifier = biomes.modifier(terrain.biome_at(x, z, 1.0));
                 let on_volcanic = terrain.map.geology[cell] == super::super::geology::VOLCANIC;
                 if on_volcanic && above >= VOLCANIC_FROM + 20.0 {
                     volcanic += 1;

@@ -685,3 +685,20 @@ Lakes and streams on tableland stood on humps. Water was routed over the map's s
 
 On seed 1650122255 lakes now stand at 59 with ground rising to 65 to 77 on each side. `water_audit`: lake walls 0 on seeds 1650122255, 11, 7 and 368871838, `map uncontained` 0. Over seeds 1 to 12 river cells fall 1 to 16% and mean land height 1 to 15 blocks against the PR 6 census, as treads are flatter and lower than the smooth ground. A test checks that tableland cells sit nearer their beds (median 4 blocks, 17 without the pass).
 
+
+## Transition zones (GENERATOR_VERSION 75)
+
+Biome edges were hard lines wandering 19 blocks off the map's cell squares. Three changes. (1) `wandered` offsets by 1.5 cells (48 blocks), up from 0.6, which also moves rock provinces' edges, and the climate biome's cell is drifted by a slow warp (perlin at wavelength 700, up to 160 blocks, falling back to the wandered cell at the coast) so edges between climates meander over hundreds of blocks; mountain and volcanic cover keep the wandered cell so they stay on their ground. (2) Two map layers, `biome_alt` and `biome_margin` (the file grows by 2 bytes a cell): each land cell probes warmth and moisture 0.01 to 0.04 either side, and the first offset that changes its class sets the margin (the offset over 0.04, as 0..255) and the biome across it; a cell the swamp rule or the tidying changed stays at 255. (3) At block scale, `biome_at` takes the alt biome where `fbm_filtered` at wavelength 12 falls under `0.5 * (1 - margin / 255)`, so patches of 10 to 20 blocks are thickest on the boundary. Cells 16 blocks wide or more use their own biome, so LODs are unchanged.
+
+The design's first step, noise of 0.05 in warmth and 0.08 in moisture at wavelength 1500 before `classify`, is not built: it made round islands of the other biome 300 to 600 blocks across wherever a class boundary ran through nearly flat climate. Drifting the lookup bends the edges without creating islands.
+
+The design's straight-edge metric could not tell fixed from unfixed (HEAD already passed under 200), so `worldprobe edges` also counts crossings: the flips along a row within 48 blocks of each other, a hard edge being one flip and a mix three or more. On seeds 1, 42, 1337 and 300059728, windows at (0, 0) and (+-12000, +-12000) with land:
+
+| | hard (one flip) | mixed (three or more) | longest straight edge |
+| --- | --- | --- | --- |
+| before | 74 to 90% | 8 to 16% | up to 136 blocks (244 on one window outside this set) |
+| after | 0 to 66%, mostly 10 to 40% | 11 to 67% | up to 88 blocks |
+
+Census over 64 seeds: no biome over 70% of land (largest 60.7%), spawn on all 64. Climate takes about 0.13 s longer from the margin probes. `bench` at a river (16912, -18064) and a peak (9744, -6768) on seed 1: vertices 928,493 to 928,061 and 596,659 to 596,665, chunk generation and meshing unchanged within noise (the default spawn moves, so its view is not comparable). `water_audit` on seeds 1 and 42: no uncontained cells, no lake or coast walls or steps. Tests: the margin layers are 255 on sea and every zone cell has another biome across it, zone blocks take the biome across while wide cells and cells well inside never do, and the map round-trips through bytes.
+
+Not done: trees and flora density still read the cell's own biome, so a patch of the other biome keeps its neighbour's tree density; the dither moves the biome, not the density layer.
