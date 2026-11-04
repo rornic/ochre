@@ -224,6 +224,13 @@ impl HeightSampler<'_> {
             .fresh_water_at(world_x - origin.x, world_z - origin.y)
     }
 
+    pub fn rocky(&mut self, world_x: i64, world_z: i64) -> bool {
+        let coord = RegionCoord::from_world(world_x, world_z);
+        let origin = coord.origin();
+        self.region(coord)
+            .rocky_at(world_x - origin.x, world_z - origin.y)
+    }
+
     pub fn spring(&mut self, world_x: i64, world_z: i64) -> SpringPart {
         let coord = RegionCoord::from_world(world_x, world_z);
         let origin = coord.origin();

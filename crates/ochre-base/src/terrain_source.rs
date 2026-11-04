@@ -30,6 +30,8 @@ pub struct TerrainSample {
     pub water_surface: f32,
     pub water_kind: WaterKind,
     pub spring: SpringPart,
+    /// Bare rock on top of a relief feature, which a block rule that reads only slope would leave as grass.
+    pub rocky: bool,
 }
 
 /// The part of a spring, where a river rises, a column is in.

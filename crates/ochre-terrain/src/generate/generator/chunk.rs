@@ -31,6 +31,9 @@ const DESERT_CLIFFS_ABOVE: i64 = 90;
 // Blocks under a column's surface the cliff pass leaves alone.
 const SKIN: i64 = 3;
 
+// Added to the gradient blocks are chosen by where the ground is bare rock, so grass gives way to stone.
+const ROCK_GRADIENT: f64 = 4.0;
+
 // Which of the passes laid over the terrain's blocks run, so a tool can tell which one made a block.
 #[derive(Clone, Copy, Debug)]
 pub struct ChunkPasses {
@@ -124,6 +127,12 @@ pub fn generate_chunk_with(
                 chunk_pos.0.z * size + z,
                 gradient,
             );
+            // the top of a kopje is bare rock whatever the slope
+            let slope = if columns.rocky(x, z) {
+                slope + ROCK_GRADIENT
+            } else {
+                slope
+            };
             // snow lies deep, in full blocks, with the packed stone only beneath it
             let snowy = column_block(
                 biomes,
@@ -232,6 +241,7 @@ pub fn generate_chunk_with(
             let column_height = columns.height(x, z);
             let local_y = column_height - world_y;
             if !(0..size).contains(&local_y)
+                || columns.rocky(x, z)
                 || cliff_reach_boosted(columns.gradient(x, z), columns.cliff_boost(x, z)) > 0.0
             {
                 continue;

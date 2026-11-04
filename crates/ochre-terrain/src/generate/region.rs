@@ -37,6 +37,7 @@ pub struct Region {
     fresh: Vec<bool>,
     // the part of a spring each column is in
     springs: Vec<SpringPart>,
+    rocky: Vec<bool>,
     // the lowest ground and highest ground or inland water in each TILE_SIZE tile, TILES x TILES, row-major [z][x]
     tile_range: Vec<(f32, f32)>,
 }
@@ -61,6 +62,10 @@ impl Region {
     pub fn fresh_water_at(&self, local_x: i64, local_z: i64) -> Option<f32> {
         let i = Self::index(local_x, local_z);
         self.fresh[i].then_some(self.water[i])
+    }
+
+    pub fn rocky_at(&self, local_x: i64, local_z: i64) -> bool {
+        self.rocky[Self::index(local_x, local_z)]
     }
 
     pub fn spring_at(&self, local_x: i64, local_z: i64) -> SpringPart {
@@ -93,6 +98,7 @@ pub fn compute_region(noise: &dyn TerrainSource, coord: RegionCoord) -> Region {
     let mut water = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);
     let mut fresh = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);
     let mut springs = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);
+    let mut rocky = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);
     let mut tile_range = vec![(f32::MAX, f32::MIN); (TILES * TILES) as usize];
     for z in 0..REGION_SIZE {
         for x in 0..REGION_SIZE {
@@ -111,6 +117,7 @@ pub fn compute_region(noise: &dyn TerrainSource, coord: RegionCoord) -> Region {
                 WaterKind::River | WaterKind::Lake
             ));
             springs.push(sample.spring);
+            rocky.push(sample.rocky);
             let tile = &mut tile_range[((z / TILE_SIZE) * TILES + x / TILE_SIZE) as usize];
             // the sea is left out: nodes under it are known to be water, see `lod::spawn::known_empty`
             let inland = if matches!(sample.water_kind, WaterKind::Lake | WaterKind::River) {
@@ -128,6 +135,7 @@ pub fn compute_region(noise: &dyn TerrainSource, coord: RegionCoord) -> Region {
         water,
         fresh,
         springs,
+        rocky,
         tile_range,
     }
 }

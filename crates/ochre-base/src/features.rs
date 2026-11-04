@@ -276,7 +276,7 @@ fn kopjes(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * gentle
 }
 
-// Narrow ravines running down slopes steeper than 0.2: 3 to 8 deep, 3 to 6 wide, wandering and branching.
+// Wide swales across slopes steeper than 0.2: 2 to 6 deep and about 10 across, wandering.
 fn gullies(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let sloped = smoothstep(0.2, 0.3, ctx.gradient);
     if sloped <= 0.0 || ctx.downhill == (0.0, 0.0) {

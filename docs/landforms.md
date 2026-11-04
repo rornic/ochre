@@ -34,7 +34,7 @@ Each is a pure function of the seed and position returning blocks to add to the 
 | Tundra | pingos, patterned ground |
 | Taiga | drumlins along the config's gradient angle |
 | Desert | yardangs along the wind |
-| Savanna | kopjes |
+| Savanna | kopjes (rounded rock heaps 6 to 14 high, bare stone where the heap stands 4 or more blocks over the plain, with grass round the foot) |
 | Steppe | gullies (swales 2 to 6 deep, about 10 across) in a frame fixed by the world's ridge angle |
 | Swamp | hummocks |
 

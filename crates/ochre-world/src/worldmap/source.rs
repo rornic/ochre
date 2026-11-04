@@ -34,6 +34,8 @@ const ZONE_CELL: f64 = 16.0;
 const ZONE_PATCH: f64 = 12.0;
 // Relief features need ground this high over the sea.
 const RELIEF_ABOVE_SEA: f64 = 6.0;
+// A kopje's heap shows bare rock where it stands this many blocks over the plain.
+const KOPJE_ROCK_ABOVE: f64 = 4.0;
 // Groves and clearings: trees keep this share of their density in a clearing, and grow in patches about `GROVE_PATCH` blocks across.
 const CLEARING_KEEPS: f64 = 0.4;
 const GROVE_PATCH: f64 = 160.0;
@@ -707,15 +709,6 @@ impl WorldTerrain {
         )
     }
 
-    // What the biome's relief features add to the ground at a point.
-    fn relief_offset(&self, biome: BiomeId, x: f64, z: f64, cell: f64) -> f64 {
-        self.relief_offsets(biome, x, z, cell)
-            .iter()
-            .map(|&(_, offset)| offset)
-            .sum::<f64>()
-            .clamp(-MAX_OFFSET, MAX_OFFSET)
-    }
-
     /// What each of the relief features of the biome at a point adds to the ground there, ignoring water.
     pub fn relief_at(&self, x: f64, z: f64) -> Vec<(ReliefKind, f64)> {
         self.relief_offsets(self.biome_at(x, z, 1.0), x, z, 1.0)
@@ -972,13 +965,18 @@ impl WorldTerrain {
             (map.config.bounds.max_y - 64) as f64,
         );
         // a biome's relief features, nowhere near water or the sea, so the water rule is untouched
+        let mut rocky = false;
         let ground = if rivers[0].is_none()
             && spring.is_none()
             && by.iter().all(Option::is_none)
             && ground >= WATER_LEVEL as f64 + RELIEF_ABOVE_SEA
         {
-            (ground + self.relief_offset(biome, x, z, cell))
-                .max(WATER_LEVEL as f64 + LAND_ABOVE_SEA)
+            let offsets = self.relief_offsets(biome, x, z, cell);
+            let sum = offsets.iter().map(|&(_, offset)| offset).sum::<f64>();
+            rocky = offsets
+                .iter()
+                .any(|&(kind, offset)| kind == ReliefKind::Kopjes && offset >= KOPJE_ROCK_ABOVE);
+            (ground + sum.clamp(-MAX_OFFSET, MAX_OFFSET)).max(WATER_LEVEL as f64 + LAND_ABOVE_SEA)
         } else {
             ground
         };
@@ -1041,6 +1039,7 @@ impl WorldTerrain {
             water_surface,
             water_kind,
             spring: spring_part,
+            rocky,
         };
         (sample, near_river)
     }
@@ -1330,6 +1329,30 @@ mod river_bank_tests {
             }
         }
         assert!(covered > 20, "only {covered} points carry a relief feature");
+    }
+
+    #[test]
+    fn a_kopje_is_bare_rock_where_its_heap_stands_over_the_plain_and_nowhere_else() {
+        // seed 1337 has savanna with kopjes round -700 -928, on the map a game builds
+        let config =
+            super::super::character::world_config(1337, super::super::WorldConfig::default());
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1337, config)));
+        let (mut rocky, mut heaped) = (0, 0);
+        for i in 0..400 {
+            for j in 0..400 {
+                let (x, z) = (-1000.0 + i as f64 * 2.0, -1300.0 + j as f64 * 2.0);
+                let high = terrain.relief_at(x, z).iter().any(|&(kind, offset)| {
+                    kind == ReliefKind::Kopjes && offset >= KOPJE_ROCK_ABOVE
+                });
+                let sample = terrain.sample(x, z);
+                // the heap is not raised near water or the sea, so no rock there either
+                assert!(!sample.rocky || high, "rock with no heap at {x},{z}");
+                rocky += sample.rocky as usize;
+                heaped += high as usize;
+            }
+        }
+        assert!(heaped > 0, "no kopje heap round -700 -928");
+        assert!(rocky > 0, "no bare rock on {heaped} heap columns");
     }
 
     #[test]
