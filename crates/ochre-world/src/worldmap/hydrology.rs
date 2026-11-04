@@ -148,9 +148,13 @@ fn open_sea(height: &[f32], dim: usize) -> Vec<bool> {
 }
 
 pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood {
+    flood_over(height, dim, ties, &open_sea(height, dim))
+}
+
+// `priority_flood` with the open sea of `height` already found.
+fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &[bool]) -> Flood {
     let cells = height.len();
     let sea = WATER_LEVEL as f32;
-    let open = open_sea(height, dim);
     let mut flood = Flood {
         filled: height.to_vec(),
         down: vec![NONE; cells],
@@ -599,7 +603,9 @@ pub fn run(map: &mut WorldMap, carve: bool) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
     let ties = flood_ties(map);
-    let mut flood = priority_flood(&map.height, dim, &ties);
+    // draining only fills basins and cuts channels to over the sea, so the open sea is the same all through
+    let open = open_sea(&map.height, dim);
+    let mut flood = flood_over(&map.height, dim, &ties, &open);
     let (mut lakes, mut basin_of) = basins(&map.height, &flood, dim);
     for _ in 0..DRAIN_ROUNDS {
         let mut cut = false;
@@ -611,7 +617,7 @@ pub fn run(map: &mut WorldMap, carve: bool) {
         if !cut {
             break;
         }
-        flood = priority_flood(&map.height, dim, &ties);
+        flood = flood_over(&map.height, dim, &ties, &open);
         (lakes, basin_of) = basins(&map.height, &flood, dim);
     }
     let height = map.height.clone();
@@ -637,7 +643,6 @@ pub fn run(map: &mut WorldMap, carve: bool) {
     let (flow, _) = flow_through(&down, &lakes, &sorted, &basin_of, &height, &rain);
     let order = upstream_first(&down);
 
-    let open = open_sea(&height, dim);
     let mut kind = vec![WaterCell::None as u8; height.len()];
     let mut surface = vec![0.0f32; height.len()];
     for (i, &o) in open.iter().enumerate() {
