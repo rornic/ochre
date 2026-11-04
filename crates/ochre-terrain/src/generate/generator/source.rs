@@ -275,33 +275,34 @@ impl<'a> ChunkNeighbourhood<'a> {
                     !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
                 })
                 .collect();
-            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`, and its level
-            let nearest_fall = |at: i32| {
+            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`, and whether any column
+            // of a fall within that is at this column's level, which makes this the high side of it
+            let near_falls = |at: i32| {
                 let (x, z) = (at / wide, at % wide);
-                (0..=WATER_CALM_REACH).find_map(|d| {
-                    (-d..=d).find_map(|dx| {
-                        (-d..=d).find_map(|dz| {
-                            let (nx, nz) = (x + dx, z + dz);
-                            let near = dx.abs().max(dz.abs()) == d
-                                && (0..wide).contains(&nx)
-                                && (0..wide).contains(&nz)
-                                && falls[(nx * wide + nz) as usize];
-                            near.then(|| (d, raw[(nx * wide + nz) as usize]))
-                        })
-                    })
-                })
+                let mut nearest = WATER_CALM_REACH + 1;
+                let mut high_side = false;
+                for dx in -WATER_CALM_REACH..=WATER_CALM_REACH {
+                    for dz in -WATER_CALM_REACH..=WATER_CALM_REACH {
+                        let (nx, nz) = (x + dx, z + dz);
+                        if !(0..wide).contains(&nx)
+                            || !(0..wide).contains(&nz)
+                            || !falls[(nx * wide + nz) as usize]
+                        {
+                            continue;
+                        }
+                        nearest = nearest.min(dx.abs().max(dz.abs()));
+                        high_side |= (raw[(nx * wide + nz) as usize] - raw[at as usize]).abs()
+                            < WATER_SLOPE_MAX_STEP;
+                    }
+                }
+                (nearest, high_side)
             };
             (0..span * span)
                 .map(|i| {
                     let (x, z) = (i / span, i % span);
                     let at = ((x + WATER_SPREAD_REACH) * wide + z + WATER_SPREAD_REACH) as usize;
                     (!raw[at].is_nan()).then(|| {
-                        let nearest = nearest_fall(at as i32);
-                        let distance = nearest.map_or(WATER_CALM_REACH + 1, |(d, _)| d);
-                        // the water on the high side of a fall, whose back must not show over the sheet
-                        let hush = nearest.is_some_and(|(_, level)| {
-                            (level - raw[at]).abs() < WATER_SLOPE_MAX_STEP
-                        });
+                        let (distance, hush) = near_falls(at as i32);
                         // all the way within two columns, so the sheet's top and the surface beside it are one height
                         let t =
                             ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);
