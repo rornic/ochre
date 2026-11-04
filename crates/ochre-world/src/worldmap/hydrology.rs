@@ -157,13 +157,10 @@ pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood 
         order: Vec::with_capacity(cells),
     };
     let mut seen = vec![false; cells];
-    let mut heap = BinaryHeap::new();
-    let push = |heap: &mut BinaryHeap<_>, key: f32, i: usize| {
+    let mut queue = FloodQueue::new();
+    let push = |queue: &mut FloodQueue, key: f32, i: usize| {
         // Elevation first, including below sea level, then deterministic flood ties.
-        heap.push((
-            Reverse(((height_key(key) as u64) << 32) | ties[i] as u64),
-            i as u32,
-        ));
+        queue.push(((height_key(key) as u64) << 32) | ties[i] as u64, i as u32);
     };
     for z in 0..dim {
         for x in 0..dim {
@@ -177,12 +174,12 @@ pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood 
                         height[(z as i64 + dz) as usize * dim + (x as i64 + dx) as usize] >= sea
                     });
                 if shore {
-                    push(&mut heap, height[i], i);
+                    push(&mut queue, height[i], i);
                 }
             }
         }
     }
-    while let Some((_, i)) = heap.pop() {
+    while let Some(i) = queue.pop() {
         let i = i as usize;
         flood.order.push(i as u32);
         let (x, z) = ((i % dim) as i64, (i / dim) as i64);
@@ -198,10 +195,54 @@ pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood 
             seen[n] = true;
             flood.filled[n] = height[n].max(flood.filled[i]);
             flood.down[n] = i as u32;
-            push(&mut heap, flood.filled[n], n);
+            push(&mut queue, flood.filled[n], n);
         }
     }
     flood
+}
+
+// How many of a key's top bits pick its bucket in `FloodQueue`.
+const BUCKET_BITS: u32 = 18;
+
+// The flood's queue: pops the lowest (key, cell) first, ties on the key going to the higher cell, as a
+// `BinaryHeap` of `Reverse` keys does. Keys wait in buckets by their top bits and only the bucket being
+// drained is a heap, which is cheaper than one heap of the whole front. A key pushed is never in a lower
+// bucket than the one being drained, since a cell's level is never under the level it was reached from.
+struct FloodQueue {
+    buckets: Vec<Vec<(Reverse<u64>, u32)>>,
+    current: usize,
+    heap: BinaryHeap<(Reverse<u64>, u32)>,
+}
+
+impl FloodQueue {
+    fn new() -> Self {
+        Self {
+            buckets: vec![Vec::new(); 1 << BUCKET_BITS],
+            current: 0,
+            heap: BinaryHeap::new(),
+        }
+    }
+
+    fn push(&mut self, key: u64, cell: u32) {
+        let bucket = (key >> (64 - BUCKET_BITS)) as usize;
+        debug_assert!(bucket >= self.current);
+        if bucket == self.current {
+            self.heap.push((Reverse(key), cell));
+        } else {
+            self.buckets[bucket].push((Reverse(key), cell));
+        }
+    }
+
+    fn pop(&mut self) -> Option<u32> {
+        loop {
+            if let Some((_, cell)) = self.heap.pop() {
+                return Some(cell);
+            }
+            self.current =
+                (self.current + 1..self.buckets.len()).find(|&b| !self.buckets[b].is_empty())?;
+            self.heap = BinaryHeap::from(std::mem::take(&mut self.buckets[self.current]));
+        }
+    }
 }
 
 // A basin the flood filled: its cells, how deep it is filled, the level it spills at and its lowest cell.
@@ -740,6 +781,36 @@ pub fn run(map: &mut WorldMap, carve: bool) {
 mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn the_flood_queue_pops_in_a_heaps_order() {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let (mut queue, mut heap) = (FloodQueue::new(), BinaryHeap::new());
+        // keys never fall under the bucket last popped from, and some share a key so the cell breaks the tie
+        let mut floor = 0u64;
+        for round in 0..20_000u32 {
+            if round % 3 != 2 {
+                let key =
+                    floor + random() % (1 << (64 - BUCKET_BITS + 2)) / 4 * 4 + (round % 2) as u64;
+                queue.push(key, round);
+                heap.push((Reverse(key), round));
+            } else {
+                let (Reverse(key), cell) = heap.pop().unwrap();
+                assert_eq!(Some(cell), queue.pop());
+                floor = key >> (64 - BUCKET_BITS) << (64 - BUCKET_BITS);
+            }
+        }
+        while let Some((_, cell)) = heap.pop() {
+            assert_eq!(Some(cell), queue.pop());
+        }
+        assert_eq!(None, queue.pop());
+    }
 
     #[test]
     fn signed_height_keys_sort_and_round_trip() {
