@@ -28,12 +28,14 @@ const STAIR_GRADE: f32 = 0.2;
 const TREAD_DROP: f32 = 3.0;
 // A drop between two profile points this big is a fall, and its lip a step this far each side of the interval's middle.
 const FALL_MIN: f32 = 2.5;
-const LIP_HALF: f32 = 0.12;
+const LIP_HALF: f32 = 0.03;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
-// A river stays this far over the lake or sea it runs into, looked for this many cells on.
-const SINK_ABOVE: f32 = 0.6;
+// How many cells on a river is followed to the still water it ends in.
 const SINK_HOPS: usize = 400;
+// A river into a lake ends where its water would stand this far under the ground it was graded to: the ground
+// there is under the lake's level, and a river that cannot rise cannot feed it.
+const TRENCH: f32 = 6.0;
 // How far a river's level may sit over the lake or sea it runs into, a block of height for each
 // 20 blocks it runs back from them, and how far above that it may be and still be brought down.
 const MOUTH_SLOPE: f32 = 0.05;
@@ -555,28 +557,23 @@ impl WorldMap {
             .enumerate()
             .map(|(n, s)| (s.from, n))
             .collect();
-        // a river never runs under the lake or sea it ends in: where the real ground is lower than the water it
-        // runs into, as a perched lake's, it stays over it and the bank holds it
-        for n in 0..stretches.len() {
-            let mut end = stretches[n];
-            let mut steps = 0;
-            let sink = loop {
-                let kind = self.water_kind[end.to];
-                if kind == WaterCell::Lake as u8 || kind == WaterCell::Ocean as u8 {
-                    break Some(self.water_surface[end.to]);
+        // whether the river ends in a lake, which is the only still water that can stand over ground the river runs on
+        let into_lake: Vec<bool> = (0..stretches.len())
+            .map(|n| {
+                let mut end = stretches[n];
+                for _ in 0..SINK_HOPS {
+                    let kind = self.water_kind[end.to];
+                    if kind == WaterCell::Lake as u8 || kind == WaterCell::Ocean as u8 {
+                        return kind == WaterCell::Lake as u8;
+                    }
+                    match at.get(&end.to) {
+                        Some(&next) => end = stretches[next],
+                        None => return false,
+                    }
                 }
-                steps += 1;
-                match at.get(&end.to) {
-                    Some(&next) if steps < SINK_HOPS => end = stretches[next],
-                    _ => break None,
-                }
-            };
-            if let Some(surface) = sink {
-                for level in caps[n].iter_mut() {
-                    *level = level.max(surface + SINK_ABOVE);
-                }
-            }
-        }
+                false
+            })
+            .collect();
         for n in 0..stretches.len() {
             let mut hops = 0;
             let mut end = stretches[n];
@@ -732,6 +729,14 @@ impl WorldMap {
                 profiles.data[n][PROFILE_POINTS] = profiles.data[next][0];
             }
         }
+        for n in 0..stretches.len() {
+            if let Some(k) = (0..=PROFILE_POINTS)
+                .filter(|_| into_lake[n])
+                .find(|&k| caps[n][k] - profiles.data[n][k] > TRENCH)
+            {
+                profiles.ends[n] = profiles.ends[n].min(k as f32 / PROFILE_POINTS as f32);
+            }
+        }
         for data in profiles.data.iter_mut() {
             stairs(data, cell_blocks);
         }
@@ -813,6 +818,10 @@ impl WorldMap {
                 }
                 // a river into a lake stops at its shore, with a rounded end, not on over the land past it
                 let end = profiles.end(i) as f64;
+                // a river that ends before this stretch begins has none of it
+                if end <= 0.0 {
+                    continue;
+                }
                 if best_t > end {
                     let (ex, ez) = stretch.point(end);
                     best_d2 = (x - ex) * (x - ex) + (z - ez) * (z - ez);
