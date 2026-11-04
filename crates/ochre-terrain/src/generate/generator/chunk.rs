@@ -1,5 +1,5 @@
 use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
-use super::flora::flora_at;
+use super::flora::{flora_at, understory};
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
 use super::terrain::{
@@ -248,11 +248,18 @@ pub fn generate_chunk_with(
             }
             let (world_x, world_z) = (origin.x + x, origin.z + z);
             // ferns grow on the forest floor, and in the shade of a lone tree's crown
-            let shaded = biomes.name(biome) == Some("forest")
+            let shaded = matches!(biomes.name(biome), Some("forest" | "jungle"))
                 || trees
                     .iter()
                     .any(|tree| tree.shades(world_x as f64 + 0.5, world_z as f64 + 0.5));
-            if let Some(plant) = flora_at(seed, world_x, world_z, shaded, temperature) {
+            if let Some(plant) = flora_at(
+                seed,
+                world_x,
+                world_z,
+                shaded,
+                temperature,
+                understory(biomes.name(biome)),
+            ) {
                 chunk_data.set_block_at(coord, plant);
             }
         }
