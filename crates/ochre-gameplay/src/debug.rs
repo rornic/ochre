@@ -251,10 +251,12 @@ fn update_overlay(
         let pos = player.translation();
         let noise = world.region_store.terrain();
         let (x, z) = (pos.x as f64, pos.z as f64);
-        let biome = noise
-            .biomes()
-            .name(noise.sample(x, z).biome)
-            .unwrap_or("base");
+        let id = noise.sample(x, z).biome;
+        let name = noise.biomes().name(id).unwrap_or("grassland");
+        let biome = match noise.biomes().modifier(id) {
+            ochre_base::biome::Modifier::None => name.to_string(),
+            modifier => format!("{name} ({})", format!("{modifier:?}").to_lowercase()),
+        };
         let climate = noise.climate(x, z);
         let _ = writeln!(out, "pos: {:.0} {:.0} {:.0}", pos.x, pos.y, pos.z);
         let _ = writeln!(
