@@ -150,8 +150,25 @@ pub(super) fn mesh_blocks(
         // shallow water in a coarse cell is drawn to its real surface, not the cell's top
         let surface_top = source.water_surface_top(block_coord);
         let top = surface_top.map_or(0.5 - lowering, |top| (top - lowering).max(-0.45));
+        let sheet = cell_size == 1 && source.water_sheet(block_coord.x, block_coord.z);
+        let hush = cell_size == 1 && source.water_hush(block_coord.x, block_coord.z);
+        // a sheet's sides are whole blocks, but its top follows the corners it shares with the surface beside it
+        let top_level = if sheet {
+            source.water_level(block_coord.x, block_coord.z)
+        } else {
+            None
+        };
+        // the sides of a fall's sheet reach the block above, or stacked blocks show a seam between them
+        let top = if sheet && source.block(block_coord + IVec3::Y) == BlockType::Water {
+            0.5
+        } else {
+            top
+        };
         // fresh water at full detail is drawn to its spread surface, a slope down the river, not to whole blocks
-        let level = if cell_size == 1 && surface_top.is_none() {
+        let level = if cell_size == 1
+            && surface_top.is_none()
+            && !source.water_sheet(block_coord.x, block_coord.z)
+        {
             source.water_level(block_coord.x, block_coord.z)
         } else {
             None
@@ -171,8 +188,14 @@ pub(super) fn mesh_blocks(
                 && !(source.flowing(block_coord.x, block_coord.z)
                     && source.block(under) == BlockType::Water
                     && open(source.block(under + FACE_NORMAL_OFFSET[i])));
+            // the top block's sides follow the corners too, so the sheet's edge is at the surface beside it
+            let at_level = if i == 4 || top_block {
+                level.or(top_level)
+            } else {
+                level
+            };
             water_face(i, top, skirt, &mut |position| {
-                let corner = corner_of(block_coord, level?, position);
+                let corner = corner_of(block_coord, at_level?, position);
                 // unclamped to the block, so blocks either side of a step meet at their shared corner, even outside it
                 let height = corner.height - WATER_DROP - block_coord.y as f32 - 0.5;
                 Some((
@@ -185,7 +208,19 @@ pub(super) fn mesh_blocks(
             if !open(source.block(block_coord + offset)) {
                 continue;
             }
-            let face = water_face_at(i);
+            let mut face = water_face_at(i);
+            // a sheet's sides face straight out, whatever the slope of the corner their top edge follows
+            if i < 4 && sheet {
+                for (v, flat) in face.iter_mut().zip(CUBE[i]) {
+                    v.normal = flat.normal;
+                }
+            }
+            // the foot of a fall's sheet reaches down to the pool's surface, which lies a little under the top of its block
+            if i < 4 && sheet && source.block(block_coord + offset - IVec3::Y) == BlockType::Water {
+                for v in face.iter_mut().filter(|v| v.position[1] <= -0.5) {
+                    v.position[1] = -0.5 - lowering - 1.0;
+                }
+            }
             // a step down to a column whose surface meets this one's is closed by the sloped tops
             let beside = (block_coord.x + offset.x, block_coord.z + offset.z);
             if i < 4
@@ -209,12 +244,41 @@ pub(super) fn mesh_blocks(
                 if i != 4 {
                     return [0.0, 0.0, 0.0, 1.0];
                 }
+                // the swell the surface keeps at this corner, from the water in the columns round it, so the
+                // surface stands still where it meets a fall's sheet and shared corners move alike
+                let calm = if cell_size == 1 {
+                    let (sx, sz) = corner_signs(v.position);
+                    let (mut total, mut count) = (0.0, 0.0);
+                    for (dx, dz) in [(0, 0), (sx, 0), (0, sz), (sx, sz)] {
+                        let (cx, cz) = (block_coord.x + dx, block_coord.z + dz);
+                        if source.water_level(cx, cz).is_some() {
+                            total += source.water_calm(cx, cz);
+                            count += 1.0;
+                        }
+                    }
+                    if count > 0.0 {
+                        total / count
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
+                // a negative distance marks the top of a fall's water, whose back is not drawn
                 [
-                    vertex_shore_factor(source, block_coord, i, v.position),
+                    if sheet {
+                        0.0
+                    } else {
+                        vertex_shore_factor(source, block_coord, i, v.position)
+                    },
                     vertex_water_depth(&mut depth_of, block_coord, i, v.position)
                         / CHUNK_SIZE as f32,
-                    1.0,
-                    vertex_shore_distance(source, block_coord, i, v.position),
+                    calm,
+                    if hush {
+                        -1.0
+                    } else {
+                        vertex_shore_distance(source, block_coord, i, v.position)
+                    },
                 ]
             });
             water.push_face(

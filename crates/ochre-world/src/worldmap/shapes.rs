@@ -324,10 +324,340 @@ pub(super) fn cones(map: &mut WorldMap, share: f64) -> Vec<(usize, usize, f64)> 
     sites
 }
 
+// Inselbergs, tower karst and cirques: domes and towers raised on lowland and bowls cut into cold mountains, sited
+// by the world's config (never its climate output) and counted by the seed's knobs.
+const SEDIMENTARY: u8 = 1;
+const BIG_APART: f64 = 40.0;
+const LOWLAND: (f32, f32) = (20.0, 150.0);
+const FLAT: f32 = 0.15;
+const INSELBERG_RADIUS: (u32, u32) = (4, 10);
+const INSELBERG_HEIGHT: (f64, f64) = (20.0, 45.0);
+const TOWER_COUNT: (u32, u32) = (10, 40);
+const TOWER_RADIUS: (f64, f64) = (1.5, 4.0);
+const TOWER_HEIGHT: (f64, f64) = (30.0, 70.0);
+const CIRQUE_RADIUS: (u32, u32) = (3, 6);
+const CIRQUE_DEPTH: (f64, f64) = (40.0, 100.0);
+const CIRQUE_FROM: f32 = 250.0;
+const CIRQUE_STEEP: f32 = 0.2;
+
+// How dry and warm the config is, 0..1, and how wet, and how cold: what each shape's count is weighted by.
+fn weights(map: &WorldMap) -> (f64, f64, f64) {
+    let c = map.config.climate;
+    let warm = ((c.warmth as f64 - 0.2) / 0.6).clamp(0.0, 1.0);
+    let wet = ((c.humidity as f64 - 0.8) / 0.8).clamp(0.0, 1.0);
+    ((1.0 - wet) * 0.5 + warm * 0.5, wet, 1.0 - warm)
+}
+
+// Up to `count` of the cells `eligible` in a seeded order, each `BIG_APART` cells from the others.
+fn sites(map: &WorldMap, eligible: Vec<usize>, count: usize, salt: u32) -> Vec<(usize, usize)> {
+    let dim = map.dim();
+    let mut order = eligible;
+    order.sort_by_key(|&i| hash(map.seed ^ salt, i as i32, 0));
+    let mut chosen: Vec<(usize, usize)> = Vec::new();
+    for i in order {
+        if chosen.len() >= count {
+            break;
+        }
+        let (x, z) = ((i % dim) as f64, (i / dim) as f64);
+        if chosen.iter().all(|&(sx, sz)| {
+            ((x - sx as f64).powi(2) + (z - sz as f64).powi(2)).sqrt() >= BIG_APART
+        }) {
+            chosen.push((i % dim, i / dim));
+        }
+    }
+    chosen
+}
+
+// Cells of sedimentary lowland, flat enough for a dome or tower to stand out of.
+fn plain(map: &WorldMap) -> Vec<usize> {
+    let dim = map.dim();
+    let sea = ochre_base::WATER_LEVEL as f32;
+    let slope = super::gameplay::slope_layer(map);
+    (EDGE..dim - EDGE)
+        .flat_map(|cz| (EDGE..dim - EDGE).map(move |cx| cz * dim + cx))
+        .filter(|&i| {
+            let above = map.height[i] - sea;
+            map.geology[i] == SEDIMENTARY
+                && (LOWLAND.0..LOWLAND.1).contains(&above)
+                && slope[i] < FLAT
+        })
+        .collect()
+}
+
+// The ragged distance in cells from (`sx`, `sz`) to (`cx`, `cz`), over `radius`.
+fn ragged_t(
+    map: &WorldMap,
+    salt: u32,
+    (cx, cz): (i64, i64),
+    (sx, sz): (usize, usize),
+    radius: f64,
+) -> f64 {
+    let (dx, dz) = ((cx - sx as i64) as f64, (cz - sz as i64) as f64);
+    let wavelength = (radius * 0.6).max(3.0);
+    let ragged = 0.15
+        * radius
+        * perlin(
+            map.seed ^ salt,
+            cx as f64 / wavelength,
+            cz as f64 / wavelength,
+        );
+    ((dx * dx + dz * dz).sqrt() + ragged).max(0.0) / radius
+}
+
+/// Raises isolated rounded rock domes on dry, warm sedimentary lowland: up to `count` of them, weighted by how dry and
+/// warm the config is. Returns the sites and their radius in cells and height in blocks.
+pub(super) fn inselbergs(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f64, f64)> {
+    let (dry, _, _) = weights(map);
+    let count = (count as f64 * dry).round() as usize;
+    let mut out = Vec::new();
+    if count == 0 {
+        return out;
+    }
+    let dim = map.dim();
+    let eligible = plain(map);
+    for (n, (sx, sz)) in sites(map, eligible, count, 0x15E1_0001)
+        .into_iter()
+        .enumerate()
+    {
+        let radius = in_range(INSELBERG_RADIUS, unit(map.seed ^ 0x15E1_0002, n as i32, 0)) as f64;
+        let height = INSELBERG_HEIGHT.0
+            + (INSELBERG_HEIGHT.1 - INSELBERG_HEIGHT.0) * unit(map.seed ^ 0x15E1_0003, n as i32, 0);
+        let reach = (radius * 1.2).ceil() as i64;
+        for cz in (sz as i64 - reach).max(0)..=(sz as i64 + reach).min(dim as i64 - 1) {
+            for cx in (sx as i64 - reach).max(0)..=(sx as i64 + reach).min(dim as i64 - 1) {
+                let t = ragged_t(map, 0x15E1_0004, (cx, cz), (sx, sz), radius);
+                if t < 1.0 {
+                    // a circular profile: steep at the sides, rounded on top
+                    map.height[cz as usize * dim + cx as usize] +=
+                        (height * (1.0 - t * t).sqrt()) as f32;
+                }
+            }
+        }
+        out.push((sx, sz, radius, height));
+    }
+    out
+}
+
+/// Raises fields of steep-sided limestone towers on wet sedimentary lowland: up to `groups` of 10 to 40 towers,
+/// weighted by how wet the config is. Returns each tower's site, radius in cells and height in blocks.
+pub(super) fn karst(map: &mut WorldMap, groups: u32) -> Vec<(usize, usize, f64, f64)> {
+    let (_, wet, _) = weights(map);
+    let groups = (groups as f64 * wet).round() as usize;
+    let mut towers = Vec::new();
+    if groups == 0 {
+        return towers;
+    }
+    let dim = map.dim();
+    let eligible = plain(map);
+    for (g, (gx, gz)) in sites(map, eligible, groups, 0x4A25_0001)
+        .into_iter()
+        .enumerate()
+    {
+        let count = in_range(TOWER_COUNT, unit(map.seed ^ 0x4A25_0002, g as i32, 0));
+        let spread = 3.0 * (count as f64).sqrt();
+        // towers are the highest of those over a cell, not their sum, so neighbours do not make a ridge
+        let mut raised: std::collections::BTreeMap<usize, f32> = Default::default();
+        for k in 0..count as i32 {
+            let m = hash(map.seed ^ 0x4A25_0003, g as i32, k);
+            let angle = unit(m, 1, 0) * std::f64::consts::TAU;
+            let away = spread * unit(m, 2, 0).sqrt();
+            let (tx, tz) = (
+                (gx as f64 + away * libm::cos(angle)).round() as i64,
+                (gz as f64 + away * libm::sin(angle)).round() as i64,
+            );
+            if tx < EDGE as i64
+                || tz < EDGE as i64
+                || tx >= (dim - EDGE) as i64
+                || tz >= (dim - EDGE) as i64
+            {
+                continue;
+            }
+            let radius = TOWER_RADIUS.0 + (TOWER_RADIUS.1 - TOWER_RADIUS.0) * unit(m, 3, 0);
+            let height = TOWER_HEIGHT.0 + (TOWER_HEIGHT.1 - TOWER_HEIGHT.0) * unit(m, 4, 0);
+            let reach = radius.ceil() as i64 + 1;
+            for cz in tz - reach..=tz + reach {
+                for cx in tx - reach..=tx + reach {
+                    let t = ragged_t(
+                        map,
+                        0x4A25_0004,
+                        (cx, cz),
+                        (tx as usize, tz as usize),
+                        radius,
+                    );
+                    if t < 1.0 {
+                        // steeper than a dome: a tower's sides are near vertical
+                        let shape = (height * libm::pow(1.0 - t * t, 0.4)) as f32;
+                        let i = cz as usize * dim + cx as usize;
+                        let entry = raised.entry(i).or_insert(0.0);
+                        *entry = entry.max(shape);
+                    }
+                }
+            }
+            towers.push((tx as usize, tz as usize, radius, height));
+        }
+        for (i, up) in raised {
+            map.height[i] += up;
+        }
+    }
+    towers
+}
+
+/// Cuts amphitheatre bowls with steep headwalls into cold mountain slopes: up to `count`, weighted by how cold the
+/// config is. Returns each bowl's site, radius in cells and depth in blocks.
+pub(super) fn cirques(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f64, f64)> {
+    let (_, _, cold) = weights(map);
+    let count = (count as f64 * cold).round() as usize;
+    let mut out = Vec::new();
+    if count == 0 {
+        return out;
+    }
+    let dim = map.dim();
+    let sea = ochre_base::WATER_LEVEL as f32;
+    let slope = super::gameplay::slope_layer(map);
+    let eligible: Vec<usize> = (EDGE..dim - EDGE)
+        .flat_map(|cz| (EDGE..dim - EDGE).map(move |cx| cz * dim + cx))
+        .filter(|&i| {
+            let (x, z) = map.cell_centre(i % dim, i / dim);
+            map.height[i] - sea >= CIRQUE_FROM
+                && slope[i] >= CIRQUE_STEEP
+                && warm_side(map, x, z) <= 0.2
+        })
+        .collect();
+    for (n, (sx, sz)) in sites(map, eligible, count, 0xC196_0001)
+        .into_iter()
+        .enumerate()
+    {
+        let radius = in_range(CIRQUE_RADIUS, unit(map.seed ^ 0xC196_0002, n as i32, 0)) as f64;
+        let depth = CIRQUE_DEPTH.0
+            + (CIRQUE_DEPTH.1 - CIRQUE_DEPTH.0) * unit(map.seed ^ 0xC196_0003, n as i32, 0);
+        let reach = (radius * 1.2).ceil() as i64;
+        for cz in (sz as i64 - reach).max(0)..=(sz as i64 + reach).min(dim as i64 - 1) {
+            for cx in (sx as i64 - reach).max(0)..=(sx as i64 + reach).min(dim as i64 - 1) {
+                let t = ragged_t(map, 0xC196_0004, (cx, cz), (sx, sz), radius);
+                if t < 1.0 {
+                    // a flat floor and a steep rim
+                    let cut = depth * (1.0 - smoothstep(0.6, 1.0, t));
+                    map.height[cz as usize * dim + cx as usize] -= cut as f32;
+                }
+            }
+        }
+        out.push((sx, sz, radius, depth));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
+
+    // The pipeline up to the last hydrology run, with `shape` laid after the cones: what a shape's ground
+    // becomes once the water is routed over it.
+    fn through_hydrology(seed: u32, shape: impl FnOnce(&mut WorldMap)) -> WorldMap {
+        use crate::worldmap::{erosion, gameplay, geology, hydrology, tectonics};
+        let config = WorldConfig {
+            size: 24576,
+            map_cell: 32,
+            ..Default::default()
+        };
+        let mut map =
+            tectonics::generate(seed, crate::worldmap::character::world_config(seed, config));
+        geology::generate(&mut map);
+        hydrology::run(&mut map, false);
+        erosion::run(&mut map);
+        shape(&mut map);
+        gameplay::carve_passes(&mut map);
+        hydrology::scatter(&mut map);
+        hydrology::run(&mut map, true);
+        map
+    }
+
+    fn lake_cells_near(map: &WorldMap, (sx, sz): (usize, usize), reach: f64) -> usize {
+        let dim = map.dim();
+        (0..dim * dim)
+            .filter(|&i| {
+                let (dx, dz) = ((i % dim) as f64 - sx as f64, (i / dim) as f64 - sz as f64);
+                dx * dx + dz * dz <= reach * reach
+                    && map.water_kind[i] == crate::worldmap::WaterCell::Lake as u8
+            })
+            .count()
+    }
+
+    #[test]
+    fn domes_keep_their_height_towers_leave_no_new_lakes_and_cirques_keep_a_headwall() {
+        for seed in [1u32, 2, 3] {
+            let force = |map: &mut WorldMap, warmth: f32, humidity: f32| {
+                map.config.climate.warmth = warmth;
+                map.config.climate.humidity = humidity;
+            };
+            let (mut domes, mut towers, mut bowls) = (Vec::new(), Vec::new(), Vec::new());
+            let base = through_hydrology(seed, |_| {});
+            let ins = through_hydrology(seed, |m| {
+                force(m, 0.8, 0.8);
+                domes = inselbergs(m, 6);
+            });
+            let kar = through_hydrology(seed, |m| {
+                force(m, 0.5, 1.6);
+                towers = karst(m, 3);
+            });
+            let cir = through_hydrology(seed, |m| {
+                force(m, 0.2, 1.0);
+                bowls = cirques(m, 6);
+            });
+            let dim = ins.dim();
+            assert!(
+                !domes.is_empty() && !towers.is_empty() && !bowls.is_empty(),
+                "seed {seed}"
+            );
+            for &(sx, sz, r, h) in &domes {
+                let kept = (ins.height[sz * dim + sx] - base.height[sz * dim + sx]) as f64 / h;
+                assert!(
+                    kept >= 0.6,
+                    "seed {seed}: a dome keeps {kept} of its height"
+                );
+                let (after, before) = (
+                    lake_cells_near(&ins, (sx, sz), 2.0 * r),
+                    lake_cells_near(&base, (sx, sz), 2.0 * r),
+                );
+                assert!(
+                    after <= before + 20,
+                    "seed {seed}: a dome adds lake cells, {before} to {after}"
+                );
+            }
+            let (mut before, mut after) = (0, 0);
+            for &(sx, sz, r, _) in &towers {
+                before += lake_cells_near(&base, (sx, sz), r + 2.0);
+                after += lake_cells_near(&kar, (sx, sz), r + 2.0);
+            }
+            assert!(
+                after <= before + 20,
+                "seed {seed}: towers add lake cells, {before} to {after}"
+            );
+            for &(sx, sz, r, _) in &bowls {
+                let floor = cir.height[sz * dim + sx];
+                let rim = (0..dim * dim)
+                    .filter(|&i| {
+                        let (dx, dz) = ((i % dim) as f64 - sx as f64, (i / dim) as f64 - sz as f64);
+                        dx * dx + dz * dz <= (1.5 * r).powi(2)
+                    })
+                    .map(|i| cir.height[i])
+                    .fold(f32::MIN, f32::max);
+                assert!(
+                    rim - floor >= 40.0,
+                    "seed {seed}: a headwall of {}",
+                    rim - floor
+                );
+                let (after, before) = (
+                    lake_cells_near(&cir, (sx, sz), r),
+                    lake_cells_near(&base, (sx, sz), r),
+                );
+                assert!(
+                    after < before + 300,
+                    "seed {seed}: a cirque fills with a lake, {before} to {after}"
+                );
+            }
+        }
+    }
 
     // Sea in the west to column 150, then land climbing east in steep ground, with plenty of uplift all over.
     fn mountainous_coast() -> WorldMap {

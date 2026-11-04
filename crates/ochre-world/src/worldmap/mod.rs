@@ -17,6 +17,7 @@ pub mod landform;
 mod shapes;
 mod source;
 pub mod tectonics;
+pub mod view;
 pub mod water;
 
 use std::sync::Arc;
@@ -26,7 +27,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 74;
+pub const GENERATOR_VERSION: u32 = 86;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -148,6 +149,10 @@ pub struct WorldMap {
     pub moisture: Vec<f32>,
     /// A `climate::BiomeKind` per cell.
     pub biome: Vec<u8>,
+    /// The climate biome just across the nearest class boundary from each cell, see `climate::boundary_margins`.
+    pub biome_alt: Vec<u8>,
+    /// How far each cell is from that boundary, 0 on it to 255 well inside.
+    pub biome_margin: Vec<u8>,
     /// How thickly trees grow at each cell, 0..1 as 0..=255.
     pub trees: Vec<u8>,
     /// How rough the ground is, 0..1 as 0..=255: the amplitude of the detail laid over it.
@@ -219,6 +224,8 @@ impl WorldMap {
             temperature: vec![0.0; cells],
             moisture: vec![0.0; cells],
             biome: vec![0; cells],
+            biome_alt: vec![0; cells],
+            biome_margin: vec![255; cells],
             trees: vec![0; cells],
             roughness: vec![0; cells],
             range: vec![0; cells],
@@ -485,6 +492,9 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     let knobs = character::LandformKnobs::from_seed(seed);
     shapes::fjords(&mut map, knobs.fjord_share);
     shapes::cones(&mut map, knobs.cone_share);
+    shapes::inselbergs(&mut map, knobs.inselbergs);
+    shapes::karst(&mut map, knobs.karst_groups);
+    shapes::cirques(&mut map, knobs.cirques);
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");

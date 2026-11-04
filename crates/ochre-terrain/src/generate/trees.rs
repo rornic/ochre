@@ -29,6 +29,16 @@ pub trait TreeGround {
         false
     }
 
+    /// Whether water stands over the column at `x`, `z`, where nothing is set down.
+    fn wet(&mut self, _x: i64, _z: i64) -> bool {
+        false
+    }
+
+    /// Whether the ground at `x`, `z` is bare rock on top of a relief feature, where nothing grows.
+    fn rocky(&mut self, _x: i64, _z: i64) -> bool {
+        false
+    }
+
     /// The height a tree's base stands at, which a coarse node sets to the ground it draws, so
     /// trees sit on it, while the rest above stay exact, so the same trees grow at every level.
     fn base_height(&mut self, x: i64, z: i64) -> i64 {
@@ -47,6 +57,14 @@ impl TreeGround for HeightSampler<'_> {
 
     fn biome(&mut self, x: i64, z: i64) -> BiomeId {
         HeightSampler::biome(self, x, z)
+    }
+
+    fn rocky(&mut self, x: i64, z: i64) -> bool {
+        HeightSampler::rocky(self, x, z)
+    }
+
+    fn wet(&mut self, x: i64, z: i64) -> bool {
+        HeightSampler::water_top(self, x, z) > WATER_LEVEL
     }
 }
 
@@ -556,6 +574,9 @@ fn tree_in_cell(
         if !(height - 1..=height).contains(&beside) {
             return None;
         }
+    }
+    if heights.rocky(x, z) {
+        return None;
     }
     let biome = heights.biome(x, z);
     let (gradient_x, gradient_z) = heights.gradient(x, z);

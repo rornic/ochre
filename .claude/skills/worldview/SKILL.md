@@ -56,6 +56,8 @@ $P <seed> passes <x> <z> <half>                          # blocks each pass chan
 
 Render `top` twice, all passes and `--no-cliffs`, to see what the cliff pass does at a shore. Columns and water from `info`, `line`, `grid` are the input to these passes; if the columns are right and `slice` is wrong, a pass is at fault.
 
+The viewer and the probe both build the world with the seed's drawn character (plates, relief, warmth, wind, humidity), as the game does, so a coordinate means the same in each. `$P <seed> edges <x> <z> <half>` measures biome edges, `features` counts relief features, `sites` lists spawn regions with the view from each.
+
 It generates the map each run (about 4.5 s), so for many questions about one seed use the viewer's `info` and `export`. `ground` is the finished column, `dry` the ground with no river or lake water on it, `base` the map's smooth height: `ground` far under `base` is detail carved into a hollow, `ground` over `dry` is a bank or valley built up.
 
 ## Hunt artefacts

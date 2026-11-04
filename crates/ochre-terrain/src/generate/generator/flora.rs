@@ -21,9 +21,21 @@ const FERN_DENSITY: f64 = 0.25;
 const SHORT_SHARE: f64 = 0.45;
 const SHADED_SHORT_SHARE: f64 = 0.65;
 const SEED_SHARE: f64 = 0.15;
+// How much thicker (or thinner) a biome's floor under trees is in ferns and shaded grass than a forest's.
+const JUNGLE_UNDERSTORY: f64 = 2.0;
+const TAIGA_UNDERSTORY: f64 = 0.5;
 // The temperatures, see `NoiseGenerator::temperature`, the flora thins out between, to none
 // at the first.
 const COLD: (f32, f32) = (0.25, 0.4);
+
+/// How thick the floor under trees grows in a biome by name, 1 being a forest's.
+pub(super) fn understory(biome: Option<&str>) -> f64 {
+    match biome {
+        Some("jungle") => JUNGLE_UNDERSTORY,
+        Some("taiga") => TAIGA_UNDERSTORY,
+        _ => 1.0,
+    }
+}
 
 fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
@@ -37,6 +49,7 @@ pub(super) fn flora_at(
     z: i64,
     shaded: bool,
     temperature: f32,
+    understory: f64,
 ) -> Option<BlockType> {
     let seed = seed as u64;
     let roll = unit(hash(seed ^ PLANT_SALT, x, z));
@@ -49,9 +62,13 @@ pub(super) fn flora_at(
     } else {
         0.0
     };
-    let ferns = if shaded { FERN_DENSITY } else { 0.0 };
+    let ferns = if shaded {
+        FERN_DENSITY * understory
+    } else {
+        0.0
+    };
     let grass = if shaded {
-        FOREST_GRASS_DENSITY
+        FOREST_GRASS_DENSITY * understory
     } else {
         GRASS_DENSITY
     };
@@ -94,7 +111,7 @@ mod tests {
         let mut counts = [0; 4];
         for x in 0..200 {
             for z in 0..200 {
-                if let Some(plant) = flora_at(7, x, z, shaded, temperature) {
+                if let Some(plant) = flora_at(7, x, z, shaded, temperature, 1.0) {
                     let kind = match plant {
                         BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass => 0,
                         BlockType::Fern => 1,
@@ -121,6 +138,29 @@ mod tests {
     }
 
     #[test]
+    fn test_jungle_floor_is_thick_and_taiga_floor_thin_and_other_biomes_are_unchanged() {
+        let cover = |name: Option<&str>| {
+            let under = understory(name);
+            (0..200)
+                .flat_map(|x| (0..200).map(move |z| (x, z)))
+                .filter(|&(x, z)| flora_at(7, x, z, true, 0.6, under).is_some())
+                .count()
+        };
+        let (jungle, forest, taiga) = (
+            cover(Some("jungle")),
+            cover(Some("forest")),
+            cover(Some("taiga")),
+        );
+        assert!(
+            jungle > forest + forest / 2 && forest > taiga,
+            "{jungle} {forest} {taiga}"
+        );
+        assert_eq!(forest, cover(Some("desert")));
+        assert_eq!(forest, cover(None));
+        assert_eq!(forest, count(true, 0.6).iter().sum::<usize>());
+    }
+
+    #[test]
     fn test_flora_thins_out_in_the_cold() {
         let (mild, chilly, frozen) = (count(false, 0.6), count(false, 0.32), count(false, 0.2));
         let sum = |c: [usize; 4]| c.iter().sum::<usize>();
@@ -133,7 +173,7 @@ mod tests {
         for (dx, dz) in [(0, 0), (6, 0), (12, 18), (-6, 30)] {
             let kinds: Vec<BlockType> = (0..DRIFT)
                 .flat_map(|x| (0..DRIFT).map(move |z| (x, z)))
-                .filter_map(|(x, z)| flora_at(3, dx + x, dz + z, false, 0.6))
+                .filter_map(|(x, z)| flora_at(3, dx + x, dz + z, false, 0.6, 1.0))
                 .filter(|p| matches!(p, BlockType::Poppy | BlockType::Dandelion))
                 .collect();
             assert!(kinds.windows(2).all(|w| w[0] == w[1]), "{kinds:?}");

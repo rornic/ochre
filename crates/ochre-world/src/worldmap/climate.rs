@@ -63,6 +63,10 @@ impl ClimateConfig {
     }
 }
 
+// Offsets in warmth or moisture tried either side of a cell to find how close it is to a class boundary.
+const MARGIN_PROBES: [f32; 4] = [0.01, 0.02, 0.03, 0.04];
+// Cells from a class boundary past which a block never takes the biome across it.
+const MARGIN_CELLS: i64 = 2;
 // Warmth and moisture are blurred this many cells each way before biomes are picked from them.
 pub(super) const FIELD_BLUR: usize = 4;
 // Cells round a river or lake that it wets and cools, and by how much at the water's edge.
@@ -438,6 +442,10 @@ pub fn run(map: &mut WorldMap) {
         }
     }
 
+    let (alt, margin) = boundary_margins(map, &temperature, &moisture, &kinds);
+    map.biome_alt = alt;
+    map.biome_margin = margin;
+
     let regional = regional_warmth(map);
     let mut trees = vec![0u8; dim * dim];
     for i in 0..dim * dim {
@@ -467,6 +475,63 @@ pub fn run(map: &mut WorldMap) {
     map.moisture = moisture;
     map.biome = kinds;
     map.trees = trees;
+}
+
+// For each land cell, the climate biome just across its nearest class boundary and how far off it the cell is: the
+// first of `MARGIN_PROBES` warmth or moisture offsets that changes the class sets the margin (offset over the last, as 0..255; 255 when
+// none does) and the biome there. A cell the swamp rule or the tidying made something its climate is not stays 255.
+fn boundary_margins(
+    map: &WorldMap,
+    temperature: &[f32],
+    moisture: &[f32],
+    kinds: &[u8],
+) -> (Vec<u8>, Vec<u8>) {
+    let sea = WATER_LEVEL as f32;
+    let mut alt = kinds.to_vec();
+    let mut margin = vec![255u8; kinds.len()];
+    for i in 0..kinds.len() {
+        let h = map.height[i];
+        if h < sea {
+            continue;
+        }
+        let warmth = (temperature[i] - (h - sea) * LAPSE_PER_BLOCK).max(0.0);
+        if classify(warmth, moisture[i]) as u8 != kinds[i] {
+            continue;
+        }
+        'probes: for (step, offset) in MARGIN_PROBES.into_iter().enumerate() {
+            for (dw, dm) in [(offset, 0.0), (-offset, 0.0), (0.0, offset), (0.0, -offset)] {
+                let other = classify((warmth + dw).max(0.0), (moisture[i] + dm).clamp(0.0, 1.0));
+                if other as u8 != kinds[i] {
+                    alt[i] = other as u8;
+                    margin[i] = ((step + 1) * 255 / MARGIN_PROBES.len()) as u8;
+                    break 'probes;
+                }
+            }
+        }
+    }
+    // the climate margin alone spreads patches for hundreds of blocks where the climate changes slowly, so patches stop a
+    // few cells from a boundary
+    let dim = map.dim();
+    for i in 0..kinds.len() {
+        if margin[i] == 255 {
+            continue;
+        }
+        let (cx, cz) = ((i % dim) as i64, (i / dim) as i64);
+        let near = (1..=MARGIN_CELLS).find(|&d| {
+            (-d..=d).any(|dz| {
+                (-d..=d).any(|dx| {
+                    let (x, z) = (cx + dx, cz + dz);
+                    (dx.abs() == d || dz.abs() == d)
+                        && (0..dim as i64).contains(&x)
+                        && (0..dim as i64).contains(&z)
+                        && kinds[z as usize * dim + x as usize] != kinds[i]
+                })
+            })
+        });
+        let by_distance = near.map_or(255, |d| ((d - 1) * 255 / MARGIN_CELLS) as u8);
+        margin[i] = margin[i].max(by_distance);
+    }
+    (alt, margin)
 }
 
 // How strongly water near each cell wets and cools it, 0..1: a lake or a very wide river counts
@@ -674,6 +739,36 @@ mod tests {
         super::run(map);
     }
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn boundary_margins_are_untouched_on_sea_and_every_zone_cell_has_another_biome_across_it() {
+        let config = WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let map = super::super::generate(1, config);
+        let sea = WATER_LEVEL as f32;
+        let (mut zones, mut inside) = (0, 0);
+        for i in 0..map.height.len() {
+            if map.height[i] < sea {
+                assert_eq!(255, map.biome_margin[i], "sea cell {i} has a margin");
+            } else if map.biome_margin[i] < 255 {
+                zones += 1;
+                assert_ne!(
+                    map.biome_alt[i], map.biome[i],
+                    "zone cell {i} has no other biome"
+                );
+            } else {
+                inside += 1;
+            }
+        }
+        assert!(zones > 100, "only {zones} zone cells");
+        assert!(
+            inside > zones,
+            "{inside} cells inside against {zones} in zones"
+        );
+    }
 
     // Sea in the west, then land with a ridge across it north to south, then flat land beyond.
     fn ridge_world() -> WorldMap {

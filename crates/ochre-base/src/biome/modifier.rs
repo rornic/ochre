@@ -87,6 +87,13 @@ impl Biome for Modified {
         }
     }
 
+    fn relief(&self) -> &'static [crate::features::ReliefKind] {
+        match self.modifier {
+            Modifier::Volcanic => &[],
+            _ => self.inner.relief(),
+        }
+    }
+
     fn climate_shift(&self) -> (f32, f32) {
         self.inner.climate_shift()
     }

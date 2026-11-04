@@ -286,12 +286,27 @@ pub(in crate::generate) fn block_gradient(
     }
     let (fx, fz) = (x as f64, z as f64);
     let eased = gradient * MOUNTAIN_EASE;
-    if eased > MEADOW_GRADIENT && ochre_base::relief::meadow_patch(seed, fx, fz) {
+    if eased > MEADOW_GRADIENT
+        && biomes.name(biome).is_none()
+        && ochre_base::relief::meadow_patch(seed, fx, fz)
+    {
         MEADOW_GRADIENT
     } else if ochre_base::relief::outcrop_patch(seed, fx, fz) {
         eased + OUTCROP_GRADIENT
     } else {
         eased
+    }
+}
+
+// A column this many blocks per cell over its lowest neighbour is a cliff face, which no patch of meadow clings to.
+const FACE_EXPOSED: i64 = 3;
+
+// The slope to choose a column's blocks by: on a cliff face the real gradient, not the meadow's.
+pub(in crate::generate) fn face_slope(slope: f64, gradient: f64, exposed: i64, cell: i64) -> f64 {
+    if exposed >= FACE_EXPOSED * cell {
+        slope.max(gradient)
+    } else {
+        slope
     }
 }
 

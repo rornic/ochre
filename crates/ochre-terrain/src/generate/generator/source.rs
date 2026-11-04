@@ -1,4 +1,7 @@
-use super::shading::{spread_water_levels, WATER_SPREAD_REACH};
+use super::shading::{spread_water_levels, WATER_SLOPE_MAX_STEP, WATER_SPREAD_REACH};
+
+// Columns from a fall over which the surface's swell fades in, from none beside it.
+const WATER_CALM_REACH: i32 = 5;
 use crate::chunk::{neighbor_26_index, ChunkData, CELLS, CHUNK_SIZE};
 use crate::flow::surface;
 use crate::generate::region_store::RegionStore;
@@ -41,6 +44,21 @@ pub(super) trait BlockSource {
     /// The fresh water's real surface, which its blocks are filled to, where `water_level` is spread out.
     fn water_block_level(&self, _x: i32, _z: i32) -> Option<f32> {
         None
+    }
+
+    /// Whether the column's water is the sheet of a fall or the water over it, whose underside is not drawn.
+    fn water_hush(&self, _x: i32, _z: i32) -> bool {
+        false
+    }
+
+    /// How much of the swell the column's surface keeps, 0 beside a fall, where it must meet the sheet, to 1 away from it.
+    fn water_calm(&self, _x: i32, _z: i32) -> f32 {
+        1.0
+    }
+
+    /// Whether the column's water is the sheet of a river's fall, drawn as whole blocks, not a surface that slopes.
+    fn water_sheet(&self, _x: i32, _z: i32) -> bool {
+        false
     }
 
     /// Whether the column's water is flowing, see `flow`, which stands over the ground beside it.
@@ -124,6 +142,12 @@ struct FreshColumn {
     block_level: f32,
     level: f32,
     pool: bool,
+    // in the sheet of a fall, which is drawn as whole blocks of water
+    sheet: bool,
+    // how much of the swell the surface keeps, see `water_calm`
+    calm: f32,
+    // on the high side of a fall, see `water_hush`
+    hush: bool,
 }
 
 pub(super) struct ChunkNeighbourhood<'a> {
@@ -216,6 +240,9 @@ impl<'a> ChunkNeighbourhood<'a> {
                 block_level: level,
                 level,
                 pool: false,
+                sheet: false,
+                calm: 1.0,
+                hush: false,
             });
         }
         let (regions, origin) = self.water?;
@@ -241,15 +268,58 @@ impl<'a> ChunkNeighbourhood<'a> {
                 })
                 .collect();
             let spread = spread_water_levels(&raw, wide);
+            // a fall's sheet and the water a column round it, drawn as blocks too, so the two meet with no slope between
+            let falls: Vec<bool> = (0..wide * wide)
+                .map(|i| {
+                    let (wx, wz) = (origin.x + i / wide - pad, origin.z + i % wide - pad);
+                    !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
+                })
+                .collect();
+            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`, and whether any column
+            // of a fall within that is at this column's level, which makes this the high side of it
+            let near_falls = |at: i32| {
+                let (x, z) = (at / wide, at % wide);
+                let mut nearest = WATER_CALM_REACH + 1;
+                let mut high_side = false;
+                for dx in -WATER_CALM_REACH..=WATER_CALM_REACH {
+                    for dz in -WATER_CALM_REACH..=WATER_CALM_REACH {
+                        let (nx, nz) = (x + dx, z + dz);
+                        if !(0..wide).contains(&nx)
+                            || !(0..wide).contains(&nz)
+                            || !falls[(nx * wide + nz) as usize]
+                        {
+                            continue;
+                        }
+                        nearest = nearest.min(dx.abs().max(dz.abs()));
+                        high_side |= (raw[(nx * wide + nz) as usize] - raw[at as usize]).abs()
+                            < WATER_SLOPE_MAX_STEP;
+                    }
+                }
+                (nearest, high_side)
+            };
             (0..span * span)
                 .map(|i| {
                     let (x, z) = (i / span, i % span);
                     let at = ((x + WATER_SPREAD_REACH) * wide + z + WATER_SPREAD_REACH) as usize;
-                    (!raw[at].is_nan()).then(|| FreshColumn {
-                        block_level: raw[at],
-                        level: spread[i as usize],
-                        pool: sampler.spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
-                            == SpringPart::Pool,
+                    (!raw[at].is_nan()).then(|| {
+                        let (distance, hush) = near_falls(at as i32);
+                        // all the way within two columns, so the sheet's top and the surface beside it are one height
+                        let t =
+                            ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);
+                        let calm = t * t * (3.0 - 2.0 * t);
+                        // beside a fall the surface is the real level, not the spread one, which the far lower water over
+                        // the fall pulls down, or up where it lies under it
+                        let block_top = raw[at];
+                        FreshColumn {
+                            block_level: raw[at],
+                            level: block_top + (spread[i as usize] - block_top) * calm,
+                            pool: sampler
+                                .spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
+                                == SpringPart::Pool,
+                            sheet: distance <= 1,
+                            hush,
+                            calm,
+                        }
                     })
                 })
                 .collect()
@@ -265,6 +335,18 @@ impl BlockSource for ChunkNeighbourhood<'_> {
 
     fn water_block_level(&self, x: i32, z: i32) -> Option<f32> {
         self.fresh_at(x, z).map(|fresh| fresh.block_level)
+    }
+
+    fn water_sheet(&self, x: i32, z: i32) -> bool {
+        self.fresh_at(x, z).is_some_and(|fresh| fresh.sheet)
+    }
+
+    fn water_calm(&self, x: i32, z: i32) -> f32 {
+        self.fresh_at(x, z).map_or(1.0, |fresh| fresh.calm)
+    }
+
+    fn water_hush(&self, x: i32, z: i32) -> bool {
+        self.fresh_at(x, z).is_some_and(|fresh| fresh.hush)
     }
 
     fn spring_pool(&self, x: i32, z: i32) -> bool {

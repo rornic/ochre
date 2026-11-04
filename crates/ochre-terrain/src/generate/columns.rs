@@ -121,6 +121,16 @@ impl ColumnGrid {
         bed_top(self.heights[index], self.water[index])
     }
 
+    /// How far the cell's ground stands over its lowest neighbour of the four, in blocks.
+    pub fn exposed(&self, cx: i32, cz: i32) -> i64 {
+        let here = self.ground_top(cx, cz);
+        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .map(|(dx, dz)| self.ground_top(cx + dx, cz + dz))
+            .into_iter()
+            .min()
+            .map_or(0, |lowest| (here - lowest).max(0))
+    }
+
     /// The slope there, as `terrain_block` takes it: the height change across two blocks
     /// each way, summed, measured between the cells either side.
     pub fn gradient(&self, cx: i32, cz: i32) -> f64 {
@@ -158,6 +168,7 @@ pub struct ChunkColumns {
     temperatures: Vec<f32>,
     water_tops: Vec<i64>,
     springs: Vec<SpringPart>,
+    rocky: Vec<bool>,
     /// The lowest and highest ground under the chunks.
     pub lowest: i64,
     pub highest: i64,
@@ -176,6 +187,7 @@ impl ChunkColumns {
             temperatures: Vec::with_capacity(cells),
             water_tops: Vec::with_capacity(cells),
             springs: Vec::with_capacity(cells),
+            rocky: Vec::with_capacity(cells),
             lowest: i64::MAX,
             highest: i64::MIN,
         };
@@ -192,12 +204,12 @@ impl ChunkColumns {
                     .min()
                     .unwrap_or(height);
                 columns.exposed.push((height - lowest_beside).max(0));
-                columns
-                    .boosts
-                    .push(noise.cliff_boost(world_x as f64, world_z as f64));
+                let boost = noise.cliff_boost(world_x as f64, world_z as f64);
+                columns.boosts.push(boost);
                 columns.biomes.push(heights.biome(world_x, world_z));
                 columns.water_tops.push(heights.water_top(world_x, world_z));
                 columns.springs.push(heights.spring(world_x, world_z));
+                columns.rocky.push(heights.rocky(world_x, world_z));
                 columns
                     .temperatures
                     .push(noise.temperature(world_x as f64, world_z as f64));
@@ -243,6 +255,11 @@ impl ChunkColumns {
     /// The height of the water's surface over the column, or the sea's where it's dry.
     pub fn water_top(&self, cx: i64, cz: i64) -> i64 {
         self.water_tops[Self::index(cx, cz)]
+    }
+
+    /// Whether the column is bare rock on top of a relief feature.
+    pub fn rocky(&self, cx: i64, cz: i64) -> bool {
+        self.rocky[Self::index(cx, cz)]
     }
 
     pub fn spring(&self, cx: i64, cz: i64) -> SpringPart {

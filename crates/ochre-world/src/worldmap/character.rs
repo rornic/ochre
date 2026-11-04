@@ -24,6 +24,12 @@ const SALT_DUNES: u32 = 0xC4A0_0009;
 const SALT_CLIFFS: u32 = 0xC4A0_000A;
 const SALT_FJORDS: u32 = 0xC4A0_000D;
 const SALT_CONES: u32 = 0xC4A0_000B;
+const SALT_INSELBERGS: u32 = 0xC4A0_000E;
+const SALT_KARST: u32 = 0xC4A0_000F;
+const SALT_CIRQUES: u32 = 0xC4A0_0010;
+const INSELBERGS: (f64, f64) = (0.0, 9.0);
+const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
+const CIRQUES: (f64, f64) = (0.0, 7.0);
 const CONE_SHARE: (f64, f64) = (0.0, 0.25);
 const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
@@ -55,6 +61,12 @@ pub struct LandformKnobs {
     pub fjord_share: f64,
     /// The share of the cone sites its volcanic ground has room for that are raised, 0 to 0.25.
     pub cone_share: f64,
+    /// How many inselbergs a dry, warm world raises, 0 to 8.
+    pub inselbergs: u32,
+    /// How many fields of tower karst a wet world raises, 0 to 4.
+    pub karst_groups: u32,
+    /// How many cirques a cold world cuts, 0 to 6.
+    pub cirques: u32,
 }
 
 impl LandformKnobs {
@@ -65,6 +77,9 @@ impl LandformKnobs {
             cliff_boost: round(draw(seed, SALT_CLIFFS, CLIFF_BOOST), 2),
             fjord_share: round(draw(seed, SALT_FJORDS, FJORD_SHARE), 3),
             cone_share: round(draw(seed, SALT_CONES, CONE_SHARE), 3),
+            inselbergs: draw(seed, SALT_INSELBERGS, INSELBERGS).floor() as u32,
+            karst_groups: draw(seed, SALT_KARST, KARST_GROUPS).floor() as u32,
+            cirques: draw(seed, SALT_CIRQUES, CIRQUES).floor() as u32,
         }
     }
 }

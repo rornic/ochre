@@ -1,4 +1,5 @@
 use super::{Biome, TreeScale};
+use crate::features::ReliefKind;
 
 /// A biome that sets how thickly trees grow, how big they get and how lush or dry the grass reads: a
 /// world map picks it, and the ground keeps the base terrain's blocks.
@@ -7,6 +8,7 @@ pub struct Plain {
     trees: f64,
     shift: (f32, f32),
     scale: TreeScale,
+    relief: &'static [ReliefKind],
 }
 
 impl Plain {
@@ -16,6 +18,7 @@ impl Plain {
             trees,
             shift: (0.0, 0.0),
             scale: TreeScale::default(),
+            relief: &[],
         }
     }
 
@@ -33,6 +36,12 @@ impl Plain {
             squash,
             giants: self.scale.giants,
         };
+        self
+    }
+
+    /// Lays `relief` over the biome's ground.
+    pub fn with_relief(mut self, relief: &'static [ReliefKind]) -> Self {
+        self.relief = relief;
         self
     }
 
@@ -58,5 +67,9 @@ impl Biome for Plain {
 
     fn tree_scale(&self) -> TreeScale {
         self.scale
+    }
+
+    fn relief(&self) -> &'static [ReliefKind] {
+        self.relief
     }
 }

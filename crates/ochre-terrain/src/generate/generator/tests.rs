@@ -2796,6 +2796,19 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     }
     // a third or so is meadow, in patches, the rest rock
     assert!(meadow > 500 && rock > 1000, "{meadow} meadow, {rock} rock");
+    // a mountain over a climate biome with its own ground has no meadow patches
+    let taiga = biomes.with_modifier(
+        biomes.id("taiga").unwrap(),
+        ochre_base::biome::Modifier::Mountain,
+    );
+    for i in 0..500 {
+        let gradient =
+            super::terrain::block_gradient(&biomes, taiga, 1, i * 23, i * 7 - 9000, steep);
+        assert!(
+            gradient >= steep * 0.5,
+            "{gradient}: a meadow on a taiga mountain"
+        );
+    }
     // gentle ground and other biomes are left as they were
     let gentle = super::terrain::block_gradient(&biomes, mountain, 1, 5, 5, 0.3);
     assert!(gentle <= 0.3, "{gentle}: eased, or at most an outcrop");

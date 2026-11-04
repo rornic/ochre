@@ -160,7 +160,11 @@ fn describe(
         v.round().clamp(0.0, max) as usize,
     );
     format!(
-        "x={x} z={z} ground={:.2} dry={:.2} base={:.2} water={:.2} {:?} | chunk ground_top={} water_top={} | map cell {:?} at {:.2}",
+        "x={x} z={z} biome={} ground={:.2} dry={:.2} base={:.2} water={:.2} {:?} | chunk ground_top={} water_top={} | map cell {:?} at {:.2}",
+        terrain
+            .biomes()
+            .name(terrain.biome(x as f64, z as f64))
+            .unwrap_or("?"),
         p.height,
         terrain.dry_ground(x as f64, z as f64, 1.0),
         map.height_at(x as f64, z as f64),
@@ -199,11 +203,73 @@ fn longest_straight_edge(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> S
     let vertical = longest(&|i, j| grid[j][i] != grid[j][i + 1]);
     let horizontal = longest(&|j, i| grid[j][i] != grid[j + 1][i]);
     let blocks = |r: usize| r as i64 * STEP;
+    // a crossing is the flips along a row within 48 blocks of each other: one flip is a hard edge, three or more a mix
+    let mut crossings: Vec<(usize, i64)> = Vec::new();
+    for row in &grid {
+        let flips: Vec<usize> = (0..n - 1).filter(|&i| row[i] != row[i + 1]).collect();
+        let mut at = 0;
+        while at < flips.len() {
+            let mut end = at;
+            while end + 1 < flips.len() && (flips[end + 1] - flips[end]) as i64 * STEP <= 48 {
+                end += 1;
+            }
+            crossings.push((end - at + 1, (flips[end] - flips[at]) as i64 * STEP));
+            at = end + 1;
+        }
+    }
+    let share = |keep: &dyn Fn(usize) -> bool| {
+        100 * crossings.iter().filter(|c| keep(c.0)).count() / crossings.len().max(1)
+    };
+    let mut spans: Vec<i64> = crossings.iter().map(|c| c.1).collect();
+    spans.sort();
     format!(
-        "longest straight edge: {} blocks (vertical {}, horizontal {})",
+        "longest straight edge: {} blocks (vertical {}, horizontal {})\ncrossings {}: {}% hard (one flip), {}% mixed (three or more), median span {} blocks",
         blocks(vertical.max(horizontal)),
         blocks(vertical),
-        blocks(horizontal)
+        blocks(horizontal),
+        crossings.len(),
+        share(&|f| f == 1),
+        share(&|f| f >= 3),
+        spans.get(spans.len() / 2).copied().unwrap_or(0)
+    )
+}
+
+// How many samples (4 blocks apart) over a square window carry each relief feature, by kind and by biome.
+fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
+    let biomes = ochre_base::biome::Biomes::new(0);
+    let mut by_kind: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut first: std::collections::BTreeMap<String, (i64, i64)> = Default::default();
+    let (mut samples, mut outside) = (0usize, 0usize);
+    for i in (-half..half).step_by(4) {
+        for j in (-half..half).step_by(4) {
+            let (wx, wz) = ((x + i) as f64, (z + j) as f64);
+            samples += 1;
+            let allowed = biomes.relief(terrain.biome(wx, wz));
+            for (kind, offset) in terrain.relief_at(wx, wz) {
+                if offset.abs() >= 0.5 {
+                    *by_kind.entry(format!("{kind:?}")).or_default() += 1;
+                    if offset.abs() >= 1.0 {
+                        first.entry(format!("{kind:?}")).or_insert((x + i, z + j));
+                    }
+                    outside += !allowed.contains(&kind) as usize;
+                }
+            }
+        }
+    }
+    let counts: Vec<String> = by_kind
+        .iter()
+        .map(|(k, n)| match first.get(k) {
+            Some((fx, fz)) => format!("{k} {n} (e.g. {fx},{fz})"),
+            None => format!("{k} {n}"),
+        })
+        .collect();
+    format!(
+        "{samples} samples; {} ; outside their biome {outside}",
+        if counts.is_empty() {
+            "no features".into()
+        } else {
+            counts.join(", ")
+        }
     )
 }
 
@@ -223,6 +289,50 @@ fn main() {
     let regions = Arc::new(RegionStore::new(terrain.clone()));
     match args[1].as_str() {
         "info" => println!("{}", describe(&terrain, &map, &regions, x, z)),
+        "sites" => {
+            let half: i64 = args.get(4).map_or(4096, |s| s.parse().unwrap());
+            println!("x z open_rays(of 16) relief_in_view");
+            for site in ochre_world::worldmap::view::view_sites(&terrain, x, z, half) {
+                println!(
+                    "{} {} {} {:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={},{} OCHRE_LOOK={:.2},{:.2},{:.2}",
+                    site.x, site.z, site.open_rays, site.relief, site.x, site.z, site.look.0, site.look.1, site.look.2
+                );
+            }
+        }
+        "falls" => {
+            // every fall in the world, the tallest first: drop, level above, then a spawn line for it
+            let mut falls = terrain.falls();
+            falls.sort_by(|a, b| b.2.total_cmp(&a.2));
+            let bins = [
+                (2.5, 4.0),
+                (4.0, 6.0),
+                (6.0, 10.0),
+                (10.0, 20.0),
+                (20.0, f32::MAX),
+            ];
+            let counts: Vec<String> = bins
+                .iter()
+                .map(|&(lo, hi)| {
+                    let n = falls.iter().filter(|f| (lo..hi).contains(&f.2)).count();
+                    format!("{lo}..{hi}: {n}")
+                })
+                .collect();
+            println!("{} falls ({})", falls.len(), counts.join(", "));
+            for (fx, fz, drop, level) in falls
+                .iter()
+                .take(args.get(4).map_or(12, |s| s.parse().unwrap()))
+            {
+                println!(
+                    "drop {drop:.1} from {level:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={:.0},{:.0},12 OCHRE_LOOK={fx:.0},{level:.0},{fz:.0}",
+                    fx - 20.0,
+                    fz - 20.0
+                );
+            }
+        }
+        "features" => {
+            let half: i64 = args.get(4).map_or(1024, |s| s.parse().unwrap());
+            println!("{}", feature_counts(&terrain, x, z, half));
+        }
         "route" => {
             let cells: usize = args.get(4).map_or(256, |s| s.parse().unwrap());
             let (u, v) = map.to_cell(x as f64, z as f64);

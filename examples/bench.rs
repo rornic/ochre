@@ -32,7 +32,10 @@ fn main() {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let map = ochre_world::worldmap::generate(seed, WorldConfig::default());
+    let map = ochre_world::worldmap::generate(
+        seed,
+        ochre_world::worldmap::character::world_config(seed, WorldConfig::default()),
+    );
     let map_copy = Arc::new(map);
     let noise: Arc<dyn TerrainSource> = Arc::new(WorldTerrain::new(map_copy.clone()));
     let (sx, sz, sh) = if std::env::var("BENCH_MOUNTAIN").is_ok() {
@@ -79,10 +82,15 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
             })
         })
         .collect();
+    // a ring beyond the area, which generating a chunk reads from too
     timed("regions", || {
-        for c in &coords {
-            let size = CHUNK_SIZE as i64;
-            regions.sampler().height(c.0.x * size, c.0.z * size);
+        let size = CHUNK_SIZE as i64;
+        for x in -ACROSS / 2 - 2..ACROSS / 2 + 2 {
+            for z in -ACROSS / 2 - 2..ACROSS / 2 + 2 {
+                regions
+                    .sampler()
+                    .height((spawn.x + x) * size, (spawn.z + z) * size);
+            }
         }
     });
     let data: HashMap<ChunkCoordinate, Arc<ChunkData>> = timed("generate chunks", || {

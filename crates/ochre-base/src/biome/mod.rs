@@ -11,6 +11,7 @@ use bevy::math::Vec3;
 use std::sync::Arc;
 
 use crate::block::BlockType;
+use crate::features::ReliefKind;
 pub use desert::Desert;
 pub use forest::Forest;
 pub use glacier::Glacier;
@@ -66,6 +67,11 @@ pub trait Biome: Send + Sync {
     fn tree_scale(&self) -> TreeScale {
         TreeScale::default()
     }
+
+    // The relief features the biome lays over its ground.
+    fn relief(&self) -> &'static [ReliefKind] {
+        &[]
+    }
 }
 
 /// Multipliers on a tree's trunk height, crown spread and crown squash (1 is the usual).
@@ -119,13 +125,26 @@ impl Biomes {
             Box::new(Glacier),
             Box::new(Desert),
             Box::new(Forest),
-            Box::new(Plain::new("tundra", 0.01).shifted(-0.10, -0.05)),
-            Box::new(Plain::new("taiga", 0.3).scaled(1.2, 0.8, 1.0)),
-            Box::new(Plain::new("steppe", 0.004).shifted(0.0, -0.10)),
+            Box::new(
+                Plain::new("tundra", 0.01)
+                    .shifted(-0.10, -0.05)
+                    .with_relief(&[ReliefKind::Pingos, ReliefKind::PatternedGround]),
+            ),
+            Box::new(
+                Plain::new("taiga", 0.3)
+                    .scaled(1.2, 0.8, 1.0)
+                    .with_relief(&[ReliefKind::Drumlins]),
+            ),
+            Box::new(
+                Plain::new("steppe", 0.004)
+                    .shifted(0.0, -0.10)
+                    .with_relief(&[ReliefKind::Gullies]),
+            ),
             Box::new(
                 Plain::new("savanna", 0.03)
                     .shifted(0.05, -0.15)
-                    .scaled(0.8, 1.2, 0.5),
+                    .scaled(0.8, 1.2, 0.5)
+                    .with_relief(&[ReliefKind::Kopjes]),
             ),
             Box::new(
                 Plain::new("jungle", 0.6)
@@ -221,6 +240,11 @@ impl Biomes {
     pub fn tree_scale(&self, biome: BiomeId) -> TreeScale {
         self.entry(biome)
             .map_or_else(TreeScale::default, |e| e.biome.tree_scale())
+    }
+
+    /// The relief features `biome` lays over its ground.
+    pub fn relief(&self, biome: BiomeId) -> &'static [ReliefKind] {
+        self.entry(biome).map_or(&[], |e| e.biome.relief())
     }
 
     /// What a spring's rim and pool bed are made of in `biome`.

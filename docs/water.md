@@ -9,7 +9,7 @@ Water is held in by ground at least as high as its surface. A wall of water is a
 dry one whose ground is under the water's surface. Everything below exists to make walls impossible
 by construction, not to patch them where they show up.
 
-Two exceptions are meant: a river's waterfall stands over the ground at its foot, and the terrain
+Two exceptions are meant: a river's waterfall stands over the ground at its foot (it is the lip of a tread, see below), and the terrain
 crate draws a curtain there; and a river can run on a levee across a slope, held in by its own bank.
 
 ## Map level: `hydrology::run`
@@ -65,6 +65,8 @@ What it means for the world: wet country's lakes fill to their brims as before; 
 lower in closed basins, or are dry. `LAKE_EVAPORATION` (wet, driest) is the knob: raise the second
 number for smaller desert lakes.
 
+Fjords (`shapes::fjords`) are cut after erosion and before the last hydrology run, their floors under the sea, so the sea fills them by height and no lake or river sees an unfilled trough. Volcanic cones are raised the same way with a crater a quarter of their height under the rim, at most 36 cells across so a crater stays under the smallest lake hydrology keeps (300 cells) and is drained. Inselbergs, tower karst and cirques (`shapes.rs`) follow the same order: a cirque's bowl is under 300 cells, so hydrology drains it by a channel instead of making a lake. Tableland's beds step the map's height before the last run (`landform::terrace`), so basins and rivers form on the treads and terrace faces bound lakes. Relief features (`ochre-base/src/features.rs`) and undercuts (`generate/undercut.rs`) are laid only where no river, spring, lake or sea is near, so the one rule above is untouched. Waterfalls as a river-profile step are not built, see `docs/terrain-perf.md`.
+
 ## Block level: `WorldTerrain::sample_for_cell`
 
 The terrain crate reads one `TerrainSample` per column (`ground`, `water_surface`, `water_kind`,
@@ -116,6 +118,8 @@ surface. The same containment check handles bends, springs and adjacent still wa
 estimating a neighbouring level from an upstream curve point. A conservative geometric
 search bound avoids checking neighbours far from water; LOD cells keep the channel's smooth
 geometry rather than this block-level correction.
+
+A steep stretch runs in treads and falls (`stairs`, `docs/terrain-perf.md`): its profile holds level for a few blocks, then drops 2.5 blocks or more at a lip, over about a block, and `river_hits` reads the level of the tread the nearest point is on. Each tread is held under the ground the stretch was graded to, so no bank is built up to hold it, and a point either side of a lip is a river's water at its own level: the water mesh draws a curtain between columns that differ by 2 blocks or more. `water_audit` counts a fall as a step between two river columns and, beside a dry column, as a wall.
 
 Where a river meets still water:
 - **joined**: its level within `JOIN` of the still water's, as at a mouth or outlet. Inside the

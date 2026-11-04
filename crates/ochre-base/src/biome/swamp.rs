@@ -1,5 +1,6 @@
 use super::{Biome, TreeScale};
 use crate::block::BlockType;
+use crate::features::ReliefKind;
 
 // Ground this far over the sea or lower is mud flat, not grass.
 const MUD_BELOW: i64 = 2;
@@ -27,6 +28,10 @@ impl Biome for Swamp {
 
     fn tree_scale(&self) -> TreeScale {
         TreeScale::default()
+    }
+
+    fn relief(&self) -> &'static [ReliefKind] {
+        &[ReliefKind::Hummocks]
     }
 
     fn block(&self, base: BlockType, above_sea: i64, _gradient: f64) -> BlockType {

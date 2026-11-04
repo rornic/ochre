@@ -1,9 +1,10 @@
 use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
-use super::flora::flora_at;
+use super::flora::{flora_at, understory};
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
 use super::terrain::{
-    block_gradient, column_block, cut_cliff, ground_top, rocked, soil_depth, under_grass,
+    block_gradient, column_block, cut_cliff, face_slope, ground_top, rocked, soil_depth,
+    under_grass,
 };
 use crate::chunk::ChunkCoordinate;
 use crate::chunk::ChunkData;
@@ -11,6 +12,7 @@ use crate::chunk::CHUNK_SIZE;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
 use crate::generate::region_store::{HeightSampler, RegionStore};
+use crate::generate::rocks::rocks_near;
 use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::TreeTints;
@@ -27,6 +29,12 @@ use std::sync::Arc;
 // Blocks above the sea desert ground must be before it has cliffs: below it the steep ground is
 // dunes.
 const DESERT_CLIFFS_ABOVE: i64 = 90;
+
+// Blocks under a column's surface the cliff pass leaves alone.
+const SKIN: i64 = 3;
+
+// Added to the gradient blocks are chosen by where the ground is bare rock, so grass gives way to stone.
+const ROCK_GRADIENT: f64 = 4.0;
 
 // Which of the passes laid over the terrain's blocks run, so a tool can tell which one made a block.
 #[derive(Clone, Copy, Debug)]
@@ -116,6 +124,13 @@ pub fn generate_chunk_with(
                 chunk_pos.0.z * size + z,
                 gradient,
             );
+            let slope = face_slope(slope, gradient, columns.exposed(x, z), 1);
+            // the top of a kopje is bare rock whatever the slope
+            let slope = if columns.rocky(x, z) {
+                slope + ROCK_GRADIENT
+            } else {
+                slope
+            };
             // snow lies deep, in full blocks, with the packed stone only beneath it
             let snowy = column_block(
                 biomes,
@@ -156,8 +171,12 @@ pub fn generate_chunk_with(
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
                     return block;
                 }
+                // the top blocks stay, or the cliff noise pits the grass and shows the dirt under it
+                if (column_height - SKIN..column_height).contains(&y) {
+                    return block;
+                }
                 let density = (column_height - y) as f64 - 0.5
-                    + cliff * cliff_density(seed, world_x, y, world_z);
+                    + cliff * cliff_density(seed, world_x, y, world_z, column_height);
                 let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top);
                 // a glacier's built-up faces are ice, not the stone a cliff builds elsewhere
                 if cut == BlockType::Stone && block != BlockType::Stone && ice_cliffs {
@@ -205,6 +224,20 @@ pub fn generate_chunk_with(
             );
         }
         chunk_data.trees = TreeTints::new(&trees, origin, 1);
+        // boulders and mounds after the trees, so a trunk keeps its place
+        for rock in rocks_near(regions.terrain(), &mut heights, min, min + size - 1) {
+            rock.plant(
+                origin,
+                1,
+                (IVec3::ZERO, IVec3::splat(size as i32 - 1)),
+                |coord, block| {
+                    let coord = coord.as_u16vec3();
+                    if rock.fits_into(chunk_data.get_block_at(coord)) {
+                        chunk_data.set_block_at(coord, block);
+                    }
+                },
+            );
+        }
     }
 
     // plants on the grass, in the air just over it, after the trees, so trunks keep their place
@@ -216,6 +249,7 @@ pub fn generate_chunk_with(
             let column_height = columns.height(x, z);
             let local_y = column_height - world_y;
             if !(0..size).contains(&local_y)
+                || columns.rocky(x, z)
                 || cliff_reach_boosted(columns.gradient(x, z), columns.cliff_boost(x, z)) > 0.0
             {
                 continue;
@@ -248,11 +282,18 @@ pub fn generate_chunk_with(
             }
             let (world_x, world_z) = (origin.x + x, origin.z + z);
             // ferns grow on the forest floor, and in the shade of a lone tree's crown
-            let shaded = biomes.name(biome) == Some("forest")
+            let shaded = matches!(biomes.name(biome), Some("forest" | "jungle"))
                 || trees
                     .iter()
                     .any(|tree| tree.shades(world_x as f64 + 0.5, world_z as f64 + 0.5));
-            if let Some(plant) = flora_at(seed, world_x, world_z, shaded, temperature) {
+            if let Some(plant) = flora_at(
+                seed,
+                world_x,
+                world_z,
+                shaded,
+                temperature,
+                understory(biomes.name(biome)),
+            ) {
                 chunk_data.set_block_at(coord, plant);
             }
         }
