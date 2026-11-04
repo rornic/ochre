@@ -43,3 +43,7 @@ Each is a pure function of the seed and position returning blocks to add to the 
 ## Not built
 
 Gneiss and andesite, objects (erratics, termite mounds), and LOD fidelity for any of this: see `world-plan.md`.
+
+## Placed objects: boulders and termite mounds
+
+`generate/rocks.rs` sets single objects by a hash of position on a grid of 48-block cells, one at most in each, and builds them block by block with the chunk, after the trees (a trunk keeps its place). A glacial erratic is a half-sunk, squashed ball of stone 2 to 5 blocks in radius with a nibbled rim, on tundra (a fifth of cells) and taiga (a sixth), on ground up to gradient 0.9 and within 3 blocks of height under it, sunk to the low side. A termite mound is a cone of dirt 3 to 7 blocks high and 2.5 to 4 in radius on savanna (3 cells in 10), on level ground (gradient 0.4, within 1 block). Neither is placed on a mountain or volcanic modifier, within 3 blocks of water or under 3 blocks over the sea. They are not in LOD meshes.

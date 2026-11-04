@@ -66,13 +66,13 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 
 ## Objects placed by hash
 
-Single things dropped on the ground by a hash of position, not shaped from the heightfield. Trees are the existing example. Each is built block by block when a chunk is built.
+Single things dropped on the ground by a hash of position, not shaped from the heightfield. Trees are the existing example. Each is built block by block when a chunk is built. They are in the chunk meshes only: LOD meshes do not show them yet.
 
-**Glacial erratic.** A lone boulder carried by a glacier and left where the ice melted, of a different rock from the ground it sits on. Real ones run from a metre to house size. Planned for tundra, taiga and the cold edge of glaciers, as rounded stone 2 to 6 blocks across.
+**Glacial erratic.** A lone boulder carried by a glacier and left where the ice melted, of a different rock from the ground it sits on. Real ones run from a metre to house size. Here they stand on tundra and taiga, as a squashed ball of stone 4 to 10 blocks across, half sunk, about one in every 5 to 6 map cells of 48 blocks that has ground level enough for it.
 
-**Termite mound.** A tall earth tower built by termites on savanna, 2 to 6 m high in Africa and Australia. Planned as slim cones of dirt with a few blocks of height variation.
+**Termite mound.** A tall earth tower built by termites on savanna, 2 to 6 m high in Africa and Australia. Here a cone of dirt 3 to 7 blocks high and 5 to 8 across on level savanna, in about a third of 48-block cells.
 
-**Kopje rock top.** The kopje relief feature is a rounded heap, but its top is grass because the block rule only looks at slope. A rock top means the core of a kopje shows bare stone, as a real one does, with a grass skirt round it.
+**Kopje rock top.** The kopje relief feature is a rounded heap. Its block rule only looked at slope, so the flat top was grass. Now the heap shows bare stone where it stands 4 or more blocks over the plain, as a real one does, with grass round its foot, and no tree stands on it.
 
 ## Level of detail (LOD)
 

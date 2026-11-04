@@ -29,6 +29,11 @@ pub trait TreeGround {
         false
     }
 
+    /// Whether water stands over the column at `x`, `z`, where nothing is set down.
+    fn wet(&mut self, _x: i64, _z: i64) -> bool {
+        false
+    }
+
     /// Whether the ground at `x`, `z` is bare rock on top of a relief feature, where nothing grows.
     fn rocky(&mut self, _x: i64, _z: i64) -> bool {
         false
@@ -56,6 +61,10 @@ impl TreeGround for HeightSampler<'_> {
 
     fn rocky(&mut self, x: i64, z: i64) -> bool {
         HeightSampler::rocky(self, x, z)
+    }
+
+    fn wet(&mut self, x: i64, z: i64) -> bool {
+        HeightSampler::water_top(self, x, z) > WATER_LEVEL
     }
 }
 
