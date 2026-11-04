@@ -3,7 +3,6 @@ use std::hash::Hash;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use super::region_store::{bed_top, water_block_top, HeightSampler};
-use super::undercut::{notches, Notch};
 use crate::chunk::CHUNK_SIZE;
 use crate::lod::LodKey;
 use ochre_base::biome::BiomeId;
@@ -155,8 +154,6 @@ pub struct ChunkColumns {
     // how far each column stands over its lowest neighbour of the four, in blocks
     exposed: Vec<i64>,
     boosts: Vec<f32>,
-    // the band of each column cut away under its cap, if any, see `undercut`
-    notches: Vec<Option<Box<Notch>>>,
     biomes: Vec<BiomeId>,
     temperatures: Vec<f32>,
     water_tops: Vec<i64>,
@@ -176,7 +173,6 @@ impl ChunkColumns {
             gradients: Vec::with_capacity(cells),
             exposed: Vec::with_capacity(cells),
             boosts: Vec::with_capacity(cells),
-            notches: Vec::new(),
             biomes: Vec::with_capacity(cells),
             temperatures: Vec::with_capacity(cells),
             water_tops: Vec::with_capacity(cells),
@@ -211,13 +207,6 @@ impl ChunkColumns {
                     (columns.lowest.min(height), columns.highest.max(height));
             }
         }
-        columns.notches = notches(
-            heights,
-            noise.seed(),
-            (x, z),
-            &columns.heights,
-            &columns.boosts,
-        );
         columns
     }
 
@@ -238,11 +227,6 @@ impl ChunkColumns {
     /// How many blocks of the column's side show over its lowest neighbour: 0 on level ground, the height of the face on a cliff's edge.
     pub fn exposed(&self, cx: i64, cz: i64) -> i64 {
         self.exposed[Self::index(cx, cz)]
-    }
-
-    /// The band cut away under the column's cap, if it is undercut.
-    pub(crate) fn notch(&self, cx: i64, cz: i64) -> Option<&Notch> {
-        self.notches[Self::index(cx, cz)].as_deref()
     }
 
     /// How much longer than usual the cliffs in the column reach, 0..1.

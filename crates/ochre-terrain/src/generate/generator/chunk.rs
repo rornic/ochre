@@ -39,7 +39,6 @@ const ROCK_GRADIENT: f64 = 4.0;
 #[derive(Clone, Copy, Debug)]
 pub struct ChunkPasses {
     pub cliffs: bool,
-    pub undercuts: bool,
     pub trees: bool,
     pub flora: bool,
 }
@@ -47,7 +46,6 @@ pub struct ChunkPasses {
 impl ChunkPasses {
     pub const ALL: Self = Self {
         cliffs: true,
-        undercuts: true,
         trees: true,
         flora: true,
     };
@@ -106,9 +104,6 @@ pub fn generate_chunk_with(
             } else {
                 cliff
             };
-            // where a face is undercut the cut makes it, and the cliff pass's roughness would only leave stray blocks
-            let notch = columns.notch(x, z).filter(|_| passes.undercuts);
-            let cliff = cliff * (1.0 - notch.map_or(0.0, |notch| notch.smoothing()));
             let bank = water_by.is_some();
             // ground cut open beside fresh water floods to its level, not left as air under it
             let flood_top = water_by.map_or(water_top, |top| top.max(water_top));
@@ -152,10 +147,6 @@ pub fn generate_chunk_with(
             let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
-                }
-                // a band of the cliff's mass cut away near its face, under the cap
-                if notch.is_some_and(|notch| notch.carves(y)) {
-                    return BlockType::Air;
                 }
                 let block = under_grass(
                     column_block(

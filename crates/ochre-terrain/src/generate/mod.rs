@@ -5,4 +5,3 @@ pub mod region;
 pub mod region_store;
 pub mod rocks;
 pub mod trees;
-pub(crate) mod undercut;

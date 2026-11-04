@@ -6,7 +6,7 @@ What each landform and ground feature in Ochre is, what it looks like in the rea
 
 1. **The map.** A 64 km grid of 32-block cells holds height, rock, water and climate. Erosion, rivers and lakes are worked out here, once per seed.
 2. **Shapes.** Large forms (fjords, cones, inselbergs, karst, cirques) are pressed into the map's heights before water is routed, so rivers and lakes form round them.
-3. **Chunk detail.** When a 16-block chunk is built, small forms (relief features), cliffs and undercuts are added to the ground at block scale. Far chunks are coarser (see LOD) and show only part of this.
+3. **Chunk detail.** When a 16-block chunk is built, small forms (relief features) and cliffs are added to the ground at block scale. Far chunks are coarser (see LOD) and show only part of this.
 
 A form that is part of the map shapes where water goes. A form added at chunk time never does, which is why chunk-time forms keep away from water.
 
@@ -54,15 +54,9 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 
 **Cliff pass.** On ground steeper than gradient 1 the surface is cut and built up from 3D noise, up to 18 blocks where the seed's `cliff_boost` reaches (mountain and tableland). It makes ledges and rough faces. The top 3 blocks of a column are left alone so the grass is not pitted.
 
-**Overhang.** Rock that sticks out over open air. A heightfield cannot hold one, since it stores one height per column, so overhangs are cut into the blocks.
+**Overhang.** Rock that sticks out over open air. A heightfield cannot hold one, since it stores one height per column. Only the cliff pass's 3D noise makes any here. Undercuts, which cut a recess under a cap, were tried and removed (`terrain-perf.md`).
 
-**Undercut.** Rock cut away at the base of a cliff so the top sticks out. Here it is a recess under a cap, deepest at the foot of the face and tapering to nothing under the cap. It only appears on steep ground, never within 24 blocks of water.
-
-**Arch.** What an undercut leaves where a rib of rock is cut from both sides.
-
-**Cap or roof.** The rock left on top of an undercut.
-
-**Foot and rim.** The bottom and top of a face. The cut's depth falls from the foot to the rim.
+**Foot and rim.** The bottom and top of a face.
 
 ## Objects placed by hash
 
@@ -80,11 +74,11 @@ Single things dropped on the ground by a hash of position, not shaped from the h
 
 **LOD.** Level of detail. Chunks beyond `full_detail_distance` are replaced by coarser meshes that cover 2, 4, 8 or more times the area, so the horizon costs little to draw.
 
-**Heightfield.** A surface stored as one height per column. LOD meshes are heightfields, which is the reason they cannot show an overhang, an arch, a cave or a tree-sized object.
+**Heightfield.** A surface stored as one height per column. LOD meshes are heightfields, which is the reason they cannot show an overhang, a cave or a tree-sized object.
 
 **LOD seam.** The line where full-detail chunks meet a coarser mesh. Where the two disagree on the ground's height there is a visible step. Steep fjord walls and the reach of the cliff pass leave seams of up to about 3 blocks.
 
-**LOD pass.** Work to make far terrain agree better with near terrain. Boulders and mounds are in the finest LOD meshes. Still planned: matching the cliff pass's reach at the seam, trees on terraces, and the cap of an undercut as a cliff.
+**LOD pass.** Work to make far terrain agree better with near terrain. Boulders and mounds are in the finest LOD meshes. Still planned: matching the cliff pass's reach at the seam, trees on terraces.
 
 ## Climate and biomes
 

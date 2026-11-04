@@ -97,7 +97,6 @@ fn colour(block: BlockType) -> [u8; 3] {
 fn passes_from(flags: &[String]) -> ChunkPasses {
     ChunkPasses {
         cliffs: !flags.iter().any(|f| f == "--no-cliffs"),
-        undercuts: !flags.iter().any(|f| f == "--no-undercuts"),
         trees: !flags.iter().any(|f| f == "--no-trees"),
         flora: !flags.iter().any(|f| f == "--no-flora"),
     }
@@ -444,174 +443,6 @@ fn main() {
             img.save(out).unwrap();
             println!("wrote {out}");
         }
-        "floating" => {
-            // solid blocks in the area joined to nothing that reaches its floor or sides, compared with and without undercuts
-            let half: i64 = args[4].parse().unwrap();
-            let mut sampler = regions.sampler();
-            let (mut lo, mut hi) = (i64::MAX, i64::MIN);
-            for pz in (z - half..z + half).step_by(4) {
-                for px in (x - half..x + half).step_by(4) {
-                    let g = sampler.ground_top(px, pz);
-                    lo = lo.min(g);
-                    hi = hi.max(g);
-                }
-            }
-            let (y0, y1) = (lo - 8, hi + 20);
-            let (w, h) = ((2 * half) as usize, (y1 - y0 + 1) as usize);
-            let mut off_pits = std::collections::HashSet::new();
-            let mut off_tops: Vec<Option<usize>> = Vec::new();
-            for undercuts in [false, true] {
-                let mut flags = vec!["--no-trees".to_string(), "--no-flora".to_string()];
-                flags.extend(args.iter().skip(5).filter(|f| *f == "--no-cliffs").cloned());
-                if !undercuts {
-                    flags.push("--no-undercuts".into());
-                }
-                let mut blocks = Blocks::new(regions.clone(), passes_from(&flags));
-                let mut solid = vec![false; w * h * w];
-                let at = |i: usize, j: usize, k: usize| (j * h + k) * w + i;
-                for j in 0..w {
-                    for k in 0..h {
-                        for i in 0..w {
-                            let b =
-                                blocks.at(x - half + i as i64, y0 + k as i64, z - half + j as i64);
-                            solid[at(i, j, k)] = b != BlockType::Air && b != BlockType::Water;
-                        }
-                    }
-                }
-                // air with a floor and walls on three sides or more, which from above is a hole in the surface
-                let mut pits = 0;
-                for j in 1..w - 1 {
-                    for k in 1..h {
-                        for i in 1..w - 1 {
-                            if solid[at(i, j, k)] || !solid[at(i, j, k - 1)] {
-                                continue;
-                            }
-                            let walls = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                                .iter()
-                                .filter(|&&(di, dj)| {
-                                    solid[at((i as i64 + di) as usize, (j as i64 + dj) as usize, k)]
-                                })
-                                .count();
-                            pits += (walls >= 3) as usize;
-                        }
-                    }
-                }
-                // columns whose surface is lower than all four neighbours', which is a hole in the surface seen from above
-                let top_of = |i: usize, j: usize| (0..h).rev().find(|&k| solid[at(i, j, k)]);
-                let (mut surface_pits, mut new_pits) = (0, 0);
-                for j in 1..w - 1 {
-                    for i in 1..w - 1 {
-                        let Some(here) = top_of(i, j) else { continue };
-                        let lowest = [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]
-                            .iter()
-                            .filter_map(|&(di, dj)| {
-                                top_of((i as i64 + di) as usize, (j as i64 + dj) as usize)
-                            })
-                            .min();
-                        let pit = lowest.is_some_and(|l| here < l && here > 8);
-                        surface_pits += pit as usize;
-                        if pit && !undercuts {
-                            off_pits.insert((i, j));
-                        }
-                        if pit && undercuts && !off_pits.contains(&(i, j)) {
-                            new_pits += 1;
-                        }
-                        if pit
-                            && undercuts
-                            && !off_pits.contains(&(i, j))
-                            && std::env::var("PITS").is_ok()
-                        {
-                            println!(
-                                "  pit at ({},{},{})",
-                                x - half + i as i64,
-                                y0 + here as i64,
-                                z - half + j as i64
-                            );
-                        }
-                    }
-                }
-                println!("undercuts {undercuts}: {pits} pit cells, {surface_pits} surface pits ({new_pits} not there without)");
-                // where the surface is lower or higher with undercuts, as red and blue
-                let tops: Vec<Option<usize>> = (0..w * w).map(|n| top_of(n % w, n / w)).collect();
-                if !undercuts {
-                    off_tops = tops;
-                } else if let Ok(out) = std::env::var("DIFFMAP") {
-                    let mut img = RgbImage::new(w as u32, w as u32);
-                    for n in 0..w * w {
-                        let d = match (tops[n], off_tops[n]) {
-                            (Some(a), Some(b)) => a as i64 - b as i64,
-                            _ => 0,
-                        };
-                        let v = (d.abs() * 40).min(255) as u8;
-                        let rgb = match d {
-                            0 => [60, 60, 60],
-                            d if d < 0 => [60 + v / 2 + 100, 60, 60],
-                            _ => [60, 60, 60 + v / 2 + 100],
-                        };
-                        img.put_pixel((n % w) as u32, (n / w) as u32, Rgb(rgb));
-                    }
-                    img.save(out).unwrap();
-                }
-                let mut seen = vec![false; solid.len()];
-                let mut stray = Vec::new();
-                for start in 0..solid.len() {
-                    if !solid[start] || seen[start] {
-                        continue;
-                    }
-                    let (mut stack, mut size, mut grounded) = (vec![start], 0, false);
-                    let mut first = start;
-                    seen[start] = true;
-                    while let Some(n) = stack.pop() {
-                        size += 1;
-                        first = first.min(n);
-                        let (i, k, j) = (n % w, (n / w) % h, n / (w * h));
-                        grounded |= i == 0 || j == 0 || i == w - 1 || j == w - 1 || k == 0;
-                        for (di, dk, dj) in [
-                            (1i64, 0i64, 0i64),
-                            (-1, 0, 0),
-                            (0, 1, 0),
-                            (0, -1, 0),
-                            (0, 0, 1),
-                            (0, 0, -1),
-                        ] {
-                            let (ni, nk, nj) = (i as i64 + di, k as i64 + dk, j as i64 + dj);
-                            if ni < 0
-                                || nk < 0
-                                || nj < 0
-                                || ni >= w as i64
-                                || nk >= h as i64
-                                || nj >= w as i64
-                            {
-                                continue;
-                            }
-                            let m = at(ni as usize, nj as usize, nk as usize);
-                            if solid[m] && !seen[m] {
-                                seen[m] = true;
-                                stack.push(m);
-                            }
-                        }
-                    }
-                    if !grounded {
-                        stray.push((size, start));
-                    }
-                }
-                stray.sort_by(|a, b| b.cmp(a));
-                let total: usize = stray.iter().map(|s| s.0).sum();
-                println!(
-                    "undercuts {undercuts}: {} floating pieces, {total} blocks",
-                    stray.len()
-                );
-                for (size, n) in stray.iter().take(8) {
-                    let (i, k, j) = (n % w, (n / w) % h, n / (w * h));
-                    println!(
-                        "  {size} blocks at ({},{},{})",
-                        x - half + i as i64,
-                        y0 + k as i64,
-                        z - half + j as i64
-                    );
-                }
-            }
-        }
         "passes" => {
             let half: i64 = args[4].parse().unwrap();
             let mut sampler = regions.sampler();
@@ -621,13 +452,6 @@ fn main() {
                     "cliffs",
                     ChunkPasses {
                         cliffs: false,
-                        ..ChunkPasses::ALL
-                    },
-                ),
-                (
-                    "undercuts",
-                    ChunkPasses {
-                        undercuts: false,
                         ..ChunkPasses::ALL
                     },
                 ),

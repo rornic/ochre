@@ -6,9 +6,9 @@ What the tectonic world covers, what is not built, and the open defects. How eac
 
 A seed makes a 64 km world with its own character: plates (8 to 16), relief, warmth, wind direction, humidity, a temperature gradient and continentality, and counts for each landform (`worldmap/character.rs`, drawn by integer hash, so a seed gives the same world on every machine). The world has landforms beyond mountains, a biome for each climate with its own trees and flora, blended edges between biomes, and relief features in cold and warm biomes.
 
-Built, in the order they went in: portable maths; seed-derived config and humidity; temperature gradient, continentality and a warmth-driven treeline; tableland (terraced beds, stepped into the map before water is routed); dune scaling; cliffs reaching up to 18 blocks; gorge rivers over tableland; a rock per plate; fjords; volcanic cones; biome identity with mountain and volcanic as modifiers, and swamp; jungle giants; blended biome edges; groves and clearings and a thick jungle floor; cold and warm relief features; inselbergs, tower karst and cirques; undercuts and arches.
+Built, in the order they went in: portable maths; seed-derived config and humidity; temperature gradient, continentality and a warmth-driven treeline; tableland (terraced beds, stepped into the map before water is routed); dune scaling; cliffs reaching up to 18 blocks; gorge rivers over tableland; a rock per plate; fjords; volcanic cones; biome identity with mountain and volcanic as modifiers, and swamp; jungle giants; blended biome edges; groves and clearings and a thick jungle floor; cold and warm relief features; inselbergs, tower karst and cirques.
 
-Out of scope, by decision: gneiss and andesite, scenic routes, elaborate (sealed) caves. Simple surface-reachable caves are a future idea; undercuts are not caves.
+Out of scope, by decision: gneiss and andesite, scenic routes, elaborate (sealed) caves. Simple surface-reachable caves are a future idea. Undercuts were built and removed: leaning faces have no cap to leave.
 
 ## Gates
 
@@ -25,12 +25,11 @@ A change that alters generation bumps `GENERATOR_VERSION` and re-pins the map ha
 | Defect | Evidence | Status |
 | --- | --- | --- |
 | Waterfalls are drawn as ramps: a river's bank follows it down a face | `water_audit` river walls, mostly falls | Spike recorded in `terrain-perf.md` (520 to 724 steep stretches a seed, mostly mountain streams); needs a fall defined from block-level terrace risers before the water rule changes |
-| LODs are heightfields: terraces' trees, steep fjord walls (seams up to about 3 blocks), the cliff pass's reach at the seam, and undercuts and arches show only at full detail. Boulders, mounds and kopje tops are in the finest LODs | the LOD seam checks | The rest deferred: needs a spike that measures the seam first |
+| LODs are heightfields: terraces' trees, steep fjord walls (seams up to about 3 blocks), the cliff pass's reach at the seam, show only at full detail. Boulders, mounds and kopje tops are in the finest LODs | the LOD seam checks | The rest deferred: needs a spike that measures the seam first |
 | Rivers over mountain terraces keep a wall defect | `water_audit` river walls on mountain seeds | Deferred; tableland rivers run in gorges |
 | Trees and flora density follow a cell's own biome, so a blended patch keeps its neighbour's trees | looking at a blended edge | Open |
-| Chunk generation costs a little more under undercuts and relief features | `terrain-perf.md` | Recorded: about the same as without on mountain views, the smooth ground being built once per chunk column |
 | Hummock views, and gully views since they became wider swales, were not measured | `terrain-perf.md` | Open |
-| Seen in the game so far: undercuts, gullies and the cliff pass. Not yet: groves, relief on the other biomes, inselbergs, karst, cirques, blended edges after the two-cell cap | | Needs a look from the ground |
+| Seen in the game so far: gullies and the cliff pass. Not yet: groves, relief on the other biomes, inselbergs, karst, cirques, blended edges after the two-cell cap | | Needs a look from the ground |
 | The ARM64 checksum run under `qemu-aarch64` | never run; the pins were written natively | Open |
 
 ## Glossary
