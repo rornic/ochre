@@ -150,11 +150,9 @@ pub(super) fn mesh_blocks(
         // shallow water in a coarse cell is drawn to its real surface, not the cell's top
         let surface_top = source.water_surface_top(block_coord);
         let top = surface_top.map_or(0.5 - lowering, |top| (top - lowering).max(-0.45));
+        let sheet = cell_size == 1 && source.water_sheet(block_coord.x, block_coord.z);
         // the sides of a fall's sheet reach the block above, or stacked blocks show a seam between them
-        let top = if cell_size == 1
-            && source.water_sheet(block_coord.x, block_coord.z)
-            && source.block(block_coord + IVec3::Y) == BlockType::Water
-        {
+        let top = if sheet && source.block(block_coord + IVec3::Y) == BlockType::Water {
             0.5
         } else {
             top
@@ -221,12 +219,21 @@ pub(super) fn mesh_blocks(
                 if i != 4 {
                     return [0.0, 0.0, 0.0, 1.0];
                 }
+                // a negative distance marks the top of a fall's water, whose back is not drawn
                 [
-                    vertex_shore_factor(source, block_coord, i, v.position),
+                    if sheet {
+                        0.0
+                    } else {
+                        vertex_shore_factor(source, block_coord, i, v.position)
+                    },
                     vertex_water_depth(&mut depth_of, block_coord, i, v.position)
                         / CHUNK_SIZE as f32,
                     1.0,
-                    vertex_shore_distance(source, block_coord, i, v.position),
+                    if sheet {
+                        -1.0
+                    } else {
+                        vertex_shore_distance(source, block_coord, i, v.position)
+                    },
                 ]
             });
             water.push_face(

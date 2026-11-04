@@ -731,8 +731,8 @@ impl WorldMap {
                 profiles.data[n][PROFILE_POINTS] = profiles.data[next][0];
             }
         }
-        for n in 0..stretches.len() {
-            if let Some(k) = into_lake[n].and_then(|lake| {
+        for (n, lake) in into_lake.iter().enumerate() {
+            if let Some(k) = lake.and_then(|lake| {
                 (0..=PROFILE_POINTS).find(|&k| profiles.data[n][k] < lake - UNDER_LAKE)
             }) {
                 profiles.ends[n] = profiles.ends[n].min(k as f32 / PROFILE_POINTS as f32);

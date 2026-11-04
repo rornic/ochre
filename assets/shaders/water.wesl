@@ -36,10 +36,8 @@ const DEEP_OCEAN_END: f32 = 14.0;
 const CHUNK_SIZE: f32 = 16.0;
 
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
-// How far under a water surface the eye can be and still be in the water under it, for the back of the surface to be drawn.
-const UNDER_REACH: f32 = 12.0;
 // The water of a fall, under its streaks.
-const FALL_COLOR: vec3<f32> = vec3<f32>(0.18, 0.40, 0.62);
+const FALL_COLOR: vec3<f32> = vec3<f32>(0.10, 0.32, 0.60);
 const FOAM_SPEED: f32 = 0.45;
 const FOAM_BAND: f32 = 0.35;
 // How many radians the shore-distance band (0..1, see vertex_shore_distance) spans -
@@ -591,11 +589,11 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
 fn fall_water(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> vec4<f32> {
     let column = floor(dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0);
     let speed = 6.0 + 4.0 * hash2(vec2<f32>(column, 3.0));
-    let streak = smoothstep(0.4, 0.8, hash2(vec2<f32>(column, floor((world_position.y + time * speed) / 5.0))));
+    let streak = smoothstep(0.6, 0.9, hash2(vec2<f32>(column, floor((world_position.y + time * speed) / 5.0))));
     let blue = scene_colour(FALL_COLOR) * daylight(uncurved(world_position));
-    let colour = mix(blue, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), 0.15 + 0.55 * streak);
+    let colour = mix(blue, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), 0.05 + 0.55 * streak);
     // seen through, more where the water is thin between the streaks
-    return vec4<f32>(colour, 0.5 + 0.35 * streak);
+    return vec4<f32>(colour, 0.45 + 0.3 * streak);
 }
 
 @fragment
@@ -676,7 +674,8 @@ fn fragment(
     // its look at any distance, LODs included
     var scene = tint;
     var opacity = 1.0;
-    if abs(normal.y) < 0.5 && fresh_surface {
+    // the sides and the underside of a fall's blocks, which are all one sheet
+    if (abs(normal.y) < 0.5 || normal.y < -0.5) && fresh_surface {
         let fall = fall_water(world_position, normal, time);
         scene = fall.rgb;
         opacity = fall.a;
@@ -684,10 +683,12 @@ fn fragment(
         scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves);
         scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
     } else if normal.y > 0.5 {
-        // the back of a surface far over the eye is a fall's sheet seen from the air under it, not water seen from within
-        if view_position.y < world_position.y - UNDER_REACH {
+        // the back of the top of a fall's water is seen from the air under it, not from within the water
+@if(VERTEX_COLORS) {
+        if in.color.a < 0.0 {
             discard;
         }
+}
         // seen from under it, clear, not tinted
         scene = water_below(world_position, to_eye, in.position, footprint);
     }
