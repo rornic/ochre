@@ -32,6 +32,8 @@ pub struct TerrainSample {
     pub spring: SpringPart,
     /// Bare rock on top of a relief feature, which a block rule that reads only slope would leave as grass.
     pub rocky: bool,
+    /// A column of the sheet of water over a river's fall, deeper than the river's own bed.
+    pub fall: bool,
 }
 
 /// The part of a spring, where a river rises, a column is in.

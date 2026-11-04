@@ -224,6 +224,14 @@ impl HeightSampler<'_> {
             .fresh_water_at(world_x - origin.x, world_z - origin.y)
     }
 
+    /// Whether the column is in the sheet of water over a river's fall.
+    pub fn fall(&mut self, world_x: i64, world_z: i64) -> bool {
+        let coord = RegionCoord::from_world(world_x, world_z);
+        let origin = coord.origin();
+        self.region(coord)
+            .fall_at(world_x - origin.x, world_z - origin.y)
+    }
+
     pub fn rocky(&mut self, world_x: i64, world_z: i64) -> bool {
         let coord = RegionCoord::from_world(world_x, world_z);
         let origin = coord.origin();

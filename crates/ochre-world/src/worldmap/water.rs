@@ -17,6 +17,8 @@ pub struct RiverHit {
     pub surface: f32,
     /// Height of the riverbed at the centre line.
     pub bed: f32,
+    /// How deep the water is at the centre line, not counting the column of a fall's lip.
+    pub depth: f32,
 }
 
 // Points a river's water level is worked out at along each stretch between two cells, which is
@@ -842,17 +844,18 @@ impl WorldMap {
                 let ahead = profiles.level(i, (best_t + 1.0 / chord.max(1.0)).min(1.0) as f32);
                 // nearest the water first, not the centre line, so a wide river wins over a narrow one
                 let margin = distance - width / 2.0;
+                // a ford is shallow however wide the river is there
+                let depth = if self.ford[i] == 1 {
+                    0.9
+                } else {
+                    depth_for_width(width)
+                };
                 let hit = RiverHit {
                     distance,
                     width,
                     surface,
-                    // a ford is shallow however wide the river is there
-                    bed: surface.min(ahead)
-                        - if self.ford[i] == 1 {
-                            0.9
-                        } else {
-                            depth_for_width(width)
-                        },
+                    bed: surface.min(ahead) - depth,
+                    depth,
                 };
                 found.push((margin, hit, profiles.stem[n as usize]));
             }

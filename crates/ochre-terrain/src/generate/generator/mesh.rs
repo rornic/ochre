@@ -150,8 +150,20 @@ pub(super) fn mesh_blocks(
         // shallow water in a coarse cell is drawn to its real surface, not the cell's top
         let surface_top = source.water_surface_top(block_coord);
         let top = surface_top.map_or(0.5 - lowering, |top| (top - lowering).max(-0.45));
+        // the sides of a fall's sheet reach the block above, or stacked blocks show a seam between them
+        let top = if cell_size == 1
+            && source.water_sheet(block_coord.x, block_coord.z)
+            && source.block(block_coord + IVec3::Y) == BlockType::Water
+        {
+            0.5
+        } else {
+            top
+        };
         // fresh water at full detail is drawn to its spread surface, a slope down the river, not to whole blocks
-        let level = if cell_size == 1 && surface_top.is_none() {
+        let level = if cell_size == 1
+            && surface_top.is_none()
+            && !source.water_sheet(block_coord.x, block_coord.z)
+        {
             source.water_level(block_coord.x, block_coord.z)
         } else {
             None

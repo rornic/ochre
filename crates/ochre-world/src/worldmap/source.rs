@@ -66,6 +66,8 @@ const VALLEY_ABOVE_SEA: f64 = 0.6;
 
 // How far past a river's banks, in blocks, its valley floor eases back out into the land's own ground.
 const VALLEY_WIDTH: f64 = 40.0;
+// A river's water this far deeper than its bed is the sheet of a fall.
+const FALL_SHEET: f32 = 2.0;
 // How far over the real ground a river's valley floor may stand where the map's ground is higher.
 const VALLEY_OVER: f64 = 2.0;
 // The gap under the map's ground, in blocks, from which the valley floor follows the real ground, and where it does fully.
@@ -118,7 +120,7 @@ fn channel(ground: f32, river: RiverHit, gorge: f64) -> f32 {
 // Where the bed of the river under it is, a parabola across it.
 fn bed_height(river: RiverHit) -> f32 {
     let t = (river.distance / (river.width / 2.0)).min(1.0);
-    river.bed + (river.surface - river.bed) * t * t
+    river.bed + river.depth * t * t
 }
 
 fn bank_width(river: RiverHit, gorge: f64) -> f32 {
@@ -1063,6 +1065,8 @@ impl WorldTerrain {
             water_kind,
             spring: spring_part,
             rocky,
+            fall: river_water
+                .is_some_and(|river| river.surface - river.bed - river.depth > FALL_SHEET),
         };
         (sample, near_river)
     }
@@ -1657,6 +1661,7 @@ mod river_bank_tests {
             width: 2.0,
             surface: 100.0,
             bed: 99.0,
+            depth: 1.0,
         };
         assert!(channel(80.0, river, 0.0) >= 100.2);
         river.distance = 100.0;
@@ -1670,6 +1675,7 @@ mod river_bank_tests {
             width: 8.0,
             surface: 100.0,
             bed: 98.0,
+            depth: 2.0,
         };
         // no tableland, or too little: today's bank, width and profile
         assert_eq!(bank_width(river, 0.0), bank_width(river, GORGE_FROM));

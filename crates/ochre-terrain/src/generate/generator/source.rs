@@ -43,6 +43,11 @@ pub(super) trait BlockSource {
         None
     }
 
+    /// Whether the column's water is the sheet of a river's fall, drawn as whole blocks, not a surface that slopes.
+    fn water_sheet(&self, _x: i32, _z: i32) -> bool {
+        false
+    }
+
     /// Whether the column's water is flowing, see `flow`, which stands over the ground beside it.
     fn flowing(&self, _x: i32, _z: i32) -> bool {
         false
@@ -124,6 +129,8 @@ struct FreshColumn {
     block_level: f32,
     level: f32,
     pool: bool,
+    // in the sheet of a fall, which is drawn as whole blocks of water
+    sheet: bool,
 }
 
 pub(super) struct ChunkNeighbourhood<'a> {
@@ -216,6 +223,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                 block_level: level,
                 level,
                 pool: false,
+                sheet: false,
             });
         }
         let (regions, origin) = self.water?;
@@ -250,6 +258,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                         level: spread[i as usize],
                         pool: sampler.spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
                             == SpringPart::Pool,
+                        sheet: sampler.fall((origin.x + x - 1) as i64, (origin.z + z - 1) as i64),
                     })
                 })
                 .collect()
@@ -265,6 +274,10 @@ impl BlockSource for ChunkNeighbourhood<'_> {
 
     fn water_block_level(&self, x: i32, z: i32) -> Option<f32> {
         self.fresh_at(x, z).map(|fresh| fresh.block_level)
+    }
+
+    fn water_sheet(&self, x: i32, z: i32) -> bool {
+        self.fresh_at(x, z).is_some_and(|fresh| fresh.sheet)
     }
 
     fn spring_pool(&self, x: i32, z: i32) -> bool {

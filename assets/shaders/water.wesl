@@ -36,6 +36,8 @@ const DEEP_OCEAN_END: f32 = 14.0;
 const CHUNK_SIZE: f32 = 16.0;
 
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
+// The water of a fall, under its streaks.
+const FALL_COLOR: vec3<f32> = vec3<f32>(0.18, 0.40, 0.62);
 const FOAM_SPEED: f32 = 0.45;
 const FOAM_BAND: f32 = 0.35;
 // How many radians the shore-distance band (0..1, see vertex_shore_distance) spans -
@@ -583,16 +585,15 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
     return mix(scatter, above, mix(BELOW_CLEAR.x, BELOW_CLEAR.y, window));
 }
 
-// A fall's sheet seen from the side: columns of water dropping at their own speeds, in streaks that break up white, over the water's blue.
-fn fall_water(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> vec3<f32> {
-    // the water's colour alone: its tile is a ripple, which on a vertical face shows as lines across the fall
-    let tint = scene_colour(material_color.rgb) * daylight(uncurved(world_position));
+// A fall's sheet seen from the side: narrow columns of water dropping at their own speeds, in long streaks that go white, over a calm blue.
+fn fall_water(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> vec4<f32> {
     let column = floor(dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0);
-    let speed = 2.0 + 3.0 * hash2(vec2<f32>(column, 3.0));
-    let dropped = world_position.y * 0.5 + time * speed * 0.5;
-    let streak = smoothstep(0.55, 0.9, hash2(vec2<f32>(column, floor(dropped))));
-    let white = clamp(0.1 + streak * (0.45 + 0.4 * fract(dropped)), 0.0, 1.0);
-    return mix(tint, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), white);
+    let speed = 6.0 + 4.0 * hash2(vec2<f32>(column, 3.0));
+    let streak = smoothstep(0.4, 0.8, hash2(vec2<f32>(column, floor((world_position.y + time * speed) / 5.0))));
+    let blue = scene_colour(FALL_COLOR) * daylight(uncurved(world_position));
+    let colour = mix(blue, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), 0.15 + 0.55 * streak);
+    // seen through, more where the water is thin between the streaks
+    return vec4<f32>(colour, 0.5 + 0.35 * streak);
 }
 
 @fragment
@@ -672,8 +673,11 @@ fn fragment(
     // water is its own sight of what's under it, so is drawn over it, not blended, and keeps
     // its look at any distance, LODs included
     var scene = tint;
+    var opacity = 1.0;
     if abs(normal.y) < 0.5 && fresh_surface {
-        scene = fall_water(world_position, normal, time);
+        let fall = fall_water(world_position, normal, time);
+        scene = fall.rgb;
+        opacity = fall.a;
     } else if outside {
         scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves);
         scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
@@ -692,6 +696,6 @@ fn fragment(
     }
 
     var output: FragmentOutput;
-    output.color = shown;
+    output.color = vec4<f32>(shown.rgb, shown.a * opacity);
     return output;
 }
