@@ -39,7 +39,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 - LODs: `ochre-terrain/src/lod/`. Chunk streaming: `chunk_loader.rs`. Both run on `TerrainPlugin`.
 - World map pipeline: `ochre-world/src/worldmap/` (tectonics, erosion, hydrology, water, climate, then `source.rs` as the `TerrainSource`).
 - Lakes, rivers and the sea, and the rule that keeps them from leaking: `docs/water.md`. Read it before changing water.
-- What the world is made of and why: `docs/world-plan.md` (scope, gates, open defects, glossary), `docs/landforms.md` (the landforms and relief features), `docs/climate.md` (climate, biomes, transitions, trees). A seed draws its own plates, relief, warmth, wind, humidity and landform counts (`worldmap/character.rs`); `OCHRE_CHARACTER=off` keeps the config as given.
+- What the world is made of and why: `docs/world-plan.md` (scope, gates, open defects, glossary), `docs/landforms.md` (the landforms and relief features), `docs/climate.md` (climate, biomes, transitions, trees), `docs/terrain-glossary.md` (what each landform and feature is). A seed draws its own plates, relief, warmth, wind, humidity and landform counts (`worldmap/character.rs`); `OCHRE_CHARACTER=off` keeps the config as given.
 - Shaders: `assets/shaders/`. Block textures: `assets/textures/blocks.png`, built by the `block-textures` skill.
 - Examples double as tools: `worldprobe` (CLI probe of a spot, plus `edges`, `features` and `sites`), `world_map` (PNG), `water_audit`, `seams`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report).
 
