@@ -28,10 +28,14 @@ use std::sync::Arc;
 // dunes.
 const DESERT_CLIFFS_ABOVE: i64 = 90;
 
+// Blocks under a column's surface the cliff pass leaves alone.
+const SKIN: i64 = 3;
+
 // Which of the passes laid over the terrain's blocks run, so a tool can tell which one made a block.
 #[derive(Clone, Copy, Debug)]
 pub struct ChunkPasses {
     pub cliffs: bool,
+    pub undercuts: bool,
     pub trees: bool,
     pub flora: bool,
 }
@@ -39,6 +43,7 @@ pub struct ChunkPasses {
 impl ChunkPasses {
     pub const ALL: Self = Self {
         cliffs: true,
+        undercuts: true,
         trees: true,
         flora: true,
     };
@@ -97,6 +102,9 @@ pub fn generate_chunk_with(
             } else {
                 cliff
             };
+            // where a face is undercut the cut makes it, and the cliff pass's roughness would only leave stray blocks
+            let notch = columns.notch(x, z).filter(|_| passes.undercuts);
+            let cliff = cliff * (1.0 - notch.map_or(0.0, |notch| notch.smoothing()));
             let bank = water_by.is_some();
             // ground cut open beside fresh water floods to its level, not left as air under it
             let flood_top = water_by.map_or(water_top, |top| top.max(water_top));
@@ -135,6 +143,10 @@ pub fn generate_chunk_with(
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
                 }
+                // a band of the cliff's mass cut away near its face, under the cap
+                if notch.is_some_and(|notch| notch.carves(y)) {
+                    return BlockType::Air;
+                }
                 let block = under_grass(
                     column_block(
                         biomes,
@@ -156,8 +168,12 @@ pub fn generate_chunk_with(
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
                     return block;
                 }
+                // the top blocks stay, or the cliff noise pits the grass and shows the dirt under it
+                if (column_height - SKIN..column_height).contains(&y) {
+                    return block;
+                }
                 let density = (column_height - y) as f64 - 0.5
-                    + cliff * cliff_density(seed, world_x, y, world_z);
+                    + cliff * cliff_density(seed, world_x, y, world_z, column_height);
                 let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top);
                 // a glacier's built-up faces are ice, not the stone a cliff builds elsewhere
                 if cut == BlockType::Stone && block != BlockType::Stone && ice_cliffs {

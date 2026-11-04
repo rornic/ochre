@@ -2519,6 +2519,7 @@ fn overhangs(regions: &Arc<RegionStore>, (cx, cy, cz): (i64, i64, i64)) -> (usiz
         ChunkCoordinate(I64Vec3::new(cx, cy, cz)),
         super::chunk::ChunkPasses {
             cliffs: true,
+            undercuts: false,
             trees: false,
             flora: false,
         },
@@ -3353,4 +3354,87 @@ fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
         })
         .collect();
     assert!(rocks.len() >= 3, "only {rocks:?}");
+}
+
+// Chunk columns with an undercut band on the test world, as (chunk x, chunk z, column x, column z, lo, hi).
+fn undercut_columns(
+    regions: &Arc<RegionStore>,
+    map: &ochre_world::worldmap::WorldMap,
+    limit: usize,
+) -> Vec<(i64, i64, i64, i64, i64, i64)> {
+    let mut heights = regions.sampler();
+    let mut found = Vec::new();
+    'cells: for cz in (0..map.dim()).step_by(2) {
+        for cx in (0..map.dim()).step_by(2) {
+            let (x, z) = map.cell_centre(cx, cz);
+            let (kx, kz) = ((x as i64).div_euclid(16), (z as i64).div_euclid(16));
+            let columns = regions.chunk_columns(&mut heights, kx, kz);
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    if let Some(range) = columns
+                        .notch(lx, lz)
+                        .filter(|n| (n.band().0..=n.band().1).any(|y| n.carves(y)))
+                        .map(|n| n.band())
+                    {
+                        found.push((kx, kz, lx, lz, range.0, range.1));
+                        if found.len() >= limit {
+                            break 'cells;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn test_undercuts_cut_a_band_under_a_roof_and_only_where_a_face_is_near() {
+    use ochre_base::WATER_LEVEL;
+    let terrain = ochre_world::worldmap::test_terrain(5);
+    let regions = Arc::new(RegionStore::new(terrain.clone()));
+    let found = undercut_columns(&regions, terrain.map(), 40);
+    assert!(!found.is_empty(), "no undercut columns on the test world");
+    let passes = |undercuts| super::chunk::ChunkPasses {
+        cliffs: true,
+        undercuts,
+        trees: false,
+        flora: false,
+    };
+    let mut carved = 0;
+    for (kx, kz, lx, lz, lo, hi) in found {
+        assert!(lo > WATER_LEVEL + 9, "the band starts at {lo}");
+        let top = regions.sampler().ground_top(kx * 16 + lx, kz * 16 + lz);
+        for cy in lo.div_euclid(16)..=hi.div_euclid(16) {
+            let at = ChunkCoordinate(I64Vec3::new(kx, cy, kz));
+            let (with, without) = (
+                super::chunk::generate_chunk_with(regions.clone(), at, passes(true)),
+                super::chunk::generate_chunk_with(regions.clone(), at, passes(false)),
+            );
+            for y in 0..16u16 {
+                let c = U16Vec3::new(lx as u16, y, lz as u16);
+                let world_y = cy * 16 + y as i64;
+                let (a, b) = (with.get_block_at(c), without.get_block_at(c));
+                if a != b {
+                    // a cut, or the cliff pass's roughness giving way to it, within the cliffs' reach of the ground
+                    if a != BlockType::Air {
+                        assert!(
+                            (world_y - top).abs() <= 18,
+                            "a block changed at {world_y} far from the ground at {top}"
+                        );
+                        continue;
+                    }
+                    assert!(
+                        (lo..=hi).contains(&world_y),
+                        "cut at {world_y} outside {lo}..={hi}"
+                    );
+                    carved += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        carved > 0,
+        "no block was cut from {carved} undercut columns"
+    );
 }

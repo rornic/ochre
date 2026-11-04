@@ -24,11 +24,15 @@ pub fn cliff_reach_boosted(gradient: f64, boost: f64) -> f64 {
     cliff_reach(gradient) * (1.0 + boost.clamp(0.0, 1.0))
 }
 
+const VERTICAL_SQUASH: f64 = 0.7;
+
 /// Noise in -1..1 that cliffs and overhangs are cut from: the surface in a column is wherever
 /// `height - y + reach * cliff_density` crosses zero, which is a different height at each y, so
-/// ledges overhang and caves open in the face.
-pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64) -> f64 {
-    let (fx, fy, fz) = (x as f64 + 0.5, y as f64 + 0.5, z as f64 + 0.5);
+/// ledges overhang and caves open in the face. The noise changes `VERTICAL_SQUASH` as fast with height round the
+/// column's `ground`, since at full speed it turns the surface over several times in a column and pits it.
+pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
+    let squashed = ground as f64 + (y - ground) as f64 * VERTICAL_SQUASH;
+    let (fx, fy, fz) = (x as f64 + 0.5, squashed + 0.5, z as f64 + 0.5);
     0.65 * perlin3(seed ^ 0xC11F, fx / 14.0, fy / 14.0, fz / 14.0)
         + 0.35 * perlin3(seed ^ 0xC120, fx / 6.0, fy / 6.0, fz / 6.0)
 }
@@ -80,7 +84,7 @@ mod tests {
         assert_eq!(CLIFF_REACH, cliff_reach(CLIFF_GRADIENT.1 + 1.0));
         assert!(cliff_reach(2.0) > 0.0 && cliff_reach(2.0) < CLIFF_REACH);
         for i in 0..500 {
-            let d = cliff_density(4, i * 3, i % 40, -i * 7);
+            let d = cliff_density(4, i * 3, i % 40, -i * 7, 20);
             assert!((-1.0..=1.0).contains(&d), "{d}");
         }
     }

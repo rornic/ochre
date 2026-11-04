@@ -82,10 +82,15 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
             })
         })
         .collect();
+    // a ring beyond the area, which generating a chunk reads from too
     timed("regions", || {
-        for c in &coords {
-            let size = CHUNK_SIZE as i64;
-            regions.sampler().height(c.0.x * size, c.0.z * size);
+        let size = CHUNK_SIZE as i64;
+        for x in -ACROSS / 2 - 2..ACROSS / 2 + 2 {
+            for z in -ACROSS / 2 - 2..ACROSS / 2 + 2 {
+                regions
+                    .sampler()
+                    .height((spawn.x + x) * size, (spawn.z + z) * size);
+            }
         }
     });
     let data: HashMap<ChunkCoordinate, Arc<ChunkData>> = timed("generate chunks", || {

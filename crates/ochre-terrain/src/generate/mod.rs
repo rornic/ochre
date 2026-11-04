@@ -4,3 +4,4 @@ pub mod light;
 pub mod region;
 pub mod region_store;
 pub mod trees;
+pub(crate) mod undercut;

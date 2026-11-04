@@ -97,6 +97,7 @@ fn colour(block: BlockType) -> [u8; 3] {
 fn passes_from(flags: &[String]) -> ChunkPasses {
     ChunkPasses {
         cliffs: !flags.iter().any(|f| f == "--no-cliffs"),
+        undercuts: !flags.iter().any(|f| f == "--no-undercuts"),
         trees: !flags.iter().any(|f| f == "--no-trees"),
         flora: !flags.iter().any(|f| f == "--no-flora"),
     }
@@ -438,6 +439,13 @@ fn main() {
                     "cliffs",
                     ChunkPasses {
                         cliffs: false,
+                        ..ChunkPasses::ALL
+                    },
+                ),
+                (
+                    "undercuts",
+                    ChunkPasses {
+                        undercuts: false,
                         ..ChunkPasses::ALL
                     },
                 ),

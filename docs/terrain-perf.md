@@ -751,3 +751,27 @@ Three map-scale shapes in `shapes.rs`, laid after the cones and before the mount
 Spikes, on seeds 1 to 4 with the shapes forced on in a 24 km world run through the last hydrology: every dome keeps 99 to 100% of its height in the final map (the plan asks for 60%) and none gains lake cells within twice its radius, towers leave fewer lake cells beside them (2,569 to 914 on seed 1, 453 to 138 on seed 3, nothing on seeds 2 and 4), and every cirque keeps a headwall of at least 60 blocks (60 to 436) and none becomes a lake (the draining that hydrology does for basins under 300 cells cuts it an outlet). A first version skipped the centre cell of each dome whenever its ragged offset went negative, which read as 0% kept on half the domes and a lake in the hollow on seed 4; the distance is now clamped at zero. All three pass and are kept. The sites are checked by `domes_keep_their_height_towers_leave_no_new_lakes_and_cirques_keep_a_headwall`.
 
 Census over 32 seeds: no biome over 70% of land (largest 61.5%), spawn on all. Carve passes take 0.08 s on seed 1. `water_audit` was not rerun for this change, the shapes sitting on dry land and cold mountains apart from the lake counts above.
+
+## Undercuts and arches (GENERATOR_VERSION 80)
+
+The mass of a cliff is cut away near its face so the cap overhangs. `generate/undercut.rs` builds the cut once for each chunk column, when its `ChunkColumns` are sampled, and every chunk stacked over it shares it.
+
+The ground is read on a two-block grid over the chunk column and 27 blocks round it (1,296 samples, after a coarse look at 81 that drops most columns, which have no 14-block face anywhere near) and blurred over 4 blocks each way. A block is cut when open air in that smooth ground lies within a depth of it along one of eight directions, up to 24 blocks. The distance to the air is read between the two samples either side of where the ground drops under the block, so the edge of a cut is continuous.
+
+The depth is full up the lower face from its foot (the lowest smooth ground within 24 blocks), then falls to nothing under a cap of at least 6 blocks, or a tenth of the face, which is what makes the cap overhang. It is scaled by steepness (smooth-ground gradient 0.6 to 1.2, so a slope is left alone and a cliff is cut), by patches (wavelength 120) and blobs (160, wandered by 50 blocks so an edge is not a circle), and by up to 20% along the ground. It does not vary with height, or a cut near the depth opens pockets through the top. A cut under 7 blocks is not made, since the ground's own roughness (about 2 blocks a column) would show through a shallower one as one-block holes. A cap under 4 blocks thick, which on a slope is only a shell over the cut, is cut through. Nothing is cut within 24 blocks of water or within 10 blocks of the sea, or under a face less than 40 blocks over it. LODs are heightfields and show none of it. `ChunkPasses` gains `undercuts` (`worldprobe --no-undercuts`).
+
+Where a face is cut, the cliff pass's own roughness is scaled away, since its noise builds and cuts blocks round the ground in the same columns and leaves stray ones.
+
+### How it got here
+
+A per-column band cut by the nearest open air in the raw ground left floating blocks and holes however it was tuned: the ground varies several blocks a column, so air along a ray comes and goes. Cutting from the foot, taking the skin beside air and the blocks a cliff built up above the ground, and a hard gate of noise over whole columns each fixed one artefact and moved another. Smooth ground and a depth that changes slowly fixed them together. Deciding each cut by the depth at the air it looks out on was tried and cut far too much (79 floating pieces).
+
+### Cost
+
+Bench mountain views, vertices against no undercuts: 634,193 to 658,915 (+3.9%) on seed 1 and 469,264 to 482,697 (+2.9%) on seed 11, against the gate of 1.10. Chunk generation is about 270 ms on both, against 262 and 358: the smooth ground is built once for a chunk column, not for each block. `bench` now warms the regions in a ring round its area, since a chunk's columns read 27 blocks past it and the outer ring otherwise pulled whole regions into the timing.
+
+`worldprobe floating <seed> <x> <z> <half>` counts solid pieces joined to nothing that reaches the area's floor or sides, surface pits (a column under all four neighbours) and the ones undercuts add, with and without them; `DIFFMAP=out.png` writes where the surface is lower or higher. On seed 1708187577 round -6248 -6020 (160 blocks square) floating pieces are 0 with the cliff pass as it now is and 0 with undercuts, from 20 before the cliff changes.
+
+## Cliff noise: slower with height, and a skin left alone
+
+The cliff pass cut and built the surface from 3D noise that changes as fast with height as along the ground. With a reach of up to 18 blocks that turns a column's surface over several times and leaves floating pieces. The noise now changes 0.7 as fast with height round the column's ground (`VERTICAL_SQUASH` in `relief.rs`), which keeps overhangs (`test_steep_ground_gets_overhangs_and_gentle_ground_gets_none` fails at 0.6 and below) and cuts floating pieces over the 160-block square from 20 to 5. The top 3 blocks of a column are not cut at all (`SKIN` in `chunk.rs`), which stopped the cliff pass cutting the grass in patches and showing the dirt under it (+1.9% vertices on the mountain view).
