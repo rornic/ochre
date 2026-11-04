@@ -7,8 +7,8 @@ use super::chunk::{sky_above, trees_may_reach};
 use super::mesh::mesh_blocks;
 use super::source::{water_depth, BlockSource, BoxFaces, TreeBox};
 use super::terrain::{
-    block_gradient, column_block, freeze_cell, ground_top, is_solid, rocked, under_grass,
-    underwater,
+    block_gradient, column_block, face_slope, freeze_cell, ground_top, is_solid, rocked,
+    under_grass, underwater,
 };
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::columns::ColumnGrid;
@@ -186,6 +186,8 @@ impl LodBlocks {
                     world_z,
                     gradient,
                 );
+                let gradient =
+                    face_slope(gradient, grid.gradient(cx, cz), grid.exposed(cx, cz), cell);
                 let temperature = noise.temperature(world_x as f64, world_z as f64);
                 let water_top = grid.water_top(cx, cz);
                 water_tops[Self::column(size, cx, cz)] = water_top;
@@ -366,6 +368,17 @@ impl LodBlocks {
                     world_x,
                     world_z,
                     combined_gradient,
+                );
+                let lowest_beside = [(cell, 0), (-cell, 0), (0, cell), (0, -cell)]
+                    .map(|(dx, dz)| heights.ground_top(world_x + dx, world_z + dz))
+                    .into_iter()
+                    .min()
+                    .unwrap_or(column_height);
+                let combined_gradient = face_slope(
+                    combined_gradient,
+                    gradient_x.abs() + gradient_z.abs(),
+                    (column_height - lowest_beside).max(0),
+                    cell,
                 );
                 let temperature = noise.temperature(world_x as f64, world_z as f64);
                 let water_top = heights.water_top(world_x, world_z);

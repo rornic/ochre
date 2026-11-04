@@ -295,6 +295,18 @@ pub(in crate::generate) fn block_gradient(
     }
 }
 
+// A column this many blocks per cell over its lowest neighbour is a cliff face, which no patch of meadow clings to.
+const FACE_EXPOSED: i64 = 3;
+
+// The slope to choose a column's blocks by: on a cliff face the real gradient, not the meadow's.
+pub(in crate::generate) fn face_slope(slope: f64, gradient: f64, exposed: i64, cell: i64) -> f64 {
+    if exposed >= FACE_EXPOSED * cell {
+        slope.max(gradient)
+    } else {
+        slope
+    }
+}
+
 // `terrain_block`, as the biome owning the column has it.
 pub(in crate::generate) fn column_block(
     biomes: &Biomes,

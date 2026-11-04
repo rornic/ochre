@@ -121,6 +121,16 @@ impl ColumnGrid {
         bed_top(self.heights[index], self.water[index])
     }
 
+    /// How far the cell's ground stands over its lowest neighbour of the four, in blocks.
+    pub fn exposed(&self, cx: i32, cz: i32) -> i64 {
+        let here = self.ground_top(cx, cz);
+        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .map(|(dx, dz)| self.ground_top(cx + dx, cz + dz))
+            .into_iter()
+            .min()
+            .map_or(0, |lowest| (here - lowest).max(0))
+    }
+
     /// The slope there, as `terrain_block` takes it: the height change across two blocks
     /// each way, summed, measured between the cells either side.
     pub fn gradient(&self, cx: i32, cz: i32) -> f64 {

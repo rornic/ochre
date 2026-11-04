@@ -764,7 +764,7 @@ The cliff pass cut and built the surface from 3D noise that changes as fast with
 
 ## Cliff faces are bare rock (GENERATOR_VERSION 84)
 
-A meadow patch on a mountain eases the slope the blocks are chosen by to 0.9, however steep the ground. On seed 3344283695 at 4289 268 12560 that put a grass and dirt skin on a ~70 degree sandstone wall, with bare sandstone above it. A column standing 3 or more blocks over its lowest neighbour (`FACE_EXPOSED` in `chunk.rs`) now takes the unlevelled gradient, so a face is rock and meadow clings to slopes and ledges. A first try capped meadow by the map gradient, which is steep at cell scale even on a flat ledge, and turned the foot bare too. With 2 blocks it also took bumpy flat ground. Not measured: vertex counts and the other mountain seeds.
+A meadow patch on a mountain eases the slope the blocks are chosen by to 0.9, however steep the ground. On seed 3344283695 at 4289 268 12560 that put a grass and dirt skin on a ~70 degree sandstone wall, with bare sandstone above it. A column standing 3 or more blocks over its lowest neighbour (`FACE_EXPOSED` in `chunk.rs`) now takes the unlevelled gradient, so a face is rock and meadow clings to slopes and ledges. A first try capped meadow by the map gradient, which is steep at cell scale even on a flat ledge, and turned the foot bare too. With 2 blocks it also took bumpy flat ground. The LOD meshes use the same rule (`face_slope`), with the drop to the lowest neighbour counted per cell, so a cell 3 blocks per cell over its neighbour is a face. Not measured: vertex counts and the other mountain seeds.
 
 ## Waterfalls: spike recorded, not built
 
