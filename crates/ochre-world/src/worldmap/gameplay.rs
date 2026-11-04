@@ -236,7 +236,7 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
 
 // Grades the ground along `path` so it never climbs steeper than WALK_SLOPE, and opens a valley
 // round it, then labels the highest point left as the pass.
-fn carve(map: &mut WorldMap, path: &[usize]) {
+fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     let dim = map.dim();
     let cell = map.config.map_cell as f32;
     // Allow the final 12 m river cut without making a graded pass too steep.
@@ -257,6 +257,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
     for k in (0..path.len() - 1).rev() {
         graded[k] = graded[k].min(graded[k + 1] + step(path[k], path[k + 1]));
     }
+    let mut changed = false;
     for (k, &i) in path.iter().enumerate() {
         let (x, z) = ((i % dim) as i64, (i / dim) as i64);
         for dz in -PASS_RADIUS..=PASS_RADIUS {
@@ -274,7 +275,9 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
                 let n = nz as usize * dim + nx as usize;
                 let floor = graded[k] + d * reach;
                 // never so low it floods
-                map.height[n] = map.height[n].min(floor).max(sea() + 1.5);
+                let carved = map.height[n].min(floor).max(sea() + 1.5);
+                changed |= carved != map.height[n];
+                map.height[n] = carved;
             }
         }
     }
@@ -290,6 +293,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
         z: z as i32,
         value: height,
     });
+    changed
 }
 
 /// Joins the lowlands a range walls off from each other by carving a pass at the lowest saddle
@@ -297,14 +301,20 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
 /// be walked to from every other.
 pub fn carve_passes(map: &mut WorldMap) {
     map.features.retain(|f| f.kind != FeatureKind::Pass);
-    for _ in 0..MAX_PASSES {
+    for round in 0..MAX_PASSES {
         let Some(split) = find_split(map) else {
             return;
         };
         let Some(path) = cheapest_way(map, &split) else {
             return;
         };
-        carve(map, &path);
+        if !carve(map, &path) {
+            // nothing moved, so each pass left finds this split and way again and pushes this same pass
+            let pass = map.features.last().copied().expect("carve pushed a pass");
+            map.features
+                .extend(std::iter::repeat_n(pass, MAX_PASSES - 1 - round));
+            return;
+        }
     }
 }
 
