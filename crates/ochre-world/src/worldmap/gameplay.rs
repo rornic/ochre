@@ -188,7 +188,20 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     for (i, &c) in split.walk.iter().enumerate() {
         if c == from {
             dist[i] = 0.0;
-            heap.push((Reverse(0.0f32.to_bits()), i as u32));
+            // a cell with no neighbour outside the region on the landmass relaxes nothing when popped
+            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
+            let edge = NEIGHBOURS.iter().any(|&(dx, dz)| {
+                let (nx, nz) = (x + dx, z + dz);
+                nx >= 0
+                    && nz >= 0
+                    && nx < dim as i64
+                    && nz < dim as i64
+                    && split.land[nz as usize * dim + nx as usize] == landmass
+                    && split.walk[nz as usize * dim + nx as usize] != from
+            });
+            if edge {
+                heap.push((Reverse(0.0f32.to_bits()), i as u32));
+            }
         }
     }
     while let Some((Reverse(bits), i)) = heap.pop() {
