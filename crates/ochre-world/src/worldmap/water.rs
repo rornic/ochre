@@ -22,6 +22,15 @@ pub struct RiverHit {
 // Points a river's water level is worked out at along each stretch between two cells, which is
 // every few blocks: the ground it must lie under is looked at there, not once a cell.
 pub(super) const PROFILE_POINTS: usize = 8;
+// A stretch falling this much a block on average, along its cell, runs in steps: treads cut at most
+// `TREAD_DROP` under the ground's descent, and falls between them, see `stairs`.
+const STAIR_GRADE: f32 = 0.2;
+const TREAD_DROP: f32 = 3.0;
+// A drop between two profile points this big is a fall, and its lip a step this far each side of the interval's middle.
+const FALL_MIN: f32 = 2.5;
+const LIP_HALF: f32 = 0.12;
+// Points an interval is looked at in for its lip.
+const LIP_SEARCH: usize = 16;
 // How far a river's level may sit over the lake or sea it runs into, a block of height for each
 // 20 blocks it runs back from them, and how far above that it may be and still be brought down.
 const MOUTH_SLOPE: f32 = 0.05;
@@ -68,6 +77,25 @@ pub(crate) fn depth_for_width(width: f32) -> f32 {
     (0.6 + (width - 1.2).max(0.0) / 3.0).min(12.0)
 }
 
+// A steep stretch's levels as treads and falls: from the second point on, each group of points is held at
+// its lowest, so the water stays under the ground it was graded to, and a group takes points while it has
+// dropped no more than `TREAD_DROP`. The ends are left, which neighbouring stretches share.
+fn stairs(data: &mut [f32; PROFILE_POINTS + 1], cell: f32) {
+    if (data[0] - data[PROFILE_POINTS]) / cell < STAIR_GRADE {
+        return;
+    }
+    let from = *data;
+    let mut a = 1;
+    while a <= PROFILE_POINTS {
+        let mut b = a;
+        while b < PROFILE_POINTS && from[a] - from[b + 1] <= TREAD_DROP {
+            b += 1;
+        }
+        data[a..=b].fill(from[b]);
+        a = b + 1;
+    }
+}
+
 /// A river's course between two cells: a smooth curve through their centres, see `river_tangents`.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Stretch {
@@ -109,6 +137,8 @@ pub struct RiverProfiles {
     // the stretch's profile in `data` by the cell it starts in
     index: Vec<u32>,
     data: Vec<[f32; PROFILE_POINTS + 1]>,
+    // by interval of each profile, where in it the water falls from one point's level to the next's, 0..1, or NaN
+    lips: Vec<[f32; PROFILE_POINTS]>,
     // how far along the stretch, 0..1, a river that runs into a lake reaches: its curve goes on
     // past the shore, over land, which would leave a stub of channel there
     ends: Vec<f32>,
@@ -131,11 +161,36 @@ impl RiverProfiles {
         self.ends[self.index[cell] as usize]
     }
 
+    /// Where each river's water falls: the lip's position on the stretch's curve, the drop and the level above it.
+    pub fn falls(&self) -> Vec<(f64, f64, f32, f32)> {
+        let mut out = Vec::new();
+        for (n, lips) in self.lips.iter().enumerate() {
+            for (k, lip) in lips.iter().enumerate().filter(|(_, l)| !l.is_nan()) {
+                let t = (k as f64 + *lip as f64) / PROFILE_POINTS as f64;
+                let (x, z) = self.stretches[n].point(t);
+                let data = &self.data[n];
+                out.push((x, z, data[k] - data[k + 1], data[k]));
+            }
+        }
+        out
+    }
+
     fn level(&self, cell: usize, t: f32) -> f32 {
-        let profile = &self.data[self.index[cell] as usize];
+        let n = self.index[cell] as usize;
+        let profile = &self.data[n];
         let at = t.clamp(0.0, 1.0) * PROFILE_POINTS as f32;
         let k = (at as usize).min(PROFILE_POINTS - 1);
-        profile[k] + (profile[k + 1] - profile[k]) * (at - k as f32)
+        let mut along = at - k as f32;
+        if let Some(&lip) = self
+            .lips
+            .get(n)
+            .map(|lips| &lips[k])
+            .filter(|l| !l.is_nan())
+        {
+            along = ((along - lip + LIP_HALF) / (2.0 * LIP_HALF)).clamp(0.0, 1.0);
+            along = along * along * (3.0 - 2.0 * along);
+        }
+        profile[k] + (profile[k + 1] - profile[k]) * along
     }
 
     /// Lists each stretch in every cell of `map` its water, banks and valley reach into, a cell off its
@@ -652,6 +707,39 @@ impl WorldMap {
                 profiles.data[n][PROFILE_POINTS] = profiles.data[next][0];
             }
         }
+        for data in profiles.data.iter_mut() {
+            stairs(data, cell_blocks);
+        }
+        // a fall's lip is where the ground falls most in its interval, if it falls a block or more at once
+        profiles.lips = profiles
+            .data
+            .iter()
+            .zip(&stretches)
+            .map(|(data, stretch)| {
+                let mut lips = [f32::NAN; PROFILE_POINTS];
+                for (k, lip) in lips.iter_mut().enumerate() {
+                    if data[k] - data[k + 1] < FALL_MIN {
+                        continue;
+                    }
+                    let at = |j: usize| {
+                        let t = (k as f64 + j as f64 / LIP_SEARCH as f64) / PROFILE_POINTS as f64;
+                        let (x, z) = centre(stretch.point(t).0, stretch.point(t).1);
+                        ground(x, z)
+                    };
+                    let (mut best, mut most) = (LIP_SEARCH / 2, 1.0);
+                    let mut last = at(0);
+                    for j in 0..LIP_SEARCH {
+                        let next = at(j + 1);
+                        if last - next > most {
+                            (best, most) = (j, last - next);
+                        }
+                        last = next;
+                    }
+                    *lip = (best as f32 + 0.5) / LIP_SEARCH as f32;
+                }
+                lips
+            })
+            .collect();
         profiles
     }
 
@@ -849,5 +937,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_a_steep_run_becomes_treads_and_falls_that_stay_under_its_levels() {
+        let steep = [100.0, 96.0, 92.0, 88.0, 84.0, 80.0, 76.0, 72.0, 68.0];
+        let mut stairs_of = steep;
+        stairs(&mut stairs_of, 32.0);
+        assert_eq!((steep[0], steep[8]), (stairs_of[0], stairs_of[8]));
+        for k in 0..PROFILE_POINTS {
+            assert!(stairs_of[k] <= steep[k] && stairs_of[k + 1] <= stairs_of[k]);
+        }
+        // each point a step of its own here: every interval is a fall
+        let falls = (0..PROFILE_POINTS)
+            .filter(|&k| stairs_of[k] - stairs_of[k + 1] >= FALL_MIN)
+            .count();
+        assert!(falls >= 4, "{stairs_of:?}");
+        // a gentle run is left as it was
+        let gentle = [10.0, 9.5, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0];
+        let mut same = gentle;
+        stairs(&mut same, 32.0);
+        assert_eq!(gentle, same);
+    }
+
+    #[test]
+    fn test_the_water_steps_at_a_lip_and_runs_level_either_side() {
+        let mut data = [50.0; PROFILE_POINTS + 1];
+        data[3..].fill(40.0);
+        let mut lips = [f32::NAN; PROFILE_POINTS];
+        lips[2] = 0.5;
+        let profiles = RiverProfiles {
+            index: vec![0],
+            data: vec![data],
+            lips: vec![lips],
+            ..RiverProfiles::default()
+        };
+        let at = |k: f32| profiles.level(0, k / PROFILE_POINTS as f32);
+        assert_eq!((50.0, 40.0), (at(2.3), at(2.7)));
+        let mid = at(2.5);
+        assert!((mid - 45.0).abs() < 0.1, "{mid}");
+        // and no lip: the straight run between points
+        assert_eq!(45.0, profiles_level_without_lips(&data, 2.5));
+    }
+
+    fn profiles_level_without_lips(data: &[f32; PROFILE_POINTS + 1], k: f32) -> f32 {
+        let profiles = RiverProfiles {
+            index: vec![0],
+            data: vec![*data],
+            ..RiverProfiles::default()
+        };
+        profiles.level(0, k / PROFILE_POINTS as f32)
     }
 }

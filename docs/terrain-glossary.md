@@ -58,6 +58,12 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 
 **Foot and rim.** The bottom and top of a face.
 
+## Water
+
+**Waterfall.** Water dropping over a step in the ground. Here a river on steep ground runs in treads (short level reaches) and falls between them, 2.5 to over 20 blocks, drawn as a curtain of water.
+
+**Tread and lip.** A tread is the level reach of river above a fall, and the lip is the edge it spills over. The ground under a tread is cut a little into the slope so the water needs no bank.
+
 ## Objects placed by hash
 
 Single things dropped on the ground by a hash of position, not shaped from the heightfield. Trees are the existing example. Each is built block by block when a chunk is built. They are in the chunk meshes and in LOD meshes whose cells are 4 blocks across or less.

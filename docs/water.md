@@ -9,7 +9,7 @@ Water is held in by ground at least as high as its surface. A wall of water is a
 dry one whose ground is under the water's surface. Everything below exists to make walls impossible
 by construction, not to patch them where they show up.
 
-Two exceptions are meant: a river's waterfall stands over the ground at its foot, and the terrain
+Two exceptions are meant: a river's waterfall stands over the ground at its foot (it is the lip of a tread, see below), and the terrain
 crate draws a curtain there; and a river can run on a levee across a slope, held in by its own bank.
 
 ## Map level: `hydrology::run`
@@ -118,6 +118,8 @@ surface. The same containment check handles bends, springs and adjacent still wa
 estimating a neighbouring level from an upstream curve point. A conservative geometric
 search bound avoids checking neighbours far from water; LOD cells keep the channel's smooth
 geometry rather than this block-level correction.
+
+A steep stretch runs in treads and falls (`stairs`, `docs/terrain-perf.md`): its profile holds level for a few blocks, then drops 2.5 blocks or more at a lip, over about a block, and `river_hits` reads the level of the tread the nearest point is on. Each tread is held under the ground the stretch was graded to, so no bank is built up to hold it, and a point either side of a lip is a river's water at its own level: the water mesh draws a curtain between columns that differ by 2 blocks or more. `water_audit` counts a fall as a step between two river columns and, beside a dry column, as a wall.
 
 Where a river meets still water:
 - **joined**: its level within `JOIN` of the still water's, as at a mouth or outlet. Inside the

@@ -367,6 +367,20 @@ impl WorldTerrain {
         )
     }
 
+    /// Where the rivers' water falls, as (x, z, drop, level above the fall).
+    pub fn falls(&self) -> Vec<(f64, f64, f32, f32)> {
+        let seed = self.map.seed;
+        self.profiles
+            .falls()
+            .into_iter()
+            .map(|(x, z, drop, level)| {
+                let (mx, mz) = meander(seed, x, z);
+                let (mx, mz) = meander(seed, x - mx, z - mz);
+                (x - mx, z - mz, drop, level)
+            })
+            .collect()
+    }
+
     // The still water with cells within `reach` cells of a point, `reach` 1 being the four round it: the
     // sea first, then up to three lakes, each at its level, a whole block.
     fn still_near(&self, x: f64, z: f64, reach: i64) -> [Option<Still>; 4] {

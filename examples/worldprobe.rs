@@ -299,6 +299,36 @@ fn main() {
                 );
             }
         }
+        "falls" => {
+            // every fall in the world, the tallest first: drop, level above, then a spawn line for it
+            let mut falls = terrain.falls();
+            falls.sort_by(|a, b| b.2.total_cmp(&a.2));
+            let bins = [
+                (2.5, 4.0),
+                (4.0, 6.0),
+                (6.0, 10.0),
+                (10.0, 20.0),
+                (20.0, f32::MAX),
+            ];
+            let counts: Vec<String> = bins
+                .iter()
+                .map(|&(lo, hi)| {
+                    let n = falls.iter().filter(|f| (lo..hi).contains(&f.2)).count();
+                    format!("{lo}..{hi}: {n}")
+                })
+                .collect();
+            println!("{} falls ({})", falls.len(), counts.join(", "));
+            for (fx, fz, drop, level) in falls
+                .iter()
+                .take(args.get(4).map_or(12, |s| s.parse().unwrap()))
+            {
+                println!(
+                    "drop {drop:.1} from {level:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={:.0},{:.0},12 OCHRE_LOOK={fx:.0},{level:.0},{fz:.0}",
+                    fx - 20.0,
+                    fz - 20.0
+                );
+            }
+        }
         "features" => {
             let half: i64 = args.get(4).map_or(1024, |s| s.parse().unwrap());
             println!("{}", feature_counts(&terrain, x, z, half));

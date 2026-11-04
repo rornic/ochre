@@ -24,7 +24,7 @@ A change that alters generation bumps `GENERATOR_VERSION` and re-pins the map ha
 
 | Defect | Evidence | Status |
 | --- | --- | --- |
-| Waterfalls are drawn as ramps: a river's bank follows it down a face | `water_audit` river walls, mostly falls | Spike recorded in `terrain-perf.md` (520 to 724 steep stretches a seed, mostly mountain streams); needs a fall defined from block-level terrace risers before the water rule changes |
+| Waterfalls: steep rivers run in treads and falls. Not built: a plunge pool, spray, falls over 40 blocks split, valley kept off a riser at a lip. Not seen in the game | `water_audit`, `worldprobe falls` | Built in the first form (version 86); a river over a terrace riser or cliff still ramps where the smooth profile does not step |
 | LODs are heightfields: terraces' trees, steep fjord walls (seams up to about 3 blocks), the cliff pass's reach at the seam, show only at full detail. Boulders, mounds and kopje tops are in the finest LODs | the LOD seam checks | The rest deferred: needs a spike that measures the seam first |
 | Rivers over mountain terraces keep a wall defect | `water_audit` river walls on mountain seeds | Deferred; tableland rivers run in gorges |
 | Trees and flora density follow a cell's own biome, so a blended patch keeps its neighbour's trees | looking at a blended edge | Open |
