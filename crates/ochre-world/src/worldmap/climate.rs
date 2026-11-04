@@ -603,21 +603,25 @@ fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
 // A box blur of `radius` cells each way along both axes.
 // The highest of `values` within `reach` cells of each cell, along each row and then each column.
 pub(super) fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
-    let pass = |src: &[f32], stride: usize, step: usize| {
-        let mut out = vec![f32::MIN; src.len()];
-        for line in 0..dim {
-            for k in 0..dim {
-                let (lo, hi) = (k.saturating_sub(reach), (k + reach).min(dim - 1));
-                out[line * stride + k * step] = (lo..=hi)
-                    .map(|j| src[line * stride + j * step])
-                    .fold(f32::MIN, f32::max);
+    let mut along_x = vec![f32::MIN; values.len()];
+    par_rows(dim, &mut along_x, |row, cells| {
+        for (col, cell) in cells.iter_mut().enumerate() {
+            let (lo, hi) = (col.saturating_sub(reach), (col + reach).min(dim - 1));
+            *cell = (lo..=hi)
+                .map(|x| values[row * dim + x])
+                .fold(f32::MIN, f32::max);
+        }
+    });
+    // down each column a row at a time, so the reads run along rows
+    let mut out = vec![f32::MIN; values.len()];
+    par_rows(dim, &mut out, |row, cells| {
+        for z in row.saturating_sub(reach)..=(row + reach).min(dim - 1) {
+            for (cell, &v) in cells.iter_mut().zip(&along_x[z * dim..(z + 1) * dim]) {
+                *cell = cell.max(v);
             }
         }
-        out
-    };
-    // rows run along x, then columns along z, so the stride and step swap
-    let along_x = pass(values, dim, 1);
-    pass(&along_x, 1, dim)
+    });
+    out
 }
 
 pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
