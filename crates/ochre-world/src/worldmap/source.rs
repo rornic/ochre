@@ -66,6 +66,10 @@ const VALLEY_ABOVE_SEA: f64 = 0.6;
 
 // How far past a river's banks, in blocks, its valley floor eases back out into the land's own ground.
 const VALLEY_WIDTH: f64 = 40.0;
+// How far over the real ground a river's valley floor may stand where the map's ground is higher.
+const VALLEY_OVER: f64 = 2.0;
+// The gap under the map's ground, in blocks, from which the valley floor follows the real ground, and where it does fully.
+const VALLEY_GAP: (f64, f64) = (12.0, 30.0);
 
 // Wider cells resolve only rivers at least a cell wide; finer cells retain every stream.
 const RIVER_DETAIL_CELL: f64 = 16.0;
@@ -696,7 +700,12 @@ impl WorldTerrain {
     // or a lake near it, which would otherwise flood the valley in a wider inlet than the river and
     // leave the river running in under its level.
     fn valley_floor(&self, x: f64, z: f64, base: f64) -> f64 {
-        let floor = base.max(WATER_LEVEL as f64 + VALLEY_ABOVE_SEA);
+        // where the real ground falls far under the map's, as at a cliff the map has as a plateau, the floor
+        // follows it down to `VALLEY_OVER` over it, so the river goes over the cliff and runs out on no bank
+        // built up to the map's height; the ordinary ups and downs of the ground leave the map's floor alone
+        let gap = base - self.landform_ground(x, z, TERRACE_CELL, base, 1.0);
+        let lowered = (gap - VALLEY_OVER).max(0.0) * smoothstep(VALLEY_GAP.0, VALLEY_GAP.1, gap);
+        let floor = (base - lowered).max(WATER_LEVEL as f64 + VALLEY_ABOVE_SEA);
         // a lake within a few dozen blocks counts, as a river's last cells run in toward it
         [
             (0.0, 0.0),

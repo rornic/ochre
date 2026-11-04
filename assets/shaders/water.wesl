@@ -583,6 +583,16 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
     return mix(scatter, above, mix(BELOW_CLEAR.x, BELOW_CLEAR.y, window));
 }
 
+// A fall's sheet seen from the side: columns of water dropping at their own speeds, in streaks that break up white, over the water's blue.
+fn fall_water(world_position: vec3<f32>, normal: vec3<f32>, time: f32, tint: vec3<f32>) -> vec3<f32> {
+    let column = floor(dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0);
+    let speed = 2.0 + 3.0 * hash2(vec2<f32>(column, 3.0));
+    let dropped = world_position.y * 0.5 + time * speed * 0.5;
+    let streak = smoothstep(0.55, 0.9, hash2(vec2<f32>(column, floor(dropped))));
+    let white = clamp(0.1 + streak * (0.45 + 0.4 * fract(dropped)), 0.0, 1.0);
+    return mix(tint, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), white);
+}
+
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -660,7 +670,9 @@ fn fragment(
     // water is its own sight of what's under it, so is drawn over it, not blended, and keeps
     // its look at any distance, LODs included
     var scene = tint;
-    if outside {
+    if abs(normal.y) < 0.5 && fresh_surface {
+        scene = fall_water(world_position, normal, time, tint);
+    } else if outside {
         scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves);
         scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
     } else if normal.y > 0.5 {

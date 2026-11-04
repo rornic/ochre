@@ -31,6 +31,9 @@ const FALL_MIN: f32 = 2.5;
 const LIP_HALF: f32 = 0.12;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
+// A river stays this far over the lake or sea it runs into, looked for this many cells on.
+const SINK_ABOVE: f32 = 0.6;
+const SINK_HOPS: usize = 400;
 // How far a river's level may sit over the lake or sea it runs into, a block of height for each
 // 20 blocks it runs back from them, and how far above that it may be and still be brought down.
 const MOUTH_SLOPE: f32 = 0.05;
@@ -552,6 +555,28 @@ impl WorldMap {
             .enumerate()
             .map(|(n, s)| (s.from, n))
             .collect();
+        // a river never runs under the lake or sea it ends in: where the real ground is lower than the water it
+        // runs into, as a perched lake's, it stays over it and the bank holds it
+        for n in 0..stretches.len() {
+            let mut end = stretches[n];
+            let mut steps = 0;
+            let sink = loop {
+                let kind = self.water_kind[end.to];
+                if kind == WaterCell::Lake as u8 || kind == WaterCell::Ocean as u8 {
+                    break Some(self.water_surface[end.to]);
+                }
+                steps += 1;
+                match at.get(&end.to) {
+                    Some(&next) if steps < SINK_HOPS => end = stretches[next],
+                    _ => break None,
+                }
+            };
+            if let Some(surface) = sink {
+                for level in caps[n].iter_mut() {
+                    *level = level.max(surface + SINK_ABOVE);
+                }
+            }
+        }
         for n in 0..stretches.len() {
             let mut hops = 0;
             let mut end = stretches[n];
@@ -801,6 +826,11 @@ impl WorldMap {
                 let distance = best_d2.sqrt() as f32;
                 let width = stretch.width_at(best_t);
                 let surface = profiles.level(i, best_t as f32);
+                // the bed steps down a block before the water does, so at a lip the water stands in a column down to the lower tread's bed: the sheet of the fall
+                let chord = ((stretch.b.0 - stretch.a.0).powi(2)
+                    + (stretch.b.1 - stretch.a.1).powi(2))
+                .sqrt();
+                let ahead = profiles.level(i, (best_t + 1.0 / chord.max(1.0)).min(1.0) as f32);
                 // nearest the water first, not the centre line, so a wide river wins over a narrow one
                 let margin = distance - width / 2.0;
                 let hit = RiverHit {
@@ -808,7 +838,7 @@ impl WorldMap {
                     width,
                     surface,
                     // a ford is shallow however wide the river is there
-                    bed: surface
+                    bed: surface.min(ahead)
                         - if self.ford[i] == 1 {
                             0.9
                         } else {

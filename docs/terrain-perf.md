@@ -774,6 +774,10 @@ The spike (below) counted 520 to 724 river stretches a seed that drop 6 blocks o
 
 `water_audit --fine` on seeds 1, 42, 1337 and 300059728: uncontained cells 0 on rivers, lakes and coasts as before, river steps down about 20% (1,177 to 944, 3,559 to 2,814, 2,613 to 2,021, 1,757 to 1,443), and river walls over 6 blocks up (1 to 5, 8 to 28, 34 to 57, 2 to 9), which are the falls. Banks raised over 2 blocks are no higher (41 to 35, 56 to 59, 84 to 88, 31 to 35). The map stage costs the same within noise.
 
+Four changes followed a look in the game. The bed steps down a block before the water does at a lip (`river_hits`), so the water stands in a column as deep as the fall and the mesh draws a curtain down all of it, where before only the block at the lip had a face. `fall_water` in `water.wesl` draws a vertical face of fresh water as a sheet of streaks falling at their own speeds, since the surface shading read the bed through it and showed dashes and black. The valley floor follows the real ground where it falls 12 to 30 blocks or more under the map's (`valley_floor`, `VALLEY_GAP`), since on seed 1337 at -427 -4565 the map has a plateau at 199 over ground at 125 and the river ran out on a bank built up 70 blocks. And a river stays 0.6 over the lake or sea it ends in (`SINK_ABOVE`), because the real ground lowered it 11 blocks under a lake's level at its mouth, and a river cannot rise.
+
+Walls in `water_audit` rise with falls, since a fall is a step beside a lower dry column on its 4-block grid, but the block-level check (`--fine`) finds no one-block wall and no open block edge on seeds 1, 42 and 300059728.
+
 Tried and dropped: holding the water under block-level terraced ground, so falls sit on the real risers. A river beside a riser took the lower tread's level for the whole reach, and since a river never rises that cut slots 13 blocks deep in the rock downstream. Falls at a terrace riser come from the smooth profile instead, as chains of steps.
 
 Not built: a plunge pool at the foot, spray, splitting a fall over 40 blocks, and keeping the valley from grading a riser away at a lip. Not seen in the game.
