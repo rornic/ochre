@@ -213,7 +213,7 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 
 @if(VERTEX_COLORS) {
-    // is_top (B channel) is a flat 0/1 flag: only the surface moves.
+    // is_top (B channel) is how much of the swell a vertex keeps: only the surface moves, and beside a fall none, so it meets the sheet.
     //
     // shore_factor (R channel) damps the swell toward 0 right at the shore: land's wall
     // geometry is static, so an undamped wave can lift water's edge above the adjacent

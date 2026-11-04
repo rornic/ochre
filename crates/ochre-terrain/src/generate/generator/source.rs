@@ -1,4 +1,7 @@
 use super::shading::{spread_water_levels, WATER_SPREAD_REACH};
+
+// Columns from a fall over which the surface's swell fades in, from none beside it.
+const WATER_CALM_REACH: i32 = 5;
 use crate::chunk::{neighbor_26_index, ChunkData, CELLS, CHUNK_SIZE};
 use crate::flow::surface;
 use crate::generate::region_store::RegionStore;
@@ -41,6 +44,11 @@ pub(super) trait BlockSource {
     /// The fresh water's real surface, which its blocks are filled to, where `water_level` is spread out.
     fn water_block_level(&self, _x: i32, _z: i32) -> Option<f32> {
         None
+    }
+
+    /// How much of the swell the column's surface keeps, 0 beside a fall, where it must meet the sheet, to 1 away from it.
+    fn water_calm(&self, _x: i32, _z: i32) -> f32 {
+        1.0
     }
 
     /// Whether the column's water is the sheet of a river's fall, drawn as whole blocks, not a surface that slopes.
@@ -131,6 +139,8 @@ struct FreshColumn {
     pool: bool,
     // in the sheet of a fall, which is drawn as whole blocks of water
     sheet: bool,
+    // how much of the swell the surface keeps, see `water_calm`
+    calm: f32,
 }
 
 pub(super) struct ChunkNeighbourhood<'a> {
@@ -224,6 +234,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                 level,
                 pool: false,
                 sheet: false,
+                calm: 1.0,
             });
         }
         let (regions, origin) = self.water?;
@@ -256,16 +267,22 @@ impl<'a> ChunkNeighbourhood<'a> {
                     !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
                 })
                 .collect();
-            let near_fall = |at: i32| {
+            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`
+            let fall_distance = |at: i32| {
                 let (x, z) = (at / wide, at % wide);
-                (-1..=1).any(|dx| {
-                    (-1..=1).any(|dz| {
-                        let (nx, nz) = (x + dx, z + dz);
-                        (0..wide).contains(&nx)
-                            && (0..wide).contains(&nz)
-                            && falls[(nx * wide + nz) as usize]
+                (0..=WATER_CALM_REACH)
+                    .find(|&d| {
+                        (-d..=d).any(|dx| {
+                            (-d..=d).any(|dz| {
+                                let (nx, nz) = (x + dx, z + dz);
+                                dx.abs().max(dz.abs()) == d
+                                    && (0..wide).contains(&nx)
+                                    && (0..wide).contains(&nz)
+                                    && falls[(nx * wide + nz) as usize]
+                            })
+                        })
                     })
-                })
+                    .unwrap_or(WATER_CALM_REACH + 1)
             };
             (0..span * span)
                 .map(|i| {
@@ -276,7 +293,13 @@ impl<'a> ChunkNeighbourhood<'a> {
                         level: spread[i as usize],
                         pool: sampler.spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
                             == SpringPart::Pool,
-                        sheet: near_fall(at as i32),
+                        sheet: fall_distance(at as i32) <= 1,
+                        calm: {
+                            let t = ((fall_distance(at as i32) - 1) as f32
+                                / (WATER_CALM_REACH - 1) as f32)
+                                .clamp(0.0, 1.0);
+                            t * t * (3.0 - 2.0 * t)
+                        },
                     })
                 })
                 .collect()
@@ -296,6 +319,10 @@ impl BlockSource for ChunkNeighbourhood<'_> {
 
     fn water_sheet(&self, x: i32, z: i32) -> bool {
         self.fresh_at(x, z).is_some_and(|fresh| fresh.sheet)
+    }
+
+    fn water_calm(&self, x: i32, z: i32) -> f32 {
+        self.fresh_at(x, z).map_or(1.0, |fresh| fresh.calm)
     }
 
     fn spring_pool(&self, x: i32, z: i32) -> bool {

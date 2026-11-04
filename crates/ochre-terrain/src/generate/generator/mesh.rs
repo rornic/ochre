@@ -195,7 +195,13 @@ pub(super) fn mesh_blocks(
             if !open(source.block(block_coord + offset)) {
                 continue;
             }
-            let face = water_face_at(i);
+            let mut face = water_face_at(i);
+            // the foot of a fall's sheet reaches down to the pool's surface, which lies a little under the top of its block
+            if i < 4 && sheet && source.block(block_coord + offset - IVec3::Y) == BlockType::Water {
+                for v in face.iter_mut().filter(|v| v.position[1] <= -0.5) {
+                    v.position[1] = -0.5 - lowering - 0.05;
+                }
+            }
             // a step down to a column whose surface meets this one's is closed by the sloped tops
             let beside = (block_coord.x + offset.x, block_coord.z + offset.z);
             if i < 4
@@ -219,6 +225,26 @@ pub(super) fn mesh_blocks(
                 if i != 4 {
                     return [0.0, 0.0, 0.0, 1.0];
                 }
+                // the swell the surface keeps at this corner, from the water in the columns round it, so the
+                // surface stands still where it meets a fall's sheet and shared corners move alike
+                let calm = if cell_size == 1 {
+                    let (sx, sz) = corner_signs(v.position);
+                    let (mut total, mut count) = (0.0, 0.0);
+                    for (dx, dz) in [(0, 0), (sx, 0), (0, sz), (sx, sz)] {
+                        let (cx, cz) = (block_coord.x + dx, block_coord.z + dz);
+                        if source.water_level(cx, cz).is_some() {
+                            total += source.water_calm(cx, cz);
+                            count += 1.0;
+                        }
+                    }
+                    if count > 0.0 {
+                        total / count
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
                 // a negative distance marks the top of a fall's water, whose back is not drawn
                 [
                     if sheet {
@@ -228,7 +254,7 @@ pub(super) fn mesh_blocks(
                     },
                     vertex_water_depth(&mut depth_of, block_coord, i, v.position)
                         / CHUNK_SIZE as f32,
-                    1.0,
+                    calm,
                     if sheet {
                         -1.0
                     } else {
