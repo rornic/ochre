@@ -294,11 +294,13 @@ pub(crate) fn thermal(map: &mut WorldMap) {
         let h = &map.height;
         // Both sides of a transfer use the donor's exposed rock and the same
         // threshold, so distributing the shed material still conserves mass.
-        let talus: Vec<f32> = h
-            .iter()
-            .enumerate()
-            .map(|(i, &height)| TALUS / map.rock_at_cell(i, height).stream_erodibility().sqrt())
-            .collect();
+        let mut talus = vec![0.0f32; dim * dim];
+        par_rows(dim, &mut talus, |row, cells| {
+            for (col, slot) in cells.iter_mut().enumerate() {
+                let i = row * dim + col;
+                *slot = TALUS / map.rock_at_cell(i, h[i]).stream_erodibility().sqrt();
+            }
+        });
         let get = |x: i64, z: i64| h[z as usize * dim + x as usize];
         let inside = |x: i64, z: i64| x >= 0 && z >= 0 && x < dim as i64 && z < dim as i64;
         // per cell: how much it sheds, and the total drop it sheds over
