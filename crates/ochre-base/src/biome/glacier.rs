@@ -1,5 +1,6 @@
 use super::Biome;
 use crate::block::BlockType;
+use crate::features::ReliefKind;
 
 // Ground gentler than this is ice, gentler than the next snow, and rougher ice again.
 const ICE_GRADIENT: f64 = 0.8;
@@ -18,6 +19,10 @@ impl Biome for Glacier {
 
     fn tree_density(&self) -> Option<f64> {
         Some(0.0)
+    }
+
+    fn relief(&self) -> &'static [ReliefKind] {
+        &[ReliefKind::Crevasses, ReliefKind::Seracs]
     }
 
     fn block(&self, base: BlockType, _above_sea: i64, gradient: f64) -> BlockType {

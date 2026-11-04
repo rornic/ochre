@@ -710,3 +710,17 @@ Trees grew at the map's cell density, so a forest was one even scatter. `WorldTe
 Undergrowth: `flora_at` takes an `understory` multiplier on the ferns and shaded grass under trees, 2.0 in jungle, 0.5 in taiga and 1.0 elsewhere (so every other biome's output is unchanged, tested), and jungle's floor counts as shaded like a forest's. The design's table (jungle 0.6, forest 0.25, taiga 0.15, other 1.0) would have thinned forest floors below today's, the opposite of a thick jungle floor, so these values replace it. Existing flora tiles only.
 
 `bench` on seed 1, before to after: at a river (16912, -18064) chunk vertices 928,607 to 798,883 and meshing 332 to 311 ms, LOD total 286 to 239 ms; at the default spawn 1,917,466 to 1,444,643 vertices and 430 to 342 ms, LOD total 316 to 243 ms. Clearings thin the trees on average to about 0.7 of their density, so this is below the gate of 1.15 times. Not measured in the game.
+
+## Cold relief features (GENERATOR_VERSION 77)
+
+`ochre-base/src/features.rs` holds one pure function per feature, `offset(kind, seed, x, z, cell, ctx)`, in blocks, clamped to +-18 and zero once cells are 16 blocks wide. `Biome::relief()` lists a biome's features (default none) and `WorldTerrain` adds their sum to the ground after containment, only where no river, spring, lake or sea is near (`by` is empty) and the ground is 6 blocks over the sea, so the water rule is untouched. The context is the smooth map's gradient and downhill direction over 16 blocks, and the config's `gradient_angle`.
+
+- glacier: crevasses (slots 2 to 5 wide and 8 to 18 deep across gently convex slopes of gradient 0.15 to 0.6 in belts, with an uncut bridge every 15 to 30 blocks along each) and seracs (jagged pillars 6 to 18 high where ice is steeper than 1.2). The slopes they need are mountain flanks, so a flat lowland glacier gets neither.
+- tundra: pingos (round mounds 6 to 14 high on flat ground, about one to 10,000 blocks squared) and patterned ground (a net of one-block ridges every 12 to 20 blocks).
+- taiga: drumlins, streamlined swells in parallel along the config's `gradient_angle`, on ground gentler than 0.4.
+
+`worldprobe features <seed> <x> <z> <half>` counts samples carrying each feature (and any outside their biome, which must be 0). On seed 2, 3,000 block windows: crevasses 2,196 and drumlins 23,779 of 562,500 samples in the glacier window, drumlins 65,543 in a taiga one.
+
+`bench` now builds its world with `character::world_config`, as the game and probe do (it used the plain default, so seed 2's cold country was elsewhere). On seed 2, before to after: a taiga plain at (-9000, -12000) chunk vertices 129,683 to 141,858 (+9.4%) and a glacier at (-16900, -18500) 572,493 to 623,921 (+9.0%), meshing 173 to 175 ms and 234 to 241 ms, chunk generation 159 to 166 ms and 240 to 272 ms. Drumlins as first written (8 to 14 high, 15 to 30 wide, 70% of cells) gave +45% on the taiga plain, since a flat plain meshes in a few faces and any relief breaks it up, so they are 4 to 8 high, 20 to 35 wide and 50% of cells; the gate is 1.10. `water_audit` on seeds 2 and 11: no uncontained cells, no lake or coast walls or steps.
+
+Not built: glacial erratics (taiga and tundra) and termite mounds (savanna, PR 6c) as objects, which need new tree kinds with crown shapes, LOD handling and hash placement, so they wait for their own change. The crevasse rule against opening in a spawn region is not enforced either: a glacier is not a spawn site.

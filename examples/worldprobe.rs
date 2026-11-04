@@ -230,6 +230,35 @@ fn longest_straight_edge(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> S
     )
 }
 
+// How many samples (4 blocks apart) over a square window carry each relief feature, by kind and by biome.
+fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
+    let biomes = ochre_base::biome::Biomes::new(0);
+    let mut by_kind: std::collections::BTreeMap<String, usize> = Default::default();
+    let (mut samples, mut outside) = (0usize, 0usize);
+    for i in (-half..half).step_by(4) {
+        for j in (-half..half).step_by(4) {
+            let (wx, wz) = ((x + i) as f64, (z + j) as f64);
+            samples += 1;
+            let allowed = biomes.relief(terrain.biome(wx, wz));
+            for (kind, offset) in terrain.relief_at(wx, wz) {
+                if offset.abs() >= 0.5 {
+                    *by_kind.entry(format!("{kind:?}")).or_default() += 1;
+                    outside += !allowed.contains(&kind) as usize;
+                }
+            }
+        }
+    }
+    let counts: Vec<String> = by_kind.iter().map(|(k, n)| format!("{k} {n}")).collect();
+    format!(
+        "{samples} samples; {} ; outside their biome {outside}",
+        if counts.is_empty() {
+            "no features".into()
+        } else {
+            counts.join(", ")
+        }
+    )
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 4 {
@@ -246,6 +275,10 @@ fn main() {
     let regions = Arc::new(RegionStore::new(terrain.clone()));
     match args[1].as_str() {
         "info" => println!("{}", describe(&terrain, &map, &regions, x, z)),
+        "features" => {
+            let half: i64 = args.get(4).map_or(1024, |s| s.parse().unwrap());
+            println!("{}", feature_counts(&terrain, x, z, half));
+        }
         "route" => {
             let cells: usize = args.get(4).map_or(256, |s| s.parse().unwrap());
             let (u, v) = map.to_cell(x as f64, z as f64);

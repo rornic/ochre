@@ -6,6 +6,7 @@ use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
 use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
+use ochre_base::features::{offset, ReliefCtx, ReliefKind, MAX_OFFSET};
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm_filtered, perlin};
 use ochre_base::terrain_source::{RockColumn, SpringPart, TerrainSample, TerrainSource, WaterKind};
@@ -31,6 +32,8 @@ const TERRACE_CELL: f64 = 32.0;
 // Cells this wide or wider take their own biome, not a patchwork near a class boundary, whose patches are about `ZONE_PATCH` blocks.
 const ZONE_CELL: f64 = 16.0;
 const ZONE_PATCH: f64 = 12.0;
+// Relief features need ground this high over the sea.
+const RELIEF_ABOVE_SEA: f64 = 6.0;
 // Groves and clearings: trees keep this share of their density in a clearing, and grow in patches about `GROVE_PATCH` blocks across.
 const CLEARING_KEEPS: f64 = 0.4;
 const GROVE_PATCH: f64 = 160.0;
@@ -704,6 +707,48 @@ impl WorldTerrain {
         )
     }
 
+    // What the biome's relief features add to the ground at a point.
+    fn relief_offset(&self, biome: BiomeId, x: f64, z: f64, cell: f64) -> f64 {
+        self.relief_offsets(biome, x, z, cell)
+            .iter()
+            .map(|&(_, offset)| offset)
+            .sum::<f64>()
+            .clamp(-MAX_OFFSET, MAX_OFFSET)
+    }
+
+    /// What each of the relief features of the biome at a point adds to the ground there, ignoring water.
+    pub fn relief_at(&self, x: f64, z: f64) -> Vec<(ReliefKind, f64)> {
+        self.relief_offsets(self.biome_at(x, z, 1.0), x, z, 1.0)
+    }
+
+    fn relief_offsets(&self, biome: BiomeId, x: f64, z: f64, cell: f64) -> Vec<(ReliefKind, f64)> {
+        let kinds = self.biomes.relief(biome);
+        if kinds.is_empty() || cell >= 16.0 {
+            return Vec::new();
+        }
+        let map = &self.map;
+        let at = |dx: f64, dz: f64| map.height_at(x + dx, z + dz) as f64;
+        let (gx, gz) = (
+            (at(8.0, 0.0) - at(-8.0, 0.0)) / 16.0,
+            (at(0.0, 8.0) - at(0.0, -8.0)) / 16.0,
+        );
+        let gradient = (gx * gx + gz * gz).sqrt();
+        let downhill = if gradient > 1e-6 {
+            (-gx / gradient, -gz / gradient)
+        } else {
+            (0.0, 0.0)
+        };
+        let ctx = ReliefCtx {
+            gradient,
+            downhill,
+            ridge_angle: map.config.climate.gradient_angle as f64,
+        };
+        kinds
+            .iter()
+            .map(|&kind| (kind, offset(kind, map.seed, x, z, cell, &ctx)))
+            .collect()
+    }
+
     // The cell whose climate biome a point takes: the point drifted by a slow warp, so edges between climates
     // meander over hundreds of blocks without closing into islands, or `at` where that would leave the land.
     fn climate_cell(&self, x: f64, z: f64, at: usize) -> usize {
@@ -918,6 +963,17 @@ impl WorldTerrain {
             (map.config.bounds.min_y + 16) as f64,
             (map.config.bounds.max_y - 64) as f64,
         );
+        // a biome's relief features, nowhere near water or the sea, so the water rule is untouched
+        let ground = if rivers[0].is_none()
+            && spring.is_none()
+            && by.iter().all(Option::is_none)
+            && ground >= WATER_LEVEL as f64 + RELIEF_ABOVE_SEA
+        {
+            (ground + self.relief_offset(biome, x, z, cell))
+                .max(WATER_LEVEL as f64 + LAND_ABOVE_SEA)
+        } else {
+            ground
+        };
 
         // where two meet, the wider river's level is the water's
         let river_water = rivers
@@ -1238,6 +1294,34 @@ mod river_bank_tests {
             moved += ((ground - base).abs() > 0.5) as usize;
         }
         assert!(moved > 50, "only {moved} of 400 points carry any detail");
+    }
+
+    #[test]
+    fn relief_features_come_only_from_their_biome_and_cover_some_ground() {
+        let biomes = ochre_base::biome::Biomes::new(0);
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        // seed 2 has cold country
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(2, config)));
+        let mut covered = 0;
+        for i in 0..640 {
+            for j in 0..640 {
+                let (x, z) = (i as f64 * 100.0 - 32000.0, j as f64 * 100.0 - 32000.0);
+                let allowed = biomes.relief(terrain.biome_at(x, z, 1.0));
+                for (kind, offset) in terrain.relief_at(x, z) {
+                    assert!(
+                        allowed.contains(&kind),
+                        "{kind:?} outside its biome at {x},{z}"
+                    );
+                    assert!(offset.abs() <= MAX_OFFSET);
+                    covered += (offset != 0.0) as usize;
+                }
+            }
+        }
+        assert!(covered > 20, "only {covered} points carry a relief feature");
     }
 
     #[test]
