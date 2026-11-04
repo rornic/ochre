@@ -273,7 +273,7 @@ pub(super) const WATER_BANK_MARGIN: f32 = 0.05;
 // How far over the bed under it a water corner is held, so the bed never shows through.
 pub(super) const WATER_BED_MARGIN: f32 = 0.02;
 
-// `raw` (NaN where dry) averaged over the water within reach of each column of the grid `WATER_SPREAD_REACH` inside it
+// `raw` (NaN where dry) averaged over the water within reach, and within a curtain's step of it, of each column of the grid `WATER_SPREAD_REACH` inside it
 // shortcut: the spread is only drawn, the blocks under it aren't moved; fill them at generation if swimming in it matters
 pub(super) fn spread_water_levels(raw: &[f32], wide: i32) -> Vec<f32> {
     let reach = WATER_SPREAD_REACH;
@@ -289,7 +289,11 @@ pub(super) fn spread_water_levels(raw: &[f32], wide: i32) -> Vec<f32> {
             for dx in -reach..=reach {
                 for dz in -reach..=reach {
                     let level = raw[((x + dx) * wide + z + dz) as usize];
-                    if dx * dx + dz * dz <= reach * reach && !level.is_nan() {
+                    // water more than a curtain keeps away, or over one, is not averaged in: it would pull a pool up toward the fall over it
+                    if dx * dx + dz * dz <= reach * reach
+                        && !level.is_nan()
+                        && (level - own).abs() <= 2.0 * WATER_SPREAD_MAX_MOVE
+                    {
                         total += level;
                         count += 1.0;
                     }

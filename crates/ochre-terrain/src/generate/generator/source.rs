@@ -1,4 +1,4 @@
-use super::shading::{spread_water_levels, WATER_SPREAD_REACH};
+use super::shading::{spread_water_levels, WATER_SLOPE_MAX_STEP, WATER_SPREAD_REACH};
 
 // Columns from a fall over which the surface's swell fades in, from none beside it.
 const WATER_CALM_REACH: i32 = 5;
@@ -44,6 +44,11 @@ pub(super) trait BlockSource {
     /// The fresh water's real surface, which its blocks are filled to, where `water_level` is spread out.
     fn water_block_level(&self, _x: i32, _z: i32) -> Option<f32> {
         None
+    }
+
+    /// Whether the column's water is the sheet of a fall or the water over it, whose underside is not drawn.
+    fn water_hush(&self, _x: i32, _z: i32) -> bool {
+        false
     }
 
     /// How much of the swell the column's surface keeps, 0 beside a fall, where it must meet the sheet, to 1 away from it.
@@ -141,6 +146,8 @@ struct FreshColumn {
     sheet: bool,
     // how much of the swell the surface keeps, see `water_calm`
     calm: f32,
+    // on the high side of a fall, see `water_hush`
+    hush: bool,
 }
 
 pub(super) struct ChunkNeighbourhood<'a> {
@@ -235,6 +242,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                 pool: false,
                 sheet: false,
                 calm: 1.0,
+                hush: false,
             });
         }
         let (regions, origin) = self.water?;
@@ -267,29 +275,33 @@ impl<'a> ChunkNeighbourhood<'a> {
                     !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
                 })
                 .collect();
-            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`
-            let fall_distance = |at: i32| {
+            // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`, and its level
+            let nearest_fall = |at: i32| {
                 let (x, z) = (at / wide, at % wide);
-                (0..=WATER_CALM_REACH)
-                    .find(|&d| {
-                        (-d..=d).any(|dx| {
-                            (-d..=d).any(|dz| {
-                                let (nx, nz) = (x + dx, z + dz);
-                                dx.abs().max(dz.abs()) == d
-                                    && (0..wide).contains(&nx)
-                                    && (0..wide).contains(&nz)
-                                    && falls[(nx * wide + nz) as usize]
-                            })
+                (0..=WATER_CALM_REACH).find_map(|d| {
+                    (-d..=d).find_map(|dx| {
+                        (-d..=d).find_map(|dz| {
+                            let (nx, nz) = (x + dx, z + dz);
+                            let near = dx.abs().max(dz.abs()) == d
+                                && (0..wide).contains(&nx)
+                                && (0..wide).contains(&nz)
+                                && falls[(nx * wide + nz) as usize];
+                            near.then(|| (d, raw[(nx * wide + nz) as usize]))
                         })
                     })
-                    .unwrap_or(WATER_CALM_REACH + 1)
+                })
             };
             (0..span * span)
                 .map(|i| {
                     let (x, z) = (i / span, i % span);
                     let at = ((x + WATER_SPREAD_REACH) * wide + z + WATER_SPREAD_REACH) as usize;
                     (!raw[at].is_nan()).then(|| {
-                        let distance = fall_distance(at as i32);
+                        let nearest = nearest_fall(at as i32);
+                        let distance = nearest.map_or(WATER_CALM_REACH + 1, |(d, _)| d);
+                        // the water on the high side of a fall, whose back must not show over the sheet
+                        let hush = nearest.is_some_and(|(_, level)| {
+                            (level - raw[at]).abs() < WATER_SLOPE_MAX_STEP
+                        });
                         // all the way within two columns, so the sheet's top and the surface beside it are one height
                         let t =
                             ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);
@@ -304,6 +316,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                                 .spring((origin.x + x - 1) as i64, (origin.z + z - 1) as i64)
                                 == SpringPart::Pool,
                             sheet: distance <= 1,
+                            hush,
                             calm,
                         }
                     })
@@ -329,6 +342,10 @@ impl BlockSource for ChunkNeighbourhood<'_> {
 
     fn water_calm(&self, x: i32, z: i32) -> f32 {
         self.fresh_at(x, z).map_or(1.0, |fresh| fresh.calm)
+    }
+
+    fn water_hush(&self, x: i32, z: i32) -> bool {
+        self.fresh_at(x, z).is_some_and(|fresh| fresh.hush)
     }
 
     fn spring_pool(&self, x: i32, z: i32) -> bool {

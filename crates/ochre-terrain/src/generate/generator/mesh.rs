@@ -151,6 +151,7 @@ pub(super) fn mesh_blocks(
         let surface_top = source.water_surface_top(block_coord);
         let top = surface_top.map_or(0.5 - lowering, |top| (top - lowering).max(-0.45));
         let sheet = cell_size == 1 && source.water_sheet(block_coord.x, block_coord.z);
+        let hush = cell_size == 1 && source.water_hush(block_coord.x, block_coord.z);
         // a sheet's sides are whole blocks, but its top follows the corners it shares with the surface beside it
         let top_level = if sheet {
             source.water_level(block_coord.x, block_coord.z)
@@ -273,7 +274,7 @@ pub(super) fn mesh_blocks(
                     vertex_water_depth(&mut depth_of, block_coord, i, v.position)
                         / CHUNK_SIZE as f32,
                     calm,
-                    if sheet {
+                    if hush {
                         -1.0
                     } else {
                         vertex_shore_distance(source, block_coord, i, v.position)
