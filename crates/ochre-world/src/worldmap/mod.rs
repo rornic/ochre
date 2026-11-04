@@ -26,7 +26,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 78;
+pub const GENERATOR_VERSION: u32 = 79;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -491,6 +491,9 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     let knobs = character::LandformKnobs::from_seed(seed);
     shapes::fjords(&mut map, knobs.fjord_share);
     shapes::cones(&mut map, knobs.cone_share);
+    shapes::inselbergs(&mut map, knobs.inselbergs);
+    shapes::karst(&mut map, knobs.karst_groups);
+    shapes::cirques(&mut map, knobs.cirques);
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");
