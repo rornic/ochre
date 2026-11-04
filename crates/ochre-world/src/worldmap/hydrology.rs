@@ -100,16 +100,19 @@ pub(super) struct Flood {
 /// with each cell's tie of its own, in a jagged comb. The low bits are a hash, so no two tie.
 pub(super) fn flood_ties(map: &WorldMap) -> Vec<u32> {
     let dim = map.dim();
-    (0..dim * dim)
-        .map(|i| {
-            let (x, z) = map.cell_centre(i % dim, i / dim);
+    let mut ties = vec![0u32; dim * dim];
+    super::par_rows(dim, &mut ties, |row, cells| {
+        for (col, tie) in cells.iter_mut().enumerate() {
+            let i = row * dim + col;
+            let (x, z) = map.cell_centre(col, row);
             let smooth = (ochre_base::noise::fbm(map.seed ^ 0x71E5, x, z, TIE_WAVELENGTH, 3) * 0.5
                 + 0.5)
                 .clamp(0.0, 1.0);
             let hash = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 48;
-            (((smooth * 65_535.0) as u32) << 16) | hash as u32
-        })
-        .collect()
+            *tie = (((smooth * 65_535.0) as u32) << 16) | hash as u32;
+        }
+    });
+    ties
 }
 
 // The cells under the sea's level that join the map's edge, the open sea: a basin of them walled in by
