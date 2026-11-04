@@ -27,9 +27,9 @@ pub(super) const PROFILE_POINTS: usize = 8;
 // A stretch falling this much a block on average, along its cell, runs in steps: treads cut at most
 // `TREAD_DROP` under the ground's descent, and falls between them, see `stairs`.
 const STAIR_GRADE: f32 = 0.2;
-const TREAD_DROP: f32 = 3.0;
+const TREAD_DROP: f32 = 4.0;
 // A drop between two profile points this big is a fall, and its lip a step this far each side of the interval's middle.
-const FALL_MIN: f32 = 2.5;
+const FALL_MIN: f32 = 5.0;
 const LIP_HALF: f32 = 0.03;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
