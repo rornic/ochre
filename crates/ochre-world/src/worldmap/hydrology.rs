@@ -355,9 +355,10 @@ fn rain(map: &WorldMap) -> Rain {
         .map(|&m| super::climate::dryness(m))
         .collect();
     let cell_len = map.config.map_cell as f32;
-    let rock: Vec<f32> = (0..map.height.len())
-        .map(|i| {
-            let (x, z) = (i % dim, i / dim);
+    let mut rock = vec![0.0f32; map.height.len()];
+    super::par_rows(dim, &mut rock, |z, cells| {
+        for (x, out) in cells.iter_mut().enumerate() {
+            let i = z * dim + x;
             let at = |x: usize, z: usize| map.height[z * dim + x];
             let (xl, xr) = (x.saturating_sub(1), (x + 1).min(dim - 1));
             let (zl, zr) = (z.saturating_sub(1), (z + 1).min(dim - 1));
@@ -370,9 +371,9 @@ fn rain(map: &WorldMap) -> Rain {
                 (map.height[i] - sea) as f64,
             );
             let steep = ochre_base::math::smoothstep_f64(ROCK_SLOPE.0, ROCK_SLOPE.1, slope);
-            high.max(steep) as f32
-        })
-        .collect();
+            *out = high.max(steep) as f32;
+        }
+    });
     Rain {
         supply: dry
             .iter()
