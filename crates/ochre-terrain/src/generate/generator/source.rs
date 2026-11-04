@@ -1,5 +1,4 @@
 use super::shading::{spread_water_levels, WATER_SPREAD_REACH};
-use crate::generate::region_store::water_block_top;
 
 // Columns from a fall over which the surface's swell fades in, from none beside it.
 const WATER_CALM_REACH: i32 = 5;
@@ -291,12 +290,13 @@ impl<'a> ChunkNeighbourhood<'a> {
                     let at = ((x + WATER_SPREAD_REACH) * wide + z + WATER_SPREAD_REACH) as usize;
                     (!raw[at].is_nan()).then(|| {
                         let distance = fall_distance(at as i32);
+                        // all the way within two columns, so the sheet's top and the surface beside it are one height
                         let t =
-                            ((distance - 1) as f32 / (WATER_CALM_REACH - 1) as f32).clamp(0.0, 1.0);
+                            ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);
                         let calm = t * t * (3.0 - 2.0 * t);
-                        // beside a fall the surface is the whole block's top the sheet's blocks are drawn to, not the
-                        // spread one, which the far lower water over the fall pulls down, or up where it lies under it
-                        let block_top = water_block_top(raw[at]) as f32;
+                        // beside a fall the surface is the real level, not the spread one, which the far lower water over
+                        // the fall pulls down, or up where it lies under it
+                        let block_top = raw[at];
                         FreshColumn {
                             block_level: raw[at],
                             level: block_top + (spread[i as usize] - block_top) * calm,

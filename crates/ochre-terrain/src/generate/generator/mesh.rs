@@ -151,6 +151,12 @@ pub(super) fn mesh_blocks(
         let surface_top = source.water_surface_top(block_coord);
         let top = surface_top.map_or(0.5 - lowering, |top| (top - lowering).max(-0.45));
         let sheet = cell_size == 1 && source.water_sheet(block_coord.x, block_coord.z);
+        // a sheet's sides are whole blocks, but its top follows the corners it shares with the surface beside it
+        let top_level = if sheet {
+            source.water_level(block_coord.x, block_coord.z)
+        } else {
+            None
+        };
         // the sides of a fall's sheet reach the block above, or stacked blocks show a seam between them
         let top = if sheet && source.block(block_coord + IVec3::Y) == BlockType::Water {
             0.5
@@ -181,8 +187,14 @@ pub(super) fn mesh_blocks(
                 && !(source.flowing(block_coord.x, block_coord.z)
                     && source.block(under) == BlockType::Water
                     && open(source.block(under + FACE_NORMAL_OFFSET[i])));
+            // the top block's sides follow the corners too, so the sheet's edge is at the surface beside it
+            let at_level = if i == 4 || top_block {
+                level.or(top_level)
+            } else {
+                level
+            };
             water_face(i, top, skirt, &mut |position| {
-                let corner = corner_of(block_coord, level?, position);
+                let corner = corner_of(block_coord, at_level?, position);
                 // unclamped to the block, so blocks either side of a step meet at their shared corner, even outside it
                 let height = corner.height - WATER_DROP - block_coord.y as f32 - 0.5;
                 Some((
@@ -196,10 +208,16 @@ pub(super) fn mesh_blocks(
                 continue;
             }
             let mut face = water_face_at(i);
+            // a sheet's sides face straight out, whatever the slope of the corner their top edge follows
+            if i < 4 && sheet {
+                for (v, flat) in face.iter_mut().zip(CUBE[i]) {
+                    v.normal = flat.normal;
+                }
+            }
             // the foot of a fall's sheet reaches down to the pool's surface, which lies a little under the top of its block
             if i < 4 && sheet && source.block(block_coord + offset - IVec3::Y) == BlockType::Water {
                 for v in face.iter_mut().filter(|v| v.position[1] <= -0.5) {
-                    v.position[1] = -0.5 - lowering - 0.05;
+                    v.position[1] = -0.5 - lowering - 1.0;
                 }
             }
             // a step down to a column whose surface meets this one's is closed by the sloped tops
