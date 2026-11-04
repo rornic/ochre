@@ -1,5 +1,7 @@
 # Tectonic world MVP
 
+> A dated log of how the tectonic world was built, newest decisions last in each section. What the world does now is described in `docs/landforms.md`, `docs/climate.md` and `docs/water.md`, and the scope and the open defects are in `docs/world-plan.md`; numbers per change are in `docs/terrain-perf.md`.
+
 The first iteration replaces noise-selected mountain belts with a procedural tectonic
 snapshot. The art direction is an alpine coastal region: deep offshore water, rugged
 coasts, forested slopes, high peaks and a sheltered dry interior. The map remains 64 km
@@ -11,7 +13,7 @@ across at 32 m/cell; it represents a compressed region, not an entire planet.
   Sea level is zero. Missing water is identified by its kind, never by positive elevation.
 - Twelve seeded plates carry motion. Continental crust crosses plate boundaries.
   Relative convergence makes collision belts or asymmetric subduction ranges/trenches.
-  Other boundary types are identified but do not yet get specialized landforms.
+  Other boundary types are identified; landforms beyond mountain belts (tableland, fjords, cones, inselbergs, karst, cirques) are laid by `docs/landforms.md`.
 - Erosion and water routing run over the new ground. Stream erosion varies with rock type.
   Fixed peak rescaling is removed; the vertical budget is not a mountain shape algorithm.
 - Flood queues use signed sortable height keys. Raw positive-float bit ordering cannot be
@@ -23,7 +25,7 @@ across at 32 m/cell; it represents a compressed region, not an entire planet.
   precipitation versus evaporative demand, without percentile-based biome quotas.
 - Curvature retains its previous radius independently of build height. Clouds move above
   the intended summits. Snow and treeline elevations are tuned for the larger relief.
-- Generator version 42 invalidates older maps. Cache identity includes bounds, geology
+- A generator version bump invalidates older maps (the current version is `GENERATOR_VERSION` in `worldmap/mod.rs`). Cache identity includes bounds, geology
   and climate configuration; no legacy generator is kept for existing worlds.
 - Range connectivity uses inland water surface slopes, keeping riverbed depth separate
   from mountain barriers. River crossing availability is still checked independently.
@@ -171,18 +173,9 @@ a known steep gully, has 11 river wall flags and none over 6 m.
 Remaining river flags, waterfall curtains, and GPU appearance still need visual
 review; a lower audit count alone does not establish that every steep bend looks right.
 
-## Next iterations
+## Where the iterations went
 
-1. **Landform variety:** rifts, spreading ridges, island arcs, transform valleys, geological
-   age, rock resistance and erosion that preserves their different structures.
-2. **Climate and ecology:** seasonal wind patterns, maritime moderation, inland extremes,
-   climate-derived treelines and separate biome/landform properties.
-3. **Visual composition:** strata, scree, vegetation transitions, atmospheric tuning,
-   scenic routes and consistent silhouettes across LOD transitions.
-
-Every iteration needs matching viewer exports, deterministic fixture tests, water audits,
-seam/loading checks and timing comparisons. Geological plausibility supports the scenery;
-it does not substitute for looking at it from the ground.
+Landform variety, climate and ecology and the first visual composition are done, in `docs/landforms.md` and `docs/climate.md`; the remaining ideas and defects are in `docs/world-plan.md`. Every iteration still needs matching viewer exports, deterministic fixture tests, water audits, seam/loading checks and timing comparisons. Geological plausibility supports the scenery; it does not substitute for looking at it from the ground.
 
 ### Later rock pass
 
@@ -196,7 +189,7 @@ each addition a role in terrain and appearance:
 - **Gneiss:** banded metamorphic rock in mountain belts, alongside marble.
 - **Andesite:** volcanic rock for island arcs and volcanoes, alongside basalt.
 
-Granite and shale are in; gneiss and andesite are next, as their landforms develop.
+Granite and shale are in. Gneiss and andesite were dropped from the plan, see `docs/world-plan.md`.
 Tune erosion and make the strata visible with the block texture pass; names and textures
 alone will not create distinctive landforms.
 
@@ -217,7 +210,7 @@ and orange for sandstone.
 Stream erosion now reads the rock at the current surface on each pass. Basalt and marble
 have lower stream erodibility than limestone; clay and sandstone have higher values.
 Hydraulic droplets and thermal slumping still use the same rules for all rocks. Terrain
-blocks and textures do not yet use the rock data.
+blocks and textures use the rock data now, see "Rock blocks".
 
 The first erosion trial exposed a river profile discontinuity on seed 1: adjacent samples
 at `(11508,-2708)` and `(11508,-2707)` differed by nearly 8 m because two consecutive

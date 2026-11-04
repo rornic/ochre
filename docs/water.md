@@ -65,6 +65,8 @@ What it means for the world: wet country's lakes fill to their brims as before; 
 lower in closed basins, or are dry. `LAKE_EVAPORATION` (wet, driest) is the knob: raise the second
 number for smaller desert lakes.
 
+Fjords (`shapes::fjords`) are cut after erosion and before the last hydrology run, their floors under the sea, so the sea fills them by height and no lake or river sees an unfilled trough. Volcanic cones are raised the same way with a crater a quarter of their height under the rim, at most 36 cells across so a crater stays under the smallest lake hydrology keeps (300 cells) and is drained. Inselbergs, tower karst and cirques (`shapes.rs`) follow the same order: a cirque's bowl is under 300 cells, so hydrology drains it by a channel instead of making a lake. Tableland's beds step the map's height before the last run (`landform::terrace`), so basins and rivers form on the treads and terrace faces bound lakes. Relief features (`ochre-base/src/features.rs`) and undercuts (`generate/undercut.rs`) are laid only where no river, spring, lake or sea is near, so the one rule above is untouched. Waterfalls as a river-profile step are not built, see `docs/terrain-perf.md`.
+
 ## Block level: `WorldTerrain::sample_for_cell`
 
 The terrain crate reads one `TerrainSample` per column (`ground`, `water_surface`, `water_kind`,

@@ -17,6 +17,7 @@ pub mod landform;
 mod shapes;
 mod source;
 pub mod tectonics;
+pub mod view;
 pub mod water;
 
 use std::sync::Arc;
