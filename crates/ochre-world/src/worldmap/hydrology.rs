@@ -538,11 +538,17 @@ fn reroute(
 /// finds and the ground they lie in agree.
 pub fn scatter(map: &mut WorldMap) {
     let dim = map.dim();
-    for i in 0..map.height.len() {
-        let (x, z) = map.cell_centre(i % dim, i / dim);
-        map.height[i] += (ochre_base::noise::fbm(map.seed ^ 0x7E1D, x, z, 260.0, 3) * 0.9) as f32
-            + ochre_base::noise::unit(map.seed ^ 0x7E1E, i as i32, (i >> 16) as i32) as f32 * 0.05;
-    }
+    let mut heights = std::mem::take(&mut map.height);
+    super::par_rows(dim, &mut heights, |row, cells| {
+        for (col, height) in cells.iter_mut().enumerate() {
+            let i = row * dim + col;
+            let (x, z) = map.cell_centre(col, row);
+            *height += (ochre_base::noise::fbm(map.seed ^ 0x7E1D, x, z, 260.0, 3) * 0.9) as f32
+                + ochre_base::noise::unit(map.seed ^ 0x7E1E, i as i32, (i >> 16) as i32) as f32
+                    * 0.05;
+        }
+    });
+    map.height = heights;
 }
 
 /// Works out lakes, drainage and rivers from the height layer: small basins are drained, the rest
