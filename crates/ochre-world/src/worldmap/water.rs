@@ -28,9 +28,10 @@ pub(super) const PROFILE_POINTS: usize = 8;
 // `TREAD_DROP` under the ground's descent, and falls between them, see `stairs`.
 const STAIR_GRADE: f32 = 0.2;
 const TREAD_DROP: f32 = 4.0;
-// A drop between two profile points this big is a fall, and its lip a step this far each side of the interval's middle.
+// A drop between two profile points this big is a fall, and its lip a step.
 const FALL_MIN: f32 = 5.0;
-const LIP_HALF: f32 = 0.03;
+// Two falls closer than this many blocks along a river are one, since the shelf between them is a column or two of water.
+const MIN_TREAD: f32 = 4.0;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
 // How many cells on a river is followed to the still water it ends in.
@@ -194,8 +195,8 @@ impl RiverProfiles {
             .map(|lips| &lips[k])
             .filter(|l| !l.is_nan())
         {
-            along = ((along - lip + LIP_HALF) / (2.0 * LIP_HALF)).clamp(0.0, 1.0);
-            along = along * along * (3.0 - 2.0 * along);
+            // a step, not a ramp, so no column stands at a level between the two treads
+            along = f32::from(along >= lip);
         }
         profile[k] + (profile[k + 1] - profile[k]) * along
     }
@@ -742,35 +743,45 @@ impl WorldMap {
             stairs(data, cell_blocks);
         }
         // a fall's lip is where the ground falls most in its interval, if it falls a block or more at once
-        profiles.lips = profiles
-            .data
-            .iter()
-            .zip(&stretches)
-            .map(|(data, stretch)| {
-                let mut lips = [f32::NAN; PROFILE_POINTS];
-                for (k, lip) in lips.iter_mut().enumerate() {
-                    if data[k] - data[k + 1] < FALL_MIN {
-                        continue;
-                    }
-                    let at = |j: usize| {
-                        let t = (k as f64 + j as f64 / LIP_SEARCH as f64) / PROFILE_POINTS as f64;
-                        let (x, z) = centre(stretch.point(t).0, stretch.point(t).1);
-                        ground(x, z)
-                    };
-                    let (mut best, mut most) = (LIP_SEARCH / 2, 1.0);
-                    let mut last = at(0);
-                    for j in 0..LIP_SEARCH {
-                        let next = at(j + 1);
-                        if last - next > most {
-                            (best, most) = (j, last - next);
-                        }
-                        last = next;
-                    }
-                    *lip = (best as f32 + 0.5) / LIP_SEARCH as f32;
+        let interval = cell_blocks / PROFILE_POINTS as f32;
+        let mut all_lips = Vec::with_capacity(stretches.len());
+        for (n, stretch) in stretches.iter().enumerate() {
+            let data = profiles.data[n];
+            let mut lips = [f32::NAN; PROFILE_POINTS];
+            for (k, lip) in lips.iter_mut().enumerate() {
+                if data[k] - data[k + 1] < FALL_MIN {
+                    continue;
                 }
-                lips
-            })
-            .collect();
+                let at = |j: usize| {
+                    let t = (k as f64 + j as f64 / LIP_SEARCH as f64) / PROFILE_POINTS as f64;
+                    let (x, z) = centre(stretch.point(t).0, stretch.point(t).1);
+                    ground(x, z)
+                };
+                let (mut best, mut most) = (LIP_SEARCH / 2, 1.0);
+                let mut last = at(0);
+                for j in 0..LIP_SEARCH {
+                    let next = at(j + 1);
+                    if last - next > most {
+                        (best, most) = (j, last - next);
+                    }
+                    last = next;
+                }
+                *lip = (best as f32 + 0.5) / LIP_SEARCH as f32;
+            }
+            // two falls with less than a tread between them are one: the level between goes down to the lower
+            for k in 0..PROFILE_POINTS - 1 {
+                if lips[k].is_nan() || lips[k + 1].is_nan() {
+                    continue;
+                }
+                let gap = ((k + 1) as f32 + lips[k + 1] - (k as f32 + lips[k])) * interval;
+                if gap < MIN_TREAD {
+                    profiles.data[n][k + 1] = profiles.data[n][k + 2];
+                    lips[k + 1] = f32::NAN;
+                }
+            }
+            all_lips.push(lips);
+        }
+        profiles.lips = all_lips;
         profiles
     }
 
@@ -1015,8 +1026,6 @@ mod tests {
         };
         let at = |k: f32| profiles.level(0, k / PROFILE_POINTS as f32);
         assert_eq!((50.0, 40.0), (at(2.3), at(2.7)));
-        let mid = at(2.5);
-        assert!((mid - 45.0).abs() < 0.1, "{mid}");
         // and no lip: the straight run between points
         assert_eq!(45.0, profiles_level_without_lips(&data, 2.5));
     }
