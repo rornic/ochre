@@ -292,19 +292,23 @@ impl WorldTerrain {
             .iter()
             .map(|&k| matches!(WaterCell::from_u8(k), WaterCell::Ocean | WaterCell::Lake))
             .collect();
-        let spread =
-            |src: &[bool], along_x: bool| -> Vec<bool> {
-                let at = |x: usize, z: usize| src[map.index(x, z)];
-                let mut out = vec![false; n * n];
-                for z in 0..n {
-                    for x in 0..n {
-                        let c = if along_x { x } else { z };
-                        out[map.index(x, z)] = (c.saturating_sub(1)..=(c + 2).min(n - 1))
-                            .any(|k| if along_x { at(k, z) } else { at(x, k) });
-                    }
+        let spread = |src: &[bool], along_x: bool| -> Vec<bool> {
+            let at = |x: usize, z: usize| src[map.index(x, z)];
+            let mut out = vec![false; n * n];
+            super::par_rows(n, &mut out, |z, row| {
+                for (x, cell) in row.iter_mut().enumerate() {
+                    let c = if along_x { x } else { z };
+                    *cell = (c.saturating_sub(1)..=(c + 2).min(n - 1)).any(|k| {
+                        if along_x {
+                            at(k, z)
+                        } else {
+                            at(x, k)
+                        }
+                    });
                 }
-                out
-            };
+            });
+            out
+        };
         spread(&spread(&wet, true), false)
     }
 
@@ -312,23 +316,26 @@ impl WorldTerrain {
     fn springs(&self) -> Vec<Option<(f64, f64, f32)>> {
         let map = &self.map;
         let dim = map.dim();
-        (0..dim * dim)
-            .map(|i| {
+        let mut springs = vec![None; dim * dim];
+        super::par_rows(dim, &mut springs, |cz, row| {
+            for (cx, spring) in row.iter_mut().enumerate() {
+                let i = cz * dim + cx;
                 if map.river_width[i] <= 0.0 {
-                    return None;
+                    continue;
                 }
-                let (cx, cz) = (i % dim, i / dim);
                 let fed = map
                     .feeders(cx, cz)
                     .any(|(ux, uz)| map.river_width[map.index(ux, uz)] > 0.0);
                 if fed || map.outlet_lake(cx, cz).is_some() {
-                    return None;
+                    continue;
                 }
                 let (x, z) = map.cell_centre(cx, cz);
-                let surface = map.river_at(&self.profiles, x, z)?.surface;
-                Some((x, z, surface))
-            })
-            .collect()
+                *spring = map
+                    .river_at(&self.profiles, x, z)
+                    .map(|river| (x, z, river.surface));
+            }
+        });
+        springs
     }
 
     // How far the nearest spring is from (`x`, `z`), in the meandered space rivers are laid in, and its level.
