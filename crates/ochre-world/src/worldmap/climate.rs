@@ -7,6 +7,7 @@ use ochre_base::biome::Biomes;
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::fbm;
 use ochre_base::WATER_LEVEL;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Warmth lost per block of height, the rate snow lines climb at, see `generator::terrain`.
 pub const LAPSE_PER_BLOCK: f32 = 1.0 / 3500.0;
@@ -293,6 +294,9 @@ fn tree_density(kind: BiomeKind, biomes: &Biomes) -> f64 {
     )
 }
 
+// Cells across a tile of the rain sweep.
+const SWEEP_TILE: usize = 64;
+
 /// Background climate shared by runoff and vegetation. Transport sweeps in upwind
 /// dependency order, mixing the two upstream neighbours for oblique winds. Rates are
 /// per metre and lift is in metres, rather than per map cell.
@@ -313,40 +317,71 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let ax = cfg.wind_x.abs() / norm;
     let az = cfg.wind_z.abs() / norm;
     let step = map.config.map_cell as f32 / (ax + az);
-    let mut vapour = vec![0.0f32; dim * dim];
-    let mut rain = vec![0.0f32; dim * dim];
-    for rz in 0..dim {
-        let z = if cfg.wind_z >= 0.0 { rz } else { dim - 1 - rz };
-        for rx in 0..dim {
-            let x = if cfg.wind_x >= 0.0 { rx } else { dim - 1 - rx };
-            let i = map.index(x, z);
-            let upstream = |horizontal: bool| {
-                let available = if horizontal { rx > 0 } else { rz > 0 };
-                if !available {
-                    return (0.65, map.height[i]);
-                }
-                let j = if horizontal {
-                    map.index(if cfg.wind_x >= 0.0 { x - 1 } else { x + 1 }, z)
-                } else {
-                    map.index(x, if cfg.wind_z >= 0.0 { z - 1 } else { z + 1 })
+    // The sweep needs the cell upwind along each axis, so it runs in tiles of a few cells across, the tiles
+    // on one diagonal of tiles (none upwind of another) side by side, each cell worked out as it always was.
+    let vapour: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
+    let rain: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
+    let (from_x, from_z) = (cfg.wind_x >= 0.0, cfg.wind_z >= 0.0);
+    let sweep = |tx: usize, tz: usize| {
+        for rz in tz * SWEEP_TILE..((tz + 1) * SWEEP_TILE).min(dim) {
+            let z = if from_z { rz } else { dim - 1 - rz };
+            for rx in tx * SWEEP_TILE..((tx + 1) * SWEEP_TILE).min(dim) {
+                let x = if from_x { rx } else { dim - 1 - rx };
+                let i = map.index(x, z);
+                let upstream = |horizontal: bool| {
+                    let available = if horizontal { rx > 0 } else { rz > 0 };
+                    if !available {
+                        return (0.65, map.height[i]);
+                    }
+                    let j = if horizontal {
+                        map.index(if from_x { x - 1 } else { x + 1 }, z)
+                    } else {
+                        map.index(x, if from_z { z - 1 } else { z + 1 })
+                    };
+                    (
+                        f32::from_bits(vapour[j].load(Ordering::Relaxed)),
+                        map.height[j],
+                    )
                 };
-                (vapour[j], map.height[j])
-            };
-            let (qx, hx) = upstream(true);
-            let (qz, hz) = upstream(false);
-            let carried = (ax * qx + az * qz) / (ax + az);
-            if map.height[i] < WATER_LEVEL as f32 {
-                vapour[i] =
-                    1.0 - (1.0 - carried) * libm::expf(-step * 0.003 * (0.3 + temperature[i]));
-            } else {
-                let lift = (map.height[i] - (ax * hx + az * hz) / (ax + az)).max(0.0);
-                let fraction = 1.0 - libm::expf(-0.00045 * step - lift / 700.0);
-                let falls = carried * fraction;
-                vapour[i] = (carried - falls * 0.30).max(0.0);
-                rain[i] = falls * 1000.0 / step;
+                let (qx, hx) = upstream(true);
+                let (qz, hz) = upstream(false);
+                let carried = (ax * qx + az * qz) / (ax + az);
+                if map.height[i] < WATER_LEVEL as f32 {
+                    let v =
+                        1.0 - (1.0 - carried) * libm::expf(-step * 0.003 * (0.3 + temperature[i]));
+                    vapour[i].store(v.to_bits(), Ordering::Relaxed);
+                } else {
+                    let lift = (map.height[i] - (ax * hx + az * hz) / (ax + az)).max(0.0);
+                    let fraction = 1.0 - libm::expf(-0.00045 * step - lift / 700.0);
+                    let falls = carried * fraction;
+                    let v = (carried - falls * 0.30).max(0.0);
+                    vapour[i].store(v.to_bits(), Ordering::Relaxed);
+                    rain[i].store((falls * 1000.0 / step).to_bits(), Ordering::Relaxed);
+                }
             }
         }
+    };
+    let tiles = dim.div_ceil(SWEEP_TILE);
+    for diagonal in 0..2 * tiles - 1 {
+        let jobs: Vec<(usize, usize)> = (0..tiles)
+            .filter_map(|tz| Some((diagonal.checked_sub(tz).filter(|&tx| tx < tiles)?, tz)))
+            .collect();
+        let per = jobs.len().div_ceil(super::worker_threads()).max(1);
+        std::thread::scope(|scope| {
+            for batch in jobs.chunks(per) {
+                let sweep = &sweep;
+                scope.spawn(move || {
+                    for &(tx, tz) in batch {
+                        sweep(tx, tz);
+                    }
+                });
+            }
+        });
     }
+    let rain: Vec<f32> = rain
+        .into_iter()
+        .map(|r| f32::from_bits(r.into_inner()))
+        .collect();
     let rain = blur_box(&rain, dim, 2);
     let mut moisture = vec![1.0; dim * dim];
     for i in 0..moisture.len() {
