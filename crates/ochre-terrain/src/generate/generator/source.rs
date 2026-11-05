@@ -229,6 +229,14 @@ impl<'a> ChunkNeighbourhood<'a> {
         ((c.x * SPAN + c.z) * SPAN + c.y) as usize
     }
 
+    /// The `len` blocks going up from `coord`, if all of them are inside the grid.
+    pub(super) fn column(&self, coord: IVec3, len: i32) -> Option<&[BlockType]> {
+        (Self::contains(coord) && Self::contains(coord + IVec3::new(0, len - 1, 0))).then(|| {
+            let from = Self::index(coord);
+            &self.blocks[from..from + len as usize]
+        })
+    }
+
     fn contains(coord: IVec3) -> bool {
         let size = CHUNK_SIZE as i32;
         coord.cmpge(IVec3::splat(-size)).all() && coord.cmplt(IVec3::splat(2 * size)).all()

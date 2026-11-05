@@ -388,8 +388,11 @@ fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> S
     // in `SkyLight::index` order
     for x in 0..span.x {
         for z in 0..span.z {
-            for y in 0..span.y {
-                opacity.push(source.block(min + IVec3::new(x, y, z)).light_opacity());
+            match source.column(min + IVec3::new(x, 0, z), span.y) {
+                Some(column) => opacity.extend(column.iter().map(|block| block.light_opacity())),
+                None => opacity.extend(
+                    (0..span.y).map(|y| source.block(min + IVec3::new(x, y, z)).light_opacity()),
+                ),
             }
         }
     }
