@@ -48,19 +48,36 @@ impl SkyLight {
     // Floods light from every lit cell into any neighbour it would brighten.
     fn spread(&mut self, opacity: &[u8]) {
         let mut queue: VecDeque<IVec3> = VecDeque::new();
-        for x in 0..self.size.x {
-            for z in 0..self.size.z {
-                for y in 0..self.size.y {
-                    let local = IVec3::new(x, y, z);
-                    let level = self.levels[Self::index(self.size, local)];
+        let (size_x, size_y, size_z) = (
+            self.size.x as usize,
+            self.size.y as usize,
+            self.size.z as usize,
+        );
+        for x in 0..size_x {
+            for z in 0..size_z {
+                let base = (x * size_z + z) * size_y;
+                let column = &self.levels[base..base + size_y];
+                // where the columns beside this one start, those that are inside the box
+                let beside = [
+                    (x > 0).then(|| base - size_z * size_y),
+                    (x + 1 < size_x).then(|| base + size_z * size_y),
+                    (z > 0).then(|| base - size_y),
+                    (z + 1 < size_z).then(|| base + size_y),
+                ];
+                for (y, &level) in column.iter().enumerate() {
                     // only light beside something darker has anywhere to go
-                    let darker = |offset: IVec3| {
-                        let next = local + offset;
-                        !(next.cmplt(IVec3::ZERO).any() || next.cmpge(self.size).any())
-                            && self.levels[Self::index(self.size, next)] + 1 < level
-                    };
-                    if level > 1 && FACE_NORMAL_OFFSET.into_iter().any(darker) {
-                        queue.push_back(local);
+                    if level <= 1 {
+                        continue;
+                    }
+                    let darker = |next: u8| next + 1 < level;
+                    if (y > 0 && darker(column[y - 1]))
+                        || (y + 1 < size_y && darker(column[y + 1]))
+                        || beside
+                            .iter()
+                            .flatten()
+                            .any(|&start| darker(self.levels[start + y]))
+                    {
+                        queue.push_back(IVec3::new(x as i32, y as i32, z as i32));
                     }
                 }
             }
