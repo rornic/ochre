@@ -85,16 +85,24 @@ pub(super) fn components(mask: &[bool], dim: usize) -> (Vec<u32>, Vec<usize>) {
         stack.push(start);
         while let Some(i) = stack.pop() {
             size += 1;
-            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            let z = i / dim;
+            let x = i - z * dim;
+            let mut visit = |n: usize| {
                 if mask[n] && comp[n] == NONE {
                     comp[n] = id;
                     stack.push(n);
+                }
+            };
+            if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
+                for (dx, dz) in NEIGHBOURS {
+                    visit((i as i64 + dz * dim as i64 + dx) as usize);
+                }
+            } else {
+                for (dx, dz) in NEIGHBOURS {
+                    let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                    if nx >= 0 && nz >= 0 && nx < dim as i64 && nz < dim as i64 {
+                        visit(nz as usize * dim + nx as usize);
+                    }
                 }
             }
         }
