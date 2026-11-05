@@ -115,36 +115,64 @@ pub(super) fn flood_ties(map: &WorldMap) -> Vec<u32> {
     ties
 }
 
-// The cells under the sea's level that join the map's edge, the open sea: a basin of them walled in by
+// The open sea: the cells under the sea's level that join the map's edge. A basin of them walled in by
 // higher land is not the sea, and is filled like any other.
-fn open_sea(height: &[f32], dim: usize) -> Vec<bool> {
+struct OpenSea {
+    cells: Vec<bool>,
+    // where the flood starts: the map's edge and the open sea beside land
+    roots: Vec<u32>,
+}
+
+fn open_sea(height: &[f32], dim: usize) -> OpenSea {
     let sea = WATER_LEVEL as f32;
-    let mut open = vec![false; height.len()];
+    let mut cells = vec![false; height.len()];
+    let mut roots = Vec::new();
     let mut stack = Vec::new();
     for z in 0..dim {
-        for x in 0..dim {
+        let step = if z == 0 || z == dim - 1 { 1 } else { dim - 1 };
+        for x in (0..dim).step_by(step) {
             let i = z * dim + x;
-            if (x == 0 || z == 0 || x == dim - 1 || z == dim - 1) && height[i] < sea {
-                open[i] = true;
+            roots.push(i as u32);
+            if height[i] < sea {
+                cells[i] = true;
                 stack.push(i);
             }
         }
     }
     while let Some(i) = stack.pop() {
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
+        let (x, z) = (i % dim, i / dim);
+        let inside = x > 0 && z > 0 && x + 1 < dim && z + 1 < dim;
+        let mut beside = [0usize; 8];
+        let mut count = 0;
+        if inside {
+            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
+                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
             }
-            let n = nz as usize * dim + nx as usize;
-            if !open[n] && height[n] < sea {
-                open[n] = true;
+            count = 8;
+        } else {
+            for (dx, dz) in NEIGHBOURS {
+                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                beside[count] = nz as usize * dim + nx as usize;
+                count += 1;
+            }
+        }
+        let mut shore = false;
+        for &n in &beside[..count] {
+            if height[n] >= sea {
+                shore = true;
+            } else if !cells[n] && height[n] < sea {
+                cells[n] = true;
                 stack.push(n);
             }
         }
+        if shore && inside {
+            roots.push(i as u32);
+        }
     }
-    open
+    OpenSea { cells, roots }
 }
 
 pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood {
@@ -152,36 +180,24 @@ pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood 
 }
 
 // `priority_flood` with the open sea of `height` already found.
-fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &[bool]) -> Flood {
+fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood {
     let cells = height.len();
-    let sea = WATER_LEVEL as f32;
     let mut flood = Flood {
         filled: height.to_vec(),
         down: vec![NONE; cells],
         order: Vec::with_capacity(cells),
     };
-    let mut seen = vec![false; cells];
+    // the open sea and the edge are reached from nowhere, so they start seen, and only the roots queue
+    let mut seen = open.cells.clone();
     let mut queue = FloodQueue::new();
-    let push = |queue: &mut FloodQueue, key: f32, i: usize| {
+    for &i in &open.roots {
+        let i = i as usize;
+        seen[i] = true;
         // Elevation first, including below sea level, then deterministic flood ties.
-        queue.push(((height_key(key) as u64) << 32) | ties[i] as u64, i as u32);
-    };
-    for z in 0..dim {
-        for x in 0..dim {
-            let i = z * dim + x;
-            let edge = x == 0 || z == 0 || x == dim - 1 || z == dim - 1;
-            if open[i] || edge {
-                seen[i] = true;
-                // open sea is never reached from the land, so only its shore needs the queue
-                let shore = edge
-                    || NEIGHBOURS.iter().any(|&(dx, dz)| {
-                        height[(z as i64 + dz) as usize * dim + (x as i64 + dx) as usize] >= sea
-                    });
-                if shore {
-                    push(&mut queue, height[i], i);
-                }
-            }
-        }
+        queue.push(
+            ((height_key(height[i]) as u64) << 32) | ties[i] as u64,
+            i as u32,
+        );
     }
     while let Some(i) = queue.pop() {
         let i = i as usize;
@@ -213,7 +229,11 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &[bool]) -> Flood 
             seen[n] = true;
             flood.filled[n] = height[n].max(flood.filled[i]);
             flood.down[n] = i as u32;
-            push(&mut queue, flood.filled[n], n);
+            // elevation first, including below sea level, then deterministic flood ties
+            queue.push(
+                ((height_key(flood.filled[n]) as u64) << 32) | ties[n] as u64,
+                n as u32,
+            );
         }
     }
     flood
@@ -659,7 +679,7 @@ pub fn run(map: &mut WorldMap, carve: bool) {
 
     let mut kind = vec![WaterCell::None as u8; height.len()];
     let mut surface = vec![0.0f32; height.len()];
-    for (i, &o) in open.iter().enumerate() {
+    for (i, &o) in open.cells.iter().enumerate() {
         if o {
             kind[i] = WaterCell::Ocean as u8;
             surface[i] = sea;
