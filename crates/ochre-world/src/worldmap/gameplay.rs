@@ -300,12 +300,15 @@ fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
         .max_by(|a, b| a.1.total_cmp(b.1))
         .expect("path has cells");
     let (x, z) = map.cell_centre(path[top] % dim, path[top] / dim);
-    map.features.push(Feature {
+    let pass = Feature {
         kind: FeatureKind::Pass,
         x: x as i32,
         z: z as i32,
         value: height,
-    });
+    };
+    if !map.features.contains(&pass) {
+        map.features.push(pass);
+    }
     changed
 }
 
@@ -314,18 +317,15 @@ fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
 /// be walked to from every other.
 pub fn carve_passes(map: &mut WorldMap) {
     map.features.retain(|f| f.kind != FeatureKind::Pass);
-    for round in 0..MAX_PASSES {
+    for _ in 0..MAX_PASSES {
         let Some(split) = find_split(map) else {
             return;
         };
         let Some(path) = cheapest_way(map, &split) else {
             return;
         };
+        // a pass that moves nothing leaves the split as it was, and the next would find it again
         if !carve(map, &path) {
-            // nothing moved, so each pass left finds this split and way again and pushes this same pass
-            let pass = map.features.last().copied().expect("carve pushed a pass");
-            map.features
-                .extend(std::iter::repeat_n(pass, MAX_PASSES - 1 - round));
             return;
         }
     }
