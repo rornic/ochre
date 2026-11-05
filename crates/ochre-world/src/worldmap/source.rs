@@ -225,7 +225,27 @@ pub struct WorldTerrain {
     dunes: Dunes,
     // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
     cliff_boost: f64,
+    // tells this terrain's entries apart from another's in `HEIGHT_MEMO`
+    id: u64,
 }
+
+// Memory of the map's height at the points a thread looked at last, by (terrain, x, z): a region samples
+// every column of a row, and a column's relief reads the height 8 blocks either side of it, which the
+// columns 8 either side of it have read as their own.
+const MEMO_SIZE: usize = 1 << 16;
+
+#[derive(Copy, Clone, Default)]
+struct Remembered {
+    id: u64,
+    x: u64,
+    z: u64,
+    height: f32,
+}
+
+thread_local! {
+    static HEIGHT_MEMO: std::cell::RefCell<Vec<Remembered>> = std::cell::RefCell::new(vec![Remembered::default(); MEMO_SIZE]);
+}
+static NEXT_TERRAIN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl WorldTerrain {
     pub fn new(map: Arc<WorldMap>) -> Self {
@@ -272,6 +292,7 @@ impl WorldTerrain {
             tableland_share: knobs.tableland_share,
             dunes,
             cliff_boost: knobs.cliff_boost,
+            id: NEXT_TERRAIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
@@ -280,6 +301,24 @@ impl WorldTerrain {
         terrain.profiles.index(&terrain.map, MEANDER_REACH as f64);
         terrain.springs = terrain.springs();
         terrain
+    }
+
+    // `WorldMap::height_at`, remembered by thread.
+    fn remembered_height(&self, x: f64, z: f64) -> f32 {
+        let (bx, bz) = (x.to_bits(), z.to_bits());
+        let slot = ((bx ^ bz.rotate_left(29)).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 48) as usize;
+        HEIGHT_MEMO.with_borrow_mut(|memo| {
+            let entry = &mut memo[slot];
+            if entry.id != self.id || entry.x != bx || entry.z != bz {
+                *entry = Remembered {
+                    id: self.id,
+                    x: bx,
+                    z: bz,
+                    height: self.map.height_at(x, z),
+                };
+            }
+            entry.height
+        })
     }
 
     // Whether each cell has sea or lake in the 4x4 window `still_near` reaches from it (cells 1 back to 2 on),
@@ -752,7 +791,7 @@ impl WorldTerrain {
             return Vec::new();
         }
         let map = &self.map;
-        let at = |dx: f64, dz: f64| map.height_at(x + dx, z + dz) as f64;
+        let at = |dx: f64, dz: f64| self.remembered_height(x + dx, z + dz) as f64;
         let (gx, gz) = (
             (at(8.0, 0.0) - at(-8.0, 0.0)) / 16.0,
             (at(0.0, 8.0) - at(0.0, -8.0)) / 16.0,
@@ -855,7 +894,7 @@ impl WorldTerrain {
         let map = &self.map;
         let seed = map.seed;
         let biome = self.biome_at(x, z, cell);
-        let base = map.height_at(x, z) as f64;
+        let base = self.remembered_height(x, z) as f64;
         // where rivers are laid, drawn off the map's lines by the meander, if any reach this cell
         let (u, v) = map.to_cell(x, z);
         let max = (map.dim() - 1) as f64;
