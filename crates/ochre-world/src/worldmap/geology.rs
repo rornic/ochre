@@ -111,6 +111,22 @@ struct Bed {
     top: f64,
 }
 
+/// The rock of a bed of one cell and the heights, up from its phase, it holds between: empty until it is filled.
+#[derive(Copy, Clone)]
+pub(super) struct BedSpan {
+    bottom: f64,
+    top: f64,
+    rock: Rock,
+}
+
+impl BedSpan {
+    pub(super) const EMPTY: Self = Self {
+        bottom: 1.0,
+        top: 0.0,
+        rock: Rock::Stone,
+    };
+}
+
 fn boundary(seed: u32, scale: f64, k: i32) -> f64 {
     (k as f64 + (unit(seed ^ 0xBED5, k, 0) - 0.5) * BED_WANDER) * scale
 }
@@ -318,6 +334,38 @@ impl WorldMap {
             |&soft| soft as f64,
         );
         self.rock_in(i, y, self.strata_offset[i], soft)
+    }
+
+    /// `rock_at_cell`, remembering the bed found in `span`: a bed is over a hundred blocks thick, so ground that
+    /// moves a little keeps the rock it had, and the bed noise runs once a cell.
+    pub(super) fn rock_in_span(&self, span: &mut BedSpan, i: usize, y: f32) -> Rock {
+        let phase = self.strata_offset[i];
+        let up = (y - phase) as f64;
+        if span.bottom <= up && up < span.top {
+            return span.rock;
+        }
+        if self.geology[i] != SEDIMENTARY {
+            *span = BedSpan {
+                bottom: f64::NEG_INFINITY,
+                top: f64::INFINITY,
+                rock: self.rock_at_cell(i, y),
+            };
+            return span.rock;
+        }
+        let soft = self.soft.0.get(i).map_or_else(
+            || {
+                let (x, z) = self.cell_centre(i % self.dim(), i / self.dim());
+                base_soft(self.seed, x, z)
+            },
+            |&soft| soft as f64,
+        );
+        let found = bed(self.seed, self.facies[i] as f64, up, phase as f64, soft);
+        *span = BedSpan {
+            bottom: found.bottom,
+            top: found.top,
+            rock: found.rock,
+        };
+        found.rock
     }
 
     // The rock at `y` in cell `i`'s province, its beds `phase` blocks up.

@@ -4,6 +4,7 @@
 //! Droplets run in tiles, four rounds each tile apart from the next of its round, so tiles run on
 //! all cores and a seed still gives the same map: nothing races on a shared grid.
 
+use super::geology::BedSpan;
 use super::hydrology::{accumulate, priority_flood, NONE};
 use super::{par_rows, WorldMap};
 use ochre_base::WATER_LEVEL;
@@ -52,6 +53,8 @@ struct Window<'a> {
     w: usize,
     h: usize,
     cells: Vec<f32>,
+    // the bed each cell of the window was last found in
+    beds: Vec<BedSpan>,
     // cells at or under this are the sea, which droplets don't wear
     sea: f32,
     map: &'a WorldMap,
@@ -130,7 +133,8 @@ impl Window<'_> {
                     }
                     let (cx, cz) = (cx as usize, cz as usize);
                     let cell = &mut self.cells[cz * self.w + cx];
-                    let rock = self.map.rock_at_cell(
+                    let rock = self.map.rock_in_span(
+                        &mut self.beds[cz * self.w + cx],
                         (self.z0 + cz) * self.map.dim() + self.x0 + cx,
                         *cell / HEIGHT_SCALE,
                     );
@@ -234,6 +238,7 @@ fn tile<'a>(
         w,
         h,
         cells: Vec::with_capacity(w * h),
+        beds: vec![BedSpan::EMPTY; w * h],
         sea,
         map,
         x0,
