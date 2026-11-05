@@ -308,17 +308,25 @@ impl WorldMap {
         let (cx, cz) = (fu as i64, fv as i64);
         let (tx, tz) = ((u - fu) as f32, (v - fv) as f32);
         let mut rows = [0.0; 4];
+        let dim = self.dim() as i64;
+        // away from the map's edge the four cells of a row are side by side, with nothing to clamp
+        let interior = cx >= 1 && cz >= 1 && cx + 2 < dim && cz + 2 < dim;
         for (j, row) in rows.iter_mut().enumerate() {
             let z = cz + j as i64 - 1;
-            *row = curve(
-                [
-                    self.at(layer, cx - 1, z),
-                    self.at(layer, cx, z),
-                    self.at(layer, cx + 1, z),
-                    self.at(layer, cx + 2, z),
-                ],
-                tx,
-            );
+            *row = if interior {
+                let from = z as usize * dim as usize + cx as usize - 1;
+                curve(layer[from..from + 4].try_into().unwrap(), tx)
+            } else {
+                curve(
+                    [
+                        self.at(layer, cx - 1, z),
+                        self.at(layer, cx, z),
+                        self.at(layer, cx + 1, z),
+                        self.at(layer, cx + 2, z),
+                    ],
+                    tx,
+                )
+            };
         }
         curve(rows, tz)
     }
