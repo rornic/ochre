@@ -186,13 +186,27 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &[bool]) -> Flood 
     while let Some(i) = queue.pop() {
         let i = i as usize;
         flood.order.push(i as u32);
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
+        let z = i / dim;
+        let x = i - z * dim;
+        // the cells beside it, all eight in `NEIGHBOURS` order unless it is on the map's edge
+        let mut beside = [0usize; 8];
+        let mut count = 0;
+        if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
+            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
+                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
             }
-            let n = nz as usize * dim + nx as usize;
+            count = 8;
+        } else {
+            for (dx, dz) in NEIGHBOURS {
+                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                beside[count] = nz as usize * dim + nx as usize;
+                count += 1;
+            }
+        }
+        for &n in &beside[..count] {
             if seen[n] {
                 continue;
             }
