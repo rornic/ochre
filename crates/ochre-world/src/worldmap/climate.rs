@@ -660,13 +660,30 @@ pub(super) fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
 }
 
 pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
+    // each cell adds its window in order, as a plain sum would, so the sums bit for bit match; they run along a row side by side
+    let zero: f32 = std::iter::empty::<f32>().sum();
     let along_x = {
         let mut out = vec![0.0f32; layer.len()];
         par_rows(dim, &mut out, |row, cells| {
-            for (col, cell) in cells.iter_mut().enumerate() {
+            let src = &layer[row * dim..(row + 1) * dim];
+            let whole = radius..dim.saturating_sub(radius);
+            for col in (0..dim).filter(|col| !whole.contains(col)) {
                 let (lo, hi) = (col.saturating_sub(radius), (col + radius).min(dim - 1));
-                let sum: f32 = (lo..=hi).map(|x| layer[row * dim + x]).sum();
-                *cell = sum / (hi - lo + 1) as f32;
+                let sum: f32 = src[lo..=hi].iter().sum();
+                cells[col] = sum / (hi - lo + 1) as f32;
+            }
+            if whole.is_empty() {
+                return;
+            }
+            let acc = &mut cells[whole.clone()];
+            acc.fill(zero);
+            for shift in 0..=2 * radius {
+                for (a, &v) in acc.iter_mut().zip(&src[shift..]) {
+                    *a += v;
+                }
+            }
+            for a in acc.iter_mut() {
+                *a /= (2 * radius + 1) as f32;
             }
         });
         out
@@ -674,9 +691,14 @@ pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; layer.len()];
     par_rows(dim, &mut out, |row, cells| {
         let (lo, hi) = (row.saturating_sub(radius), (row + radius).min(dim - 1));
-        for (col, cell) in cells.iter_mut().enumerate() {
-            let sum: f32 = (lo..=hi).map(|z| along_x[z * dim + col]).sum();
-            *cell = sum / (hi - lo + 1) as f32;
+        cells.fill(zero);
+        for z in lo..=hi {
+            for (a, &v) in cells.iter_mut().zip(&along_x[z * dim..(z + 1) * dim]) {
+                *a += v;
+            }
+        }
+        for a in cells.iter_mut() {
+            *a /= (hi - lo + 1) as f32;
         }
     });
     out
@@ -778,6 +800,46 @@ mod tests {
         super::run(map);
     }
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn blur_box_matches_the_plain_windowed_sum_bit_for_bit() {
+        let dim = 97;
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let layer: Vec<f32> = (0..dim * dim)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 40) as f32 / 1000.0 - 5000.0
+            })
+            .collect();
+        for radius in [0usize, 1, 4, 18, 40, 48, 60] {
+            let along_x: Vec<f32> = (0..dim * dim)
+                .map(|i: usize| {
+                    let (row, col) = (i / dim, i % dim);
+                    let (lo, hi) = (col.saturating_sub(radius), (col + radius).min(dim - 1));
+                    let sum: f32 = (lo..=hi).map(|x| layer[row * dim + x]).sum();
+                    sum / (hi - lo + 1) as f32
+                })
+                .collect();
+            let plain: Vec<f32> = (0..dim * dim)
+                .map(|i: usize| {
+                    let (row, col) = (i / dim, i % dim);
+                    let (lo, hi) = (row.saturating_sub(radius), (row + radius).min(dim - 1));
+                    let sum: f32 = (lo..=hi).map(|z| along_x[z * dim + col]).sum();
+                    sum / (hi - lo + 1) as f32
+                })
+                .collect();
+            let blurred = blur_box(&layer, dim, radius);
+            assert!(
+                plain
+                    .iter()
+                    .zip(&blurred)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "radius {radius}"
+            );
+        }
+    }
 
     #[test]
     fn boundary_margins_are_untouched_on_sea_and_every_zone_cell_has_another_biome_across_it() {
