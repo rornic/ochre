@@ -187,16 +187,34 @@ pub(super) fn mesh_opaque_greedy(
             out
         };
 
+        // the chunk's blocks are a dense grid, see `grid_index`: how far each axis steps in it
+        let strides = [size * size, size, 1];
+        let (step_a, step_b, step_n) = (strides[a_axis], strides[b_axis], strides[normal_axis]);
+        let toward = normal[normal_axis];
+        // what `face_span` says of a block under a block that hides it
+        let hidden_is_final = normal.y != 0 || !source.has_surface_tops();
+
         for slice in 0..size {
             // merging takes every face it finds out of the mask, so it's left empty for the next slice
             let mut faces = 0;
+            let inside_next = (0..size).contains(&(slice + toward));
             for b in 0..size {
                 for a in 0..size {
-                    let coord = normal_unit * slice + ta * a + tb * b;
-                    let block = source.block(coord);
+                    let at = (slice * step_n + a * step_a + b * step_b) as usize;
+                    let block = source.blocks[at];
                     if matches!(block, BlockType::Air | BlockType::Water) {
                         continue;
                     }
+                    // most blocks are buried, and face_span would turn each down after looking where we can
+                    if inside_next && hidden_is_final {
+                        let beyond = source.blocks[(at as i32 + toward * step_n) as usize];
+                        if beyond.is_opaque()
+                            || (block == BlockType::Ice && beyond == BlockType::Ice)
+                        {
+                            continue;
+                        }
+                    }
+                    let coord = normal_unit * slice + ta * a + tb * b;
                     // past the mesh's edge the terrain may be drawn at another detail, with no
                     // leaves just there, so leaves on the edge keep their faces
                     let inside = source.contains(coord + normal);
