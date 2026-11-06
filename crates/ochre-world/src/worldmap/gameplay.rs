@@ -85,16 +85,24 @@ pub(super) fn components(mask: &[bool], dim: usize) -> (Vec<u32>, Vec<usize>) {
         stack.push(start);
         while let Some(i) = stack.pop() {
             size += 1;
-            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            let z = i / dim;
+            let x = i - z * dim;
+            let mut visit = |n: usize| {
                 if mask[n] && comp[n] == NONE {
                     comp[n] = id;
                     stack.push(n);
+                }
+            };
+            if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
+                for (dx, dz) in NEIGHBOURS {
+                    visit((i as i64 + dz * dim as i64 + dx) as usize);
+                }
+            } else {
+                for (dx, dz) in NEIGHBOURS {
+                    let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                    if nx >= 0 && nz >= 0 && nx < dim as i64 && nz < dim as i64 {
+                        visit(nz as usize * dim + nx as usize);
+                    }
                 }
             }
         }
@@ -188,7 +196,20 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     for (i, &c) in split.walk.iter().enumerate() {
         if c == from {
             dist[i] = 0.0;
-            heap.push((Reverse(0.0f32.to_bits()), i as u32));
+            // a cell with no neighbour outside the region on the landmass relaxes nothing when popped
+            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
+            let edge = NEIGHBOURS.iter().any(|&(dx, dz)| {
+                let (nx, nz) = (x + dx, z + dz);
+                nx >= 0
+                    && nz >= 0
+                    && nx < dim as i64
+                    && nz < dim as i64
+                    && split.land[nz as usize * dim + nx as usize] == landmass
+                    && split.walk[nz as usize * dim + nx as usize] != from
+            });
+            if edge {
+                heap.push((Reverse(0.0f32.to_bits()), i as u32));
+            }
         }
     }
     while let Some((Reverse(bits), i)) = heap.pop() {
@@ -236,7 +257,7 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
 
 // Grades the ground along `path` so it never climbs steeper than WALK_SLOPE, and opens a valley
 // round it, then labels the highest point left as the pass.
-fn carve(map: &mut WorldMap, path: &[usize]) {
+fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     let dim = map.dim();
     let cell = map.config.map_cell as f32;
     // Allow the final 12 m river cut without making a graded pass too steep.
@@ -257,6 +278,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
     for k in (0..path.len() - 1).rev() {
         graded[k] = graded[k].min(graded[k + 1] + step(path[k], path[k + 1]));
     }
+    let mut changed = false;
     for (k, &i) in path.iter().enumerate() {
         let (x, z) = ((i % dim) as i64, (i / dim) as i64);
         for dz in -PASS_RADIUS..=PASS_RADIUS {
@@ -274,7 +296,9 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
                 let n = nz as usize * dim + nx as usize;
                 let floor = graded[k] + d * reach;
                 // never so low it floods
-                map.height[n] = map.height[n].min(floor).max(sea() + 1.5);
+                let carved = map.height[n].min(floor).max(sea() + 1.5);
+                changed |= carved != map.height[n];
+                map.height[n] = carved;
             }
         }
     }
@@ -284,12 +308,16 @@ fn carve(map: &mut WorldMap, path: &[usize]) {
         .max_by(|a, b| a.1.total_cmp(b.1))
         .expect("path has cells");
     let (x, z) = map.cell_centre(path[top] % dim, path[top] / dim);
-    map.features.push(Feature {
+    let pass = Feature {
         kind: FeatureKind::Pass,
         x: x as i32,
         z: z as i32,
         value: height,
-    });
+    };
+    if !map.features.contains(&pass) {
+        map.features.push(pass);
+    }
+    changed
 }
 
 /// Joins the lowlands a range walls off from each other by carving a pass at the lowest saddle
@@ -304,7 +332,10 @@ pub fn carve_passes(map: &mut WorldMap) {
         let Some(path) = cheapest_way(map, &split) else {
             return;
         };
-        carve(map, &path);
+        // a pass that moves nothing leaves the split as it was, and the next would find it again
+        if !carve(map, &path) {
+            return;
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use ochre_base::biome::Biomes;
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::fbm;
 use ochre_base::WATER_LEVEL;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Warmth lost per block of height, the rate snow lines climb at, see `generator::terrain`.
 pub const LAPSE_PER_BLOCK: f32 = 1.0 / 3500.0;
@@ -293,6 +294,9 @@ fn tree_density(kind: BiomeKind, biomes: &Biomes) -> f64 {
     )
 }
 
+// Cells across a tile of the rain sweep.
+const SWEEP_TILE: usize = 64;
+
 /// Background climate shared by runoff and vegetation. Transport sweeps in upwind
 /// dependency order, mixing the two upstream neighbours for oblique winds. Rates are
 /// per metre and lift is in metres, rather than per map cell.
@@ -313,40 +317,71 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let ax = cfg.wind_x.abs() / norm;
     let az = cfg.wind_z.abs() / norm;
     let step = map.config.map_cell as f32 / (ax + az);
-    let mut vapour = vec![0.0f32; dim * dim];
-    let mut rain = vec![0.0f32; dim * dim];
-    for rz in 0..dim {
-        let z = if cfg.wind_z >= 0.0 { rz } else { dim - 1 - rz };
-        for rx in 0..dim {
-            let x = if cfg.wind_x >= 0.0 { rx } else { dim - 1 - rx };
-            let i = map.index(x, z);
-            let upstream = |horizontal: bool| {
-                let available = if horizontal { rx > 0 } else { rz > 0 };
-                if !available {
-                    return (0.65, map.height[i]);
-                }
-                let j = if horizontal {
-                    map.index(if cfg.wind_x >= 0.0 { x - 1 } else { x + 1 }, z)
-                } else {
-                    map.index(x, if cfg.wind_z >= 0.0 { z - 1 } else { z + 1 })
+    // The sweep needs the cell upwind along each axis, so it runs in tiles of a few cells across, the tiles
+    // on one diagonal of tiles (none upwind of another) side by side, each cell worked out as it always was.
+    let vapour: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
+    let rain: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
+    let (from_x, from_z) = (cfg.wind_x >= 0.0, cfg.wind_z >= 0.0);
+    let sweep = |tx: usize, tz: usize| {
+        for rz in tz * SWEEP_TILE..((tz + 1) * SWEEP_TILE).min(dim) {
+            let z = if from_z { rz } else { dim - 1 - rz };
+            for rx in tx * SWEEP_TILE..((tx + 1) * SWEEP_TILE).min(dim) {
+                let x = if from_x { rx } else { dim - 1 - rx };
+                let i = map.index(x, z);
+                let upstream = |horizontal: bool| {
+                    let available = if horizontal { rx > 0 } else { rz > 0 };
+                    if !available {
+                        return (0.65, map.height[i]);
+                    }
+                    let j = if horizontal {
+                        map.index(if from_x { x - 1 } else { x + 1 }, z)
+                    } else {
+                        map.index(x, if from_z { z - 1 } else { z + 1 })
+                    };
+                    (
+                        f32::from_bits(vapour[j].load(Ordering::Relaxed)),
+                        map.height[j],
+                    )
                 };
-                (vapour[j], map.height[j])
-            };
-            let (qx, hx) = upstream(true);
-            let (qz, hz) = upstream(false);
-            let carried = (ax * qx + az * qz) / (ax + az);
-            if map.height[i] < WATER_LEVEL as f32 {
-                vapour[i] =
-                    1.0 - (1.0 - carried) * libm::expf(-step * 0.003 * (0.3 + temperature[i]));
-            } else {
-                let lift = (map.height[i] - (ax * hx + az * hz) / (ax + az)).max(0.0);
-                let fraction = 1.0 - libm::expf(-0.00045 * step - lift / 700.0);
-                let falls = carried * fraction;
-                vapour[i] = (carried - falls * 0.30).max(0.0);
-                rain[i] = falls * 1000.0 / step;
+                let (qx, hx) = upstream(true);
+                let (qz, hz) = upstream(false);
+                let carried = (ax * qx + az * qz) / (ax + az);
+                if map.height[i] < WATER_LEVEL as f32 {
+                    let v =
+                        1.0 - (1.0 - carried) * libm::expf(-step * 0.003 * (0.3 + temperature[i]));
+                    vapour[i].store(v.to_bits(), Ordering::Relaxed);
+                } else {
+                    let lift = (map.height[i] - (ax * hx + az * hz) / (ax + az)).max(0.0);
+                    let fraction = 1.0 - libm::expf(-0.00045 * step - lift / 700.0);
+                    let falls = carried * fraction;
+                    let v = (carried - falls * 0.30).max(0.0);
+                    vapour[i].store(v.to_bits(), Ordering::Relaxed);
+                    rain[i].store((falls * 1000.0 / step).to_bits(), Ordering::Relaxed);
+                }
             }
         }
+    };
+    let tiles = dim.div_ceil(SWEEP_TILE);
+    for diagonal in 0..2 * tiles - 1 {
+        let jobs: Vec<(usize, usize)> = (0..tiles)
+            .filter_map(|tz| Some((diagonal.checked_sub(tz).filter(|&tx| tx < tiles)?, tz)))
+            .collect();
+        let per = jobs.len().div_ceil(super::worker_threads()).max(1);
+        std::thread::scope(|scope| {
+            for batch in jobs.chunks(per) {
+                let sweep = &sweep;
+                scope.spawn(move || {
+                    for &(tx, tz) in batch {
+                        sweep(tx, tz);
+                    }
+                });
+            }
+        });
     }
+    let rain: Vec<f32> = rain
+        .into_iter()
+        .map(|r| f32::from_bits(r.into_inner()))
+        .collect();
     let rain = blur_box(&rain, dim, 2);
     let mut moisture = vec![1.0; dim * dim];
     for i in 0..moisture.len() {
@@ -603,31 +638,52 @@ fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
 // A box blur of `radius` cells each way along both axes.
 // The highest of `values` within `reach` cells of each cell, along each row and then each column.
 pub(super) fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
-    let pass = |src: &[f32], stride: usize, step: usize| {
-        let mut out = vec![f32::MIN; src.len()];
-        for line in 0..dim {
-            for k in 0..dim {
-                let (lo, hi) = (k.saturating_sub(reach), (k + reach).min(dim - 1));
-                out[line * stride + k * step] = (lo..=hi)
-                    .map(|j| src[line * stride + j * step])
-                    .fold(f32::MIN, f32::max);
+    let mut along_x = vec![f32::MIN; values.len()];
+    par_rows(dim, &mut along_x, |row, cells| {
+        for (col, cell) in cells.iter_mut().enumerate() {
+            let (lo, hi) = (col.saturating_sub(reach), (col + reach).min(dim - 1));
+            *cell = (lo..=hi)
+                .map(|x| values[row * dim + x])
+                .fold(f32::MIN, f32::max);
+        }
+    });
+    // down each column a row at a time, so the reads run along rows
+    let mut out = vec![f32::MIN; values.len()];
+    par_rows(dim, &mut out, |row, cells| {
+        for z in row.saturating_sub(reach)..=(row + reach).min(dim - 1) {
+            for (cell, &v) in cells.iter_mut().zip(&along_x[z * dim..(z + 1) * dim]) {
+                *cell = cell.max(v);
             }
         }
-        out
-    };
-    // rows run along x, then columns along z, so the stride and step swap
-    let along_x = pass(values, dim, 1);
-    pass(&along_x, 1, dim)
+    });
+    out
 }
 
 pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
+    // each cell adds its window in order, as a plain sum would, so the sums bit for bit match; they run along a row side by side
+    let zero: f32 = std::iter::empty::<f32>().sum();
     let along_x = {
         let mut out = vec![0.0f32; layer.len()];
         par_rows(dim, &mut out, |row, cells| {
-            for (col, cell) in cells.iter_mut().enumerate() {
+            let src = &layer[row * dim..(row + 1) * dim];
+            let whole = radius..dim.saturating_sub(radius);
+            for col in (0..dim).filter(|col| !whole.contains(col)) {
                 let (lo, hi) = (col.saturating_sub(radius), (col + radius).min(dim - 1));
-                let sum: f32 = (lo..=hi).map(|x| layer[row * dim + x]).sum();
-                *cell = sum / (hi - lo + 1) as f32;
+                let sum: f32 = src[lo..=hi].iter().sum();
+                cells[col] = sum / (hi - lo + 1) as f32;
+            }
+            if whole.is_empty() {
+                return;
+            }
+            let acc = &mut cells[whole.clone()];
+            acc.fill(zero);
+            for shift in 0..=2 * radius {
+                for (a, &v) in acc.iter_mut().zip(&src[shift..]) {
+                    *a += v;
+                }
+            }
+            for a in acc.iter_mut() {
+                *a /= (2 * radius + 1) as f32;
             }
         });
         out
@@ -635,9 +691,14 @@ pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; layer.len()];
     par_rows(dim, &mut out, |row, cells| {
         let (lo, hi) = (row.saturating_sub(radius), (row + radius).min(dim - 1));
-        for (col, cell) in cells.iter_mut().enumerate() {
-            let sum: f32 = (lo..=hi).map(|z| along_x[z * dim + col]).sum();
-            *cell = sum / (hi - lo + 1) as f32;
+        cells.fill(zero);
+        for z in lo..=hi {
+            for (a, &v) in cells.iter_mut().zip(&along_x[z * dim..(z + 1) * dim]) {
+                *a += v;
+            }
+        }
+        for a in cells.iter_mut() {
+            *a /= (hi - lo + 1) as f32;
         }
     });
     out
@@ -739,6 +800,46 @@ mod tests {
         super::run(map);
     }
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn blur_box_matches_the_plain_windowed_sum_bit_for_bit() {
+        let dim = 97;
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let layer: Vec<f32> = (0..dim * dim)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 40) as f32 / 1000.0 - 5000.0
+            })
+            .collect();
+        for radius in [0usize, 1, 4, 18, 40, 48, 60] {
+            let along_x: Vec<f32> = (0..dim * dim)
+                .map(|i: usize| {
+                    let (row, col) = (i / dim, i % dim);
+                    let (lo, hi) = (col.saturating_sub(radius), (col + radius).min(dim - 1));
+                    let sum: f32 = (lo..=hi).map(|x| layer[row * dim + x]).sum();
+                    sum / (hi - lo + 1) as f32
+                })
+                .collect();
+            let plain: Vec<f32> = (0..dim * dim)
+                .map(|i: usize| {
+                    let (row, col) = (i / dim, i % dim);
+                    let (lo, hi) = (row.saturating_sub(radius), (row + radius).min(dim - 1));
+                    let sum: f32 = (lo..=hi).map(|z| along_x[z * dim + col]).sum();
+                    sum / (hi - lo + 1) as f32
+                })
+                .collect();
+            let blurred = blur_box(&layer, dim, radius);
+            assert!(
+                plain
+                    .iter()
+                    .zip(&blurred)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "radius {radius}"
+            );
+        }
+    }
 
     #[test]
     fn boundary_margins_are_untouched_on_sea_and_every_zone_cell_has_another_biome_across_it() {

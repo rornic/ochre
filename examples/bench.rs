@@ -32,12 +32,15 @@ fn main() {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let map = ochre_world::worldmap::generate(
-        seed,
-        ochre_world::worldmap::character::world_config(seed, WorldConfig::default()),
-    );
+    let map = timed("map", || {
+        ochre_world::worldmap::generate(
+            seed,
+            ochre_world::worldmap::character::world_config(seed, WorldConfig::default()),
+        )
+    });
     let map_copy = Arc::new(map);
-    let noise: Arc<dyn TerrainSource> = Arc::new(WorldTerrain::new(map_copy.clone()));
+    let noise: Arc<dyn TerrainSource> =
+        timed("terrain", || Arc::new(WorldTerrain::new(map_copy.clone())));
     let (sx, sz, sh) = if std::env::var("BENCH_MOUNTAIN").is_ok() {
         // the middle of a stretch of mountain, over the sea by 150 blocks or more
         let map = map_copy.as_ref();

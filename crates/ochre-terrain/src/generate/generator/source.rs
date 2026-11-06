@@ -229,6 +229,14 @@ impl<'a> ChunkNeighbourhood<'a> {
         ((c.x * SPAN + c.z) * SPAN + c.y) as usize
     }
 
+    /// The `len` blocks going up from `coord`, if all of them are inside the grid.
+    pub(super) fn column(&self, coord: IVec3, len: i32) -> Option<&[BlockType]> {
+        (Self::contains(coord) && Self::contains(coord + IVec3::new(0, len - 1, 0))).then(|| {
+            let from = Self::index(coord);
+            &self.blocks[from..from + len as usize]
+        })
+    }
+
     fn contains(coord: IVec3) -> bool {
         let size = CHUNK_SIZE as i32;
         coord.cmpge(IVec3::splat(-size)).all() && coord.cmplt(IVec3::splat(2 * size)).all()
@@ -275,6 +283,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                     !raw[i as usize].is_nan() && sampler.fall(wx as i64, wz as i64)
                 })
                 .collect();
+            let any_fall = falls.contains(&true);
             // the distance in columns to the nearest column of a fall, up to `WATER_CALM_REACH`, and whether any column
             // of a fall within that is at this column's level, which makes this the high side of it
             let near_falls = |at: i32| {
@@ -302,7 +311,11 @@ impl<'a> ChunkNeighbourhood<'a> {
                     let (x, z) = (i / span, i % span);
                     let at = ((x + WATER_SPREAD_REACH) * wide + z + WATER_SPREAD_REACH) as usize;
                     (!raw[at].is_nan()).then(|| {
-                        let (distance, hush) = near_falls(at as i32);
+                        let (distance, hush) = if any_fall {
+                            near_falls(at as i32)
+                        } else {
+                            (WATER_CALM_REACH + 1, false)
+                        };
                         // all the way within two columns, so the sheet's top and the surface beside it are one height
                         let t =
                             ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);

@@ -809,3 +809,106 @@ A kopje was only a heap of height, so its top took the savanna's grass. `Terrain
 ## Boulders and mounds in LOD meshes
 
 `Rock::plant` takes the size of a cell, and a cell is rock if its middle is, so a LOD node whose cells are 4 blocks across or less draws the same boulders and mounds as the chunks, in the same place. Past 4 blocks one is under a pixel. A rock is 66 blocks at one block a cell and the same volume, within 40%, at two (a test). Bench on the savanna view (`BENCH_AT=-700,-928`, seed 1337, `lod`): level 1 gains 103 vertices (20,084 to 20,187), the other levels none, and the total is 166.8 to 168.3 ms. Chunks are unchanged (the pins hold), so no version bump.
+
+## Terrain optimisation pass (no generation change)
+
+Where the pipeline stood at the merge base (`01a7f36`), at the head of `feat/waterfall-falls` (`299559b`, "branch"), and after this pass ("tip"), all from `cargo run --release --example bench -- <seed>` on one machine with a game running beside it, best of 3 per cell. Nothing here changes the world: `GENERATOR_VERSION` (86) and the pinned map and chunk hashes are as they were, the bench's vertex counts are the same at tip as at the branch head in every scene, and a saved map plus 144,000 terrain samples a seed over ten windows hashed the same before and after on seeds 1, 7, 11, 42, 99, 1337, 2024 and 300059728 (`maphash`, a throwaway example, not kept). The bench now times the map (`generate`) and `WorldTerrain::new`, which it left out.
+
+Milliseconds, base / branch / tip. Views are the bench's spawn on seeds 1, 11 and 1337, `BENCH_MOUNTAIN=1` on 1337, the river view (`BENCH_AT=98,-5544`, 1337) and the savanna view (`BENCH_AT=-700,-928`, 1337). The worlds differ from base to branch (new relief, no undercuts), so vertex counts and the stages that follow them are not comparable across that step, only the cost per sample is.
+
+| View | map | terrain setup | regions | generate chunks | mesh chunks | LOD total |
+| --- | --- | --- | --- | --- | --- | --- |
+| seed 1 | 5600 / 5700 / 3700 | 124 / 160 / 121 | 125 / 188 / 189 | 201 / 208 / 206 | 204 / 201 / 205 | 85 / 89 / 89 |
+| seed 11 | 6000 / 6000 / 4000 | 121 / 145 / 107 | 135 / 160 / 160 | 271 / 235 / 235 | 407 / 340 / 342 | 410 / 347 / 337 |
+| seed 1337 | 9100 / 8900 / 4200 | 129 / 196 / 138 | 153 / 226 / 225 | 214 / 204 / 203 | 286 / 258 / 255 | 128 / 124 / 123 |
+| mountain 1337 | 9000 / 9400 / 4500 | 130 / 199 / 140 | 186 / 210 / 212 | 185 / 179 / 178 | 190 / 200 / 198 | 237 / 209 / 208 |
+| river 1337 | 9200 / 9400 / 4400 | 130 / 198 / 138 | 437 / 653 / 611 | 240 / 272 / 271 | 209 / 206 / 204 | 253 / 256 / 251 |
+| savanna 1337 | 8900 / 9400 / 4400 | 129 / 195 / 139 | 176 / 275 / 278 | 198 / 202 / 200 | 212 / 207 / 210 | 186 / 171 / 172 |
+
+Mesh vertices, branch and tip alike: 646,567 (seed 1), 1,448,964 (11), 867,951 (1337), 612,379 (mountain), 328,347 (river), 709,416 (savanna); LOD vertices 289,742, 396,603, 311,367, 340,803, 446,792, 290,820. Base: 653,502, 1,842,430, 961,404, 612,832, 410,787, 727,226 and 290,631, 460,355, 325,530, 347,341, 512,229, 293,874.
+
+LOD meshing per level, base / branch / tip:
+
+| Level | seed 1 | seed 11 | seed 1337 | mountain 1337 |
+| --- | --- | --- | --- | --- |
+| 1 | 9.3 / 9.8 / 9.8 | 12.6 / 10.7 / 10.7 | 10.8 / 10.6 / 10.6 | 8.7 / 9.2 / 9.1 |
+| 2 | 8.6 / 9.2 / 9.2 | 34.7 / 24.6 / 24.7 | 18.8 / 16.2 / 16.2 | 15.1 / 15.0 / 14.9 |
+| 3 | 9.8 / 10.3 / 10.3 | 55.6 / 40.7 / 40.3 | 19.2 / 17.0 / 16.9 | 17.4 / 16.4 / 16.5 |
+| 4 | 10.6 / 11.0 / 11.0 | 71.9 / 59.9 / 57.3 | 15.6 / 15.7 / 15.6 | 38.8 / 33.2 / 33.1 |
+| 5 | 14.8 / 15.4 / 15.5 | 202 / 177 / 170 | 32.7 / 32.4 / 32.2 | 123 / 100 / 99.9 |
+| 6 | 10.1 / 10.7 / 10.6 | 10.5 / 11.0 / 11.0 | 9.5 / 9.9 / 10.0 | 11.0 / 11.4 / 11.3 |
+| 7 | 10.7 / 11.2 / 11.2 | 11.2 / 11.8 / 11.7 | 10.3 / 10.8 / 10.8 | 11.1 / 11.5 / 11.4 |
+| 8 | 10.5 / 11.1 / 11.0 | 10.9 / 11.4 / 11.2 | 10.5 / 11.1 / 11.1 | 11.3 / 11.7 / 11.7 |
+
+What the branch cost against the base, and where it sits against the plan's 0.3 s cap on a new stage: the map generation stages are within 30 ms of base each (seed 1: carve passes 52 to 79 ms, climate 178 to 197 ms; seed 1337: climate 152 to 169 ms), so the map itself is +0.1 to +0.3 s of 5.6 to 9.3 s, mostly noise. Terrain setup (`WorldTerrain::new`) rose by 36 ms on seed 1 and 66 to 69 ms on seed 1337 and the river view: the timers put it in the caps pass (31 ms, parallel, where the valley floor now follows the real ground through `landform_ground`) and the serial lip search (42 ms, 16 ground samples per falling interval). Regions rose 13 to 56% across the views (125 to 188 ms on seed 1) and 49% on the river view; the profile there is flat (perlin 11%, `river_hits` 7%, `bilinear_bytes`, `smoothstep`, `fbm_filtered`, `height_at` each 2 to 3%), so no one new function owns it, and it is not recovered here except on rivers. Chunk generation, meshing and the flat LOD levels did not move by more than 5%, and the 4 to 5% on LOD levels 1 to 3 and 6 to 8 on seed 1 is unexplained (`rocks_near` and the relief features read at each cell are the candidates).
+
+Map generation by stage on seeds 1 and 1337, milliseconds, base / branch / tip. The stages are not equal: most of the map's wall time was serial work, which a thread count does not shrink (a 3-core run of the same binary: tectonics 3.2 s, geology 2.8 s, erosion 5.1 s, so those scale; the hydrology passes and the pass search did not).
+
+| Stage | seed 1 | seed 1337 |
+| --- | --- | --- |
+| tectonics | 360 / 357 / 372 | 363 / 368 / 361 |
+| geology | 261 / 260 / 268 | 266 / 274 / 281 |
+| hydrology 1 | 922 / 921 / 565 | 920 / 951 / 560 |
+| erosion | 2174 / 2221 / 1417 | 2343 / 2341 / 1610 |
+| carve passes | 52 / 79 / 78 | 3588 / 3444 / 670 |
+| terrace | 226 / 226 / 43 | 239 / 242 / 49 |
+| scatter | 144 / 144 / 17 | 146 / 145 / 17 |
+| hydrology 2 | 891 / 899 / 537 | 904 / 909 / 544 |
+| landform | 175 / 167 / 36 | 172 / 172 / 38 |
+| climate | 178 / 197 / 198 | 152 / 169 / 171 |
+| roughness | 66 / 65 / 65 | 68 / 65 / 66 |
+| label | 106 / 109 / 107 | 109 / 113 / 109 |
+| terrain setup | 122 / 158 / 117 | 132 / 198 / 140 |
+| map total | 5600 / 5700 / 3700 | 9300 / 9600 / 4500 |
+
+The map takes 2.0 s less on seed 1 and 5.1 s less on seed 1337 than at the branch head, and 1.9 s and 4.8 s less than base. The big items, in the order they were found by timing the stages (a call-graph `perf` of the whole run would not finish reporting, so the flat profile and `Instant` timers did it):
+
+- `carve_passes` (seed 1337, 3.4 s): up to 40 rounds, each a world-wide slope, two component labellings and a Dijkstra. From the 13th round on, this seed finds the same way, carves nothing and pushes the same `Pass` feature again, 28 rounds of 80 ms. A round that moves no height is a fixed point, so the rest are skipped and their features pushed, which leaves the map the same byte for byte. Seeding the search from the region's edge instead of every cell of it (a seed cell relaxes only a neighbour outside the region) took the rounds that remain from 80 to 50 ms. 3.44 s to 0.67 s.
+- `flood_ties` (158 ms, three times a map, one thread): `par_rows`, 0.4 s. `window_max` (landform, twice): its second pass walked columns at an 8 KB stride on one thread, now rows on all cores, 0.3 s. `scatter`, `terrace` and rain's rock share were per-cell and serial: 0.13 s, 0.04 s and 0.04 s.
+- `priority_flood` (16 times a map, 97 ms each, the largest serial cost left): its heap is now `FloodQueue`, buckets by the top 18 bits of the key with a heap only for the bucket being drained, 0.3 s (16 and 20 bits were no better); the open sea is found once a hydrology run, not once a drain round, 0.22 s. Stream power's six floods do not share it, since erosion may sink a shore cell under the sea.
+- Erosion's serial parts: thermal erosion's talus table (24 passes of 4.2M bed lookups) and stream power's rate per cell, 0.45 s together.
+- Terrain setup, 36 to 69 ms of the branch's cost: the lip search split over threads (13 to 31 ms), the spring and near-still tables per row (22 ms each way), back to the base's 117 to 140 ms.
+- Chunk and region side: `river_hits` evaluated the stretch's Hermite curve nine times per stretch near each river column, now points kept with the profiles (regions on the river view 647 to 607 ms, every pair apart); `fresh_at` scanned 11 x 11 for each water column of a chunk even with no fall in it (mesh chunks on the river view 207.2 to 204.8 ms, a real but small 1%).
+
+Tried and dropped, all inside noise: a `floor` without the libm call (an x86-64 baseline build calls it, 2 to 4% of the profile) in `perlin` and `perlin3` (regions 188.8 and 188.1 ms, mesh chunks 201.0 and 203.9); skipping the grove noise in columns with no trees (regions 187.9 and 188.3, 159.0 and 159.0, 225.6 and 225.1, 210.2 and 211.7 ms); 16 and 20 bits for the flood queue's buckets (20 pays for zeroing a million of them). Not done: `mesh_blocks` is 35% of the bench after the map (24% on chunks, 11% on LODs) and unchanged since base; the greedy loop reads each block six times. The climate sweep (`climate_fields`, three times a map, about 100 ms each) is serial along the wind. `hydraulic` erosion calls `rock_at_cell` for every brush cell of each eroding droplet step. The lake distance field is a serial chamfer (44 ms). The carve rounds still relabel the world's components twice per round.
+
+Found, not fixed: on a seed whose split no pass can close (1337 here), `carve_passes` pushes the same `Pass` feature 28 times and every round of it was wasted. The skipped rounds still push them, since leaving them out changes the map. The real fault is that the split persists (the walkable test reads water surfaces in `find_split` and the carve cannot lower ground under `sea + 1.5`), and it wants a version bump with the duplicates removed.
+
+Verification. The full `cargo test --release --workspace`, `cargo clippy --workspace --all-targets` and `cargo fmt --all` ran clean at the tip, including the pinned map hash, the chunk hash and the thread-count test (a map for 1 and 7 threads is the same). One commit (the stretch curve points) failed two `water` tests when first made, since `flat_river_profiles` builds its profiles without `index`; it was fixed in place before anything was pushed. Between commits only the hashes above and the touched crate's tests ran. Not run: the ARM64 checksum tests under `qemu-aarch64`, the flight and `lod_sim` examples, and the full `water_audit` sweep.
+
+### The pass continued: meshing, regions, chunk generation, the rest of the map (generator version 87)
+
+The section above stops at `0b911e9`. What came after, in the order it was made: `carve_passes` pushed the same `Pass` feature up to 28 times on a seed it cannot close (1337) and ran every one of those rounds, so it now pushes each once and stops when a pass moves nothing (**`GENERATOR_VERSION` 87**, the map and chunk hash pins updated; the saved map differs from version 86 by the dropped duplicates and no terrain sample does, which a hash of 144,000 samples a seed on 8 seeds confirms). The later changes are all exact: the saved map and terrain samples hash the same before and after each one on seeds 1, 7, 11, 42, 99, 1337, 2024 and 300059728, and `bench` vertex counts are those of `origin/main` in every view. `GENERATOR_VERSION` (87) and both pinned hashes stand.
+
+Milliseconds, best of 3, alone on the machine, `origin/main` (373cd80, the merged #114) / the branch at 359f77d, the last commit before the work below / the tip. The map and terrain setup columns of main are quoted from the table above (its "branch" column, the same generation; the bench of main cannot time them). The savanna view shares seed 1337's map. Mesh vertices are identical in the three builds: 646,567 (seed 1), 1,448,964 (11), 867,951 (1337), 612,379 (mountain), 328,347 (river), 709,416 (savanna); LOD vertices 289,742, 396,603, 311,367, 340,803, 446,792, 290,820.
+
+| View | map | terrain setup | regions | generate chunks | mesh chunks | LOD total |
+| --- | --- | --- | --- | --- | --- | --- |
+| seed 1 | 5700 / 3100 / 2800 | 160 / 115 / 117 | 187 / 148 / 148 | 205 / 207 / 175 | 204 / 95 / 86 | 88 / 70 / 68 |
+| seed 11 | 6000 / 3400 / 3100 | 145 / 103 / 104 | 159 / 145 / 144 | 234 / 237 / 207 | 343 / 245 / 221 | 346 / 298 / 297 |
+| seed 1337 | 8900 / 3500 / 3200 | 196 / 134 / 134 | 226 / 192 / 191 | 203 / 205 / 172 | 259 / 153 / 137 | 123 / 102 / 100 |
+| mountain 1337 | 9400 / 3500 / 3200 | 199 / 135 / 134 | 210 / 195 / 195 | 176 / 174 / 157 | 197 / 122 / 106 | 208 / 182 / 180 |
+| river 1337 | 9400 / 3500 / 3200 | 198 / 134 / 136 | 650 / 578 / 581 | 271 / 269 / 238 | 204 / 96 / 86 | 255 / 220 / 219 |
+| savanna 1337 | 9400 / 3500 / 3200 | 195 / 134 / 135 | 274 / 229 / 230 | 200 / 200 / 173 | 206 / 112 / 100 | 170 / 147 / 145 |
+
+Against the merge base `01a7f36` (125 ms regions on seed 1, 437 on the river view, 201 mesh chunks, 85 LOD total, 5.6 s map) the tip is: map 2.8 s quicker on seed 1 and 6.1 s on seed 1337, mesh chunks 57% quicker, LOD total 20% quicker, generate chunks 13% quicker, regions still 18% slower on seed 1 and 33% on the river view.
+
+What each change bought (seed 1 unless said; from the commit messages, re-measured only where marked):
+
+- `8f357f9`, `8e84f18` greedy mesher: mesh chunks 201 to 116, then 98 ms (seed 1337 258 to 157, river view 204 to 100). The scan visited every cell for each of six directions and sent each of the 31M that hold a block through `face_span`, which turned down all but 121k; it now reads the dense grid by stride, passes over a block whose neighbour is opaque, and skips slices that are empty or whose next slice is wholly opaque.
+- `5779fa1` map row read in four-cell slices (bicubic reads, away from the edge): regions 187 to 163 ms. `750c248` a per-thread memory of the map heights a column reads twice: regions 166 to 148 (river view 598 to 577). `359f77d`, `8f26a3b` components and flood neighbours by index: carve passes on seed 1337 638 to 548 ms, hydrology and erosion about 30 ms each.
+- `23dfa93` remember each cell's bed (`BedSpan`) in hydraulic erosion: erosion 1.41 to 1.03 s on seed 1. `04fb82f` rain sweep in tiles on every core: 0.1 to 0.2 s of the map (inside noise for any one stage; not re-measured).
+- `44d9c80` the flood finds its roots while it finds the open sea: hydrology 508 to 467 ms and erosion 988 to 945 on seed 1, the map 0.12 s, every pair apart. Stream power's six floods still run one after another; each is about 55 ms now, 50 of it the pop loop.
+- `4971f43` box blur by rows in the same order: geology 254 to 102 ms and roughness 63 to 23 ms on seed 1, 0.19 s of the map; the blur was 18% of the map's CPU time (it read each vertical window at an 8 KB stride and added horizontal windows in one dependent chain), so a machine with fewer cores gains more in seconds. A test compares it bit for bit with the plain sum.
+- `b3f75f5` the column's soil depth (a smoothstep) and the terrain's bottom bound (a dyn call) were worked out for each of a column's 32 blocks, now once: generate chunks 191 to 162 ms on seed 1 and 162 to 144 on the mountain view, with the bench's repeated passes (the single first pass in the table 207 to 175).
+- `afaf8bf`, `f2697dd` the chunk mesher's light box (48 x 65 x 48 cells, 150k a chunk with faces): the cells that can spread are found by column slices, and the opacities are copied a column at a time out of the neighbourhood's dense grid: mesh chunks 97.3 to 94.5, then 94.6 to 86.8 ms on seed 1 (river view 99.4 to 93.9, then 93.7 to 86.6), every pair apart.
+
+Where regions stand. The profile of regions on the river view (single thread, 12 rebuilds) is flat: `perlin` 21% (the same per sample as before), `river_hits` 11.5%, `floor` 7%, `bilinear_bytes` 6%, `sample_uncontained` 5.5%, `smoothstep` 5%, `fbm_filtered` 5%, `round` 4%, `terraced` 4%, `biome_at` 3%, `detail_at` 3%. The gap to the base is mostly not waterfall work: the base-to-main diff of `sample_uncontained` adds, for every column, `climate_cell` (two long-wavelength `perlin` samples for the drifted climate cell), a one-octave `fbm_filtered` for the zone patches, a two-octave one for groves, and `relief_offsets` (four `height_at` reads and each relief feature's noise) wherever there is dry land over 6 blocks, none of which is a river or a fall; the waterfall era adds `landform_ground` in `valley_floor` for columns near a river (0.75% of the profile), the `fall` flag, a second `level` lookup and a `sqrt` per hit stretch in `river_hits`, and the `Spring` and `still_near` work. A like-for-like comparison against the base needs the same world and the worlds differ, so the base profile (per rebuild 242 ms of samples against 442 on the river view) says only that every function there is about twice as busy: more of this view's columns are river or relief columns. Nothing in it is a lone cost to remove; what is left is `river_hits` (a pointer chase through `index`, `data` and `lips` for each of its two `level` calls, about 10% of it) and noise that cannot change without changing the world.
+
+The 4 to 5% on LOD levels 1 to 3 and 6 to 8 on seed 1 is gone: at the tip every level of seed 1 is under the base's (level 1 9.3 to 7.0 ms, level 8 10.5 to 9.1).
+
+Measured the way the game feels it. `flight` (headless, 30 simulated seconds, seed 1) paces the loading by simulated frames, so chunks and LOD meshes a second come out equal in all builds (814 and 245 in the load leg, 1,573 and 92 walking) and the main-thread frame times do not separate them either: p99 load 1.47 / 1.59 / 1.89 ms, walk 4.00 / 4.06 / 4.12, sprint 5.03 / 4.78 / 4.65, worst 6 to 9 ms except one 38 / 17 / 21 ms in the high leg, base / main / the branch at 4971f43, the tip when it was run (run once each, spreads of that size are noise). What it does show is the loading's total CPU time, which the world map being cached makes the streaming alone: user seconds for the whole run, two runs each, base 118.9 and 121.6, main 128.3 and 127.5, 4971f43 112.2 and 112.3, tip 108.9 and 108.4. Main costs 6% more CPU than the base to stream the same world, and the tip 10% less than the base (15% less than main). `lod_sim` (seed 7, 80 blocks a second) logs no frame over 100 ms in main or the tip, and the holes match at the same moments (`[0, 0, 0, 3104]` at 28 s in both; later rows differ by where the camera had got to); the tip loads quicker, reaching its settled state before the 40 s timeout main hits.
+
+Tried and dropped, all measured against the build before them: a bucket queue for the flood as chains through one arena instead of a `Vec` per bucket (hydrology 473 to 501 ms, slower); an inline `round` for the map lookups and the tree and rock heights (exact on 600,000 values including edge cases, but regions 151 to 156 ms, river view 579 to 599, generate chunks 203 to 209: the libm call is quicker than the int conversions); a branch-free min over the six neighbours for the light spread scan (mesh chunks 87.0 to 91.0 ms). The floor in `perlin` was tried in the first part and is inside noise. Not done: `ChunkNeighbourhood::non_air` builds a `Vec` of every non-air block for the mesher (about 4% of meshing); stream power's floods still do not share work; `river_hits` has not had its `level` lookups flattened.
+
+Verification at the tip. `cargo test --release --workspace` (the pinned map and chunk hashes, the thread-count test), `cargo clippy --workspace --all-targets` and `cargo fmt --all` clean; the saved map plus 144,000 terrain samples a seed hash the same as at the version 87 commit on 8 seeds. `water_audit --fine` on seeds 1, 42, 1337 and 300059728 is line for line the same as `origin/main`'s (no uncontained cell on rivers, lakes or coasts, no one-block wall, no open block edge): river walls 61, 145, 122 and 82 (the 148 and 78 recorded after the last waterfall commit are not what main gives now; the tip does not move them). Not run: the ARM64 checksum tests (`qemu-aarch64` is not installed here).

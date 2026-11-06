@@ -75,17 +75,21 @@ pub(super) fn tableland(
 pub fn terrace(map: &mut WorldMap, share: f64) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f64;
-    for i in 0..dim * dim {
-        let above = map.height[i] as f64 - sea;
-        let mountain = (map.landform[i] == MOUNTAIN) as u8 as f64;
-        let (x, z) = map.cell_centre(i % dim, i / dim);
-        let weight = tableland(map.seed, share, x, z, above, mountain);
-        if weight > 0.0 {
-            let height = map.height[i] as f64;
-            let stepped = map.terraced(x, z, height, above);
-            map.height[i] = (height + (stepped - height) * weight) as f32;
+    let mut heights = std::mem::take(&mut map.height);
+    super::par_rows(dim, &mut heights, |row, cells| {
+        for (col, cell) in cells.iter_mut().enumerate() {
+            let above = *cell as f64 - sea;
+            let mountain = (map.landform[row * dim + col] == MOUNTAIN) as u8 as f64;
+            let (x, z) = map.cell_centre(col, row);
+            let weight = tableland(map.seed, share, x, z, above, mountain);
+            if weight > 0.0 {
+                let height = *cell as f64;
+                let stepped = map.terraced(x, z, height, above);
+                *cell = (height + (stepped - height) * weight) as f32;
+            }
         }
-    }
+    });
+    map.height = heights;
 }
 
 #[cfg(test)]

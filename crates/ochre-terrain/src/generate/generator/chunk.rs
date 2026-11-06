@@ -72,6 +72,7 @@ pub fn generate_chunk_with(
     let world_y = chunk_pos.0.y * size;
     // cells in `ChunkData::from_cells` order, which is the order they're worked out in here
     let mut cells = Vec::with_capacity((size * size * size) as usize);
+    let bedrock_top = regions.terrain().bounds().min_y + 16;
 
     for x in 0..size {
         for z in 0..size {
@@ -146,6 +147,7 @@ pub fn generate_chunk_with(
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
             let ice_cliffs = biomes.block(biome, BlockType::Stone, 20, 0.0) == BlockType::Ice;
+            let soil = soil_depth(slope);
             let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
@@ -164,7 +166,7 @@ pub fn generate_chunk_with(
                     column_height,
                     1,
                     snowy,
-                    soil_depth(slope),
+                    soil,
                     columns.exposed(x, z),
                 );
                 // cliffs are cut from the ground before the water fills what they open
@@ -187,7 +189,7 @@ pub fn generate_chunk_with(
             };
             let (mut rock, mut bed) = (None, (0, 0, BlockType::Stone));
             cells.extend((world_y..world_y + size).map(|y| {
-                if y < regions.terrain().bounds().min_y + 16 {
+                if y < bedrock_top {
                     return BlockType::CompactedStone;
                 }
                 // stone is the rock the geology has there, found a bed at a time
@@ -386,8 +388,11 @@ fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> S
     // in `SkyLight::index` order
     for x in 0..span.x {
         for z in 0..span.z {
-            for y in 0..span.y {
-                opacity.push(source.block(min + IVec3::new(x, y, z)).light_opacity());
+            match source.column(min + IVec3::new(x, 0, z), span.y) {
+                Some(column) => opacity.extend(column.iter().map(|block| block.light_opacity())),
+                None => opacity.extend(
+                    (0..span.y).map(|y| source.block(min + IVec3::new(x, y, z)).light_opacity()),
+                ),
             }
         }
     }

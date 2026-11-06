@@ -100,105 +100,187 @@ pub(super) struct Flood {
 /// with each cell's tie of its own, in a jagged comb. The low bits are a hash, so no two tie.
 pub(super) fn flood_ties(map: &WorldMap) -> Vec<u32> {
     let dim = map.dim();
-    (0..dim * dim)
-        .map(|i| {
-            let (x, z) = map.cell_centre(i % dim, i / dim);
+    let mut ties = vec![0u32; dim * dim];
+    super::par_rows(dim, &mut ties, |row, cells| {
+        for (col, tie) in cells.iter_mut().enumerate() {
+            let i = row * dim + col;
+            let (x, z) = map.cell_centre(col, row);
             let smooth = (ochre_base::noise::fbm(map.seed ^ 0x71E5, x, z, TIE_WAVELENGTH, 3) * 0.5
                 + 0.5)
                 .clamp(0.0, 1.0);
             let hash = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 48;
-            (((smooth * 65_535.0) as u32) << 16) | hash as u32
-        })
-        .collect()
+            *tie = (((smooth * 65_535.0) as u32) << 16) | hash as u32;
+        }
+    });
+    ties
 }
 
-// The cells under the sea's level that join the map's edge, the open sea: a basin of them walled in by
+// The open sea: the cells under the sea's level that join the map's edge. A basin of them walled in by
 // higher land is not the sea, and is filled like any other.
-fn open_sea(height: &[f32], dim: usize) -> Vec<bool> {
+struct OpenSea {
+    cells: Vec<bool>,
+    // where the flood starts: the map's edge and the open sea beside land
+    roots: Vec<u32>,
+}
+
+fn open_sea(height: &[f32], dim: usize) -> OpenSea {
     let sea = WATER_LEVEL as f32;
-    let mut open = vec![false; height.len()];
+    let mut cells = vec![false; height.len()];
+    let mut roots = Vec::new();
     let mut stack = Vec::new();
     for z in 0..dim {
-        for x in 0..dim {
+        let step = if z == 0 || z == dim - 1 { 1 } else { dim - 1 };
+        for x in (0..dim).step_by(step) {
             let i = z * dim + x;
-            if (x == 0 || z == 0 || x == dim - 1 || z == dim - 1) && height[i] < sea {
-                open[i] = true;
+            roots.push(i as u32);
+            if height[i] < sea {
+                cells[i] = true;
                 stack.push(i);
             }
         }
     }
     while let Some(i) = stack.pop() {
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
+        let (x, z) = (i % dim, i / dim);
+        let inside = x > 0 && z > 0 && x + 1 < dim && z + 1 < dim;
+        let mut beside = [0usize; 8];
+        let mut count = 0;
+        if inside {
+            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
+                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
             }
-            let n = nz as usize * dim + nx as usize;
-            if !open[n] && height[n] < sea {
-                open[n] = true;
+            count = 8;
+        } else {
+            for (dx, dz) in NEIGHBOURS {
+                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                beside[count] = nz as usize * dim + nx as usize;
+                count += 1;
+            }
+        }
+        let mut shore = false;
+        for &n in &beside[..count] {
+            if height[n] >= sea {
+                shore = true;
+            } else if !cells[n] && height[n] < sea {
+                cells[n] = true;
                 stack.push(n);
             }
         }
+        if shore && inside {
+            roots.push(i as u32);
+        }
     }
-    open
+    OpenSea { cells, roots }
 }
 
 pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood {
+    flood_over(height, dim, ties, &open_sea(height, dim))
+}
+
+// `priority_flood` with the open sea of `height` already found.
+fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood {
     let cells = height.len();
-    let sea = WATER_LEVEL as f32;
-    let open = open_sea(height, dim);
     let mut flood = Flood {
         filled: height.to_vec(),
         down: vec![NONE; cells],
         order: Vec::with_capacity(cells),
     };
-    let mut seen = vec![false; cells];
-    let mut heap = BinaryHeap::new();
-    let push = |heap: &mut BinaryHeap<_>, key: f32, i: usize| {
+    // the open sea and the edge are reached from nowhere, so they start seen, and only the roots queue
+    let mut seen = open.cells.clone();
+    let mut queue = FloodQueue::new();
+    for &i in &open.roots {
+        let i = i as usize;
+        seen[i] = true;
         // Elevation first, including below sea level, then deterministic flood ties.
-        heap.push((
-            Reverse(((height_key(key) as u64) << 32) | ties[i] as u64),
+        queue.push(
+            ((height_key(height[i]) as u64) << 32) | ties[i] as u64,
             i as u32,
-        ));
-    };
-    for z in 0..dim {
-        for x in 0..dim {
-            let i = z * dim + x;
-            let edge = x == 0 || z == 0 || x == dim - 1 || z == dim - 1;
-            if open[i] || edge {
-                seen[i] = true;
-                // open sea is never reached from the land, so only its shore needs the queue
-                let shore = edge
-                    || NEIGHBOURS.iter().any(|&(dx, dz)| {
-                        height[(z as i64 + dz) as usize * dim + (x as i64 + dx) as usize] >= sea
-                    });
-                if shore {
-                    push(&mut heap, height[i], i);
-                }
-            }
-        }
+        );
     }
-    while let Some((_, i)) = heap.pop() {
+    while let Some(i) = queue.pop() {
         let i = i as usize;
         flood.order.push(i as u32);
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
+        let z = i / dim;
+        let x = i - z * dim;
+        // the cells beside it, all eight in `NEIGHBOURS` order unless it is on the map's edge
+        let mut beside = [0usize; 8];
+        let mut count = 0;
+        if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
+            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
+                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
             }
-            let n = nz as usize * dim + nx as usize;
+            count = 8;
+        } else {
+            for (dx, dz) in NEIGHBOURS {
+                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                beside[count] = nz as usize * dim + nx as usize;
+                count += 1;
+            }
+        }
+        for &n in &beside[..count] {
             if seen[n] {
                 continue;
             }
             seen[n] = true;
             flood.filled[n] = height[n].max(flood.filled[i]);
             flood.down[n] = i as u32;
-            push(&mut heap, flood.filled[n], n);
+            // elevation first, including below sea level, then deterministic flood ties
+            queue.push(
+                ((height_key(flood.filled[n]) as u64) << 32) | ties[n] as u64,
+                n as u32,
+            );
         }
     }
     flood
+}
+
+// How many of a key's top bits pick its bucket in `FloodQueue`.
+const BUCKET_BITS: u32 = 18;
+
+// The flood's queue: pops the lowest (key, cell) first, ties on the key going to the higher cell, as a
+// `BinaryHeap` of `Reverse` keys does. Keys wait in buckets by their top bits and only the bucket being
+// drained is a heap, which is cheaper than one heap of the whole front. A key pushed is never in a lower
+// bucket than the one being drained, since a cell's level is never under the level it was reached from.
+struct FloodQueue {
+    buckets: Vec<Vec<(Reverse<u64>, u32)>>,
+    current: usize,
+    heap: BinaryHeap<(Reverse<u64>, u32)>,
+}
+
+impl FloodQueue {
+    fn new() -> Self {
+        Self {
+            buckets: vec![Vec::new(); 1 << BUCKET_BITS],
+            current: 0,
+            heap: BinaryHeap::new(),
+        }
+    }
+
+    fn push(&mut self, key: u64, cell: u32) {
+        let bucket = (key >> (64 - BUCKET_BITS)) as usize;
+        debug_assert!(bucket >= self.current);
+        if bucket == self.current {
+            self.heap.push((Reverse(key), cell));
+        } else {
+            self.buckets[bucket].push((Reverse(key), cell));
+        }
+    }
+
+    fn pop(&mut self) -> Option<u32> {
+        loop {
+            if let Some((_, cell)) = self.heap.pop() {
+                return Some(cell);
+            }
+            self.current =
+                (self.current + 1..self.buckets.len()).find(|&b| !self.buckets[b].is_empty())?;
+            self.heap = BinaryHeap::from(std::mem::take(&mut self.buckets[self.current]));
+        }
+    }
 }
 
 // A basin the flood filled: its cells, how deep it is filled, the level it spills at and its lowest cell.
@@ -352,9 +434,10 @@ fn rain(map: &WorldMap) -> Rain {
         .map(|&m| super::climate::dryness(m))
         .collect();
     let cell_len = map.config.map_cell as f32;
-    let rock: Vec<f32> = (0..map.height.len())
-        .map(|i| {
-            let (x, z) = (i % dim, i / dim);
+    let mut rock = vec![0.0f32; map.height.len()];
+    super::par_rows(dim, &mut rock, |z, cells| {
+        for (x, out) in cells.iter_mut().enumerate() {
+            let i = z * dim + x;
             let at = |x: usize, z: usize| map.height[z * dim + x];
             let (xl, xr) = (x.saturating_sub(1), (x + 1).min(dim - 1));
             let (zl, zr) = (z.saturating_sub(1), (z + 1).min(dim - 1));
@@ -367,9 +450,9 @@ fn rain(map: &WorldMap) -> Rain {
                 (map.height[i] - sea) as f64,
             );
             let steep = ochre_base::math::smoothstep_f64(ROCK_SLOPE.0, ROCK_SLOPE.1, slope);
-            high.max(steep) as f32
-        })
-        .collect();
+            *out = high.max(steep) as f32;
+        }
+    });
     Rain {
         supply: dry
             .iter()
@@ -534,11 +617,17 @@ fn reroute(
 /// finds and the ground they lie in agree.
 pub fn scatter(map: &mut WorldMap) {
     let dim = map.dim();
-    for i in 0..map.height.len() {
-        let (x, z) = map.cell_centre(i % dim, i / dim);
-        map.height[i] += (ochre_base::noise::fbm(map.seed ^ 0x7E1D, x, z, 260.0, 3) * 0.9) as f32
-            + ochre_base::noise::unit(map.seed ^ 0x7E1E, i as i32, (i >> 16) as i32) as f32 * 0.05;
-    }
+    let mut heights = std::mem::take(&mut map.height);
+    super::par_rows(dim, &mut heights, |row, cells| {
+        for (col, height) in cells.iter_mut().enumerate() {
+            let i = row * dim + col;
+            let (x, z) = map.cell_centre(col, row);
+            *height += (ochre_base::noise::fbm(map.seed ^ 0x7E1D, x, z, 260.0, 3) * 0.9) as f32
+                + ochre_base::noise::unit(map.seed ^ 0x7E1E, i as i32, (i >> 16) as i32) as f32
+                    * 0.05;
+        }
+    });
+    map.height = heights;
 }
 
 /// Works out lakes, drainage and rivers from the height layer: small basins are drained, the rest
@@ -548,7 +637,9 @@ pub fn run(map: &mut WorldMap, carve: bool) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
     let ties = flood_ties(map);
-    let mut flood = priority_flood(&map.height, dim, &ties);
+    // draining only fills basins and cuts channels to over the sea, so the open sea is the same all through
+    let open = open_sea(&map.height, dim);
+    let mut flood = flood_over(&map.height, dim, &ties, &open);
     let (mut lakes, mut basin_of) = basins(&map.height, &flood, dim);
     for _ in 0..DRAIN_ROUNDS {
         let mut cut = false;
@@ -560,7 +651,7 @@ pub fn run(map: &mut WorldMap, carve: bool) {
         if !cut {
             break;
         }
-        flood = priority_flood(&map.height, dim, &ties);
+        flood = flood_over(&map.height, dim, &ties, &open);
         (lakes, basin_of) = basins(&map.height, &flood, dim);
     }
     let height = map.height.clone();
@@ -586,10 +677,9 @@ pub fn run(map: &mut WorldMap, carve: bool) {
     let (flow, _) = flow_through(&down, &lakes, &sorted, &basin_of, &height, &rain);
     let order = upstream_first(&down);
 
-    let open = open_sea(&height, dim);
     let mut kind = vec![WaterCell::None as u8; height.len()];
     let mut surface = vec![0.0f32; height.len()];
-    for (i, &o) in open.iter().enumerate() {
+    for (i, &o) in open.cells.iter().enumerate() {
         if o {
             kind[i] = WaterCell::Ocean as u8;
             surface[i] = sea;
@@ -730,6 +820,36 @@ pub fn run(map: &mut WorldMap, carve: bool) {
 mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn the_flood_queue_pops_in_a_heaps_order() {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let (mut queue, mut heap) = (FloodQueue::new(), BinaryHeap::new());
+        // keys never fall under the bucket last popped from, and some share a key so the cell breaks the tie
+        let mut floor = 0u64;
+        for round in 0..20_000u32 {
+            if round % 3 != 2 {
+                let key =
+                    floor + random() % (1 << (64 - BUCKET_BITS + 2)) / 4 * 4 + (round % 2) as u64;
+                queue.push(key, round);
+                heap.push((Reverse(key), round));
+            } else {
+                let (Reverse(key), cell) = heap.pop().unwrap();
+                assert_eq!(Some(cell), queue.pop());
+                floor = key >> (64 - BUCKET_BITS) << (64 - BUCKET_BITS);
+            }
+        }
+        while let Some((_, cell)) = heap.pop() {
+            assert_eq!(Some(cell), queue.pop());
+        }
+        assert_eq!(None, queue.pop());
+    }
 
     #[test]
     fn signed_height_keys_sort_and_round_trip() {

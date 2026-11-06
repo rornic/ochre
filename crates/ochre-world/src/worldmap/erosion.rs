@@ -4,6 +4,7 @@
 //! Droplets run in tiles, four rounds each tile apart from the next of its round, so tiles run on
 //! all cores and a seed still gives the same map: nothing races on a shared grid.
 
+use super::geology::BedSpan;
 use super::hydrology::{accumulate, priority_flood, NONE};
 use super::{par_rows, WorldMap};
 use ochre_base::WATER_LEVEL;
@@ -52,6 +53,8 @@ struct Window<'a> {
     w: usize,
     h: usize,
     cells: Vec<f32>,
+    // the bed each cell of the window was last found in
+    beds: Vec<BedSpan>,
     // cells at or under this are the sea, which droplets don't wear
     sea: f32,
     map: &'a WorldMap,
@@ -130,7 +133,8 @@ impl Window<'_> {
                     }
                     let (cx, cz) = (cx as usize, cz as usize);
                     let cell = &mut self.cells[cz * self.w + cx];
-                    let rock = self.map.rock_at_cell(
+                    let rock = self.map.rock_in_span(
+                        &mut self.beds[cz * self.w + cx],
                         (self.z0 + cz) * self.map.dim() + self.x0 + cx,
                         *cell / HEIGHT_SCALE,
                     );
@@ -234,6 +238,7 @@ fn tile<'a>(
         w,
         h,
         cells: Vec::with_capacity(w * h),
+        beds: vec![BedSpan::EMPTY; w * h],
         sea,
         map,
         x0,
@@ -294,11 +299,13 @@ pub(crate) fn thermal(map: &mut WorldMap) {
         let h = &map.height;
         // Both sides of a transfer use the donor's exposed rock and the same
         // threshold, so distributing the shed material still conserves mass.
-        let talus: Vec<f32> = h
-            .iter()
-            .enumerate()
-            .map(|(i, &height)| TALUS / map.rock_at_cell(i, height).stream_erodibility().sqrt())
-            .collect();
+        let mut talus = vec![0.0f32; dim * dim];
+        par_rows(dim, &mut talus, |row, cells| {
+            for (col, slot) in cells.iter_mut().enumerate() {
+                let i = row * dim + col;
+                *slot = TALUS / map.rock_at_cell(i, h[i]).stream_erodibility().sqrt();
+            }
+        });
         let get = |x: i64, z: i64| h[z as usize * dim + x as usize];
         let inside = |x: i64, z: i64| x >= 0 && z >= 0 && x < dim as i64 && z < dim as i64;
         // per cell: how much it sheds, and the total drop it sheds over
@@ -370,25 +377,36 @@ pub(crate) fn stream_power(map: &mut WorldMap) {
         let flood = priority_flood(&map.height, dim, &ties);
         let flow = accumulate(&flood);
         let before = map.height.clone();
+        // each cell's rate is its own, so only the sweep outward from the sea is in order
+        let mut rate = vec![0.0f32; dim * dim];
+        par_rows(dim, &mut rate, |row, cells| {
+            for (col, slot) in cells.iter_mut().enumerate() {
+                let (i, d) = (row * dim + col, flood.down[row * dim + col]);
+                if d == NONE || before[i] <= sea {
+                    continue;
+                }
+                let d = d as usize;
+                let dist = cell
+                    * if (i % dim != d % dim) && (i / dim != d / dim) {
+                        std::f32::consts::SQRT_2
+                    } else {
+                        1.0
+                    };
+                *slot = STREAM_K
+                    * map.rock_at_cell(i, before[i]).stream_erodibility()
+                    * flow[i].sqrt()
+                    * cell
+                    / dist;
+            }
+        });
         for &i in &flood.order {
             let (i, d) = (i as usize, flood.down[i as usize]);
             if d == NONE || before[i] <= sea {
                 continue;
             }
-            let d = d as usize;
-            let dist = cell
-                * if (i % dim != d % dim) && (i / dim != d / dim) {
-                    std::f32::consts::SQRT_2
-                } else {
-                    1.0
-                };
-            let f = STREAM_K
-                * map.rock_at_cell(i, before[i]).stream_erodibility()
-                * flow[i].sqrt()
-                * cell
-                / dist;
+            let f = rate[i];
             // the new height can't pass the downstream cell's: that would run water uphill
-            map.height[i] = ((before[i] + f * map.height[d]) / (1.0 + f)).min(before[i]);
+            map.height[i] = ((before[i] + f * map.height[d as usize]) / (1.0 + f)).min(before[i]);
         }
     }
 }

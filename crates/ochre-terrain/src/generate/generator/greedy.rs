@@ -143,6 +143,21 @@ pub(super) fn mesh_opaque_greedy(
     let size = CHUNK_SIZE as i32;
     let n = size as usize;
     let mut mask: Vec<Option<FaceCell>> = vec![None; n * n];
+    // how many cells of each slice along each axis hold a block, and how many hold an opaque one
+    let (mut held, mut opaque) = (vec![[0usize; 3]; n], vec![[0usize; 3]; n]);
+    for x in 0..n {
+        for y in 0..n {
+            for z in 0..n {
+                let block = source.blocks[(x * n + y) * n + z];
+                let is_opaque = block.is_opaque() as usize;
+                let is_held = !matches!(block, BlockType::Air | BlockType::Water) as usize;
+                for (axis, at) in [x, y, z].into_iter().enumerate() {
+                    held[at][axis] += is_held;
+                    opaque[at][axis] += is_opaque;
+                }
+            }
+        }
+    }
 
     for (i, template) in faces.iter().enumerate() {
         let normal = FACE_NORMAL_OFFSET[i];
@@ -187,16 +202,42 @@ pub(super) fn mesh_opaque_greedy(
             out
         };
 
+        // the chunk's blocks are a dense grid, see `grid_index`: how far each axis steps in it
+        let strides = [size * size, size, 1];
+        let (step_a, step_b, step_n) = (strides[a_axis], strides[b_axis], strides[normal_axis]);
+        let toward = normal[normal_axis];
+        // what `face_span` says of a block under a block that hides it
+        let hidden_is_final = normal.y != 0 || !source.has_surface_tops();
+
         for slice in 0..size {
             // merging takes every face it finds out of the mask, so it's left empty for the next slice
             let mut faces = 0;
+            let inside_next = (0..size).contains(&(slice + toward));
+            // nothing to show in a slice with no blocks, or whose next slice is wholly opaque
+            if held[slice as usize][normal_axis] == 0
+                || (inside_next
+                    && hidden_is_final
+                    && opaque[(slice + toward) as usize][normal_axis] == n * n)
+            {
+                continue;
+            }
             for b in 0..size {
                 for a in 0..size {
-                    let coord = normal_unit * slice + ta * a + tb * b;
-                    let block = source.block(coord);
+                    let at = (slice * step_n + a * step_a + b * step_b) as usize;
+                    let block = source.blocks[at];
                     if matches!(block, BlockType::Air | BlockType::Water) {
                         continue;
                     }
+                    // most blocks are buried, and face_span would turn each down after looking where we can
+                    if inside_next && hidden_is_final {
+                        let beyond = source.blocks[(at as i32 + toward * step_n) as usize];
+                        if beyond.is_opaque()
+                            || (block == BlockType::Ice && beyond == BlockType::Ice)
+                        {
+                            continue;
+                        }
+                    }
+                    let coord = normal_unit * slice + ta * a + tb * b;
                     // past the mesh's edge the terrain may be drawn at another detail, with no
                     // leaves just there, so leaves on the edge keep their faces
                     let inside = source.contains(coord + normal);
