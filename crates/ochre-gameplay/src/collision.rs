@@ -31,6 +31,32 @@ pub fn move_and_collide(
     (position, hit)
 }
 
+/// Like `move_and_collide`, but a box blocked sideways tries again from `step` higher and
+/// settles back down, so it climbs ledges up to `step` tall. Pass a `step` of 0 in the air.
+pub fn move_and_step(
+    position: Vec3,
+    delta: Vec3,
+    aabb: Aabb,
+    step: f32,
+    solid: impl Fn(I64Vec3) -> bool,
+) -> (Vec3, BVec3) {
+    let flat = move_and_collide(position, delta, aabb, &solid);
+    if step <= 0.0 || delta.y > 0.0 || !(flat.1.x || flat.1.z) {
+        return flat;
+    }
+    let sideways = Vec3::new(delta.x, 0.0, delta.z);
+    let (raised, _) = move_and_collide(position, Vec3::Y * step, aabb, &solid);
+    let (across, hit) = move_and_collide(raised, sideways, aabb, &solid);
+    let (settled, landed) = move_and_collide(across, Vec3::Y * (delta.y - step), aabb, &solid);
+    let gained = |p: Vec3| (p.x - position.x).powi(2) + (p.z - position.z).powi(2);
+    // only a step that ends up on something and gets further than walking into the wall
+    if landed.y && gained(settled) > gained(flat.0) {
+        (settled, BVec3::new(hit.x, true, hit.z))
+    } else {
+        flat
+    }
+}
+
 // How far the box gets along `axis` towards `delta`, and whether a block stopped it.
 fn sweep_axis(
     position: Vec3,
@@ -166,6 +192,67 @@ mod tests {
         let (position, hit) = move_and_collide(Vec3::new(0.5, 0.0, 0.5), Vec3::Z * 4.0, BOX, walls);
         assert_eq!(position.z, 4.5);
         assert!(!hit.z);
+    }
+
+    // a floor with a one-block ledge from x = 2 on
+    fn ledge(cell: I64Vec3) -> bool {
+        cell.y < i64::from(cell.x >= 2)
+    }
+
+    #[test]
+    fn test_steps_up_a_one_block_ledge() {
+        let (position, hit) = move_and_step(
+            Vec3::new(1.6, 0.0, 0.5),
+            Vec3::new(0.5, -0.5, 0.0),
+            BOX,
+            1.0,
+            ledge,
+        );
+        assert!((position.x - 2.1).abs() < 1e-5);
+        assert!((position.y - 1.0).abs() < 1e-5);
+        assert!(hit.y && !hit.x);
+    }
+
+    #[test]
+    fn test_doesnt_step_up_in_the_air() {
+        let (position, _) = move_and_step(
+            Vec3::new(1.6, 0.0, 0.5),
+            Vec3::X * 0.5,
+            BOX,
+            0.0,
+            ledge,
+        );
+        assert!((position.x - 1.7).abs() < 1e-5);
+        assert_eq!(position.y, 0.0);
+    }
+
+    #[test]
+    fn test_doesnt_step_up_a_two_block_wall() {
+        let wall = |cell: I64Vec3| cell.y < 2 * i64::from(cell.x >= 2);
+        let (position, hit) = move_and_step(
+            Vec3::new(1.6, 0.0, 0.5),
+            Vec3::new(0.5, -0.5, 0.0),
+            BOX,
+            1.0,
+            wall,
+        );
+        assert!((position.x - 1.7).abs() < 1e-5);
+        assert_eq!(position.y, 0.0);
+        assert!(hit.x);
+    }
+
+    #[test]
+    fn test_doesnt_step_up_into_a_low_ceiling() {
+        let low = |cell: I64Vec3| ledge(cell) || cell.y >= 2;
+        let (position, hit) = move_and_step(
+            Vec3::new(1.6, 0.0, 0.5),
+            Vec3::new(0.5, -0.5, 0.0),
+            BOX,
+            1.0,
+            low,
+        );
+        assert!((position.x - 1.7).abs() < 1e-5);
+        assert!(hit.x);
     }
 
     #[test]
