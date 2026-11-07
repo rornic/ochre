@@ -92,6 +92,7 @@ pub struct TerrainRenderPlugin {
 impl Plugin for TerrainRenderPlugin {
     fn build(&self, app: &mut App) {
         pack::set_packed(self.renderer.pack_meshes);
+        generate::generator::set_painterly_ao(self.renderer.painterly_lighting);
         app.add_plugins((
             MaterialPlugin::<ChunkMaterial>::default(),
             MaterialPlugin::<WaterMaterial>::default(),

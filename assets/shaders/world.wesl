@@ -14,7 +14,7 @@ import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
 import super::fog::fogged;
 import super::lighting::{direct_moon, direct_sun, open_sky, sun_radiance};
-import super::painterly::{FAR_VISIBILITY, painterly_light};
+import super::painterly::{FAR_VISIBILITY, Painterly, painterly_light, painterly_saturation};
 import super::sky::SUN_LIGHT;
 import super::cloud_shadow::cloud_shadow;
 import super::lod_patch::patch_tint;
@@ -76,7 +76,7 @@ fn sunlight(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky
 }
 
 // The light on a painted face when the painterly model has it, see `painterly.wesl`.
-fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> vec3<f32> {
+fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
     var to_sun = vec3<f32>(0.0, 1.0, 0.0);
     var sun = vec3<f32>(0.0);
@@ -285,9 +285,12 @@ fn fragment(
     let glow = point_light_glow(world_position, normal, in.position.xy);
     var light = vec3<f32>(0.0);
     var painterly = false;
+    var lit = 1.0;
 @if(PAINTERLY) {
     if painted {
-        light = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy) + glow;
+        let result = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy);
+        light = result.light + glow;
+        lit = result.lit;
         painterly = true;
     }
 }
@@ -295,6 +298,11 @@ fn fragment(
         light = sunlight(in.world_position, normal, shaded, sky, in.position.xy) + sky_ambient(sky, shaded) + glow;
     }
     color = vec4<f32>(color.rgb * light, color.a);
+@if(PAINTERLY) {
+    if painterly {
+        color = vec4<f32>(painterly_saturation(color.rgb, lit), color.a);
+    }
+}
 
     // so distant chunks fade into the sky instead of popping in and out
     color = fogged(color, world_position, in.position.xy);

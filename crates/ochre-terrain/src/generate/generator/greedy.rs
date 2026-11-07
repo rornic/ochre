@@ -6,7 +6,7 @@ use super::buffers::{
 
 use super::lod::MAX_SKIRT_CELLS;
 use super::shading::{
-    axis_of, face_light, vertex_ao, vertex_light, AO_GAMMA, FACE_NORMAL_OFFSET, FACE_TANGENTS,
+    axis_of, face_light, vertex_ao, vertex_light, ao_gamma, FACE_NORMAL_OFFSET, FACE_TANGENTS,
 };
 use super::source::{BlockSource, GridView};
 use super::terrain::is_solid;
@@ -666,7 +666,7 @@ pub(super) fn mesh_opaque_greedy(
                     BlockType::Grass => source.forest_shade(position),
                     _ => 1.0,
                 };
-                (tint * ao.powf(AO_GAMMA) * shade)
+                (tint * ao.powf(ao_gamma(painted)) * shade)
                     .extend(atlas_cell)
                     .to_array()
             };

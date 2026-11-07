@@ -3,6 +3,7 @@ use super::terrain::is_solid;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
 use bevy::math::IVec3;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(in crate::generate) const FACE_NORMAL_OFFSET: [IVec3; 6] = [
     IVec3::new(0, 0, -1), // front
@@ -26,6 +27,23 @@ pub(super) const FACE_TANGENTS: [(IVec3, IVec3); 6] = [
 pub(super) const AO_STRENGTH: f32 = 0.6;
 // AO reads as the brightness it should show, so it's raised to this to multiply in linear light: a 0.7 straight in linear shows as 0.85.
 pub(super) const AO_GAMMA: f32 = 2.2;
+// The same on painted faces under the painterly model, gentler so creases stay soft and coloured.
+const AO_GAMMA_PAINTERLY: f32 = 1.5;
+
+static PAINTERLY_AO: AtomicBool = AtomicBool::new(false);
+
+/// Whether painted faces take the painterly model's gentler AO, set from `painterly_lighting` before meshing starts.
+pub fn set_painterly_ao(on: bool) {
+    PAINTERLY_AO.store(on, Ordering::Relaxed);
+}
+
+pub(super) fn ao_gamma(painted: bool) -> f32 {
+    if painted && PAINTERLY_AO.load(Ordering::Relaxed) {
+        AO_GAMMA_PAINTERLY
+    } else {
+        AO_GAMMA
+    }
+}
 
 // Height of the water surface within a full-detail block, whose cube spans -0.5..0.5.
 pub(super) const WATER_TOP: f32 = 0.4;
