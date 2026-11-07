@@ -13,6 +13,11 @@ SHADER = HERE / "../../../assets/shaders/block_texture.wesl"
 GRASS_TEXTURE_MEAN = 0.5  # crates/ochre-base/src/biome/mod.rs, the greyscale mean the grass tint assumes
 
 
+def file_name(tile):
+    """`GrassTop` as `grass_top`, see `MATERIAL_FILES` in crates/ochre-base/src/block.rs."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", tile).lower()
+
+
 def linear(v):
     v = v / 255
     return np.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4)
@@ -27,7 +32,7 @@ for name in PAINTED:
     if name == "GrassTop":
         assert np.ptp(np.asarray(img, int).reshape(-1, 3), axis=1).max() == 0, "GrassTop must be greyscale, the biome tint multiplies it"
         assert abs(means[name][0] - GRASS_TEXTURE_MEAN) < 0.01, f"GrassTop mean is {means[name][0]:.4f}, the tint assumes {GRASS_TEXTURE_MEAN}"
-    img.save(DEST / f"{re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()}.png")
+    img.save(DEST / f"{file_name(name)}.png")
 
 cell = {t["name"]: i for i, t in enumerate(TILES)}
 row = -1
@@ -48,7 +53,7 @@ if text != SHADER.read_text():  # an untouched shader keeps its mtime, so it isn
 
 sheet = Image.new("RGB", (len(PAINTED) * 384, 384))
 for i, name in enumerate(PAINTED):
-    layer = Image.open(DEST / f"{name}.png").resize((128, 128), Image.LANCZOS)
+    layer = Image.open(DEST / f"{file_name(name)}.png").resize((128, 128), Image.LANCZOS)
     sheet.paste(Image.fromarray(np.tile(np.asarray(layer), (3, 3, 1))), (i * 384, 0))
 sheet.save(OUT / "materials_contact.png")
 print("installed", ", ".join(PAINTED), "; seam check:", OUT / "materials_contact.png")

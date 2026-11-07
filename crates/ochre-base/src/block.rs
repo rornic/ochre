@@ -227,7 +227,21 @@ pub enum Tile {
 pub const TILE_COUNT: usize = 35;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 5] = ["stone", "dirt", "grass_top", "sand", "snow"];
+pub const MATERIAL_FILES: [&str; 13] = [
+    "stone",
+    "dirt",
+    "grass_top",
+    "sand",
+    "snow",
+    "limestone",
+    "clay",
+    "basalt",
+    "marble",
+    "granite",
+    "shale",
+    "sandstone_top",
+    "gravel",
+];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
 impl Tile {
@@ -240,6 +254,15 @@ impl Tile {
             Tile::GrassTop | Tile::GrassSide => Some(2),
             Tile::Sand => Some(3),
             Tile::Snow => Some(4),
+            Tile::Limestone => Some(5),
+            Tile::Clay => Some(6),
+            Tile::Basalt => Some(7),
+            Tile::Marble => Some(8),
+            Tile::Granite => Some(9),
+            Tile::Shale => Some(10),
+            // a sandstone block's sides are the same rock as its top
+            Tile::SandstoneTop | Tile::SandstoneSide => Some(11),
+            Tile::Gravel => Some(12),
             _ => None,
         }
     }
@@ -348,6 +371,14 @@ mod tests {
             Tile::GrassTop,
             Tile::Sand,
             Tile::Snow,
+            Tile::Limestone,
+            Tile::Clay,
+            Tile::Basalt,
+            Tile::Marble,
+            Tile::Granite,
+            Tile::Shale,
+            Tile::SandstoneTop,
+            Tile::Gravel,
         ] {
             let layer = tile.material_layer().unwrap() as usize;
             assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
@@ -356,13 +387,17 @@ mod tests {
             Tile::GrassTop.material_layer(),
             Tile::GrassSide.material_layer()
         );
+        assert_eq!(
+            Tile::SandstoneTop.material_layer(),
+            Tile::SandstoneSide.material_layer()
+        );
         assert!(Tile::Dirt.material_layer().unwrap() < MATERIAL_LAYERS as u8);
         for tile in [
             Tile::Leaves,
             Tile::Water,
             Tile::TallGrass,
             Tile::SeedGrass,
-            Tile::Gravel,
+            Tile::CompactedStone,
         ] {
             assert_eq!(None, tile.material_layer());
         }
