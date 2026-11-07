@@ -7,7 +7,7 @@ use ochre_gameplay::debug::DebugOverlayPlugin;
 use ochre_gameplay::flythrough::FlythroughPlugin;
 use ochre_gameplay::player::{spawn_player, PlayerAssets, PlayerPlugin};
 use ochre_terrain::curvature::Curvature;
-use ochre_terrain::material::{block_atlas, ShaderInputs, TerrainAssets};
+use ochre_terrain::material::{block_atlas, material_array, ShaderInputs, TerrainAssets};
 use ochre_terrain::{
     insert_terrain_resources, task_pool_plugin, TerrainPlugin, TerrainRenderPlugin,
 };
@@ -57,11 +57,22 @@ fn setup_scene(
         world_bounds,
         &ShaderInputs {
             atlas: Some(images.add(block_atlas("assets/textures/blocks.png"))),
+            materials: Some(images.add(material_array(
+                "assets/textures/materials",
+                renderer.material_anisotropy,
+            ))),
             clouds: clouds.clone(),
             curvature: curvature.buffer.clone(),
         },
         &mut terrain,
     );
+}
+
+// `OCHRE_RESOLUTION=WxH`, for reading frame times at a fixed size.
+fn window_size() -> Option<(u32, u32)> {
+    let value = std::env::var("OCHRE_RESOLUTION").ok()?;
+    let (w, h) = value.split_once('x')?;
+    Some((w.parse().ok()?, h.parse().ok()?))
 }
 
 fn main() {
@@ -80,7 +91,7 @@ fn main() {
                 primary_window: Some(Window {
                     // uncapped, the GPU runs flat out and can starve the desktop's compositor until the PC stalls
                     // a recording runs unsynced, as the desktop throttles a hidden vsynced window to a crawl
-                    present_mode: if flythrough {
+                    present_mode: if flythrough || std::env::var_os("OCHRE_NOVSYNC").is_some() {
                         bevy::window::PresentMode::AutoNoVsync
                     } else {
                         bevy::window::PresentMode::AutoVsync
@@ -88,6 +99,8 @@ fn main() {
                     // a flythrough is recorded at video size
                     resolution: if flythrough {
                         bevy::window::WindowResolution::new(1920, 1080)
+                    } else if let Some((w, h)) = window_size() {
+                        bevy::window::WindowResolution::new(w, h)
                     } else {
                         default()
                     },

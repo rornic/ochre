@@ -17,6 +17,19 @@ DEFAULT_STD = 14  # contrast for tiles with no reference
 MIN_STD = 8  # floor on the reference contrast, so near-flat old tiles (sand, snow) still get some texture
 LUM = np.array([0.299, 0.587, 0.114])
 STYLE = "seamless tileable texture, extreme close-up of a flat surface filling the whole frame, pixel art, 8-bit, "
+PAINTED_STYLE = "seamless tileable hand-painted game texture, soft brush strokes, low contrast, flat even lighting, no shadows, extreme close-up of a flat surface filling the whole frame, "
+PAINTED_PROMPTS = {  # a few big soft shapes: SD adds detail unprompted, and detail is what reads as busy
+    "Stone": "weathered grey rock surface, smooth and simple, a few broad soft shifts of light and dark grey",
+    "Dirt": "smooth brown earth, a few large soft cloudy patches of lighter and darker brown",
+    "GrassTop": "soft green meadow, a few large soft cloudy patches of lighter and darker green, no individual blades",
+    "Sand": "sand dune surface, smooth and simple, a few broad gentle ripples in pale tan",
+    "Snow": "smooth white snow, large soft gentle patches of faint blue-grey shadow",
+}
+PAINTED_CFG = {"Stone": 4.5, "Sand": 4.5}  # looser than the graph's 7: strong prompt pull makes SD draw ornamental tessellations
+PAINTED_AVOID = "detailed, noisy, fine texture, grain, pebbles, cracks, speckles, sharp, high contrast, realistic, photo, outlines"
+PAINTED_STD = 12  # luminance contrast of a painted layer, low so the sun and painterly lighting do the shading
+PAINTED = ["Stone", "Dirt", "GrassTop", "Sand", "Snow"]  # layer order, `MATERIAL_FILES` in crates/ochre-base/src/block.rs
+PAINTED_OUT = OUT / "512"
 
 # Order matches `Tile` in crates/ochre-base/src/block.rs. Generated tiles take a prompt, `avoid` (negative prompt), and optionally
 # `mean` (target sRGB colour, when reference.png has no tile), `std`, `smooth` and `colors` to tune their look.
@@ -70,13 +83,15 @@ def run(wf):
     return requests.get(f"{API}/view", params=dict(filename=img["filename"], subfolder=img["subfolder"], type=img["type"])).content
 
 
-def build(t, seed, ckpt):
+def build(t, seed, ckpt, style=STYLE):
     wf = json.loads((HERE / "block_texture.json").read_text())
     wf["1"]["inputs"]["ckpt_name"] = ckpt
-    wf["3"]["inputs"]["text"] = STYLE + t["prompt"]
+    wf["3"]["inputs"]["text"] = style + t["prompt"]
     wf["6"]["inputs"]["seed"] = seed
     if "avoid" in t:
         wf["4"]["inputs"]["text"] += ", " + t["avoid"]
+    if "cfg" in t:
+        wf["6"]["inputs"]["cfg"] = t["cfg"]
     return wf
 
 
@@ -125,6 +140,18 @@ def finish(t, data, suffix=""):
     img = Image.fromarray(np.clip(a.round(), 0, 255).astype("uint8")).quantize(t.get("colors", COLORS), dither=Image.NONE).convert("RGBA")
     img.putalpha(Image.fromarray(alpha.astype("uint8")))
     img.save(OUT / f"{t['name']}{suffix}.png")
+
+
+def finish_painted(t, data, suffix=""):
+    """Keep the 512px render, moving only its mean colour and contrast: out/512/<Tile>.png."""
+    PAINTED_OUT.mkdir(exist_ok=True)
+    a = np.asarray(Image.open(io.BytesIO(data)).convert("RGB"), float)
+    ref = reference(t["name"])
+    mean = np.full(3, t["grey"]) if "grey" in t else np.array(t["mean"], float) if "mean" in t else ref[0] if ref else a.mean((0, 1))
+    if "grey" in t:
+        a = np.repeat((a @ LUM)[..., None], 3, 2)
+    a = normalise(a, mean, PAINTED_STD, np.ones(a.shape[:2], bool))
+    Image.fromarray(np.clip(a.round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}{suffix}.png")
 
 
 def derive(t, seed):
@@ -183,14 +210,24 @@ if __name__ == "__main__":
     ap.add_argument("--ckpt", default="v1-5-pruned-emaonly.safetensors")
     ap.add_argument("--candidates", type=int, default=1, help="N seeds per tile, saved as out/<Tile>_c<k>.png plus a numbered sheet")
     ap.add_argument("--pick", action="append", default=[], metavar="TILE=K", help="make candidate K the tile's output, e.g. --pick LogBark=3")
+    ap.add_argument("--painted", action="store_true", help="render the PAINTED tiles at 512px to out/512/, for materials.py, instead of 16px tiles")
     a = ap.parse_args()
     OUT.mkdir(exist_ok=True)
     for p in a.pick:
         name, k = p.split("=")
-        shutil.copy(OUT / f"{name}_c{k}.png", OUT / f"{name}.png")
-        shutil.copy(OUT / f"raw_{name}_c{k}.png", OUT / f"raw_{name}.png")
+        src, dst = (PAINTED_OUT / f"{name}_c{k}.png", PAINTED_OUT / f"{name}.png") if a.painted else (OUT / f"{name}_c{k}.png", OUT / f"{name}.png")
+        shutil.copy(src, dst)
+        if not a.painted:
+            shutil.copy(OUT / f"raw_{name}_c{k}.png", OUT / f"raw_{name}.png")
         print("picked", p)
     if a.pick:
+        raise SystemExit
+    if a.painted:
+        for t in (t for t in TILES if t["name"] in (a.tiles or PAINTED)):
+            for k in range(1, a.candidates + 1):
+                p = {**t, "cfg": PAINTED_CFG.get(t["name"], 7.0), "prompt": PAINTED_PROMPTS[t["name"]], "avoid": PAINTED_AVOID + (", " + t["avoid"] if "avoid" in t else "")}
+                finish_painted(t, run(build(p, a.seed + k - 1, a.ckpt, PAINTED_STYLE)), suffix="" if a.candidates == 1 else f"_c{k}")
+            print("done", t["name"])
         raise SystemExit
     want = a.tiles or [t["name"] for t in TILES]
     todo = sorted((t for t in TILES if t["name"] in want), key=lambda t: "derive" in t)  # derived tiles need their sources first

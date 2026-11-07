@@ -6,6 +6,10 @@
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> material_fade: vec4<f32>;
 
+// the painted materials, see `material_array` in material.rs
+@group(constants::MATERIAL_BIND_GROUP) @binding(12) var materials: texture_2d_array<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(13) var materials_sampler: sampler;
+
 // textures in blocks.png, see `Tile` in block.rs
 const ATLAS_CELLS: f32 = 35.0;
 const TILE_INSET: f32 = 0.002;
@@ -57,20 +61,129 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
     return material_color * texel;
 }
 
+// The painted material layer each atlas cell draws, -1 for the tiles that stay in the atlas: `Tile::material_layer`,
+// which a test checks this against.
+const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
+    0, // stone
+    2, // grass top
+    3, // sand
+    -1, // water
+    4, // snow
+    -1, // log bark
+    -1, // leaves
+    2, // grass side
+    1, // dirt
+    -1, // log end
+    -1, // gravel
+    -1, // ice
+    -1, // sandstone side
+    -1, // sandstone top
+    -1, // snow side
+    -1, // compacted stone
+    -1, // limestone
+    -1, // clay
+    -1, // basalt
+    -1, // marble
+    -1, // compacted limestone
+    -1, // compacted clay
+    -1, // compacted basalt
+    -1, // compacted marble
+    -1, // compacted sandstone
+    -1, // granite
+    -1, // shale
+    -1, // compacted granite
+    -1, // compacted shale
+    -1, // tall grass
+    -1, // fern
+    -1, // poppy
+    -1, // dandelion
+    -1, // short grass
+    -1, // seed grass
+);
+
+fn material_layer(vertex_alpha: f32) -> i32 {
+    var table = MATERIAL_LAYER_TABLE;
+    return table[u32(floor(vertex_alpha + 0.5))];
+}
+
+// Spreads `p` about the nearest block boundary along the way a face tilts, in the plane it's projected onto, by
+// `tilt` blocks of rise for each block across, so a tilted face covers as much of the texture as a flat one does: a
+// chamfer's 45 degrees would stretch it by two fifths. `tilt` is the face's normal in the plane's axes over its
+// normal's other part. Block boundaries are at half-integers, where the flat faces on either side of a chamfer are
+// continuous with it.
+fn unstretched(p: vec2<f32>, tilt: vec2<f32>) -> vec2<f32> {
+    let steep = length(tilt);
+    if steep < 1e-4 {
+        return p;
+    }
+    let boundary = round(p - 0.5) + 0.5;
+    let across = p - boundary;
+    let along = tilt / steep;
+    return boundary + across + along * dot(across, along) * (sqrt(1.0 + steep * steep) - 1.0);
+}
+
+// Where a painted face sits in its plane, in blocks: the chunk origin's remainder by the period
+// is exact in f32 (the period is a power of two), so the texture holds still far from the origin.
+// A mesh stores the normals of faces along z reversed. One whose mesh worked out its texture coordinates, with
+// `generator::UNFOLDED` added to their `x`, has them from the chunk's corner and only needs the origin's remainder.
+fn material_uv(local: vec3<f32>, origin: vec3<f32>, stored_normal: vec3<f32>, mesh_uv: vec2<f32>) -> vec2<f32> {
+    let period = f32(constants::MATERIAL_PERIOD);
+    let remainder = origin - floor(origin / period) * period;
+    let at = local + remainder;
+    let normal = vec3<f32>(stored_normal.x, stored_normal.y, -stored_normal.z);
+    let n = abs(normal);
+    let unfolded = mesh_uv.x > 512.0;
+    let given = mesh_uv - vec2<f32>(1024.0, 0.0);
+    if n.y >= n.x && n.y >= n.z {
+        if unfolded {
+            return given + remainder.xz;
+        }
+        return unstretched(at.xz, normal.xz / n.y);
+    }
+    // sides have world up as the texture's up
+    if n.x >= n.z {
+        if unfolded {
+            return given + vec2<f32>(remainder.z, -remainder.y);
+        }
+        return unstretched(vec2<f32>(at.z, -at.y), vec2<f32>(normal.z, -normal.y) / n.x);
+    }
+    if unfolded {
+        return given + vec2<f32>(remainder.x, -remainder.y);
+    }
+    return unstretched(vec2<f32>(at.x, -at.y), vec2<f32>(normal.x, -normal.y) / n.z);
+}
+
+// How a painted face's uv covers the screen, in material repeats. It takes derivatives, so needs
+// uniform control flow, while `material_sample` doesn't.
+struct MaterialFootprint {
+    dx: vec2<f32>,
+    dy: vec2<f32>,
+}
+
+fn material_footprint(uv: vec2<f32>) -> MaterialFootprint {
+    let period = f32(constants::MATERIAL_PERIOD);
+    return MaterialFootprint(dpdx(uv) / period, dpdy(uv) / period);
+}
+
+fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> vec4<f32> {
+    let texel = textureSampleGrad(materials, materials_sampler, uv / f32(constants::MATERIAL_PERIOD), layer, footprint.dx, footprint.dy);
+    return material_color * vec4<f32>(texel.rgb, 1.0);
+}
+
 // What a tile averages to: the mean linear colour of each atlas cell's opaque texels, in atlas
 // order. `gen_atlas` prints these and the block-textures skill's `pack.py`
 // rewrites them, and `material.rs`'s tests check them against blocks.png.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
     var means = array<vec3<f32>, 35>(
-        vec3<f32>(0.1182, 0.1186, 0.1186), // stone
-        vec3<f32>(0.5003, 0.5003, 0.5003), // grass top
-        vec3<f32>(0.4776, 0.3611, 0.1822), // sand
+        vec3<f32>(0.1200, 0.1203, 0.1203), // stone
+        vec3<f32>(0.4999, 0.4999, 0.4999), // grass top
+        vec3<f32>(0.4798, 0.3661, 0.1856), // sand
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
-        vec3<f32>(0.9308, 0.9726, 0.9921), // snow
+        vec3<f32>(0.9245, 0.9519, 0.9581), // snow
         vec3<f32>(0.0776, 0.0449, 0.0211), // log bark
         vec3<f32>(0.2433, 0.2433, 0.2433), // leaves
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
-        vec3<f32>(0.2611, 0.1228, 0.0581), // dirt
+        vec3<f32>(0.2646, 0.1248, 0.0599), // dirt
         vec3<f32>(0.4083, 0.2484, 0.0983), // log end
         vec3<f32>(0.2623, 0.2423, 0.2180), // gravel
         vec3<f32>(0.3090, 0.6154, 0.8315), // ice

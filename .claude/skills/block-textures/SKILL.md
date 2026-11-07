@@ -5,7 +5,7 @@ description: Generate or regenerate Ochre's 16px seamless block textures (stone,
 
 # Block textures
 
-The atlas `assets/textures/blocks.png` is one 16px-tall strip. Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. `pack.py` asserts the length.
+The atlas `assets/textures/blocks.png` is one 16px-tall strip, for the tiles not yet painted (see Painted materials below). Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. `pack.py` asserts the length.
 
 ## One-time setup
 
@@ -51,3 +51,15 @@ Open `out/contact.png` (each tile repeated 3x3, 9x zoom) and check seams. Re-rol
 2. Append a row to `TILES` in `generate.py` at the same index.
 3. In `block_texture.wesl`, bump `ATLAS_CELLS` and add a `vec3` row to `block_mean` (`pack.py` asserts one row per tile and fills the numbers in).
 4. Widen the atlas first (`pack.py` asserts 16px per row entry), e.g. paste a blank 16px onto the right edge, then generate and pack.
+
+## Painted materials
+
+Tiles in `PAINTED` (`generate.py`, mirroring `MATERIAL_FILES` in `crates/ochre-base/src/block.rs`) are drawn from 512px painted layers sampled in world space, see `docs/materials.md`, not from the atlas.
+
+```
+python generate.py --painted                 # PAINTED tiles, seed 1, to out/512/<Tile>.png
+python generate.py --painted Stone --candidates 4 --seed 7   # then --painted --pick Stone=2
+python materials.py                          # validate, install, and update the means
+```
+
+`--painted` keeps the 512px render and moves only its mean and contrast (`PAINTED_STD`), with a painted, flat-lit prompt. GrassTop is greyscale at the mean the biome tint assumes. `materials.py` copies each into `assets/textures/materials/<Tile>.png`, rewrites those tiles' `block_mean` rows from the layers, and writes `out/materials_contact.png` (each layer 3x3) to judge seams. `pack.py` leaves those rows alone. The files in `assets/textures/materials/` are placeholders until a painted run replaces them.

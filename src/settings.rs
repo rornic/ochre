@@ -31,12 +31,21 @@ mod tests {
         let settings: Settings = toml::from_str("[renderer]\nrender_distance = 64").unwrap();
         assert_eq!(64, settings.renderer.render_distance);
         assert_eq!(32, settings.renderer.full_detail_distance);
+        assert_eq!(8, settings.renderer.material_period());
+        assert_eq!(8, settings.renderer.material_anisotropy);
         assert_eq!(
             super::CloudResolution::Medium,
             settings.renderer.cloud_resolution
         );
         assert!(!settings.debug.still_leaves && !settings.debug.solid_leaves);
         assert_eq!(WorldConfig::default(), settings.world);
+    }
+
+    #[test]
+    #[should_panic(expected = "power of two")]
+    fn test_material_period_must_be_a_power_of_two() {
+        let settings: Settings = toml::from_str("[renderer]\nmaterial_period = 12").unwrap();
+        settings.renderer.material_period();
     }
 
     #[test]
@@ -82,6 +91,7 @@ mod tests {
         assert_eq!(2, settings.renderer.lod_level_scale);
         assert_eq!(64, settings.renderer.mesh_slab_mb);
         assert!(settings.renderer.mesh_slab_growth > 1.0);
+        assert_eq!(16, settings.renderer.material_period());
         // Full detail reaches 12 chunks, with the LOD base at 16.
         let layout = settings.renderer.lod_layout();
         assert_eq!(12.0, layout.reach(0));

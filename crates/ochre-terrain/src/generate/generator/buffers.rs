@@ -1,11 +1,10 @@
 use crate::chunk::CHUNK_SIZE;
 use bevy::asset::RenderAssetUsages;
-use bevy::math::Vec3;
+use bevy::math::{IVec3, Vec2, Vec3};
 use bevy::render::mesh::Indices;
 use bevy::render::mesh::Mesh;
 use bevy::render::mesh::VertexAttributeValues;
 use ochre_base::biome::grass_tint;
-use ochre_base::block::Tile;
 use ochre_base::block::TILE_COUNT;
 use ochre_base::terrain_source::TerrainSource;
 
@@ -21,10 +20,49 @@ pub(super) struct MeshBuffers {
     pub(super) lights: Vec<f32>,
     // whether faces draw their block's mean colour instead of its texture, see `world.wesl`
     pub(super) untextured: bool,
-    // grass sides' vertices and their shade without the grass's tint, see `tint_grass_sides`
-    pub(super) grass_sides: Vec<(usize, f32)>,
     // where tree boxes start and how they draw, which is on their own terms
     pub(super) boxes: Option<(usize, f32)>,
+}
+
+// How far a bevelled edge is cut back along each face that meets there, in blocks: the chamfer is
+// a 45 degree strip across the corner this big on each side.
+pub(super) const BEVEL: f32 = 0.2;
+
+// How far up a wall the ground against it climbs, in blocks, over the one cell of floor that meets it,
+// and its foot is raised to meet: the crease is a slope, not a right angle.
+pub(super) const RAMP: f32 = 0.3;
+
+// How much of a crease's ambient occlusion goes where a ramp fills it, at the top of the ramp: the geometry
+// does the shading there, and the darkening would count it twice.
+const AO_RELIEF: f32 = 0.7;
+
+// Where a point `(i, j)` cells along a quad's tangents ends up, `size` cells wide and tall, with the
+// quad's edge pulled in on each side, -ta, +ta, -tb, +tb, by `inset` blocks.
+pub(super) fn bevelled_ij(inset: [f32; 4], (i, j): (f32, f32), size: (usize, usize)) -> (f32, f32) {
+    let pull = |near: f32, far: f32, at: f32, end: f32| {
+        (if at == 0.0 { near } else { 0.0 }) - (if at == end { far } else { 0.0 })
+    };
+    (
+        i + pull(inset[0], inset[1], i, size.0 as f32),
+        j + pull(inset[2], inset[3], j, size.1 as f32),
+    )
+}
+
+// How far up a quad rises at `(i, j)` cells along it, from the rise at each corner, (-ta, -tb), (+ta, -tb),
+// (-ta, +tb), (+ta, +tb): the ground that climbs a wall, or the foot of a wall that meets it. Neighbours that
+// agree on a corner's rise agree on every point of the edge between, so ramps join.
+pub(super) fn lift_at(corners: [f32; 4], (i, j): (f32, f32), size: (usize, usize)) -> f32 {
+    let (u, v) = (
+        (i / size.0 as f32).clamp(0.0, 1.0),
+        (j / size.1 as f32).clamp(0.0, 1.0),
+    );
+    blend_corners([[corners[0], corners[2]], [corners[1], corners[3]]], u, v)
+}
+
+// The value at `(u, v)` across a quad from its values at the four corners, [along ta][along tb].
+pub(super) fn blend_corners(corners: [[f32; 2]; 2], u: f32, v: f32) -> f32 {
+    let along = |c: [f32; 2]| c[0] + (c[1] - c[0]) * v;
+    along(corners[0]) + (along(corners[1]) - along(corners[0])) * u
 }
 
 // How a face draws, carried in each vertex's second uv, see `world.wesl`: its own tile, its
@@ -34,6 +72,49 @@ pub(super) const TEXTURED: f32 = 0.0;
 pub(super) const TEXTURED_SOLID: f32 = 0.75;
 
 pub(super) const UNTEXTURED: f32 = 1.0;
+
+// Added to the `x` of a painted face's texture coordinates that the mesh worked out itself, so `material_uv` in
+// `block_texture.wesl` takes them as they are, in blocks along the face's plane from the chunk's corner.
+pub(super) const UNFOLDED: f32 = 1024.0;
+
+// Texture coordinates for a triangle lying `facet` way, in the axes of the plane `face` is projected onto (x and z for
+// a top, z and down y for a side along x, x and down y for one along z), with its tilt from that plane spread out so it
+// covers as much of the texture as a flat one does. The three points are spread about one block boundary, so it's the
+// same map across all of them.
+pub(super) fn unfolded_uv(points: [Vec3; 3], face: Vec3, facet: Vec3) -> [[f32; 2]; 3] {
+    let n = face.abs();
+    let top = n.y >= n.x && n.y >= n.z;
+    let side_x = !top && n.x >= n.z;
+    let plane = |p: Vec3| -> Vec2 {
+        if top {
+            Vec2::new(p.x, p.z)
+        } else if side_x {
+            Vec2::new(p.z, -p.y)
+        } else {
+            Vec2::new(p.x, -p.y)
+        }
+    };
+    let tilt = if top {
+        Vec2::new(facet.x, facet.z) / facet.y.abs().max(1e-3)
+    } else if side_x {
+        Vec2::new(facet.z, -facet.y) / facet.x.abs().max(1e-3)
+    } else {
+        Vec2::new(facet.x, -facet.y) / facet.z.abs().max(1e-3)
+    };
+    let centre = (plane(points[0]) + plane(points[1]) + plane(points[2])) / 3.0;
+    let anchor = (centre - 0.5).round() + 0.5;
+    let steep = tilt.length();
+    points.map(|p| {
+        let across = plane(p) - anchor;
+        let uv = if steep < 1e-4 {
+            anchor + across
+        } else {
+            let along = tilt / steep;
+            anchor + across + along * across.dot(along) * ((1.0 + steep * steep).sqrt() - 1.0)
+        };
+        [uv.x + UNFOLDED, uv.y]
+    })
+}
 
 impl MeshBuffers {
     pub(super) fn push_face(
@@ -108,6 +189,43 @@ impl MeshBuffers {
         self.push_quad_indices(triangle_start);
     }
 
+    // One triangle with a vertex set of its own, so its normal is its facet's.
+    pub(super) fn push_tiled_triangle(
+        &mut self,
+        positions: [[f32; 3]; 3],
+        normal: [f32; 3],
+        uvs: [[f32; 2]; 3],
+        colors: [[f32; 4]; 3],
+        lights: [f32; 3],
+    ) {
+        let start = self.vertices.len() as u32;
+        for j in 0..3 {
+            self.vertices.push(Vertex {
+                position: positions[j],
+                normal,
+                uv: uvs[j],
+            });
+            self.colors.push(colors[j]);
+            self.lights.push(lights[j]);
+        }
+        self.indices.extend([start, start + 1, start + 2]);
+    }
+
+    // As `push_tiled_quad`, drawn from both sides: the one set of vertices, with the indices of
+    // both windings, as the material culls one side of a triangle.
+    pub(super) fn push_double_sided_quad(
+        &mut self,
+        positions: [[f32; 3]; 4],
+        normal: [f32; 3],
+        uvs: [[f32; 2]; 4],
+        colors: [[f32; 4]; 4],
+        lights: [f32; 4],
+    ) {
+        let start = self.vertices.len() as u32;
+        self.push_tiled_quad(positions, normal, uvs, colors, lights);
+        self.indices.extend([0, 2, 1, 1, 2, 3].map(|i| start + i));
+    }
+
     // Vertices at every block step round the border, so neighbours share exact edge points and leave no cracks.
     pub(super) fn push_fan_quad(&mut self, quad: FanQuad) {
         let (w, h) = quad.size;
@@ -116,33 +234,87 @@ impl MeshBuffers {
         ring.extend((0..h).map(|j| (w, j)));
         ring.extend((1..=w).rev().map(|i| (i, h)));
         ring.extend((1..=h).rev().map(|j| (0, j)));
+        // each point of the ring, and the corner it's a bevel's width from, if it's one of those
+        let mut ring: Vec<(f32, f32, Option<usize>)> = ring
+            .into_iter()
+            .map(|(i, j)| (i as f32, j as f32, None))
+            .collect();
+        // the corners, in the order of `dip`
+        let corners = [
+            (0.0, 0.0),
+            (w as f32, 0.0),
+            (0.0, h as f32),
+            (w as f32, h as f32),
+        ];
+        // a wall's feet are cut down along the foot, and its sides run straight
+        let wall = quad.normal[1] == 0.0;
+        for (k, corner) in corners.into_iter().enumerate() {
+            if quad.dip[k] <= 0.0 {
+                continue;
+            }
+            let at = ring
+                .iter()
+                .position(|p| (p.0, p.1) == corner)
+                .expect("a corner is on the ring");
+            let (before, after) = (
+                ring[(at + ring.len() - 1) % ring.len()],
+                ring[(at + 1) % ring.len()],
+            );
+            // a bevel's width from the corner along an edge, toward the ring's next point
+            let along = |to: (f32, f32, Option<usize>)| {
+                let (di, dj) = (to.0 - corner.0, to.1 - corner.1);
+                if wall && di == 0.0 {
+                    return None;
+                }
+                // the ring runs along the quad's axes, so one of these is none
+                let length = di.abs().max(dj.abs());
+                Some((
+                    corner.0 + di / length * BEVEL,
+                    corner.1 + dj / length * BEVEL,
+                    Some(k),
+                ))
+            };
+            let (near_before, near_after) = (along(before), along(after));
+            if let Some(near) = near_after {
+                ring.insert(at + 1, near);
+            }
+            if let Some(near) = near_before {
+                ring.insert(at, near);
+            }
+        }
 
-        let blend = |corners: [[f32; 2]; 2], u: f32, v: f32| {
-            let along = |c: [f32; 2]| c[0] + (c[1] - c[0]) * v;
-            along(corners[0]) + (along(corners[1]) - along(corners[0])) * u
-        };
-        let mut push = |i: f32, j: f32, uv: [f32; 2]| {
-            let position = quad.corner + quad.ta * i + quad.tb * j;
+        let blend = blend_corners;
+        let mut push = |i: f32, j: f32, near: Option<usize>| {
+            let (at_i, at_j) = bevelled_ij(quad.inset, (i, j), quad.size);
+            let dip = corners
+                .iter()
+                .zip(quad.dip)
+                .find(|(&c, _)| c == (i, j))
+                .map_or(0.0, |(_, dip)| dip);
+            // a point a bevel's width from a cut corner is as high as the corner is raised, as the chamfer's end beside it
+            let raised = match near {
+                Some(k) => quad.corner_lift[k],
+                None => lift_at(quad.corner_lift, (i, j), quad.size),
+            };
+            let lift = raised - dip;
+            let position = quad.corner + quad.ta * at_i + quad.tb * at_j + Vec3::Y * lift;
+            // the texture follows the point to where it's moved to
             self.vertices.push(Vertex {
                 position: position.into(),
                 normal: quad.normal,
-                uv,
+                uv: (quad.uv_at)(at_i, at_j),
             });
             let (u, v) = (i / w as f32, j / h as f32);
-            self.colors
-                .push((quad.color)(blend(quad.ao, u, v), position));
+            let ao = blend(quad.ao, u, v);
+            let ao = ao + (1.0 - ao) * AO_RELIEF * (lift / RAMP).clamp(0.0, 1.0);
+            self.colors.push((quad.color)(ao, position));
             self.lights.push(blend(quad.light, u, v));
             self.vertices.len() as u32 - 1
         };
-        let (uv_min, uv_max) = ((quad.uv_at)(0, 0), (quad.uv_at)(w, h));
-        let centre = push(
-            w as f32 / 2.0,
-            h as f32 / 2.0,
-            [0, 1].map(|k| (uv_min[k] + uv_max[k]) / 2.0),
-        );
+        let centre = push(w as f32 / 2.0, h as f32 / 2.0, None);
         let first = centre + 1;
-        for &(i, j) in &ring {
-            push(i as f32, j as f32, (quad.uv_at)(i, j));
+        for &(i, j, near) in &ring {
+            push(i, j, near);
         }
         for k in 0..ring.len() as u32 {
             let (from, to) = (first + k, first + (k + 1) % ring.len() as u32);
@@ -150,21 +322,6 @@ impl MeshBuffers {
                 self.indices.extend([centre, to, from]);
             } else {
                 self.indices.extend([centre, from, to]);
-            }
-        }
-    }
-
-    // Grass sides carry the grass's tint, which the dirt in their tile mustn't take, so their shade
-    // without it goes in place of how they draw. A block a pixel or so tall shows its side's tile
-    // averaged, mostly dirt, so far off they turn to the tinted grass top, see `world.wesl`.
-    pub(super) fn tint_grass_sides(&mut self, grass_tint: &GrassTint) {
-        let side = Tile::GrassSide.atlas_cell();
-        for (i, (vertex, color)) in self.vertices.iter().zip(&mut self.colors).enumerate() {
-            if color[3] == side {
-                let shade = color[0];
-                let tinted = grass_tint.at(Vec3::from(vertex.position)) * shade;
-                color[..3].copy_from_slice(&tinted.to_array());
-                self.grass_sides.push((i, shade));
             }
         }
     }
@@ -197,7 +354,7 @@ impl MeshBuffers {
                 self.vertices.len(),
                 "only some vertices carry light"
             );
-            let mut lights: Vec<[f32; 2]> = self
+            let lights: Vec<[f32; 2]> = self
                 .lights
                 .into_iter()
                 .enumerate()
@@ -213,9 +370,6 @@ impl MeshBuffers {
                     ],
                 })
                 .collect();
-            for (i, shade) in self.grass_sides {
-                lights[i][1] = -shade;
-            }
             mesh.insert_attribute(
                 Mesh::ATTRIBUTE_UV_1,
                 VertexAttributeValues::Float32x2(lights),
@@ -236,7 +390,14 @@ pub(super) struct FanQuad<'a> {
     // ambient occlusion and sky light at the quad's corners, [along ta][along tb], blended across it
     pub(super) ao: [[f32; 2]; 2],
     pub(super) light: [[f32; 2]; 2],
-    pub(super) uv_at: &'a dyn Fn(usize, usize) -> [f32; 2],
+    pub(super) uv_at: &'a dyn Fn(f32, f32) -> [f32; 2],
+    // how far each side, -ta, +ta, -tb, +tb, is pulled in for a bevel, see `bevelled_ij`
+    pub(super) inset: [f32; 4],
+    // how far each corner rises, see `lift_at`
+    pub(super) corner_lift: [f32; 4],
+    // how far down each corner is cut, (-ta, -tb), (+ta, -tb), (-ta, +tb), (+ta, +tb), with a vertex a bevel's width
+    // along each of its two edges, so the chamfers beside it run into the cut
+    pub(super) dip: [f32; 4],
     pub(super) reversed: bool,
 }
 
@@ -246,6 +407,8 @@ pub(super) struct MeshStyle {
     pub(super) ambient_occlusion: bool,
     pub(super) textured: bool,
     pub(super) inner_leaves: InnerLeaves,
+    // whether faces are cut back along convex edges and chamfered, see `bevelled_position`
+    pub(super) bevel: bool,
 }
 
 // The faces between two leaves, which only show through the leaves' holes. In a forest of big
@@ -294,6 +457,8 @@ pub const INNER_LEAVES_BAND: f32 = 16.0;
 pub(super) struct GrassTint {
     // at the mesh's edges, so neighbouring meshes share their tints along each edge: (-x, -z), (+x, -z), (-x, +z), (+x, +z)
     pub(super) corners: [Vec3; 4],
+    // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
+    pub(super) origin: IVec3,
 }
 
 impl GrassTint {
@@ -304,7 +469,10 @@ impl GrassTint {
             let world = origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale;
             grass_tint(noise.climate(world.x as f64, world.z as f64))
         });
-        Self { corners }
+        Self {
+            corners,
+            origin: origin.floor().as_ivec3(),
+        }
     }
 
     pub(super) fn at(&self, local: Vec3) -> Vec3 {

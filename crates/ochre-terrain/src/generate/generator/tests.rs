@@ -8,7 +8,7 @@ use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
 
 use ochre_base::block::{BlockType, Tile};
 
-use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
+use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle, RAMP};
 use super::chunk::{generate_chunk, generate_chunk_mesh};
 use super::lod::LodBlocks;
 use super::shading::{
@@ -31,6 +31,7 @@ fn style(ambient_occlusion: bool, textured: bool) -> MeshStyle {
         ambient_occlusion,
         textured,
         inner_leaves: InnerLeaves::Hidden,
+        bevel: false,
     }
 }
 
@@ -660,7 +661,7 @@ fn test_lod_steps_are_lit_by_the_air_above_the_lower_ground() {
     );
 }
 
-fn mesh_chunk(chunk: ChunkData) -> ChunkMeshes {
+fn mesh_chunk_bevelled(chunk: ChunkData) -> ChunkMeshes {
     // well above the sea, under open sky
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
     generate_chunk_mesh(
@@ -670,6 +671,15 @@ fn mesh_chunk(chunk: ChunkData) -> ChunkMeshes {
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
         false,
     )
+}
+
+// The chunk meshed as the game does, without bevels, which cut quads back and split them along edges:
+// the tests of merging and shading are about the blocks' faces, and `mesh_chunk_bevelled` is the game's.
+fn mesh_chunk(chunk: ChunkData) -> ChunkMeshes {
+    super::greedy::NO_BEVELS.set(true);
+    let meshes = mesh_chunk_bevelled(chunk);
+    super::greedy::NO_BEVELS.set(false);
+    meshes
 }
 
 fn mesh_vertices(chunk: ChunkData) -> usize {
@@ -810,36 +820,6 @@ fn test_only_grass_tops_and_sides_are_tinted() {
     let colours = tints(&mesh_chunk(chunk).opaque);
     assert_eq!(28, colours.iter().filter(|c| **c == Vec3::ONE).count());
     assert_eq!(20, colours.iter().filter(|c| **c != Vec3::ONE).count());
-}
-
-#[test]
-fn test_grass_sides_carry_their_untinted_shade() {
-    let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(10, 4, 10), BlockType::Grass);
-    chunk.set_block_at(U16Vec3::new(11, 4, 10), BlockType::Grass);
-    let mesh = mesh_chunk(chunk).opaque;
-    let (
-        Some(VertexAttributeValues::Float32x4(colors)),
-        Some(VertexAttributeValues::Float32x2(modes)),
-    ) = (
-        mesh.attribute(Mesh::ATTRIBUTE_COLOR),
-        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
-    )
-    else {
-        panic!("mesh lacks colours or uv_b");
-    };
-    let side = Tile::GrassSide.atlas_cell();
-    let mut sides = 0;
-    for (color, mode) in colors.iter().zip(modes) {
-        if color[3] == side {
-            sides += 1;
-            // the shade is ambient occlusion here, so between dark and full
-            assert!(mode[1] < 0.0 && mode[1] >= -1.0, "{mode:?}");
-        } else {
-            assert_eq!(super::buffers::TEXTURED, mode[1]);
-        }
-    }
-    assert!(sides > 0);
 }
 
 #[test]
@@ -1095,7 +1075,6 @@ fn test_lods_up_to_four_blocks_are_textured_with_the_texture_repeating_over_each
         .expect("no mesh")
         .opaque;
     let flags = untextured_flags(&mesh);
-    // grass sides mark their shade instead, see `MeshBuffers::tint_grass_sides`
     assert!(!flags.is_empty() && flags.iter().all(|&f| f <= 0.0));
     // a face one cell wide spans four tiles, so none comes out a tile wide
     let uvs = mesh.attribute(Mesh::ATTRIBUTE_UV_0).unwrap();
@@ -3366,4 +3345,996 @@ fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
         })
         .collect();
     assert!(rocks.len() >= 3, "only {rocks:?}");
+}
+
+#[test]
+fn test_only_sides_turning_into_open_air_are_bevelled() {
+    use super::greedy::convex_sides;
+    let solid = |blocks: Vec<IVec3>| move |c: IVec3| blocks.contains(&c);
+    let (here, up) = (IVec3::ZERO, IVec3::Y);
+    let (x, z) = (IVec3::X, IVec3::Z);
+    // a lone block's top turns away on every side
+    assert_eq!([true; 4], convex_sides(solid(vec![]), here, up, x, z));
+    // a neighbour at the same height is a seam
+    assert_eq!(
+        [true, false, true, true],
+        convex_sides(solid(vec![IVec3::X]), here, up, x, z)
+    );
+    // a wall beside it is an inner corner
+    assert_eq!(
+        [true, false, true, true],
+        convex_sides(solid(vec![IVec3::X, IVec3::new(1, 1, 0)]), here, up, x, z)
+    );
+    // a block only over the open side is a notch, not an edge
+    assert_eq!(
+        [true, false, true, true],
+        convex_sides(solid(vec![IVec3::new(1, 1, 0)]), here, up, x, z)
+    );
+}
+
+// Every edge of a closed surface is shared by two triangles: a hole or a missing cap leaves one with
+// a single. Vertices are matched by position, to a thousandth of a block, and an edge that has another
+// vertex along it, a T-junction, counts as the pieces between them: the surface is closed there but its
+// vertices don't match, which is the most the bevel's caps against neighbours can ask.
+fn open_edges(mesh: &Mesh) -> Vec<String> {
+    let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        panic!("missing positions");
+    };
+    let Some(Indices::U32(indices)) = mesh.indices() else {
+        panic!("missing indices");
+    };
+    let key = |i: u32| positions[i as usize].map(|c| (c * 1000.0).round() as i64);
+    let mut vertices: Vec<[i64; 3]> = positions
+        .iter()
+        .map(|p| p.map(|c| (c * 1000.0).round() as i64))
+        .collect();
+    vertices.sort();
+    vertices.dedup();
+    // the vertices on the segment `a`..`b` between its ends, in order from `a`
+    let along = |a: [i64; 3], b: [i64; 3]| {
+        let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let length = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        let mut on: Vec<(i64, [i64; 3])> = vertices
+            .iter()
+            .filter_map(|&v| {
+                let e = [v[0] - a[0], v[1] - a[1], v[2] - a[2]];
+                let cross = [
+                    d[1] * e[2] - d[2] * e[1],
+                    d[2] * e[0] - d[0] * e[2],
+                    d[0] * e[1] - d[1] * e[0],
+                ];
+                let t = d[0] * e[0] + d[1] * e[1] + d[2] * e[2];
+                (cross == [0, 0, 0] && t > 0 && t < length).then_some((t, v))
+            })
+            .collect();
+        on.sort();
+        let mut points = vec![a];
+        points.extend(on.into_iter().map(|(_, v)| v));
+        points.push(b);
+        points
+    };
+    // each edge's owning triangles, and whether each goes along it from the lesser end
+    type Owners = Vec<(usize, bool)>;
+    let mut edges: HashMap<([i64; 3], [i64; 3]), Owners> = HashMap::default();
+    for (n, t) in indices.chunks(3).enumerate() {
+        let corners = [key(t[0]), key(t[1]), key(t[2])];
+        if corners[0] == corners[1] || corners[1] == corners[2] || corners[0] == corners[2] {
+            continue;
+        }
+        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+            for pair in along(corners[a], corners[b]).windows(2) {
+                let edge = (pair[0].min(pair[1]), pair[0].max(pair[1]));
+                edges.entry(edge).or_default().push((n, pair[0] <= pair[1]));
+            }
+        }
+    }
+    // an edge that lies on another triangle's face, as the grass lip's ledge met the wall under it, is joined: its
+    // own triangle doesn't count, as every edge lies on that
+    let triangles: Vec<[Vec3; 3]> = indices
+        .chunks(3)
+        .map(|t| {
+            t.iter()
+                .map(|&i| Vec3::from(positions[i as usize]))
+                .collect::<Vec<_>>()
+        })
+        .map(|t| [t[0], t[1], t[2]])
+        .collect();
+    let on_a_face = |p: Vec3, own: usize| {
+        triangles.iter().enumerate().any(|(n, &[a, b, c])| {
+            let normal = (b - a).cross(c - a);
+            if n == own {
+                return false;
+            }
+            if normal.length() < 1e-6 || (p - a).dot(normal.normalize()).abs() > 2e-3 {
+                return false;
+            }
+            let side = |u: Vec3, v: Vec3| (v - u).cross(p - u).dot(normal) >= -1e-5;
+            side(a, b) && side(b, c) && side(c, a)
+        })
+    };
+    edges
+        .iter()
+        .filter(|&(&(a, b), owners)| {
+            // two triangles going the same way along an edge are one of them wound the wrong way round
+            if owners.len() == 2 {
+                return owners[0].1 == owners[1].1;
+            }
+            // three faces on an edge is a fin meeting a wall, as a lip's end against a step: closed
+            if owners.len() != 1 {
+                return false;
+            }
+            let (a, b) = (
+                Vec3::from(a.map(|c| c as f32 / 1000.0)),
+                Vec3::from(b.map(|c| c as f32 / 1000.0)),
+            );
+            !(0..=4).all(|k| on_a_face(a.lerp(b, k as f32 / 4.0), owners[0].0))
+        })
+        .map(|(&(a, b), owners)| {
+            let show = |p: [i64; 3]| {
+                format!(
+                    "({:.2}, {:.2}, {:.2})",
+                    p[0] as f32 / 1000.0,
+                    p[1] as f32 / 1000.0,
+                    p[2] as f32 / 1000.0
+                )
+            };
+            format!("{} to {} owners {:?}", show(a), show(b), owners)
+        })
+        .collect()
+}
+
+fn blocks_chunk(blocks: &[(u16, u16, u16)]) -> ChunkData {
+    blocks_chunk_of(BlockType::Stone, blocks)
+}
+
+fn blocks_chunk_of(block: BlockType, blocks: &[(u16, u16, u16)]) -> ChunkData {
+    let mut chunk = ChunkData::default();
+    for &(x, y, z) in blocks {
+        chunk.set_block_at(U16Vec3::new(x, y, z), block);
+    }
+    chunk
+}
+
+#[test]
+fn test_a_bevelled_block_is_cut_back_and_chamfered_on_top() {
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&[(4, 4, 4)])).opaque;
+    let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL)
+    else {
+        panic!("missing normals");
+    };
+    // a 45 degree strip on each of the top's four sides
+    let chamfers = normals.iter().filter(|n| n[1] > 0.6 && n[1] < 0.8).count();
+    assert_eq!(16, chamfers);
+}
+
+#[test]
+fn test_bevelled_surfaces_stay_closed() {
+    for (name, blocks) in [
+        ("a lone block", vec![(4, 4, 4)]),
+        (
+            "a slab",
+            (4..7)
+                .flat_map(|x| (4..7).map(move |z| (x, 4, z)))
+                .collect(),
+        ),
+        (
+            "an L",
+            vec![(4, 4, 4), (5, 4, 4), (6, 4, 4), (4, 4, 5), (4, 4, 6)],
+        ),
+        ("a step", vec![(4, 4, 4), (5, 4, 4), (5, 5, 4)]),
+        (
+            "a pillar by a wall",
+            vec![(4, 4, 4), (5, 4, 4), (5, 5, 4), (5, 6, 4), (4, 4, 5)],
+        ),
+        (
+            "stairs",
+            vec![
+                (4, 4, 4),
+                (5, 4, 4),
+                (5, 5, 4),
+                (6, 4, 4),
+                (6, 5, 4),
+                (6, 6, 4),
+            ],
+        ),
+        (
+            "a plus",
+            vec![(5, 4, 5), (4, 4, 5), (6, 4, 5), (5, 4, 4), (5, 4, 6)],
+        ),
+        (
+            "a ring round a pit",
+            (4..7)
+                .flat_map(|x| (4..7).map(move |z| (x, 4, z)))
+                .filter(|&b| b != (5, 4, 5))
+                .collect(),
+        ),
+        // xyz / xxy / xxx from above: x two high, y one, on a floor, and z as high as y, as x, or down at the floor
+        ("a staircase corner, z as y", staircase_corner(1)),
+        ("a staircase corner, z as x", staircase_corner(2)),
+        ("a staircase corner, z lowest", staircase_corner(0)),
+        (
+            "an inner corner",
+            vec![
+                (4, 4, 4),
+                (5, 4, 4),
+                (4, 4, 5),
+                (5, 4, 5),
+                (5, 5, 4),
+                (4, 5, 5),
+                (5, 5, 5),
+            ],
+        ),
+        (
+            "a trench",
+            vec![(4, 4, 4), (5, 4, 4), (6, 4, 4), (4, 5, 4), (6, 5, 4)],
+        ),
+        (
+            "a pit",
+            (4..7)
+                .flat_map(|x| (4..7).flat_map(move |z| [(x, 4, z), (x, 5, z)]))
+                .filter(|&b| b != (5, 5, 5))
+                .collect(),
+        ),
+        (
+            "an outer corner of a wall",
+            vec![(4, 4, 4), (5, 4, 4), (4, 4, 5), (5, 4, 5), (5, 5, 5)],
+        ),
+        (
+            "a tall pillar on a slab",
+            (3..8)
+                .flat_map(|x| (3..8).map(move |z| (x, 4, z)))
+                .chain((5..8).map(|y| (5, y, 5)))
+                .collect(),
+        ),
+        (
+            "a wall",
+            (4..9)
+                .flat_map(|x| (4..6).map(move |y| (x, y, 4)))
+                .collect(),
+        ),
+        (
+            "a terraced slope",
+            (4..8)
+                .flat_map(|x| (4..4 + (x - 3)).map(move |y| (x, y, 4)))
+                .collect(),
+        ),
+    ] {
+        // stone is cut back, and grass is left sharp
+        for block in [BlockType::Stone, BlockType::Grass] {
+            let mesh = mesh_chunk_bevelled(blocks_chunk_of(block, &blocks)).opaque;
+            let open = open_edges(&mesh);
+            assert!(
+                open.is_empty(),
+                "{name} of {block:?} has open edges:\n{}",
+                open.join("\n")
+            );
+        }
+    }
+}
+
+#[test]
+fn test_grass_tops_grow_tufts_over_their_edges_only_with_bevels() {
+    let slab: Vec<(u16, u16, u16)> = (4..10)
+        .flat_map(|x| (4..10).map(move |z| (x, 4, z)))
+        .collect();
+    let tufts = |mesh: &Mesh| {
+        let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("missing colors");
+        };
+        colors
+            .iter()
+            .filter(|c| c[3] >= Tile::FIRST_FLORA.atlas_cell())
+            .count()
+    };
+    let bevelled = mesh_chunk_bevelled(blocks_chunk_of(BlockType::Grass, &slab)).opaque;
+    let plain = mesh_chunk(blocks_chunk_of(BlockType::Grass, &slab)).opaque;
+    assert!(tufts(&bevelled) > 0, "no tufts on the grass");
+    assert_eq!(0, tufts(&plain));
+}
+
+#[test]
+fn test_a_wall_meets_the_ground_in_a_slope() {
+    // a block against the side of one a step higher: the floor climbs the wall and the wall's foot is raised
+    let blocks = [(4, 4, 4), (5, 4, 4), (5, 5, 4)];
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+    )
+    else {
+        panic!("mesh lacks positions or normals");
+    };
+    // the wall of (5, 5, 4) faces -x at x = 4.5, and stands on the top of (4, 4, 4), at y = 4.5: its foot is
+    // the lowest of its vertices above the end caps, which are lower
+    let foot = positions
+        .iter()
+        .zip(normals)
+        .filter(|(p, n)| n[0] < -0.9 && (p[0] - 4.5).abs() < 1e-3 && p[1] > 4.6 && p[1] < 5.05)
+        .map(|(p, _)| p[1])
+        .fold(f32::MAX, f32::min);
+    assert!(
+        (foot - (4.5 + RAMP)).abs() < 1e-3,
+        "the wall's foot is at {foot}"
+    );
+    // the floor's edge at the wall is up there too
+    let top = positions
+        .iter()
+        .zip(normals)
+        .filter(|(p, n)| n[1] > 0.9 && p[1] < 5.1 && (p[0] - 4.5).abs() < 1e-3)
+        .map(|(p, _)| p[1])
+        .fold(f32::MIN, f32::max);
+    assert!(
+        (top - (4.5 + RAMP)).abs() < 1e-3,
+        "the slope tops out at {top}"
+    );
+}
+
+// Columns for the corner xyz / xxy / xxx, rows along z and columns along x, on a floor of stone: x is two high, y
+// one, and z `z_height`.
+fn staircase_corner(z_height: u16) -> Vec<(u16, u16, u16)> {
+    let height = |row: usize, col: usize| match (row, col) {
+        (0, 0) | (1, 0) | (1, 1) | (2, 0) | (2, 1) | (2, 2) => 2,
+        (0, 1) | (1, 2) => 1,
+        _ => z_height,
+    };
+    let mut blocks = Vec::new();
+    for row in 0..3 {
+        for col in 0..3 {
+            blocks.push((4 + col as u16, 3, 4 + row as u16));
+            for y in 0..height(row, col) {
+                blocks.push((4 + col as u16, 4 + y, 4 + row as u16));
+            }
+        }
+    }
+    blocks
+}
+
+#[test]
+fn test_different_blocks_keep_their_sharp_creases() {
+    // grass ground against a stone wall: nothing climbs it, and its foot stays at the ground
+    let mut chunk = blocks_chunk(&[(5, 4, 4), (5, 5, 4)]);
+    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Grass);
+    let mesh = mesh_chunk_bevelled(chunk).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+    )
+    else {
+        panic!("mesh lacks positions or normals");
+    };
+    // the wall faces -x at x = 4.5, standing on the ground at y = 4.5
+    let foot = positions
+        .iter()
+        .zip(normals)
+        .filter(|(p, n)| n[0] < -0.9 && (p[0] - 4.5).abs() < 1e-3 && p[1] > 4.4 && p[1] < 4.9)
+        .map(|(p, _)| p[1])
+        .fold(f32::MAX, f32::min);
+    assert!((foot - 4.5).abs() < 1e-3, "the wall's foot is at {foot}");
+}
+
+// The heights of a 3x3 of columns, read row by row, as the same under turns and flips of the square, so
+// only the smallest of each set is meshed.
+fn canonical_grid(heights: [u8; 9]) -> [u8; 9] {
+    let mut best = heights;
+    for flip in [false, true] {
+        for turns in 0..4 {
+            let mut grid = [0; 9];
+            for row in 0..3 {
+                for col in 0..3 {
+                    let (mut r, mut c) = (row, if flip { 2 - col } else { col });
+                    for _ in 0..turns {
+                        (r, c) = (c, 2 - r);
+                    }
+                    grid[row * 3 + col] = heights[r * 3 + c];
+                }
+            }
+            best = best.min(grid);
+        }
+    }
+    best
+}
+
+// The blocks of a 3x3 of columns `heights` high (0 to 2) on a floor, each of the block `kind` picks from its
+// place, as (column, height, row).
+fn grid_chunk(heights: [u8; 9], kind: impl Fn(usize, usize, u16) -> BlockType) -> ChunkData {
+    let mut chunk = ChunkData::default();
+    for row in 0..3 {
+        for col in 0..3 {
+            for y in 0..=heights[row * 3 + col] as u16 {
+                let at = U16Vec3::new(4 + col as u16, 3 + y, 4 + row as u16);
+                chunk.set_block_at(at, kind(row, col, y));
+            }
+        }
+    }
+    chunk
+}
+
+// Calls `check` with each of the meshes of every arrangement of heights in a 3x3 of columns, up to
+// symmetry: in stone, in grass, and in a mix for one in six, as the kind, the heights and the mesh.
+fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
+    let regions = test_regions();
+    let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
+    let mesh = |chunk: ChunkData| {
+        generate_chunk_mesh(Arc::new(chunk), vec![None; 26], coord, &regions, false).opaque
+    };
+    let mut grids = Vec::new();
+    for n in 0..3usize.pow(9) {
+        let mut heights = [0u8; 9];
+        let mut rest = n;
+        for h in &mut heights {
+            *h = (rest % 3) as u8;
+            rest /= 3;
+        }
+        if canonical_grid(heights) == heights {
+            grids.push(heights);
+        }
+    }
+    for (i, &heights) in grids.iter().enumerate() {
+        let hash = |row: usize, col: usize, y: u16| {
+            let h = (i as u32 + 1)
+                .wrapping_mul(0x9E37_79B1)
+                .wrapping_add((row * 3 + col) as u32 * 0x85EB_CA77)
+                .wrapping_add(y as u32 * 0xC2B2_AE3D);
+            (h ^ (h >> 15)).wrapping_mul(0x2C1B_3C6D) >> 7
+        };
+        type Kind<'a> = Box<dyn Fn(usize, usize, u16) -> BlockType + 'a>;
+        let kinds: [(&str, Kind); 3] = [
+            ("stone", Box::new(|_, _, _| BlockType::Stone)),
+            ("grass", Box::new(|_, _, _| BlockType::Grass)),
+            (
+                "mixed",
+                Box::new(move |r, c, y| {
+                    if hash(r, c, y) & 1 == 0 {
+                        BlockType::Stone
+                    } else {
+                        BlockType::Grass
+                    }
+                }),
+            ),
+        ];
+        for (name, kind) in &kinds {
+            if *name == "mixed" && i % 6 != 0 {
+                continue;
+            }
+            check(name, heights, &mesh(grid_chunk(heights, kind)));
+        }
+    }
+}
+
+// Every arrangement of heights in a 3x3 of columns, up to symmetry, in stone, in grass and in a mix, has a
+// closed surface: no hole the sky shows through. A test of chosen shapes only finds the
+// holes thought of.
+#[test]
+fn test_no_arrangement_of_columns_leaves_a_hole() {
+    let mut failures: Vec<(u32, String, &str)> = Vec::new();
+    let mut meshed = 0;
+    for_each_column_mesh(|name, heights, mesh| {
+        meshed += 1;
+        let open = open_edges(mesh);
+        if !open.is_empty() {
+            let weight = heights.iter().map(|&h| h as u32).sum::<u32>();
+            let name: &'static str = ["stone", "grass", "mixed"]
+                .into_iter()
+                .find(|k| *k == name)
+                .unwrap();
+            failures.push((
+                weight,
+                format!(
+                    "{name} {:?}: {} open:\n    {}",
+                    heights,
+                    open.len(),
+                    open.join("\n    ")
+                ),
+                name,
+            ));
+        }
+    });
+    failures.sort();
+    let by_kind = |k: &str| failures.iter().filter(|f| f.2 == k).count();
+    assert!(
+        failures.is_empty(),
+        "{} of {meshed} meshes have holes ({} stone, {} grass, {} mixed), the simplest:\n{}",
+        failures.len(),
+        by_kind("stone"),
+        by_kind("grass"),
+        by_kind("mixed"),
+        ["stone", "grass", "mixed"]
+            .iter()
+            .flat_map(|k| failures.iter().filter(move |f| f.2 == *k).take(3))
+            .map(|f| f.1.clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+// Rolling ground in layers, with its own surface block in each column, as the game's is: no hole in it.
+#[test]
+fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
+    let mut seed = 777u32;
+    let mut rand = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed >> 16) as u16
+    };
+    let surfaces = [
+        BlockType::Grass,
+        BlockType::Sand,
+        BlockType::Stone,
+        BlockType::Dirt,
+        BlockType::Snow,
+    ];
+    let mut holes = Vec::new();
+    for range in [3u16, 4, 6] {
+        for trial in 0..4 {
+            let mut chunk = ChunkData::default();
+            let mixed = trial % 2 == 0;
+            for x in 3..13u16 {
+                for z in 3..13u16 {
+                    let top = 4 + rand() % range;
+                    let surface = if mixed {
+                        surfaces[rand() as usize % surfaces.len()]
+                    } else {
+                        BlockType::Grass
+                    };
+                    for y in 1..=top {
+                        let block = if y == top {
+                            surface
+                        } else if y + 2 >= top {
+                            BlockType::Dirt
+                        } else {
+                            BlockType::Stone
+                        };
+                        chunk.set_block_at(U16Vec3::new(x, y, z), block);
+                    }
+                }
+            }
+            let open = open_edges(&mesh_chunk_bevelled(chunk).opaque);
+            if !open.is_empty() {
+                holes.push(format!(
+                    "range {range} trial {trial}: {} open, {}",
+                    open.len(),
+                    open[0]
+                ));
+            }
+        }
+    }
+    assert!(holes.is_empty(), "{}", holes.join("\n"));
+}
+
+// Rolling ground over the meeting of eight chunks, each meshed on its own with the others as neighbours, joined:
+// no hole along the seams.
+#[test]
+fn test_chunk_seams_leave_no_hole() {
+    let regions = test_regions();
+    let mut seed = 4242u32;
+    let mut rand = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed >> 16) as u16
+    };
+    let surfaces = [
+        BlockType::Grass,
+        BlockType::Sand,
+        BlockType::Stone,
+        BlockType::Dirt,
+    ];
+    let size = CHUNK_SIZE as usize;
+    let mut holes = Vec::new();
+    for trial in 0..3 {
+        // the ground's top and surface at each column of x 8..24, z 8..24, rising over the seam at y 16
+        let mut ground = [[(0u16, BlockType::Air); 32]; 32];
+        for column in ground[8..24].iter_mut() {
+            for cell in column[8..24].iter_mut() {
+                *cell = (12 + rand() % 6, surfaces[rand() as usize % surfaces.len()]);
+            }
+        }
+        let chunk_of = |n: usize| ((n & 1) as i32, (n >> 2) as i32, ((n >> 1) & 1) as i32);
+        let chunks: Vec<Arc<ChunkData>> = (0..8)
+            .map(|n| {
+                let (cx, cy, cz) = chunk_of(n);
+                let mut chunk = ChunkData::default();
+                for x in 0..size {
+                    for z in 0..size {
+                        let (top, surface) = ground[cx as usize * size + x][cz as usize * size + z];
+                        for y in 1..=top as usize {
+                            if y / size != cy as usize {
+                                continue;
+                            }
+                            let block = if y == top as usize {
+                                surface
+                            } else if y + 2 >= top as usize {
+                                BlockType::Dirt
+                            } else {
+                                BlockType::Stone
+                            };
+                            chunk.set_block_at(
+                                U16Vec3::new(x as u16, (y % size) as u16, z as u16),
+                                block,
+                            );
+                        }
+                    }
+                }
+                Arc::new(chunk)
+            })
+            .collect();
+        let mut positions: Vec<[f32; 3]> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+        for n in 0..8usize {
+            let (cx, cy, cz) = chunk_of(n);
+            let mut adjacent: Vec<Option<Arc<ChunkData>>> = vec![None; 26];
+            for m in (0..8usize).filter(|&m| m != n) {
+                let (mx, my, mz) = chunk_of(m);
+                adjacent[neighbor_26_index(mx - cx, my - cy, mz - cz)] = Some(chunks[m].clone());
+            }
+            let coord = ChunkCoordinate(I64Vec3::new(cx as i64, 40 + cy as i64, cz as i64));
+            let mesh =
+                generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+            let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
+                (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
+            else {
+                continue;
+            };
+            let base = positions.len() as u32;
+            let offset = Vec3::new(cx as f32, cy as f32, cz as f32) * CHUNK_SIZE as f32;
+            positions.extend(p.iter().map(|&p| (Vec3::from(p) + offset).to_array()));
+            indices.extend(i.iter().map(|&i| i + base));
+        }
+        let mut joined = Mesh::new(
+            bevy::render::mesh::PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::all(),
+        );
+        joined.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            VertexAttributeValues::Float32x3(positions),
+        );
+        joined.insert_indices(Indices::U32(indices));
+        let open = open_edges(&joined);
+        if !open.is_empty() {
+            holes.push(format!("trial {trial}: {} open, {}", open.len(), open[0]));
+        }
+    }
+    assert!(holes.is_empty(), "{}", holes.join("\n"));
+}
+
+// the joined meshes of the chunks at x 0, z 0 and z 1, blocks given in world coordinates (x, y, z) of one block type
+fn seam_mesh(blocks: &[(u16, u16, u16)], block: BlockType) -> Mesh {
+    let regions = test_regions();
+    let size = CHUNK_SIZE;
+    let chunks: Vec<Arc<ChunkData>> = (0..2u16)
+        .map(|cz| {
+            let mut chunk = ChunkData::default();
+            for &(x, y, z) in blocks {
+                if z / size == cz {
+                    chunk.set_block_at(U16Vec3::new(x, y, z % size), block);
+                }
+            }
+            Arc::new(chunk)
+        })
+        .collect();
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    for n in 0..2usize {
+        let mut adjacent: Vec<Option<Arc<ChunkData>>> = vec![None; 26];
+        adjacent[neighbor_26_index(0, 0, if n == 0 { 1 } else { -1 })] =
+            Some(chunks[1 - n].clone());
+        let coord = ChunkCoordinate(I64Vec3::new(0, 40, n as i64));
+        let mesh = generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+        let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
+            (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
+        else {
+            continue;
+        };
+        let base = positions.len() as u32;
+        let offset = Vec3::new(0.0, 0.0, n as f32 * CHUNK_SIZE as f32);
+        positions.extend(p.iter().map(|&p| (Vec3::from(p) + offset).to_array()));
+        indices.extend(i.iter().map(|&i| i + base));
+    }
+    let mut joined = Mesh::new(
+        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::all(),
+    );
+    joined.insert_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        VertexAttributeValues::Float32x3(positions),
+    );
+    joined.insert_indices(Indices::U32(indices));
+    joined
+}
+
+// Every arrangement of heights in a 3x2 of columns across a seam between chunks has a closed surface.
+#[test]
+fn test_columns_across_a_chunk_seam_leave_no_hole() {
+    // columns x 4..7, z 15..17 (across the seam at 15.5), heights 0..2 over a floor at y 3
+    let mut failures: Vec<(u32, [u8; 6], usize, String)> = Vec::new();
+    for n in 0..3usize.pow(6) {
+        let mut heights = [0u8; 6];
+        let mut rest = n;
+        for h in &mut heights {
+            *h = (rest % 3) as u8;
+            rest /= 3;
+        }
+        let mut blocks = Vec::new();
+        for col in 0..3u16 {
+            for row in 0..2u16 {
+                for y in 0..=heights[(row * 3 + col) as usize] as u16 {
+                    blocks.push((4 + col, 3 + y, 15 + row));
+                }
+            }
+        }
+        let open = open_edges(&seam_mesh(&blocks, BlockType::Stone));
+        if !open.is_empty() {
+            failures.push((
+                heights.iter().map(|&h| h as u32).sum(),
+                heights,
+                open.len(),
+                open[0].clone(),
+            ));
+        }
+    }
+    failures.sort();
+    assert!(
+        failures.is_empty(),
+        "{} of 729 arrangements have holes, the simplest:\n{}",
+        failures.len(),
+        failures
+            .iter()
+            .take(6)
+            .map(|f| format!("{:?}: {} open, {}", f.1, f.2, f.3))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+// Five blocks in a plus: the middle one's corners are cut down to where the chamfers of the blocks beside it meet, so
+// the chamfers join with nothing left to seal.
+#[test]
+fn test_the_inside_corners_of_a_plus_join_the_chamfers_beside_them() {
+    let plus = [(4, 4, 4), (3, 4, 4), (5, 4, 4), (4, 4, 3), (4, 4, 5)];
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&plus)).opaque;
+    assert_eq!(Vec::<String>::new(), open_edges(&mesh));
+    let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        panic!("no positions");
+    };
+    // the middle block's top corner, over where the diagonal's air meets it, is down a bevel
+    let low = positions.iter().any(|p| {
+        (p[0] - 4.5).abs() < 1e-3 && (p[2] - 4.5).abs() < 1e-3 && (p[1] - 4.3).abs() < 1e-3
+    });
+    assert!(low, "the middle block's corner is cut down");
+    // a lone block has no such corner
+    let single = mesh_chunk_bevelled(blocks_chunk(&[(4, 4, 4)])).opaque;
+    let Some(VertexAttributeValues::Float32x3(single)) = single.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        panic!("no positions");
+    };
+    assert!(!single.iter().any(|p| (p[1] - 4.3).abs() < 1e-3
+        && (p[0] - 4.0).abs() < 0.45
+        && (p[2] - 4.0).abs() < 0.45));
+}
+
+// Ground that climbs a block a step, along an axis or a diagonal, in one block, in layers and in a surface of its
+// own in each column: no hole in it.
+#[test]
+fn test_steep_ground_a_block_a_step_leaves_no_hole() {
+    let surfaces = [
+        BlockType::Grass,
+        BlockType::Sand,
+        BlockType::Stone,
+        BlockType::Dirt,
+    ];
+    let mut seed = 99u32;
+    let mut rand = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed >> 16) as usize
+    };
+    let mut holes = Vec::new();
+    for (a, b) in [
+        (1i32, 0i32),
+        (0, 1),
+        (1, 1),
+        (1, -1),
+        (2, 1),
+        (1, 2),
+        (2, 2),
+        (2, 0),
+    ] {
+        for mode in ["stone", "grass-dirt-stone", "random-surfaces"] {
+            let mut chunk = ChunkData::default();
+            for x in 3..10i32 {
+                for z in 3..10i32 {
+                    let top = (6 + a * (x - 6) + b * (z - 6)).clamp(1, 14) as u16;
+                    let surface = surfaces[rand() % surfaces.len()];
+                    for y in 1..=top {
+                        let block = match mode {
+                            "stone" => BlockType::Stone,
+                            "grass-dirt-stone" => {
+                                if y == top {
+                                    BlockType::Grass
+                                } else if y + 2 >= top {
+                                    BlockType::Dirt
+                                } else {
+                                    BlockType::Stone
+                                }
+                            }
+                            _ => {
+                                if y == top {
+                                    surface
+                                } else {
+                                    BlockType::Stone
+                                }
+                            }
+                        };
+                        chunk.set_block_at(U16Vec3::new(x as u16, y, z as u16), block);
+                    }
+                }
+            }
+            let open = open_edges(&mesh_chunk_bevelled(chunk).opaque);
+            if !open.is_empty() {
+                holes.push(format!(
+                    "slope ({a}, {b}) {mode}: {} open, {}",
+                    open.len(),
+                    open[0]
+                ));
+            }
+        }
+    }
+    assert!(holes.is_empty(), "{}", holes.join("\n"));
+}
+
+// A block with a taller one behind it: the wall's foot is raised to the ground's slope, and its corners come down
+// to where the ground's chamfers end, so nothing is left to seal under the foot.
+#[test]
+fn test_a_raised_foot_comes_down_where_the_ground_is_chamfered() {
+    let blocks = [(4, 4, 4), (4, 4, 3), (4, 5, 3)];
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    assert_eq!(Vec::<String>::new(), open_edges(&mesh));
+}
+
+// How the painted materials' projection, as `material_uv` in `block_texture.wesl` has it, stretches each triangle: the
+// ratio of the larger to the smaller way the texture is scaled across it, and the overall scale.
+fn texture_stretch(mesh: &Mesh) -> Vec<(f32, f32, Vec3, Vec3)> {
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(VertexAttributeValues::Float32x2(uvs)),
+        Some(Indices::U32(indices)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_0),
+        mesh.indices(),
+    )
+    else {
+        return Vec::new();
+    };
+    let unstretched = |p: [f32; 2], tilt: [f32; 2]| {
+        let steep = (tilt[0] * tilt[0] + tilt[1] * tilt[1]).sqrt();
+        if steep < 1e-4 {
+            return p;
+        }
+        let boundary = [0, 1].map(|k| (p[k] - 0.5).round() + 0.5);
+        let across = [p[0] - boundary[0], p[1] - boundary[1]];
+        let along = [tilt[0] / steep, tilt[1] / steep];
+        let spread = across[0] * along[0] + across[1] * along[1];
+        let by = (1.0 + steep * steep).sqrt() - 1.0;
+        [0, 1].map(|k| boundary[k] + across[k] + along[k] * spread * by)
+    };
+    // a mesh stores the normals of faces along z reversed
+    let project = |at: Vec3, stored: Vec3| -> [f32; 2] {
+        let normal = Vec3::new(stored.x, stored.y, -stored.z);
+        let n = normal.abs();
+        if n.y >= n.x && n.y >= n.z {
+            unstretched([at.x, at.z], [normal.x / n.y, normal.z / n.y])
+        } else if n.x >= n.z {
+            unstretched([at.z, -at.y], [normal.z / n.x, -normal.y / n.x])
+        } else {
+            unstretched([at.x, -at.y], [normal.x / n.z, -normal.y / n.z])
+        }
+    };
+    let mut out = Vec::new();
+    for t in indices.chunks(3) {
+        let p: Vec<Vec3> = t
+            .iter()
+            .map(|&i| Vec3::from(positions[i as usize]))
+            .collect();
+        let uv: Vec<[f32; 2]> = t
+            .iter()
+            .map(|&i| {
+                let given = uvs[i as usize];
+                // texture coordinates the mesh worked out itself, see `UNFOLDED`
+                if given[0] > 512.0 {
+                    [given[0] - 1024.0, given[1]]
+                } else {
+                    project(
+                        Vec3::from(positions[i as usize]),
+                        Vec3::from(normals[i as usize]),
+                    )
+                }
+            })
+            .collect();
+        let (e1, e2) = (p[1] - p[0], p[2] - p[0]);
+        let area = e1.cross(e2).length() / 2.0;
+        if area < 1e-4 {
+            continue;
+        }
+        // the triangle in its own plane, then the map from that to the texture
+        let u1 = e1.normalize();
+        let normal = e1.cross(e2).normalize();
+        let u2 = normal.cross(u1);
+        let (s1, s2) = ((e1.length(), 0.0), (e2.dot(u1), e2.dot(u2)));
+        let (d1, d2) = (
+            (uv[1][0] - uv[0][0], uv[1][1] - uv[0][1]),
+            (uv[2][0] - uv[0][0], uv[2][1] - uv[0][1]),
+        );
+        let det = s1.0 * s2.1 - s1.1 * s2.0;
+        // M = [d1 d2] * [s1 s2]^-1
+        let inverse = [[s2.1 / det, -s2.0 / det], [-s1.1 / det, s1.0 / det]];
+        let m = [
+            [
+                d1.0 * inverse[0][0] + d2.0 * inverse[1][0],
+                d1.0 * inverse[0][1] + d2.0 * inverse[1][1],
+            ],
+            [
+                d1.1 * inverse[0][0] + d2.1 * inverse[1][0],
+                d1.1 * inverse[0][1] + d2.1 * inverse[1][1],
+            ],
+        ];
+        // singular values of a 2 by 2
+        let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
+        let (s, r) = (
+            (a * a + b * b + c * c + d * d) / 2.0,
+            ((a * a + b * b - c * c - d * d).powi(2) / 4.0 + (a * c + b * d).powi(2)).sqrt(),
+        );
+        let (big, small) = ((s + r).sqrt(), (s - r).max(0.0).sqrt());
+        out.push((
+            big / small.max(1e-4),
+            (big * small).sqrt(),
+            normal,
+            Vec3::from(normals[t[0] as usize]),
+        ));
+    }
+    out
+}
+
+// The painted materials cover a triangle as much one way as another. A chamfer, which the mesh works out the texture
+// of itself, lies flat on it, and a ramp, lit and projected as the top it is part of, stretches it by no more than
+// its slope does. The stretch is the larger of the two ways the texture is scaled across a triangle over the
+// smaller, from replaying `material_uv`.
+#[test]
+fn test_painted_textures_are_not_stretched_on_chamfers_and_barely_on_ramps() {
+    let mut strips = (1.0f32, String::new());
+    let mut tops = (1.0f32, String::new());
+    for_each_column_mesh(|name, heights, mesh| {
+        if name != "stone" {
+            return;
+        }
+        for (stretch, _, _, stored) in texture_stretch(mesh) {
+            let flat = stored.y.abs() > 0.99;
+            let worst = if flat { &mut tops } else { &mut strips };
+            if stretch > worst.0 {
+                *worst = (stretch, format!("{heights:?}"));
+            }
+        }
+    });
+    assert!(
+        strips.0 < 1.05,
+        "a chamfer is stretched {:.2} times in {}",
+        strips.0,
+        strips.1
+    );
+    // a corner cut down a bevel's width is as steep as a chamfer, and a few triangles
+    assert!(
+        tops.0 < 1.6,
+        "a top is stretched {:.2} times in {}",
+        tops.0,
+        tops.1
+    );
 }

@@ -8,6 +8,9 @@ shadow_distance = 64
 shadow_cascades = 3
 # low, medium, high or ultra; the cloud target height follows the window's aspect ratio.
 cloud_resolution = "medium"
+# Blocks before a painted material repeats (a power of two up to 64), and its anisotropic filtering taps (1 to 16).
+material_period = 16
+material_anisotropy = 8
 
 [debug]
 still_leaves = false

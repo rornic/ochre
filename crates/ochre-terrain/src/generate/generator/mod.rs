@@ -7,6 +7,7 @@ mod flora;
 mod greedy;
 mod lod;
 mod mesh;
+mod seam;
 mod shading;
 mod source;
 mod terrain;

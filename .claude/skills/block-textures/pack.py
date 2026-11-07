@@ -6,7 +6,7 @@ import re
 import numpy as np
 from PIL import Image
 
-from generate import HERE, OUT, TILES, tiled
+from generate import HERE, OUT, PAINTED, TILES, tiled
 
 ATLAS = HERE / "../../../assets/textures/blocks.png"
 SHADER = HERE / "../../../assets/shaders/block_texture.wesl"
@@ -38,7 +38,10 @@ rewritten = 0
 def mean_row(m):
     global rewritten
     rewritten += 1
-    return "vec3<f32>(%.4f, %.4f, %.4f)" % tuple(next(means))
+    mean = next(means)
+    if TILES[rewritten - 1]["name"] in PAINTED:  # materials.py owns these rows, from the 512px layers
+        return m.group(0)
+    return "vec3<f32>(%.4f, %.4f, %.4f)" % tuple(mean)
 
 
 lines = [re.sub(r"vec3<f32>\([^)]*\)", mean_row, l, count=1) if l.strip().startswith("vec3<f32>(") else l for l in SHADER.read_text().splitlines()]

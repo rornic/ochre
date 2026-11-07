@@ -323,6 +323,7 @@ mod tests {
             .run_system_once(|mut commands: Commands, mut assets: TerrainAssets| {
                 let materials = TerrainMaterials::new(
                     DebugSettings::default(),
+                    8,
                     &ShaderInputs::default(),
                     &mut assets,
                 );
