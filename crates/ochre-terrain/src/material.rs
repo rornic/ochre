@@ -609,6 +609,18 @@ mod tests {
     }
 
     // The mean linear colour of the texels an image draws, those the shaders don't cut out.
+    // `GrassTop` as `grass_top`, the name of its file.
+    fn snake_case(name: &str) -> String {
+        let mut out = String::new();
+        for (i, c) in name.chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                out.push('_');
+            }
+            out.extend(c.to_lowercase());
+        }
+        out
+    }
+
     fn image_mean(image: &image::RgbaImage, x0: u32, tile: u32) -> [f32; 3] {
         let drawn: Vec<LinearRgba> = (0..tile)
             .flat_map(|y| (0..tile).map(move |x| (x, y)))
@@ -635,7 +647,7 @@ mod tests {
                 // grass sides draw the dirt layer but keep their own row
                 match tile_of
                     .material_layer()
-                    .filter(|l| format!("{tile_of:?}") == MATERIAL_FILES[*l as usize])
+                    .filter(|l| snake_case(&format!("{tile_of:?}")) == MATERIAL_FILES[*l as usize])
                 {
                     Some(layer) => {
                         let name = MATERIAL_FILES[layer as usize];

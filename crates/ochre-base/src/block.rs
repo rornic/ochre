@@ -227,7 +227,7 @@ pub enum Tile {
 pub const TILE_COUNT: usize = 35;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 5] = ["Stone", "Dirt", "GrassTop", "Sand", "Snow"];
+pub const MATERIAL_FILES: [&str; 5] = ["stone", "dirt", "grass_top", "sand", "snow"];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
 impl Tile {
@@ -328,6 +328,18 @@ mod tests {
         assert_eq!(TILE_COUNT, Tile::SeedGrass as usize + 1);
     }
 
+    // `GrassTop` as `grass_top`.
+    fn file_name(tile: Tile) -> String {
+        let mut name = String::new();
+        for (i, c) in format!("{tile:?}").chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                name.push('_');
+            }
+            name.extend(c.to_lowercase());
+        }
+        name
+    }
+
     #[test]
     fn test_material_layers_follow_the_file_list() {
         for tile in [
@@ -338,7 +350,7 @@ mod tests {
             Tile::Snow,
         ] {
             let layer = tile.material_layer().unwrap() as usize;
-            assert_eq!(format!("{tile:?}"), MATERIAL_FILES[layer]);
+            assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
         }
         assert_eq!(
             Tile::GrassTop.material_layer(),

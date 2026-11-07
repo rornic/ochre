@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install out/512/<Tile>.png as assets/textures/materials/<Tile>.png, rewrite those tiles' block_mean rows in block_texture.wesl
+"""Install out/512/<Tile>.png as assets/textures/materials/<tile>.png (snake case, `GrassTop` as `grass_top.png`), rewrite those tiles' block_mean rows in block_texture.wesl
 from their mean linear colour, and write out/materials_contact.png (each layer 3x3 at 128px)."""
 import re
 
@@ -27,7 +27,7 @@ for name in PAINTED:
     if name == "GrassTop":
         assert np.ptp(np.asarray(img, int).reshape(-1, 3), axis=1).max() == 0, "GrassTop must be greyscale, the biome tint multiplies it"
         assert abs(means[name][0] - GRASS_TEXTURE_MEAN) < 0.01, f"GrassTop mean is {means[name][0]:.4f}, the tint assumes {GRASS_TEXTURE_MEAN}"
-    img.save(DEST / f"{name}.png")
+    img.save(DEST / f"{re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()}.png")
 
 cell = {t["name"]: i for i, t in enumerate(TILES)}
 row = -1

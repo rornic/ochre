@@ -77,7 +77,7 @@ The fix is a larger, painted texture that is looked up by world position, not by
 
 **Decision (owner, 2026-11-04): texture coordinates are computed in the vertex shader.** A painted face gets its world-plane coordinates in `vertex()` in `assets/shaders/world.wesl`, written into the `uv` varying. The fragment shader only samples. Mesher output does not change, so `bench` vertex counts stay identical.
 
-**Data.** Each painted material is its own 512x512 opaque sRGB PNG in `assets/textures/materials/`, named for its tile (`Stone.png`, `Dirt.png`, `GrassTop.png`, `Sand.png`, `Snow.png`), so one material is edited, re-rolled and committed alone. A new loader in `crates/ochre-terrain/src/material.rs` decodes each file, builds its mips box-filtered in linear light, and assembles the 2D array layer by layer in `Tile::material_layer` order. Alpha weighting is not needed because the layers are opaque. Its sampler is linear for magnification, minification and mips, repeats on both axes, and takes its anisotropy from a setting. `ChunkMaterial` gets a second texture and sampler binding for it. The atlas and its `Nearest` sampler stay for everything unpainted.
+**Data.** Each painted material is its own 512x512 opaque sRGB PNG in `assets/textures/materials/`, named for its tile in snake case (`stone.png`, `dirt.png`, `grass_top.png`, `sand.png`, `snow.png`), so one material is edited, re-rolled and committed alone. A new loader in `crates/ochre-terrain/src/material.rs` decodes each file, builds its mips box-filtered in linear light, and assembles the 2D array layer by layer in `Tile::material_layer` order. Alpha weighting is not needed because the layers are opaque. Its sampler is linear for magnification, minification and mips, repeats on both axes, and takes its anisotropy from a setting. `ChunkMaterial` gets a second texture and sampler binding for it. The atlas and its `Nearest` sampler stay for everything unpainted.
 
 **Which faces are painted.** A new `Tile::material_layer(self) -> Option<u8>` in `crates/ochre-base/src/block.rs` is the one source of truth. Stage 1 maps Stone to layer 0, Dirt to 1, GrassTop to 2, Sand to 3 and Snow to 4, and GrassSide to 1 (dirt). Every other tile returns `None`. `block_texture.wesl` holds a 35-entry copy of the table by atlas cell, with -1 for unpainted, and a test compares it with the Rust function the way `shader_means()` checks `block_mean`.
 
@@ -106,7 +106,7 @@ Faces without a layer keep their tile counts in `uv`. Leaves and flora stay in t
 **What does not change.** The mesher and every vertex attribute, the prepass and shadow shaders (painted faces are opaque, so they never alpha-test), leaves, flora, water, and every tile outside the first set.
 
 ```text
-Tile::material_layer (ochre-base)        assets/textures/materials/<Tile>.png
+Tile::material_layer (ochre-base)        assets/textures/materials/<name>.png
         |                                           |
         v                                           v
  shader layer table  ---+            material_array loader -> 2D array + mips
@@ -257,7 +257,7 @@ Work in this order. Phase 0 changes no behaviour and Phase 2 changes only what i
 *   **Type / Scope**: Reference game.
 *   **Proposed Changes**: Load the array into `ShaderInputs.materials` with `material_array("assets/textures/materials", renderer.material_anisotropy)`. Add two env vars for the fps gate. `OCHRE_RESOLUTION=1920x1080` sets the window size. `OCHRE_NOVSYNC=1` selects `AutoNoVsync`, which today only a flythrough gets. Both default to current behaviour. The existing comment warns that an uncapped GPU can starve the desktop's compositor, so the gate runs are short and the new flag says so.
 
-#### 12. `assets/textures/materials/Stone.png`, `Dirt.png`, `GrassTop.png`, `Sand.png`, `Snow.png` (Create)
+#### 12. `assets/textures/materials/stone.png`, `dirt.png`, `grass_top.png`, `sand.png`, `snow.png` (Create)
 
 *   **Type / Scope**: Assets, five opaque 512x512 sRGB PNGs, one per painted tile, in the directory `material_array` reads.
 *   **Proposed Changes**: Phase 1 and 2 use any placeholder images (for example a flat colour per tile plus a coarse grid so the repeat and seams are visible). Phase 3 replaces them with the pipeline's output. Texels carry no baked lighting, the GrassTop layer is greyscale with a mean of `GRASS_TEXTURE_MEAN`, and the repeat period is 8 blocks.
@@ -270,7 +270,7 @@ Work in this order. Phase 0 changes no behaviour and Phase 2 changes only what i
 #### 14. `.claude/skills/block-textures/materials.py` (Create)
 
 *   **Type / Scope**: Python, validates and installs the painted PNGs and updates the means.
-*   **Proposed Changes**: Read `out/512/<Tile>.png` in `PAINTED` order, assert each is 512x512 and opaque, assert the GrassTop mean, copy each into `assets/textures/materials/<Tile>.png`, rewrite the five matching `block_mean` rows in `assets/shaders/block_texture.wesl` from the layers' mean linear colour (leaving the other 30 rows alone), and write a 3x3 contact sheet at 4 blocks per tile. `pack.py` stays for the 16px atlas and still asserts its length.
+*   **Proposed Changes**: Read `out/512/<Tile>.png` in `PAINTED` order, assert each is 512x512 and opaque, assert the GrassTop mean, copy each into `assets/textures/materials/<name>.png`, rewrite the five matching `block_mean` rows in `assets/shaders/block_texture.wesl` from the layers' mean linear colour (leaving the other 30 rows alone), and write a 3x3 contact sheet at 4 blocks per tile. `pack.py` stays for the 16px atlas and still asserts its length.
 
 #### 15. `.claude/skills/block-textures/SKILL.md` (Modify)
 
