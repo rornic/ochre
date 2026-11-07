@@ -36,8 +36,10 @@ const DEEP_OCEAN_END: f32 = 14.0;
 const CHUNK_SIZE: f32 = 16.0;
 
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
-// The water of a fall, under its streaks.
-const FALL_COLOR: vec3<f32> = vec3<f32>(0.10, 0.32, 0.60);
+// A fall's sheet is lit as fresh water, as thick as this in blocks, with its ripples this much steeper, and the streaks of foam over it this white at most.
+const FALL_DEPTH: f32 = 1.0;
+const FALL_RIPPLES: f32 = 0.6;
+const FALL_FOAM: f32 = 0.5;
 const FOAM_SPEED: f32 = 0.45;
 const FOAM_BAND: f32 = 0.35;
 // How many radians the shore-distance band (0..1, see vertex_shore_distance) spans -
@@ -496,7 +498,7 @@ fn screen_reflection(origin: vec3<f32>, direction: vec3<f32>, frag_coord: vec4<f
 // water that tints it, and the sky, the sun and the world about it reflected off the top. `sea` is 1 for
 // the sea and 0 for fresh water, `ocean` how far the sea's depth has darkened it to open ocean blue,
 // and `waves` the swell on the surface.
-fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f32>, depth: f32, footprint: f32, dist: f32, tint: vec3<f32>, sea: f32, ocean: f32, waves: Swell) -> vec3<f32> {
+fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f32>, depth: f32, footprint: f32, dist: f32, tint: vec3<f32>, sea: f32, ocean: f32, waves: Swell, sheet: bool) -> vec3<f32> {
     let time = view_bindings::globals.time;
     // ripples carried down the slope the normal leans to, as two copies half a period apart faded across each other
     var flow = normal.xz / max(normal.y, 0.2) * FLOW_SPEED * f32(normal.y > 0.5);
@@ -517,9 +519,15 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
         ripple = mix(ripple, carried, smoothstep(0.01, 0.1, speed));
         ripple *= 1.0 + FLOW_ROUGHEN * speed;
     }
-    let slope = ripple.xy * FRESH_RIPPLES + waves.slope;
-    let surface = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
-    let variance = CALM_SLOPE_VARIANCE + ripple.z * FRESH_RIPPLES * FRESH_RIPPLES + waves.lost;
+    let rough = select(FRESH_RIPPLES, FALL_RIPPLES, sheet);
+    let slope = ripple.xy * rough + waves.slope;
+    var surface = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
+    if sheet {
+        // a sheet leans out of the way, whichever face is seen
+        let facing = select(-normal, normal, dot(normal, to_eye) > 0.0);
+        surface = normalize(facing + vec3<f32>(-slope.x, 0.0, -slope.y));
+    }
+    let variance = CALM_SLOPE_VARIANCE + ripple.z * rough * rough + waves.lost;
 
     // the bed shows only near, easing to a typical bed's grey past that, or where nothing can be read of it
     let far_bed = FAR_BED * daylight(uncurved(world_position));
@@ -585,15 +593,21 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
     return mix(scatter, above, mix(BELOW_CLEAR.x, BELOW_CLEAR.y, window));
 }
 
-// A fall's sheet seen from the side: narrow columns of water dropping at their own speeds, in long streaks that go white, over a calm blue.
-fn fall_water(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> vec4<f32> {
-    let column = floor(dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0);
+// One column's streak at height `y`: water dropping at the column's own speed, sharp at its head and trailing off up the fall.
+fn fall_strand(column: f32, y: f32, time: f32) -> f32 {
     let speed = 6.0 + 4.0 * hash2(vec2<f32>(column, 3.0));
-    let streak = smoothstep(0.6, 0.9, hash2(vec2<f32>(column, floor((world_position.y + time * speed) / 5.0))));
-    let blue = scene_colour(FALL_COLOR) * daylight(uncurved(world_position));
-    let colour = mix(blue, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), 0.05 + 0.55 * streak);
-    // seen through, more where the water is thin between the streaks
-    return vec4<f32>(colour, 0.45 + 0.3 * streak);
+    let along = (y + time * speed) / 5.0;
+    let tail = fract(along);
+    let pick = smoothstep(0.6, 0.9, hash2(vec2<f32>(column, floor(along))));
+    return pick * smoothstep(0.0, 0.1, tail) * (1.0 - tail);
+}
+
+// How much of a fall's sheet is a white streak at `world_position`: strands half a block apart, each tapering into the next sideways.
+fn fall_streak(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> f32 {
+    let across = dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0 - 0.5;
+    let column = floor(across);
+    let side = smoothstep(0.0, 1.0, across - column);
+    return mix(fall_strand(column, world_position.y, time), fall_strand(column + 1.0, world_position.y, time), side);
 }
 
 @fragment
@@ -673,14 +687,13 @@ fn fragment(
     // water is its own sight of what's under it, so is drawn over it, not blended, and keeps
     // its look at any distance, LODs included
     var scene = tint;
-    var opacity = 1.0;
     // the sides and the underside of a fall's blocks, which are all one sheet
     if (abs(normal.y) < 0.5 || normal.y < -0.5) && fresh_surface {
-        let fall = fall_water(world_position, normal, time);
-        scene = fall.rgb;
-        opacity = fall.a;
+        // the sea's own water, without its swell, and the foam of a fall's streaks over it
+        scene = water(world_position, normal, to_eye, in.position, FALL_DEPTH, footprint, dist, tint, sea, ocean, Swell(0.0, vec2<f32>(0.0), 0.0), true);
+        scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), FALL_FOAM * fall_streak(world_position, normal, time));
     } else if outside {
-        scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves);
+        scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves, false);
         scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
     } else if normal.y > 0.5 {
         // the back of the top of a fall's water is seen from the air under it, not from within the water
@@ -703,6 +716,6 @@ fn fragment(
     }
 
     var output: FragmentOutput;
-    output.color = vec4<f32>(shown.rgb, shown.a * opacity);
+    output.color = vec4<f32>(shown.rgb, shown.a);
     return output;
 }
