@@ -1,0 +1,11 @@
+{
+  "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"}},
+  "2": {"class_type": "LoraLoader", "inputs": {"model": ["1", 0], "clip": ["1", 1], "lora_name": "hand-painted-2d-seamless-textures.safetensors", "strength_model": 1.0, "strength_clip": 1.0}},
+  "3": {"class_type": "SeamlessTile", "inputs": {"model": ["2", 0], "tiling": "enable", "copy_model": "Make a copy"}},
+  "4": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 1], "text": ""}},
+  "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 1], "text": ""}},
+  "6": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+  "7": {"class_type": "KSampler", "inputs": {"model": ["3", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0], "seed": 0, "steps": 28, "cfg": 6.5, "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1.0}},
+  "8": {"class_type": "CircularVAEDecode", "inputs": {"samples": ["7", 0], "vae": ["1", 2], "tiling": "enable"}},
+  "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "painted"}}
+}

@@ -22,7 +22,18 @@ pub(super) struct MeshBuffers {
     pub(super) untextured: bool,
     // where tree boxes start and how they draw, which is on their own terms
     pub(super) boxes: Option<(usize, f32)>,
+    // per vertex, how far a painted top is drawn in the wall's projection, see `set_blend`, for the vertices that have one
+    pub(super) blends: Vec<f32>,
 }
+
+// A painted top meeting a wall is drawn partly in the wall's projection so the texture runs on into the wall. Each of its
+// vertices carries how much, 0 to 1, in its mode (`uv_b.y`) as `BLEND_SPAN` times it, plus `BLEND_Z` when the wall faces
+// along z, which stays under the 0.5 that marks coarse cells. See `material_blend` in `world.wesl`.
+// How far up a ramp, as a share of its rise, the wall's projection starts to show.
+const RAMP_BLEND_FROM: f32 = 0.6;
+
+const BLEND_SPAN: f32 = 0.2;
+const BLEND_Z: f32 = 0.25;
 
 // How far a bevelled edge is cut back along each face that meets there, in blocks: the chamfer is
 // a 45 degree strip across the corner this big on each side.
@@ -79,9 +90,14 @@ pub(super) const UNFOLDED: f32 = 1024.0;
 
 // Texture coordinates for a triangle lying `facet` way, in the axes of the plane `face` is projected onto (x and z for
 // a top, z and down y for a side along x, x and down y for one along z), with its tilt from that plane spread out so it
-// covers as much of the texture as a flat one does. The three points are spread about one block boundary, so it's the
-// same map across all of them.
-pub(super) fn unfolded_uv(points: [Vec3; 3], face: Vec3, facet: Vec3) -> [[f32; 2]; 3] {
+// covers as much of the texture as a flat one does. The points are spread about `anchor`, which keeps the
+// texture where it is, so it's the same map across all of them.
+pub(super) fn unfolded_uv<const N: usize>(
+    points: [Vec3; N],
+    face: Vec3,
+    facet: Vec3,
+    anchor: Vec3,
+) -> [[f32; 2]; N] {
     let n = face.abs();
     let top = n.y >= n.x && n.y >= n.z;
     let side_x = !top && n.x >= n.z;
@@ -101,8 +117,7 @@ pub(super) fn unfolded_uv(points: [Vec3; 3], face: Vec3, facet: Vec3) -> [[f32; 
     } else {
         Vec2::new(facet.x, -facet.y) / facet.z.abs().max(1e-3)
     };
-    let centre = (plane(points[0]) + plane(points[1]) + plane(points[2])) / 3.0;
-    let anchor = (centre - 0.5).round() + 0.5;
+    let anchor = plane(anchor);
     let steep = tilt.length();
     points.map(|p| {
         let across = plane(p) - anchor;
@@ -161,6 +176,15 @@ impl MeshBuffers {
                 .push([seed, size, if droplet { 1.0 } else { 0.0 }, burst]);
         }
         self.push_quad_indices(start);
+    }
+
+    // Draws the vertex `vertex` of a painted top `amount` in the projection of a wall facing along x, or along z if not.
+    pub(super) fn set_blend(&mut self, vertex: usize, wall_faces_x: bool, amount: f32) {
+        if self.blends.len() < self.vertices.len() {
+            self.blends.resize(self.vertices.len(), 0.0);
+        }
+        self.blends[vertex] =
+            amount.clamp(0.0, 1.0) * BLEND_SPAN + if wall_faces_x { 0.0 } else { BLEND_Z };
     }
 
     fn push_quad_indices(&mut self, start: u32) {
@@ -283,6 +307,18 @@ impl MeshBuffers {
             }
         }
 
+        // a painted top that climbs a wall is drawn partly in the wall's projection at its foot, so the texture runs on
+        // into the wall: the wall is on the side whose corners rise
+        let [c0, c1, c2, c3] = quad.corner_lift;
+        let (across_a, across_b) = ((c1 + c3 - c0 - c2).abs(), (c2 + c3 - c0 - c1).abs());
+        let wall_faces_x = if across_b >= across_a {
+            quad.tb.x
+        } else {
+            quad.ta.x
+        }
+        .abs()
+            > 0.5;
+        let blended = quad.painted && !wall && quad.corner_lift.iter().any(|&l| l > 0.0);
         let blend = blend_corners;
         let mut push = |i: f32, j: f32, near: Option<usize>| {
             let (at_i, at_j) = bevelled_ij(quad.inset, (i, j), quad.size);
@@ -309,6 +345,11 @@ impl MeshBuffers {
             let ao = ao + (1.0 - ao) * AO_RELIEF * (lift / RAMP).clamp(0.0, 1.0);
             self.colors.push((quad.color)(ao, position));
             self.lights.push(blend(quad.light, u, v));
+            if blended {
+                // the last part of the ramp up to the wall: further out the ground's own projection is the better fit
+                let amount = (raised / RAMP - RAMP_BLEND_FROM) / (1.0 - RAMP_BLEND_FROM);
+                self.set_blend(self.vertices.len() - 1, wall_faces_x, amount);
+            }
             self.vertices.len() as u32 - 1
         };
         let centre = push(w as f32 / 2.0, h as f32 / 2.0, None);
@@ -365,7 +406,7 @@ impl MeshBuffers {
                         if self.untextured {
                             UNTEXTURED
                         } else {
-                            TEXTURED
+                            TEXTURED + self.blends.get(i).copied().unwrap_or(0.0)
                         },
                     ],
                 })
@@ -399,6 +440,8 @@ pub(super) struct FanQuad<'a> {
     // along each of its two edges, so the chamfers beside it run into the cut
     pub(super) dip: [f32; 4],
     pub(super) reversed: bool,
+    // whether it draws a painted material, see `material_uv`
+    pub(super) painted: bool,
 }
 
 // `textured` is whether faces draw their own tile, not the one their block's colour is read from.

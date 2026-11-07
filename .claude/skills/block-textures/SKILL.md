@@ -54,12 +54,20 @@ Open `out/contact.png` (each tile repeated 3x3, 9x zoom) and check seams. Re-rol
 
 ## Painted materials
 
-Tiles in `PAINTED` (`generate.py`, mirroring `MATERIAL_FILES` in `crates/ochre-base/src/block.rs`) are drawn from 512px painted layers sampled in world space, see `docs/materials.md`, not from the atlas.
+Tiles in `PAINTED` (`generate.py`, mirroring `MATERIAL_FILES` in `crates/ochre-base/src/block.rs`) draw from 512px layers sampled in world space, see `docs/materials.md`, not from the atlas. They are painted with SDXL and a hand-painted seamless texture LoRA by `lora_paint.py`, which needs a running ComfyUI.
+
+Setup, on top of the one above:
+
+1. Download `sd_xl_base_1.0.safetensors` (openrail++) from `stabilityai/stable-diffusion-xl-base-1.0` into `~/ComfyUI/models/checkpoints/`, and `hand-painted-2d-seamless-textures.safetensors` (SDXL, openrail++) from `Muapi/hand-painted-2d-seamless-textures.safetensors` into `~/ComfyUI/models/loras/`.
+2. Start ComfyUI with `--cpu-vae`. On the 6GB card the GPU VAE runs out of memory and falls back to a non-circular tiled decode, which leaves seams. The CPU VAE is circular and seamless. A render takes about 37 s at 1024px.
 
 ```
-python generate.py --painted                 # PAINTED tiles, seed 1, to out/512/<Tile>.png
-python generate.py --painted Stone --candidates 4 --seed 7   # then --painted --pick Stone=2
-python materials.py                          # validate, install, and update the means
+python lora_paint.py Stone Dirt --seeds 1 2 3 4   # candidates to out/sdxl/<Tile>_s<seed>.png, plus <Tile>_sheet.png
+python lora_paint.py Granite --tag g --seeds 31 32 --prompt "..." --avoid "..."   # own prompt, files <Tile>_g<seed>.png
+python lora_paint.py --pick Stone=3 Granite=g31   # install as out/512/<Tile>.png
+python materials.py                               # copy to assets/textures/materials/, update block_mean, write out/materials_contact.png
 ```
 
-`--painted` keeps the 512px render and moves only its mean and contrast (`PAINTED_STD`), with a painted, flat-lit prompt. GrassTop is greyscale at the mean the biome tint assumes. `materials.py` copies each into `assets/textures/materials/<Tile>.png`, rewrites those tiles' `block_mean` rows from the layers, and writes `out/materials_contact.png` (each layer 3x3) to judge seams. `pack.py` leaves those rows alone. The files in `assets/textures/materials/` are placeholders until a painted run replaces them.
+`PROMPTS` holds each tile's prompt after the LoRA's trigger words. Renders are downscaled to 512. `--pick` moves only the mean (`TARGET_MEAN`, the atlas tile's mean, so the world keeps its tones) and contrast (`CONTRAST`) and makes GrassTop greyscale at the mean the biome tint assumes. Stop ComfyUI before running the game, as both want the card.
+
+What reads well in play: a block is 32px of a layer at repeat 16 (64px at the default 8). Detail much finer than a block averages into grain, and flat colour reads as plastic, so ask for shapes of about a block with soft shading. Reject any candidate with one large distinctive feature (a long crack, a big blob). It shows as an obvious repeat across the world, so prefer even, uniform candidates, and look at them tiled 2x2. Judge in the game, not on the contact sheet, which exaggerates detail the mip chain removes.

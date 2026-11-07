@@ -152,6 +152,19 @@ fn fragment(
 
     let footprint = block_footprint(in.uv);
     let painted_footprint = material_footprint(in.uv);
+    // a painted top that meets a wall is drawn partly in the wall's projection, which the texture then runs on into:
+    // how much, and which way the wall faces, are in its mode, see `BLEND_SPAN` in `buffers.rs`
+    var wall_blend = 0.0;
+    var wall_faces_z = false;
+@if(VERTEX_UVS_B) {
+    if in.uv_b.y > 0.0 && in.uv_b.y < 0.5 {
+        wall_faces_z = in.uv_b.y >= 0.25;
+        wall_blend = clamp((in.uv_b.y - select(0.0, 0.25, wall_faces_z)) / 0.2, 0.0, 1.0);
+    }
+}
+    // the wall's own coordinates: along it the top's, and down it world up, as `material_uv` has them
+    let wall_uv = vec2<f32>(select(in.uv.y, in.uv.x, wall_faces_z), -uncurved(world_position).y);
+    let wall_footprint = material_footprint(wall_uv);
     // blocks per pixel up the face, worked out here as derivatives need uniform control flow
     let block_rate = length(vec2<f32>(dpdx(in.uv.y), dpdy(in.uv.y)));
     // the painted material layer this face draws, if any: coarse cells and tree boxes draw their mean
@@ -168,6 +181,9 @@ fn fragment(
     if painted {
         if block_rate < MEAN_BLOCK_RATE {
             color = material_sample(in.uv, layer, painted_footprint);
+            if wall_blend > 0.001 {
+                color = mix(color, material_sample(wall_uv, layer, wall_footprint), wall_blend);
+            }
         } else {
             color = block_mean(in.color.a);
         }
