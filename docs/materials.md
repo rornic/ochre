@@ -1,10 +1,10 @@
 # Painted materials
 
-Terrain faces whose tile has a painted material draw it from a 512px layer sampled by world position, so one texture covers many blocks and ignores block edges. Everything else (the other tiles, leaves, flora, water) draws from the 16px atlas as before. Design: `docs/designs/painted-world-space-materials.md`.
+Terrain faces whose tile has a painted material draw it from a 512px layer sampled by world position, so one texture covers many blocks and ignores block edges. Leaves, flora and water draw from the 16px atlas as before. Design: `docs/designs/painted-world-space-materials.md`.
 
 ## What is painted
 
-`Tile::material_layer` (`ochre-base/src/block.rs`) maps a tile to a layer, and `MATERIAL_FILES` lists the layers in order, each `assets/textures/materials/<name>.png`, 512x512 opaque sRGB. Painted so far: Stone, Dirt, GrassTop, Sand, Snow, Limestone, Clay, Basalt, Marble, Granite, Shale, SandstoneTop and Gravel. Grass sides draw the GrassTop layer, as the top does, tinted the same, and sandstone sides draw SandstoneTop. The compacted rocks stay in the atlas. `MATERIAL_LAYER_TABLE` in `block_texture.wesl` is the shader's copy by atlas cell, and a test in `material.rs` checks it against `material_layer`.
+`Tile::material_layer` (`ochre-base/src/block.rs`) maps a tile to a layer, and `MATERIAL_FILES` lists the layers in order, each `assets/textures/materials/<name>.png`, 512x512 opaque sRGB. Painted: Stone, Dirt, GrassTop, Sand, Snow, Limestone, Clay, Basalt, Marble, Granite, Shale, SandstoneTop, Gravel, Ice, LogBark, LogEnd and the eight compacted rocks. Grass sides draw the GrassTop layer, as the top does, tinted the same, sandstone sides draw SandstoneTop and snow sides draw Snow. Each compacted rock has its own layer, its rock's layer at 85% brightness, made by `materials.py` so it stays recognisably packed harder. `MATERIAL_LAYER_TABLE` in `block_texture.wesl` is the shader's copy by atlas cell, and a test in `material.rs` checks it against `material_layer`.
 
 GrassTop is greyscale at the mean `GRASS_TEXTURE_MEAN` assumes, because the biome tint multiplies it. `block_mean` rows for painted tiles come from their layers (`materials.py`), and a test checks every row against its texture.
 
@@ -24,5 +24,6 @@ The change passes if the median frame time at spawn stays at 16.7 ms or lower (6
 
 ## Open
 
-- Remaining blocks (compacted rocks, ice, logs) move to materials if the look is accepted, and the atlas then shrinks to leaves, flora and water.
+- `blocks.png` still holds every tile, painted ones included, which the mesher and `block_mean` index by cell. Shrinking it to leaves, flora and water needs a new cell order.
+- A log's end grain is a world-space layer, so its rings aren't centred on the trunk, and a chamfered trunk top blends the end grain, not the bark, into the wall at its rim.
 - Bevel, blended boundaries and painterly lighting are separate, later stages.

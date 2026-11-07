@@ -61,7 +61,7 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
     return material_color * texel;
 }
 
-// The painted material layer each atlas cell draws, -1 for the tiles that stay in the atlas: `Tile::material_layer`,
+// The painted material layer each atlas cell draws, -1 for the leaves, flora and water that stay in the atlas: `Tile::material_layer`,
 // which a test checks this against.
 const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
     0, // stone
@@ -69,30 +69,30 @@ const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
     3, // sand
     -1, // water
     4, // snow
-    -1, // log bark
+    14, // log bark
     -1, // leaves
     2, // grass side
     1, // dirt
-    -1, // log end
+    15, // log end
     12, // gravel
-    -1, // ice
+    13, // ice
     11, // sandstone side
     11, // sandstone top
-    -1, // snow side
-    -1, // compacted stone
+    4, // snow side
+    16, // compacted stone
     5, // limestone
     6, // clay
     7, // basalt
     8, // marble
-    -1, // compacted limestone
-    -1, // compacted clay
-    -1, // compacted basalt
-    -1, // compacted marble
-    -1, // compacted sandstone
+    17, // compacted limestone
+    18, // compacted clay
+    19, // compacted basalt
+    20, // compacted marble
+    21, // compacted sandstone
     9, // granite
     10, // shale
-    -1, // compacted granite
-    -1, // compacted shale
+    22, // compacted granite
+    23, // compacted shale
     -1, // tall grass
     -1, // fern
     -1, // poppy
@@ -180,30 +180,30 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
         vec3<f32>(0.6173, 0.7140, 0.8183), // snow
-        vec3<f32>(0.0776, 0.0449, 0.0211), // log bark
+        vec3<f32>(0.0755, 0.0383, 0.0301), // log bark
         vec3<f32>(0.2433, 0.2433, 0.2433), // leaves
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
         vec3<f32>(0.2403, 0.1078, 0.0716), // dirt
-        vec3<f32>(0.4083, 0.2484, 0.0983), // log end
+        vec3<f32>(0.4026, 0.2195, 0.1318), // log end
         vec3<f32>(0.3113, 0.2217, 0.1859), // gravel
-        vec3<f32>(0.3090, 0.6154, 0.8315), // ice
+        vec3<f32>(0.4181, 0.6444, 0.6924), // ice
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
         vec3<f32>(0.4256, 0.3341, 0.2906), // snow side
-        vec3<f32>(0.0773, 0.0811, 0.0958), // compacted stone
+        vec3<f32>(0.1049, 0.1048, 0.1322), // compacted stone
         vec3<f32>(0.5822, 0.4646, 0.3619), // limestone
         vec3<f32>(0.4313, 0.1646, 0.0943), // clay
         vec3<f32>(0.0618, 0.0582, 0.0596), // basalt
         vec3<f32>(0.7205, 0.6952, 0.7124), // marble
-        vec3<f32>(0.3801, 0.3507, 0.2589), // compacted limestone
-        vec3<f32>(0.3022, 0.1332, 0.0547), // compacted clay
-        vec3<f32>(0.0388, 0.0410, 0.0484), // compacted basalt
-        vec3<f32>(0.5083, 0.4980, 0.4672), // compacted marble
-        vec3<f32>(0.4670, 0.3667, 0.2079), // compacted sandstone
+        vec3<f32>(0.4055, 0.3244, 0.2533), // compacted limestone
+        vec3<f32>(0.3013, 0.1168, 0.0676), // compacted clay
+        vec3<f32>(0.0449, 0.0424, 0.0434), // compacted basalt
+        vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
+        vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
         vec3<f32>(0.1033, 0.0949, 0.1022), // shale
-        vec3<f32>(0.2922, 0.2238, 0.1924), // compacted granite
-        vec3<f32>(0.0777, 0.0713, 0.0650), // compacted shale
+        vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
+        vec3<f32>(0.0739, 0.0680, 0.0731), // compacted shale
         vec3<f32>(0.5186, 0.5186, 0.5186), // tall grass
         vec3<f32>(0.3112, 0.3112, 0.3112), // fern
         vec3<f32>(0.2675, 0.0986, 0.0166), // poppy
