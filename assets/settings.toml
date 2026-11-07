@@ -11,6 +11,8 @@ cloud_resolution = "medium"
 # Blocks before a painted material repeats (a power of two up to 64), and its anisotropic filtering taps (1 to 16).
 material_period = 8
 material_anisotropy = 8
+# Painterly lighting on painted materials, compared against the current model; restart to change.
+painterly_lighting = false
 
 [debug]
 still_leaves = false

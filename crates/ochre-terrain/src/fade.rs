@@ -324,6 +324,7 @@ mod tests {
                 let materials = TerrainMaterials::new(
                     DebugSettings::default(),
                     8,
+                    false,
                     &ShaderInputs::default(),
                     &mut assets,
                 );

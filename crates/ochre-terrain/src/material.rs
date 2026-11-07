@@ -192,6 +192,8 @@ pub struct ChunkMaterial {
     pub non_cutout: bool,
     /// Blocks before a painted material repeats, compiled into the shaders.
     pub period: u32,
+    /// Painted faces use `painterly_light`, compiled into the shaders.
+    pub painterly: bool,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -199,6 +201,7 @@ pub struct ChunkMaterialKey {
     pub debug: DebugSettings,
     pub non_cutout: bool,
     pub period: u32,
+    pub painterly: bool,
 }
 
 impl From<&ChunkMaterial> for ChunkMaterialKey {
@@ -207,6 +210,7 @@ impl From<&ChunkMaterial> for ChunkMaterialKey {
             debug: material.debug,
             non_cutout: material.non_cutout,
             period: material.period,
+            painterly: material.painterly,
         }
     }
 }
@@ -264,6 +268,9 @@ impl Material for ChunkMaterial {
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
         ];
         // compiled in or out, so the switches leave no trace of the code they turn off
+        if key.bind_group_data.painterly {
+            defs.push("PAINTERLY".into());
+        }
         if key.bind_group_data.debug.still_leaves {
             defs.push("STILL_LEAVES".into());
         }
@@ -304,6 +311,7 @@ impl TerrainMaterials {
     pub fn new(
         debug: DebugSettings,
         period: u32,
+        painterly: bool,
         inputs: &ShaderInputs,
         assets: &mut TerrainAssets,
     ) -> Self {
@@ -319,6 +327,7 @@ impl TerrainMaterials {
             debug,
             non_cutout: false,
             period,
+            painterly,
         });
         let base_chunk = assets.chunk.get(&chunk).unwrap().clone();
         let solid_chunk = assets.chunk.add(ChunkMaterial {

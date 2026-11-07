@@ -14,6 +14,7 @@ import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
 import super::fog::fogged;
 import super::lighting::{direct_moon, direct_sun, open_sky};
+import super::painterly::painterly_light;
 import super::sky::SUN_LIGHT;
 import super::cloud_shadow::cloud_shadow;
 import super::lod_patch::patch_tint;
@@ -238,8 +239,15 @@ fn fragment(
 }
 
     let shaded = lit_normal(normal, world_position);
-    let light = sunlight(in.world_position, normal, shaded, sky, in.position.xy) + sky_ambient(sky, shaded)
-        + point_light_glow(world_position, normal, in.position.xy);
+    let sun = sunlight(in.world_position, normal, shaded, sky, in.position.xy);
+    let ambient = sky_ambient(sky, shaded);
+    let glow = point_light_glow(world_position, normal, in.position.xy);
+    var light = sun + ambient + glow;
+@if(PAINTERLY) {
+    if painted {
+        light = painterly_light(sun, ambient, glow);
+    }
+}
     color = vec4<f32>(color.rgb * light, color.a);
 
     // so distant chunks fade into the sky instead of popping in and out
