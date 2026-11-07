@@ -817,7 +817,7 @@ pub(super) fn mesh_opaque_greedy(
                             if painted {
                                 for (j, o) in wound.into_iter().enumerate() {
                                     let foot = (o >= 2) as u32 as f32;
-                                    buffers.set_blend(first_vertex + j, outward.x != 0.0, foot);
+                                    buffers.set_blend(first_vertex + j, outward, foot);
                                 }
                             }
                         }
@@ -846,7 +846,7 @@ pub(super) fn mesh_opaque_greedy(
                     if painted {
                         for (j, o) in order.into_iter().enumerate() {
                             let foot = (o >= 2) as u32 as f32;
-                            buffers.set_blend(first_vertex + j, outward.x != 0.0, foot);
+                            buffers.set_blend(first_vertex + j, outward, foot);
                         }
                     }
                 };

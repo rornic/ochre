@@ -94,6 +94,13 @@ fn drift(p: vec2<f32>) -> vec3<f32> {
     return vec3<f32>(1.0 + bright + warm, 1.0 + bright, 1.0 + bright - warm);
 }
 
+// How a painted top's blend mark is laid out, see `BLEND_BAND` in `buffers.rs`.
+const BLEND_BAND: f32 = 0.125;
+const BLEND_BASE: f32 = 0.0125;
+const BLEND_SPAN: f32 = 0.1;
+// How far toward its wall a ramp is lit, at the most: it meets the wall in a crease, not a turn.
+const RAMP_LIT_TURN: f32 = 0.5;
+
 // The normal to light by: turned toward up with distance, which evens out the sun's and sky's contrast between faces.
 fn lit_normal(normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
     let flatten = FLATTEN_MAX * smoothstep(FLATTEN_START, FLATTEN_END, distance(world_position, view_bindings::view.world_position));
@@ -153,14 +160,21 @@ fn fragment(
 
     let footprint = block_footprint(in.uv);
     let painted_footprint = material_footprint(in.uv);
-    // a painted top that meets a wall is drawn partly in the wall's projection, which the texture then runs on into:
-    // how much, and which way the wall faces, are in its mode, see `BLEND_SPAN` in `buffers.rs`
+    // a painted top that meets a wall is drawn partly in the wall's projection, which the texture then runs on into, and
+    // lit partly as the wall: how much, and which way the wall faces, are in its mode, see `BLEND_BAND` in `buffers.rs`
     var wall_blend = 0.0;
     var wall_faces_z = false;
+    // the way the wall faces, as the stored normals have it, and whether this face has one
+    var wall_side = vec2<f32>(0.0);
+    var has_wall = false;
 @if(VERTEX_UVS_B) {
     if in.uv_b.y > 0.0 && in.uv_b.y < 0.5 {
-        wall_faces_z = in.uv_b.y >= 0.25;
-        wall_blend = clamp((in.uv_b.y - select(0.0, 0.25, wall_faces_z)) / 0.2, 0.0, 1.0);
+        let band = floor(in.uv_b.y / BLEND_BAND);
+        has_wall = true;
+        wall_faces_z = band >= 2.0;
+        wall_blend = clamp((in.uv_b.y - band * BLEND_BAND - BLEND_BASE) / BLEND_SPAN, 0.0, 1.0);
+        let facing = select(1.0, -1.0, band % 2.0 >= 1.0);
+        wall_side = select(vec2<f32>(facing, 0.0), vec2<f32>(0.0, facing), wall_faces_z);
     }
 }
     // the wall's own coordinates: along it the top's, and down it world up, as `material_uv` has them
@@ -238,7 +252,14 @@ fn fragment(
     sky = in.uv_b.x;
 }
 
-    let shaded = lit_normal(normal, world_position);
+    // a chamfer grades from the top's light to the wall's across its strip, and a ramp, stored flat, part of the way;
+    // the shadow lookup keeps the faceted normal, so its bias is as it was
+    var smooth_normal = normal;
+    if has_wall {
+        let turn = wall_blend * select(1.0, RAMP_LIT_TURN, normal.y > 0.99);
+        smooth_normal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(wall_side.x, 0.0, wall_side.y), turn));
+    }
+    let shaded = lit_normal(smooth_normal, world_position);
     let sun = sunlight(in.world_position, normal, shaded, sky, in.position.xy);
     let ambient = sky_ambient(sky, shaded);
     let glow = point_light_glow(world_position, normal, in.position.xy);
