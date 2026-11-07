@@ -38,7 +38,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 
-use crate::collision::{move_and_collide, Aabb};
+use crate::collision::{move_and_step, Aabb};
 use bevy::{
     anti_alias::taa::TemporalAntiAliasing,
     app::{App, Plugin, Update},
@@ -75,6 +75,10 @@ pub struct Player {
     // how far through its stride the head's bob is, in radians a pair of steps, and how big the bob is now
     bob_phase: f32,
     bob: f32,
+    // how far the eyes still trail below the body after a step up
+    eye_lag: f32,
+    // seconds before the next step up is allowed, so a flight of steps isn't taken at a sprint
+    step_cooldown: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +133,12 @@ const AIR_CONTROL: f32 = 3.0;
 const SWIM_CHEST: f32 = 0.6;
 // Blocks are drawn centred on their coordinates, and collision takes a block to start at its coordinate.
 const BLOCK_CORNER: Vec3 = Vec3::splat(0.5);
+// The tallest ledge a grounded player walks up without jumping.
+const STEP_HEIGHT: f32 = 1.0;
+// Seconds between steps up.
+const STEP_COOLDOWN: f32 = 0.3;
+// How fast, a share a second, the eyes catch up with the body after a step up.
+const STEP_EASE: f32 = 10.0;
 // The longest frame moved in one step, so a hitch doesn't fling the player.
 const MAX_STEP: f32 = 0.1;
 
@@ -204,9 +214,10 @@ fn player_move(
         BOB_STRIDE
     };
     player.bob_phase = (player.bob_phase + across_speed * dt * TAU / stride) % TAU;
+    player.eye_lag -= player.eye_lag * (STEP_EASE * dt).min(1.0);
     camera.translation = Vec3::new(
         player.bob * 0.5 * player.bob_phase.sin(),
-        EYE_HEIGHT - player.bob * (1.0 - (2.0 * player.bob_phase).cos()) / 2.0,
+        EYE_HEIGHT - player.eye_lag - player.bob * (1.0 - (2.0 * player.bob_phase).cos()) / 2.0,
         0.0,
     );
 }
@@ -273,12 +284,22 @@ fn walk(
         !world.is_chunk_generated(ChunkCoordinate::containing(block))
             || world.get_block_at(block).is_solid()
     };
-    let (position, hit) = move_and_collide(
+    player.step_cooldown = (player.step_cooldown - dt).max(0.0);
+    let ready = player.grounded && !swimming && player.step_cooldown == 0.0;
+    let step = if ready { STEP_HEIGHT } else { 0.0 };
+    let (position, hit) = move_and_step(
         transform.translation + BLOCK_CORNER,
         player.velocity * dt,
         BODY,
+        step,
         solid,
     );
+    // a step up moves the body a block in one frame, so the eyes start where they were and ease up
+    let rose = position.y - BLOCK_CORNER.y - transform.translation.y;
+    if step > 0.0 && rose > 0.0 {
+        player.eye_lag = (player.eye_lag + rose).min(STEP_HEIGHT);
+        player.step_cooldown = STEP_COOLDOWN;
+    }
     transform.translation = position - BLOCK_CORNER;
     player.grounded = hit.y && player.velocity.y < 0.0;
     if hit.y {
