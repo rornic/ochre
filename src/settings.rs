@@ -62,7 +62,8 @@ mod tests {
     fn test_world_shader_imports_painterly_light() {
         let world = std::fs::read_to_string("assets/shaders/world.wesl").unwrap();
         let painterly = std::fs::read_to_string("assets/shaders/painterly.wesl").unwrap();
-        assert!(world.contains("import super::painterly::painterly_light;"));
+        assert!(world.contains("import super::painterly::{FAR_VISIBILITY, painterly_light};"));
+        assert!(painterly.contains("const FAR_VISIBILITY"));
         assert!(painterly.contains("fn painterly_light("));
     }
 

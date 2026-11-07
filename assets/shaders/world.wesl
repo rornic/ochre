@@ -13,8 +13,8 @@ import super::block_texture::{
 import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
 import super::fog::fogged;
-import super::lighting::{direct_moon, direct_sun, open_sky};
-import super::painterly::painterly_light;
+import super::lighting::{direct_moon, direct_sun, open_sky, sun_radiance};
+import super::painterly::{FAR_VISIBILITY, painterly_light};
 import super::sky::SUN_LIGHT;
 import super::cloud_shadow::cloud_shadow;
 import super::lod_patch::patch_tint;
@@ -48,12 +48,17 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     }
     let view_z = position_world_to_view(world_position.xyz).z;
     let reach = (*sun).cascades[(*sun).num_cascades - 1u].far_bound;
+    // what the land past the shadows is lit as: all of the sun, unless the painterly model evens it out with the shadowed land
+    var beyond = 1.0;
+@if(PAINTERLY) {
+    beyond = FAR_VISIBILITY;
+}
     // faded out wholly, so nothing to look up
     if -view_z >= reach {
-        return 1.0;
+        return beyond;
     }
     let shadow = fetch_directional_shadow(SUN_LIGHT, world_position, normal, view_z, frag_coord);
-    return mix(shadow, 1.0, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
+    return mix(shadow, beyond, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
 }
 
 // Sunlight reaching a face, shadowed by the land and the clouds, and moonlight, kept out of caves
@@ -68,6 +73,23 @@ fn sunlight(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky
     }
     // the clouds are flat, so their shadows fall where the land really is
     return light * sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz)) + moon;
+}
+
+// The light on a painted face when the painterly model has it, see `painterly.wesl`.
+fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> vec3<f32> {
+    let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
+    var to_sun = vec3<f32>(0.0, 1.0, 0.0);
+    var sun = vec3<f32>(0.0);
+    var visibility = 0.0;
+    if view_bindings::lights.n_directional_lights > 0u {
+        to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
+        sun = sun_radiance(uncurved(world_position.xyz)) * gate;
+        // no sun, nothing to shadow
+        if any(sun > vec3<f32>(0.0)) {
+            visibility = sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz));
+        }
+    }
+    return painterly_light(shaded, to_sun, sun, visibility, sky_ambient(sky, shaded), direct_moon(shaded) * gate);
 }
 
 // Faces turn toward up between these distances in blocks, to this much of the way: past
@@ -260,15 +282,18 @@ fn fragment(
         smooth_normal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(wall_side.x, 0.0, wall_side.y), turn));
     }
     let shaded = lit_normal(smooth_normal, world_position);
-    let sun = sunlight(in.world_position, normal, shaded, sky, in.position.xy);
-    let ambient = sky_ambient(sky, shaded);
     let glow = point_light_glow(world_position, normal, in.position.xy);
-    var light = sun + ambient + glow;
+    var light = vec3<f32>(0.0);
+    var painterly = false;
 @if(PAINTERLY) {
     if painted {
-        light = painterly_light(sun, ambient, glow);
+        light = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy) + glow;
+        painterly = true;
     }
 }
+    if !painterly {
+        light = sunlight(in.world_position, normal, shaded, sky, in.position.xy) + sky_ambient(sky, shaded) + glow;
+    }
     color = vec4<f32>(color.rgb * light, color.a);
 
     // so distant chunks fade into the sky instead of popping in and out
