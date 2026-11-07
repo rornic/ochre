@@ -33,6 +33,10 @@ pub struct RendererSettings {
     /// Pack terrain meshes' vertices into about half the bytes, see `crate::pack`. On unless a
     /// test of the two needs it off.
     pub pack_meshes: bool,
+    /// Blocks before a painted material repeats, a power of two from 1 to 64.
+    pub material_period: u32,
+    /// Anisotropic filtering taps on painted materials, 1 to 16.
+    pub material_anisotropy: u16,
 }
 
 /// Maximum cloud target width; smaller windows still march at half display resolution.
@@ -79,6 +83,16 @@ impl RendererSettings {
         settings
     }
 
+    /// `material_period`, which the vertex shader's exact coordinate reduction needs to be a power of two.
+    pub fn material_period(&self) -> u32 {
+        let period = self.material_period;
+        assert!(
+            period.is_power_of_two() && period <= 64,
+            "material_period must be a power of two from 1 to 64, not {period}"
+        );
+        period
+    }
+
     /// Where the fog ends and the land with it, in blocks.
     pub fn fog_distance(&self) -> f32 {
         self.lod_layout().render_distance() * CHUNK_SIZE as f32
@@ -108,6 +122,8 @@ impl Default for RendererSettings {
             mesh_slab_mb: 64,
             mesh_slab_growth: 1.25,
             pack_meshes: true,
+            material_period: 8,
+            material_anisotropy: 8,
         }
     }
 }

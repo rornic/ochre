@@ -716,6 +716,7 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<Chunk
             ambient_occlusion: true,
             textured,
             inner_leaves: InnerLeaves::Hidden,
+            bevel: false,
         },
         &tint,
         &light,

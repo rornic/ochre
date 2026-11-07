@@ -360,6 +360,7 @@ pub fn generate_chunk_mesh(
             } else {
                 InnerLeaves::Apart
             },
+            bevel: bevel_on(),
         },
         &tint,
         &light,
@@ -398,4 +399,13 @@ fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> S
     }
     let top = coord.0.y * size as i64 + (min.y + span.y) as i64 - 1;
     SkyLight::new(min, span, sky_above(top, 1), opacity)
+}
+
+// Whether full-detail chunks carry bevel distances, which tests of merging switch off.
+fn bevel_on() -> bool {
+    #[cfg(test)]
+    if super::greedy::NO_BEVELS.get() {
+        return false;
+    }
+    true
 }

@@ -226,7 +226,24 @@ pub enum Tile {
 
 pub const TILE_COUNT: usize = 35;
 
+// The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
+pub const MATERIAL_FILES: [&str; 5] = ["Stone", "Dirt", "GrassTop", "Sand", "Snow"];
+pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
+
 impl Tile {
+    // The painted material layer a face draws instead of its atlas tile, if it has one.
+    pub fn material_layer(self) -> Option<u8> {
+        match self {
+            Tile::Stone => Some(0),
+            Tile::Dirt => Some(1),
+            // a grass block's sides are the same grass as its top
+            Tile::GrassTop | Tile::GrassSide => Some(2),
+            Tile::Sand => Some(3),
+            Tile::Snow => Some(4),
+            _ => None,
+        }
+    }
+
     // What meshes carry in vertex alpha for `block_texture.wesl`.
     pub fn atlas_cell(self) -> f32 {
         self as u8 as f32
@@ -237,6 +254,7 @@ impl Tile {
         matches!(
             self,
             Tile::GrassTop
+                | Tile::GrassSide
                 | Tile::Leaves
                 | Tile::TallGrass
                 | Tile::Fern
@@ -303,11 +321,39 @@ impl BlockType {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockType, Face, Tile, TILE_COUNT};
+    use super::{BlockType, Face, Tile, MATERIAL_FILES, MATERIAL_LAYERS, TILE_COUNT};
 
     #[test]
     fn test_tile_count_matches_the_last_tile() {
         assert_eq!(TILE_COUNT, Tile::SeedGrass as usize + 1);
+    }
+
+    #[test]
+    fn test_material_layers_follow_the_file_list() {
+        for tile in [
+            Tile::Stone,
+            Tile::Dirt,
+            Tile::GrassTop,
+            Tile::Sand,
+            Tile::Snow,
+        ] {
+            let layer = tile.material_layer().unwrap() as usize;
+            assert_eq!(format!("{tile:?}"), MATERIAL_FILES[layer]);
+        }
+        assert_eq!(
+            Tile::GrassTop.material_layer(),
+            Tile::GrassSide.material_layer()
+        );
+        assert!(Tile::Dirt.material_layer().unwrap() < MATERIAL_LAYERS as u8);
+        for tile in [
+            Tile::Leaves,
+            Tile::Water,
+            Tile::TallGrass,
+            Tile::SeedGrass,
+            Tile::Gravel,
+        ] {
+            assert_eq!(None, tile.material_layer());
+        }
     }
 
     #[test]

@@ -17,3 +17,13 @@ fn hash3(cell: vec3<i32>) -> f32 {
     h = h ^ (h >> 15u);
     return f32(h) / 4294967295.0;
 }
+
+// 0..1, smooth between `hash2`'s values at the whole-number corners around `p`.
+fn value_noise(p: vec2<f32>) -> f32 {
+    let cell = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let bottom = mix(hash2(cell), hash2(cell + vec2<f32>(1.0, 0.0)), u.x);
+    let top = mix(hash2(cell + vec2<f32>(0.0, 1.0)), hash2(cell + vec2<f32>(1.0, 1.0)), u.x);
+    return mix(bottom, top, u.y);
+}

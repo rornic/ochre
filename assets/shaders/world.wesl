@@ -6,7 +6,11 @@ import bevy_pbr::render::{
     shadows::fetch_directional_shadow,
     view_transformations::{position_world_to_clip, position_world_to_view},
 };
-import super::block_texture::{block_alpha, block_footprint, block_mean, block_sample, material_fade};
+import super::block_texture::{
+    block_alpha, block_footprint, block_mean, block_sample, material_fade, material_footprint, material_layer,
+    material_sample, material_uv,
+};
+import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
 import super::fog::fogged;
 import super::lighting::{direct_moon, direct_sun, open_sky};
@@ -73,14 +77,21 @@ const FLATTEN_START: f32 = 1024.0;
 const FLATTEN_END: f32 = 4096.0;
 const FLATTEN_MAX: f32 = 0.85;
 
-// Blocks per pixel at which grass sides start turning to the grass on top, and are wholly it:
-// four pixels tall, as the tile's green fringe is about a quarter of it, to under two.
-const GRASS_SIDE_FADE_START: f32 = 0.25;
-const GRASS_SIDE_FADE_END: f32 = 0.6;
-
 // Tiles up a pixel at which a face's texture is its mean colour: under a pixel across, the lookup
 // is the coarsest mip, which `block_mean` holds.
 const MEAN_BLOCK_RATE: f32 = 1.0;
+
+// How far the land's brightness and warmth drift from a painted material, across patches tens of blocks wide.
+const DRIFT_BRIGHTNESS: f32 = 0.10;
+const DRIFT_WARMTH: f32 = 0.04;
+
+// A slow, wide factor over the land, so a painted texture's repeat doesn't line up. The wavelengths aren't
+// multiples of the period, and each noise averages out to 1.
+fn drift(p: vec2<f32>) -> vec3<f32> {
+    let bright = DRIFT_BRIGHTNESS * (value_noise(p / 37.0) * 2.0 - 1.0);
+    let warm = DRIFT_WARMTH * (value_noise(p / 91.0 + vec2<f32>(17.0, 5.0)) * 2.0 - 1.0);
+    return vec3<f32>(1.0 + bright + warm, 1.0 + bright, 1.0 + bright - warm);
+}
 
 // The normal to light by: turned toward up with distance, which evens out the sun's and sky's contrast between faces.
 fn lit_normal(normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
@@ -101,6 +112,11 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
 @if(VERTEX_UVS_B) {
     coarse = vertex.uv_b.y > 0.5;
 }
+    // painted faces carry their plane coordinates in uv, see `material_uv`
+    var uv = vertex.uv;
+    if !coarse && material_layer(vertex.color.a) >= 0 {
+        uv = material_uv(vertex.position, world_from_local[3].xyz, vertex.normal, vertex.uv);
+    }
     let swaying = swayed(out.world_position.xyz, vertex.color.a, vertex.uv, coarse, view_bindings::globals.time);
     // bent where it's drawn, so shadows and fog are looked up where it's seen
     out.world_position = vec4<f32>(curved(swaying), 1.0);
@@ -109,7 +125,7 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     // a mesh fading out sits a little farther than it is, so what replaces it wins where they coincide
     out.position.z *= 1.0 - material_fade.z;
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
-    out.uv = vertex.uv;
+    out.uv = uv;
 @if(VERTEX_UVS_B) {
     out.uv_b = vertex.uv_b;
 }
@@ -135,12 +151,27 @@ fn fragment(
     let normal = normalize(in.world_normal);
 
     let footprint = block_footprint(in.uv);
+    let painted_footprint = material_footprint(in.uv);
     // blocks per pixel up the face, worked out here as derivatives need uniform control flow
     let block_rate = length(vec2<f32>(dpdx(in.uv.y), dpdy(in.uv.y)));
+    // the painted material layer this face draws, if any: coarse cells and tree boxes draw their mean
+    var layer = material_layer(in.color.a);
+@if(VERTEX_UVS_B) {
+    if in.uv_b.y > 0.5 {
+        layer = -1;
+    }
+}
+    let painted = layer >= 0;
     // a tile under a pixel across filters to its mean, so skips the lookup; leaves and plants keep
     // theirs for their holes
     var color: vec4<f32>;
-    if block_rate < MEAN_BLOCK_RATE || is_leaf(in.color.a) || is_flora(in.color.a) {
+    if painted {
+        if block_rate < MEAN_BLOCK_RATE {
+            color = material_sample(in.uv, layer, painted_footprint);
+        } else {
+            color = block_mean(in.color.a);
+        }
+    } else if block_rate < MEAN_BLOCK_RATE || is_leaf(in.color.a) || is_flora(in.color.a) {
         color = block_sample(in.uv, in.color.a, footprint);
     } else {
         color = block_mean(in.color.a);
@@ -179,24 +210,9 @@ fn fragment(
 }
     // ambient occlusion and grass/leaf tint
     var tinted = color.rgb * in.color.rgb;
-@if(VERTEX_UVS_B) {
-    // grass sides are a greyscale grass fringe, transparent below, layered over dirt: the grass
-    // carries the grass's tint and the dirt its shade alone, see `MeshBuffers::tint_grass_sides`.
-    // Once blocks are a few pixels tall the tile averages out to mostly dirt, while the grass
-    // on top of them would fill the pixel, so they turn to it
-    if in.uv_b.y < 0.0 {
-        let grass_top = block_mean(f32(constants::GRASS_TOP_CELL)).rgb * in.color.rgb;
-        if block_rate >= GRASS_SIDE_FADE_END {
-            // wholly the grass on top, so the dirt under the fringe needs no lookup
-            tinted = grass_top;
-        } else {
-            let dirt = block_sample(in.uv, f32(constants::DIRT_CELL), footprint).rgb * -in.uv_b.y;
-            let near = mix(dirt, tinted, color.a);
-            tinted = mix(near, grass_top, smoothstep(GRASS_SIDE_FADE_START, GRASS_SIDE_FADE_END, block_rate));
-        }
-        color.a = 1.0;
+    if painted {
+        tinted = tinted * drift(world_position.xz);
     }
-}
     color = vec4<f32>(tinted, color.a);
 
     // block meshes carry smoothed sky light, all but those with no faces at all
