@@ -642,249 +642,272 @@ pub(super) fn mesh_opaque_greedy(
         };
 
         // draws `cell`, `w` by `h` cells from the one at `at`, into `buffers`
-        let emit =
-            |cell: &FaceCell, (w, h): (usize, usize), at: IVec3, buffers: &mut MeshBuffers| {
-                let origin = at.as_vec3();
-                let tile = if textured {
-                    cell.block.tile(Face::of_normal_y(normal.y as f32))
-                } else {
-                    cell.block.lod_tile()
-                };
-                let atlas_cell = tile.atlas_cell();
-                let painted = textured && tile.material_layer().is_some();
-                let color = |ao: f32, position: Vec3| {
-                    // leaves share grass's tint, over a darker texture
-                    let tint = if tile.tinted() {
-                        grass_tint.at(position) * cell.tint
-                    } else {
-                        Vec3::ONE
-                    };
-                    let shade = match cell.block {
-                        BlockType::Leaves => source.canopy_shade(position),
-                        BlockType::Grass => source.forest_shade(position),
-                        _ => 1.0,
-                    };
-                    (tint * ao.powf(AO_GAMMA) * shade)
-                        .extend(atlas_cell)
-                        .to_array()
-                };
-                // a convex edge is cut back, a wall's foot is raised, and a floor's side by a wall climbs it
-                let inset = cell.bevel.map(|e| match e {
-                    Edge::Convex => BEVEL,
-                    _ => 0.0,
-                });
-                let corner_lift = cell.corner.map(|c| if c { RAMP } else { 0.0 });
-                // a wall's foot corner is let down off its raised foot to the chamfer's foot
-                let dip = cell.dip.map(|d| match (d, normal.y) {
-                    (false, _) => 0.0,
-                    (true, 0) => RAMP + BEVEL,
-                    (true, _) => BEVEL,
-                });
-                let bevelled = cell.bevel.iter().any(|&e| e != Edge::Flat)
-                    || cell.corner.contains(&true)
-                    || cell.dip.contains(&true);
-                if w == 1 && h == 1 && !bevelled {
-                    let positions: [Vec3; 4] = std::array::from_fn(|j| {
-                        let mut position = Vec3::from(template[j].position) + origin;
-                        if let Some([floor, ceiling]) = cell.span {
-                            position.y = if template[j].position[1] > 0.0 {
-                                ceiling
-                            } else {
-                                floor
-                            };
-                        }
-                        position
-                    });
-                    let uvs = std::array::from_fn(|j| template[j].uv.map(|c| c * uv_tiles));
-                    let colors = std::array::from_fn(|j| color(cell.ao[j], positions[j]));
-                    let positions = positions.map(|p| p.to_array());
-                    buffers.push_tiled_quad(positions, template[0].normal, uvs, colors, cell.light);
-                    return;
-                }
-
-                let mut corner = origin;
-                corner[a_axis] -= 0.5;
-                corner[b_axis] -= 0.5;
-                corner[normal_axis] += template[0].position[normal_axis];
-                let (mut ta_step, mut tb_step) = (ta.as_vec3(), tb.as_vec3());
-                match cell.span {
-                    Some([_, ceiling]) if normal.y > 0 => corner.y = ceiling,
-                    Some([floor, ceiling]) => {
-                        corner.y = floor;
-                        // the side's one step up spans just its trimmed height
-                        let up = if a_axis == 1 {
-                            &mut ta_step
-                        } else {
-                            &mut tb_step
-                        };
-                        up.y *= ceiling - floor;
-                    }
-                    None => {}
-                }
-                let extent = [w as f32, h as f32];
-                let uv_at = |i: f32, j: f32| {
-                    let along = [i, j];
-                    [0, 1].map(|k| {
-                        let t = (uv_axes[k] == b_axis) as usize;
-                        (if uv_ascending[k] {
-                            along[t]
-                        } else {
-                            extent[t] - along[t]
-                        }) * uv_tiles
-                    })
-                };
-                buffers.push_fan_quad(FanQuad {
-                    corner,
-                    ta: ta_step,
-                    tb: tb_step,
-                    size: (w, h),
-                    normal: template[0].normal,
-                    color: &color,
-                    ao: by_corner(cell.ao),
-                    light: by_corner(cell.light),
-                    uv_at: &uv_at,
-                    inset,
-                    corner_lift,
-                    dip,
-                    reversed: !ccw_in_ab,
-                });
-                if normal.y > 0 && bevelled {
-                    let (ta_v, tb_v) = (ta_step, tb_step);
-                    let base = |i: usize, j: usize| corner + ta_v * i as f32 + tb_v * j as f32;
-                    let (corner_ao, corner_light) = (by_corner(cell.ao), by_corner(cell.light));
-                    // a quad of these points, with the texture at `at` cells along the top, wound as the
-                    // cube's faces are, lit and tinted as the top is
-                    let mut push = |points: [Vec3; 4], at: [(f32, f32); 4], outward: Vec3| {
-                        let across = |(i, j): (f32, f32)| {
-                            (
-                                (i / w as f32).clamp(0.0, 1.0),
-                                (j / h as f32).clamp(0.0, 1.0),
-                            )
-                        };
-                        let colour = |o: usize| {
-                            let (u, v) = across(at[o]);
-                            color(blend_corners(corner_ao, u, v), points[o])
-                        };
-                        let light_at = |o: usize| {
-                            let (u, v) = across(at[o]);
-                            blend_corners(corner_light, u, v)
-                        };
-                        // the facet of three of the points, facing out
-                        let facet = |a: usize, b: usize, c: usize| {
-                            let n = (points[b] - points[a])
-                                .cross(points[c] - points[a])
-                                .normalize_or_zero();
-                            if n.dot(outward) > 0.0 {
-                                n
-                            } else {
-                                -n
-                            }
-                        };
-                        let (first, second) = (facet(0, 1, 2), facet(2, 1, 3));
-                        // a strip that rises at its ends, as the ground does where it climbs a wall, is steeper
-                        // than the chamfer, so is textured as it really lies, a triangle at a time, and lit as a chamfer
-                        if first.dot(outward) < 0.9995 || second.dot(outward) < 0.9995 {
-                            for ([a, b, c], normal) in [([0, 1, 2], first), ([2, 1, 3], second)] {
-                                // the cube's faces wind with the cross product pointing in
-                                let wound = if (points[b] - points[a])
-                                    .cross(points[c] - points[a])
-                                    .dot(normal)
-                                    > 0.0
-                                {
-                                    [a, c, b]
-                                } else {
-                                    [a, b, c]
-                                };
-                                // the atlas tiles take their texture along the strip, the painted ones their plane's
-                                let unfolded =
-                                    unfolded_uv(wound.map(|o| points[o]), outward, normal);
-                                buffers.push_tiled_triangle(
-                                    wound.map(|o| points[o].to_array()),
-                                    // the cube's faces along z store their normals reversed
-                                    [outward.x, outward.y, -outward.z],
-                                    if painted {
-                                        unfolded
-                                    } else {
-                                        wound.map(|o| uv_at(at[o].0, at[o].1))
-                                    },
-                                    wound.map(colour),
-                                    wound.map(light_at),
-                                );
-                            }
-                            return;
-                        }
-                        let flipped = (points[1] - points[0])
-                            .cross(points[2] - points[0])
-                            .dot(outward)
-                            > 0.0;
-                        let order = if flipped { [1, 0, 3, 2] } else { [0, 1, 2, 3] };
-                        buffers.push_tiled_quad(
-                            order.map(|o| points[o].to_array()),
-                            // the cube's faces along z store their normals reversed
-                            [outward.x, outward.y, -outward.z],
-                            order.map(|o| uv_at(at[o].0, at[o].1)),
-                            order.map(colour),
-                            order.map(light_at),
-                        );
-                    };
-                    for k in (0..4).filter(|&k| cell.bevel[k] != Edge::Flat) {
-                        let along_b = k < 2;
-                        let len = if along_b { h } else { w };
-                        let point = |s: usize| match k {
-                            0 => (0, s),
-                            1 => (w, s),
-                            2 => (s, 0),
-                            _ => (s, h),
-                        };
-                        let side = [-ta_v, ta_v, -tb_v, tb_v][k];
-                        // the same direction in cells along the quad
-                        let side_ij = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)][k];
-                        // the top's edge point at step `s`, moved as the top's edge is
-                        let edge_ij = |s: usize| {
-                            let (i, j) = point(s);
-                            bevelled_ij(inset, (i as f32, j as f32), (w, h))
-                        };
-                        // where the quad's own vertex at `(i, j)` is: cut back, and up where the floor
-                        // climbs a wall
-                        let ring = |i: usize, j: usize| {
-                            let (at_i, at_j) = bevelled_ij(inset, (i as f32, j as f32), (w, h));
-                            corner
-                                + ta_v * at_i
-                                + tb_v * at_j
-                                + Vec3::Y * lift_at(corner_lift, (i as f32, j as f32), (w, h))
-                        };
-                        let edge = |s: usize| {
-                            let (i, j) = point(s);
-                            ring(i, j)
-                        };
-                        let sharp = |s: usize| {
-                            let (i, j) = point(s);
-                            base(i, j)
-                        };
-                        let sharp_ij = |s: usize| (point(s).0 as f32, point(s).1 as f32);
-                        // where the texture is `by` cells past the sharp edge, away from the top
-                        let past = |s: usize, by: f32| {
-                            let (i, j) = sharp_ij(s);
-                            (i + side_ij.0 * by, j + side_ij.1 * by)
-                        };
-                        let kind = cell.bevel[k];
-                        let concave = kind == Edge::Concave;
-                        let chamfer = (Vec3::Y + side).normalize();
-                        let foot = |s: usize| sharp(s) - Vec3::Y * BEVEL;
-                        // a cut is a strip across the corner, and a floor climbing a wall needs none
-                        for s in (0..len).filter(|_| !concave) {
-                            // the strip's texture spans its length, over from the top's edge
-                            let at = [
-                                edge_ij(s),
-                                edge_ij(s + 1),
-                                past(s, 0.083),
-                                past(s + 1, 0.083),
-                            ];
-                            push([edge(s), edge(s + 1), foot(s), foot(s + 1)], at, chamfer);
-                        }
-                    }
-                }
+        let emit = |cell: &FaceCell,
+                    (w, h): (usize, usize),
+                    at: IVec3,
+                    buffers: &mut MeshBuffers| {
+            let origin = at.as_vec3();
+            let tile = if textured {
+                cell.block.tile(Face::of_normal_y(normal.y as f32))
+            } else {
+                cell.block.lod_tile()
             };
+            let atlas_cell = tile.atlas_cell();
+            let painted = textured && tile.material_layer().is_some();
+            let color = |ao: f32, position: Vec3| {
+                // leaves share grass's tint, over a darker texture
+                let tint = if tile.tinted() {
+                    grass_tint.at(position) * cell.tint
+                } else {
+                    Vec3::ONE
+                };
+                let shade = match cell.block {
+                    BlockType::Leaves => source.canopy_shade(position),
+                    BlockType::Grass => source.forest_shade(position),
+                    _ => 1.0,
+                };
+                (tint * ao.powf(AO_GAMMA) * shade)
+                    .extend(atlas_cell)
+                    .to_array()
+            };
+            // a convex edge is cut back, a wall's foot is raised, and a floor's side by a wall climbs it
+            let inset = cell.bevel.map(|e| match e {
+                Edge::Convex => BEVEL,
+                _ => 0.0,
+            });
+            let corner_lift = cell.corner.map(|c| if c { RAMP } else { 0.0 });
+            // a wall's foot corner is let down off its raised foot to the chamfer's foot
+            let dip = cell.dip.map(|d| match (d, normal.y) {
+                (false, _) => 0.0,
+                (true, 0) => RAMP + BEVEL,
+                (true, _) => BEVEL,
+            });
+            let bevelled = cell.bevel.iter().any(|&e| e != Edge::Flat)
+                || cell.corner.contains(&true)
+                || cell.dip.contains(&true);
+            if w == 1 && h == 1 && !bevelled {
+                let positions: [Vec3; 4] = std::array::from_fn(|j| {
+                    let mut position = Vec3::from(template[j].position) + origin;
+                    if let Some([floor, ceiling]) = cell.span {
+                        position.y = if template[j].position[1] > 0.0 {
+                            ceiling
+                        } else {
+                            floor
+                        };
+                    }
+                    position
+                });
+                let uvs = std::array::from_fn(|j| template[j].uv.map(|c| c * uv_tiles));
+                let colors = std::array::from_fn(|j| color(cell.ao[j], positions[j]));
+                let positions = positions.map(|p| p.to_array());
+                buffers.push_tiled_quad(positions, template[0].normal, uvs, colors, cell.light);
+                return;
+            }
+
+            let mut corner = origin;
+            corner[a_axis] -= 0.5;
+            corner[b_axis] -= 0.5;
+            corner[normal_axis] += template[0].position[normal_axis];
+            let (mut ta_step, mut tb_step) = (ta.as_vec3(), tb.as_vec3());
+            match cell.span {
+                Some([_, ceiling]) if normal.y > 0 => corner.y = ceiling,
+                Some([floor, ceiling]) => {
+                    corner.y = floor;
+                    // the side's one step up spans just its trimmed height
+                    let up = if a_axis == 1 {
+                        &mut ta_step
+                    } else {
+                        &mut tb_step
+                    };
+                    up.y *= ceiling - floor;
+                }
+                None => {}
+            }
+            let extent = [w as f32, h as f32];
+            let uv_at = |i: f32, j: f32| {
+                let along = [i, j];
+                [0, 1].map(|k| {
+                    let t = (uv_axes[k] == b_axis) as usize;
+                    (if uv_ascending[k] {
+                        along[t]
+                    } else {
+                        extent[t] - along[t]
+                    }) * uv_tiles
+                })
+            };
+            buffers.push_fan_quad(FanQuad {
+                corner,
+                ta: ta_step,
+                tb: tb_step,
+                size: (w, h),
+                normal: template[0].normal,
+                color: &color,
+                ao: by_corner(cell.ao),
+                light: by_corner(cell.light),
+                uv_at: &uv_at,
+                inset,
+                corner_lift,
+                dip,
+                reversed: !ccw_in_ab,
+                painted,
+            });
+            if normal.y > 0 && bevelled {
+                let (ta_v, tb_v) = (ta_step, tb_step);
+                let base = |i: usize, j: usize| corner + ta_v * i as f32 + tb_v * j as f32;
+                let (corner_ao, corner_light) = (by_corner(cell.ao), by_corner(cell.light));
+                // a quad of these points, with the texture at `at` cells along the top, wound as the
+                // cube's faces are, lit and tinted as the top is
+                let mut push = |points: [Vec3; 4], at: [(f32, f32); 4], outward: Vec3| {
+                    let across = |(i, j): (f32, f32)| {
+                        (
+                            (i / w as f32).clamp(0.0, 1.0),
+                            (j / h as f32).clamp(0.0, 1.0),
+                        )
+                    };
+                    let colour = |o: usize| {
+                        let (u, v) = across(at[o]);
+                        color(blend_corners(corner_ao, u, v), points[o])
+                    };
+                    let light_at = |o: usize| {
+                        let (u, v) = across(at[o]);
+                        blend_corners(corner_light, u, v)
+                    };
+                    // the facet of three of the points, facing out
+                    let facet = |a: usize, b: usize, c: usize| {
+                        let n = (points[b] - points[a])
+                            .cross(points[c] - points[a])
+                            .normalize_or_zero();
+                        if n.dot(outward) > 0.0 {
+                            n
+                        } else {
+                            -n
+                        }
+                    };
+                    let (first, second) = (facet(0, 1, 2), facet(2, 1, 3));
+                    // a strip that rises at its ends, as the ground does where it climbs a wall, is steeper
+                    // than the chamfer, so is textured as it really lies, a triangle at a time, and lit as a chamfer
+                    if first.dot(outward) < 0.9995 || second.dot(outward) < 0.9995 {
+                        for ([a, b, c], normal) in [([0, 1, 2], first), ([2, 1, 3], second)] {
+                            // the cube's faces wind with the cross product pointing in
+                            let wound = if (points[b] - points[a])
+                                .cross(points[c] - points[a])
+                                .dot(normal)
+                                > 0.0
+                            {
+                                [a, c, b]
+                            } else {
+                                [a, b, c]
+                            };
+                            // the atlas tiles take their texture along the strip, the painted ones their plane's
+                            let unfolded =
+                                unfolded_uv(wound.map(|o| points[o]), outward, normal, points[0]);
+                            let first_vertex = buffers.vertices.len();
+                            buffers.push_tiled_triangle(
+                                wound.map(|o| points[o].to_array()),
+                                // the cube's faces along z store their normals reversed
+                                [outward.x, outward.y, -outward.z],
+                                if painted {
+                                    unfolded
+                                } else {
+                                    wound.map(|o| uv_at(at[o].0, at[o].1))
+                                },
+                                wound.map(colour),
+                                wound.map(light_at),
+                            );
+                            if painted {
+                                for (j, o) in wound.into_iter().enumerate() {
+                                    let foot = (o >= 2) as u32 as f32;
+                                    buffers.set_blend(first_vertex + j, outward.x != 0.0, foot);
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    let flipped = (points[1] - points[0])
+                        .cross(points[2] - points[0])
+                        .dot(outward)
+                        > 0.0;
+                    let order = if flipped { [1, 0, 3, 2] } else { [0, 1, 2, 3] };
+                    let first_vertex = buffers.vertices.len();
+                    buffers.push_tiled_quad(
+                        order.map(|o| points[o].to_array()),
+                        // the cube's faces along z store their normals reversed
+                        [outward.x, outward.y, -outward.z],
+                        // a painted strip's texture runs on from the top's edge
+                        if painted {
+                            let unfolded = unfolded_uv(points, outward, first, points[0]);
+                            order.map(|o| unfolded[o])
+                        } else {
+                            order.map(|o| uv_at(at[o].0, at[o].1))
+                        },
+                        order.map(colour),
+                        order.map(light_at),
+                    );
+                    if painted {
+                        for (j, o) in order.into_iter().enumerate() {
+                            let foot = (o >= 2) as u32 as f32;
+                            buffers.set_blend(first_vertex + j, outward.x != 0.0, foot);
+                        }
+                    }
+                };
+                for k in (0..4).filter(|&k| cell.bevel[k] != Edge::Flat) {
+                    let along_b = k < 2;
+                    let len = if along_b { h } else { w };
+                    let point = |s: usize| match k {
+                        0 => (0, s),
+                        1 => (w, s),
+                        2 => (s, 0),
+                        _ => (s, h),
+                    };
+                    let side = [-ta_v, ta_v, -tb_v, tb_v][k];
+                    // the same direction in cells along the quad
+                    let side_ij = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)][k];
+                    // the top's edge point at step `s`, moved as the top's edge is
+                    let edge_ij = |s: usize| {
+                        let (i, j) = point(s);
+                        bevelled_ij(inset, (i as f32, j as f32), (w, h))
+                    };
+                    // where the quad's own vertex at `(i, j)` is: cut back, and up where the floor
+                    // climbs a wall
+                    let ring = |i: usize, j: usize| {
+                        let (at_i, at_j) = bevelled_ij(inset, (i as f32, j as f32), (w, h));
+                        corner
+                            + ta_v * at_i
+                            + tb_v * at_j
+                            + Vec3::Y * lift_at(corner_lift, (i as f32, j as f32), (w, h))
+                    };
+                    let edge = |s: usize| {
+                        let (i, j) = point(s);
+                        ring(i, j)
+                    };
+                    let sharp = |s: usize| {
+                        let (i, j) = point(s);
+                        base(i, j)
+                    };
+                    let sharp_ij = |s: usize| (point(s).0 as f32, point(s).1 as f32);
+                    // where the texture is `by` cells past the sharp edge, away from the top
+                    let past = |s: usize, by: f32| {
+                        let (i, j) = sharp_ij(s);
+                        (i + side_ij.0 * by, j + side_ij.1 * by)
+                    };
+                    let kind = cell.bevel[k];
+                    let concave = kind == Edge::Concave;
+                    let chamfer = (Vec3::Y + side).normalize();
+                    let foot = |s: usize| sharp(s) - Vec3::Y * BEVEL;
+                    // a cut is a strip across the corner, and a floor climbing a wall needs none
+                    for s in (0..len).filter(|_| !concave) {
+                        // the strip's texture spans its length, over from the top's edge
+                        let at = [
+                            edge_ij(s),
+                            edge_ij(s + 1),
+                            past(s, 0.083),
+                            past(s + 1, 0.083),
+                        ];
+                        push([edge(s), edge(s + 1), foot(s), foot(s + 1)], at, chamfer);
+                    }
+                }
+            }
+        };
 
         for slice in 0..size {
             // merging takes every face it finds out of the mask, so it's left empty for the next slice

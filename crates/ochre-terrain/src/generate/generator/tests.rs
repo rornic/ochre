@@ -4198,19 +4198,16 @@ fn test_a_raised_foot_comes_down_where_the_ground_is_chamfered() {
     assert_eq!(Vec::<String>::new(), open_edges(&mesh));
 }
 
-// How the painted materials' projection, as `material_uv` in `block_texture.wesl` has it, stretches each triangle: the
-// ratio of the larger to the smaller way the texture is scaled across it, and the overall scale.
-fn texture_stretch(mesh: &Mesh) -> Vec<(f32, f32, Vec3, Vec3)> {
+// The texture coordinates the painted materials give each vertex, as `material_uv` in `block_texture.wesl` has them.
+fn painted_uvs(mesh: &Mesh) -> Vec<[f32; 2]> {
     let (
         Some(VertexAttributeValues::Float32x3(positions)),
         Some(VertexAttributeValues::Float32x3(normals)),
         Some(VertexAttributeValues::Float32x2(uvs)),
-        Some(Indices::U32(indices)),
     ) = (
         mesh.attribute(Mesh::ATTRIBUTE_POSITION),
         mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
         mesh.attribute(Mesh::ATTRIBUTE_UV_0),
-        mesh.indices(),
     )
     else {
         return Vec::new();
@@ -4239,27 +4236,41 @@ fn texture_stretch(mesh: &Mesh) -> Vec<(f32, f32, Vec3, Vec3)> {
             unstretched([at.x, -at.y], [normal.x / n.z, -normal.y / n.z])
         }
     };
+    (0..positions.len())
+        .map(|i| {
+            // texture coordinates the mesh worked out itself, see `UNFOLDED`
+            if uvs[i][0] > 512.0 {
+                [uvs[i][0] - 1024.0, uvs[i][1]]
+            } else {
+                project(Vec3::from(positions[i]), Vec3::from(normals[i]))
+            }
+        })
+        .collect()
+}
+
+// How the painted materials' projection stretches each triangle: the ratio of the larger to the smaller way the
+// texture is scaled across it, and the overall scale.
+fn texture_stretch(mesh: &Mesh) -> Vec<(f32, f32, Vec3, Vec3)> {
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(Indices::U32(indices)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.indices(),
+    )
+    else {
+        return Vec::new();
+    };
+    let all_uvs = painted_uvs(mesh);
     let mut out = Vec::new();
     for t in indices.chunks(3) {
         let p: Vec<Vec3> = t
             .iter()
             .map(|&i| Vec3::from(positions[i as usize]))
             .collect();
-        let uv: Vec<[f32; 2]> = t
-            .iter()
-            .map(|&i| {
-                let given = uvs[i as usize];
-                // texture coordinates the mesh worked out itself, see `UNFOLDED`
-                if given[0] > 512.0 {
-                    [given[0] - 1024.0, given[1]]
-                } else {
-                    project(
-                        Vec3::from(positions[i as usize]),
-                        Vec3::from(normals[i as usize]),
-                    )
-                }
-            })
-            .collect();
+        let uv: Vec<[f32; 2]> = t.iter().map(|&i| all_uvs[i as usize]).collect();
         let (e1, e2) = (p[1] - p[0], p[2] - p[0]);
         let area = e1.cross(e2).length() / 2.0;
         if area < 1e-4 {
@@ -4337,4 +4348,77 @@ fn test_painted_textures_are_not_stretched_on_chamfers_and_barely_on_ramps() {
         tops.0,
         tops.1
     );
+}
+
+#[test]
+fn test_a_painted_chamfer_runs_the_texture_on_from_the_top() {
+    let blocks: Vec<_> = (4..7)
+        .flat_map(|x| (4..7).map(move |z| (x, 4, z)))
+        .collect();
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+    )
+    else {
+        panic!("missing attributes");
+    };
+    let uvs = painted_uvs(&mesh);
+    let key = |p: [f32; 3]| [0, 1, 2].map(|k| (p[k] * 64.0).round() as i32);
+    let mut tops = std::collections::HashMap::new();
+    for i in (0..positions.len()).filter(|&i| normals[i][1] > 0.99) {
+        tops.insert(key(positions[i]), uvs[i]);
+    }
+    let mut checked = 0;
+    for i in (0..positions.len()).filter(|&i| normals[i][1] > 0.6 && normals[i][1] < 0.8) {
+        let Some(top) = tops.get(&key(positions[i])) else {
+            continue;
+        };
+        let off = ((uvs[i][0] - top[0]).powi(2) + (uvs[i][1] - top[1]).powi(2)).sqrt();
+        assert!(
+            off < 0.01,
+            "a chamfer's top edge is {off} blocks from the top's texture"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 8,
+        "only {checked} chamfer vertices share the top's edge"
+    );
+}
+
+#[test]
+fn test_a_painted_chamfer_blends_into_the_wall_at_its_foot() {
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&[(4, 4, 4)])).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(VertexAttributeValues::Float32x2(modes)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
+    )
+    else {
+        panic!("missing attributes");
+    };
+    let (mut top_edge, mut foot) = (0, 0);
+    for (n, mode) in normals.iter().zip(modes) {
+        if !(n[1] > 0.6 && n[1] < 0.8) {
+            continue;
+        }
+        // 0 or 0.25 is none of the wall's projection, and 0.2 or 0.45 is all of it
+        let amount = (mode[1] % 0.25) / 0.2;
+        assert!(mode[1] < 0.5, "a chamfer is marked as a coarse cell");
+        if amount < 0.01 {
+            top_edge += 1;
+        } else if amount > 0.99 {
+            foot += 1;
+        } else {
+            panic!("a chamfer vertex is part way: {mode:?}");
+        }
+    }
+    // each of the four strips has two vertices on the top's edge and two on its foot
+    assert_eq!((8, 8), (top_edge, foot));
 }
