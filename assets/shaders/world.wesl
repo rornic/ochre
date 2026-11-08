@@ -7,7 +7,7 @@ import bevy_pbr::render::{
     view_transformations::{position_world_to_clip, position_world_to_view},
 };
 import super::block_texture::{
-    block_alpha, block_footprint, block_mean, block_sample, material_fade, material_footprint, material_layer,
+    block_alpha_at, block_footprint, block_mean, block_sample, foliage_level, material_fade, material_footprint, material_layer,
     material_sample, material_uv,
 };
 import super::hash::value_noise;
@@ -250,9 +250,8 @@ fn fragment(
         }
         color.a = 1.0;
     } else if is_leaf(in.color.a) || is_flora(in.color.a) {
-        // cut where the depth prepass and shadows do, at full detail: a blurred alpha agrees
-        // with them only up close, and where it doesn't the holes flicker
-        color.a = block_alpha(in.uv, in.color.a);
+        // cut where the depth prepass does, at the same blur, so the two agree and the holes don't flicker
+        color.a = block_alpha_at(in.uv, in.color.a, foliage_level(distance(world_position, eye()), view_bindings::view.viewport.w, view_bindings::view.clip_from_view[1][1]));
     }
 }
     // `DebugSettings::solid_leaves`: leaves without their holes, as coarse LODs draw them

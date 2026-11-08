@@ -24,6 +24,11 @@ def linear(v):
 
 
 DEST.mkdir(exist_ok=True)
+# a compacted rock is its rock's layer packed darker, as `derive()` in generate.py does the atlas tile
+for t in TILES:
+    if t["name"] in PAINTED and t.get("derive") == "shade":
+        body = np.asarray(Image.open(PAINTED_OUT / f"{t['body']}.png").convert("RGB"), float)
+        Image.fromarray(np.clip((body * t["factor"] * np.array(t["tint"])).round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}.png")
 means = {}
 for name in PAINTED:
     img = Image.open(PAINTED_OUT / f"{name}.png").convert("RGB")

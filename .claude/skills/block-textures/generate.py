@@ -28,7 +28,8 @@ PAINTED_PROMPTS = {  # a few big soft shapes: SD adds detail unprompted, and det
 PAINTED_CFG = {"Stone": 4.5, "Sand": 4.5}  # looser than the graph's 7: strong prompt pull makes SD draw ornamental tessellations
 PAINTED_AVOID = "detailed, noisy, fine texture, grain, pebbles, cracks, speckles, sharp, high contrast, realistic, photo, outlines"
 PAINTED_STD = 12  # luminance contrast of a painted layer, low so the sun and painterly lighting do the shading
-PAINTED = ["Stone", "Dirt", "GrassTop", "Sand", "Snow", "Limestone", "Clay", "Basalt", "Marble", "Granite", "Shale", "SandstoneTop", "Gravel"]  # layer order, `MATERIAL_FILES` in crates/ochre-base/src/block.rs
+PAINTED = ["Stone", "Dirt", "GrassTop", "Sand", "Snow", "Limestone", "Clay", "Basalt", "Marble", "Granite", "Shale", "SandstoneTop", "Gravel",
+           "Ice", "LogBark", "LogEnd", "CompactedStone", "CompactedLimestone", "CompactedClay", "CompactedBasalt", "CompactedMarble", "CompactedSandstone", "CompactedGranite", "CompactedShale"]  # layer order, `MATERIAL_FILES` in crates/ochre-base/src/block.rs
 PAINTED_OUT = OUT / "512"
 
 # Order matches `Tile` in crates/ochre-base/src/block.rs. Generated tiles take a prompt, `avoid` (negative prompt), and optionally
