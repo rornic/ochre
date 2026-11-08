@@ -1,8 +1,8 @@
 # Painterly lighting (stage 2)
 
 *   **Author:** Rory Nickolls
-*   **Status:** Draft, for hand-off
-*   **Date:** 2026-11-07
+*   **Status:** Built, on by default. See "As built".
+*   **Date:** 2026-11-07, built 2026-11-08
 
 ## Overview
 
@@ -15,6 +15,8 @@ This change gives painted cube faces a painterly lighting model: soft wrapped li
 Target look: Overwatch-style hand-painted. Warm key light, cool coloured shadows (never grey or black), forms modelled by soft colour gradients rather than hard light/dark steps, no outlines.
 
 ## Scope
+
+This is the plan as drafted. The scope grew to every face, see "As built".
 
 In: faces that draw a painted material (`painted` in `world.wesl`, `Tile::material_layer().is_some()`), at full-detail chunks.
 
@@ -92,12 +94,25 @@ Not in the spike: rim light, outlines, stylised shadow banding, per-material sha
 
 Commit per slice as lowercase conventional commits. Do not push or open a PR until asked.
 
+## As built
+
+Painterly is the default, and `[renderer] painterly_lighting = false` restores the previous model. The setting and the old path remain until the owner deletes them. What differs from the plan:
+
+*   **Every face, not only painted ones.** Painterly light, saturation and AO apply to painted tiles, leaves, flora, logs, tree boxes and LOD cells alike, so nothing sits on the old model and there is no seam at the full-detail to LOD handover. Water, sky and clouds keep their own lighting. Leaves and flora were also painted, with RGBA layers (`docs/materials.md`).
+*   **One switch.** `material::set_painterly`, called from `TerrainRenderPlugin`, turns on the `PAINTERLY` def in every terrain, water and cloud pipeline through `push_shader_defs`, and the gentler AO in the mesher. The chunk material key carries nothing.
+*   **Smooth bevel lighting is not behind the setting.** The marks carry the wall's facing in four bands, offset by `BLEND_BASE` so interpolation can't tip a vertex into the next band, and the shader turns the lighting normal from up toward the wall over a chamfer, and by at most half over a ramp (`RAMP_LIT_TURN`). The facing uses the stored normals' convention, which reverses z. No `GENERATOR_VERSION` bump was needed, since marks are made at meshing time and the cached maps don't hold them. See `docs/bevels.md`.
+*   **The model.** Wrap `WRAP` 0.35, shadow visibility remapped over 0.1 to 0.9, shadow fill the sky's ambient pushed toward `SHADOW_TINT` (0.55, 0.63, 1.0) by 0.3, floored at 0.35 of a lit face, saturation gain 1.1 lit and in shadow. Faces turned from the sun ignore the shadow map, which shadows them wholesale and would cancel the wrap. The first tint, violet at 0.65, turned marble sides lilac, and the saturation gain amplified it.
+*   **Land past the shadows** is lit at `FAR_VISIBILITY` (0.8) of the sun, so it isn't brighter than shadowed land nearer. This applies in `sun_shadow` under the setting only.
+*   **AO.** AO multiplies the albedo, so the shadow floor never softened it, and option (a) would have changed nothing. Option (b) is built without the warm tint: `AO_GAMMA_PAINTERLY` 1.5 for every face, set through `set_painterly_ao` like `set_packed`.
+*   **Atmosphere and grade** were not in the plan. The haze thickens sooner (`PAINTERLY_FOG_SCALE` 0.16 against 0.25) and warms toward a low sun (`SUN_HAZE`), and the grade (`dry_color_grading(true)`) is a touch warmer and richer (warmth 0.015, saturation 1.04) with bloom at 0.08. Bevy's grade is sensitive: warmth 0.08 turned noon into sunset, and lifted blacks showed the cloud dome's edge.
+*   **Cost** is about 0.3 ms in the opaque pass on the RTX 2060 and 60 fps holds, see `docs/terrain-perf.md`.
+
+Not built, and noted for later: per-biome tuning (the shaders have no biome, so it needs a world-space biome texture or a table per material), shadows past the cascades (a horizon map precomputed from the world heightmap, one sample per far fragment), chamfered vertical wall corners, and trees, which are still cubes.
+
 ## Open questions for the owner
 
-*   How far toward flat painted (Zelda-like soft bands) versus soft painted (Overwatch)? The brief assumes soft gradients with no banding.
-*   Is a cube-only seam at trees and water acceptable for the spike, or must flora and leaves follow in the same change?
-*   Should the painterly model also apply to LOD cells (they draw a mean colour and are far away, so probably not)?
-*   AO option (a) or (b).
+Answered: soft gradients with no banding; leaves and flora followed in the same change; LOD cells take the model too; AO option (b). Still open: chamfering vertical wall corners.
+
 *   Chamfer vertical wall corners, so they can blend and light smoothly like the tops' bevels? It is a mesher change with a vertex cost, and without it cliff corners stay a hard crease in both texture and light.
 
 ## Texture notes carried from stage 1

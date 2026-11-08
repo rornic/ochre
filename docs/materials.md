@@ -24,16 +24,21 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 - The fragment shader takes one array sample per painted fragment, or the layer's mean once a block is under a pixel (`MEAN_BLOCK_RATE`). Slow world-space noise (`drift`) shifts brightness and warmth to hide the repeat, with no extra sample.
 - The mesher and vertex attributes are unchanged, so `bench` vertex counts do not move.
 
+## Lighting
+
+Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is on by default and described in `docs/designs/painterly-lighting.md`. `painterly_lighting = false` restores the previous lighting.
+
 ## Settings
 
-`[renderer]` in `assets/settings.toml`: `material_period` (blocks before the texture repeats, a power of two up to 64, default 8) and `material_anisotropy` (1 to 16, default 8). Both need a restart. The sandbox reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC=1` to read frame times at a fixed size.
+`[renderer]` in `assets/settings.toml`: `material_period` (blocks before the texture repeats, a power of two up to 64, default 8), `material_anisotropy` (1 to 16, default 8) and `painterly_lighting` (default true). All need a restart. The sandbox reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC=1` to read frame times at a fixed size.
 
 ## The fps gate
 
-The change passes if the median frame time at spawn stays at 16.7 ms or lower (60fps) at 1920x1080 on the RTX 2060. Run `OCHRE_SEED=1692045686 OCHRE_RESOLUTION=1920x1080 OCHRE_NOVSYNC=1 OCHRE_STATS=1` for 80 s, three runs, and log the overlay's median in `docs/terrain-perf.md` next to the baseline. If it fails, lower anisotropy first, then paint off for LOD cells beyond a distance.
+A change passes if the median frame time at spawn stays at 16.7 ms or lower (60fps) at 1920x1080 on the RTX 2060. Run `OCHRE_SEED=1692045686 OCHRE_RESOLUTION=1920x1080 OCHRE_NOVSYNC=1 OCHRE_STATS=1` for 80 s, three runs, and log the overlay's median in `docs/terrain-perf.md` next to the baseline. If it fails, lower anisotropy first, then paint off for LOD cells beyond a distance.
 
 ## Open
 
 - `blocks.png` still holds every tile, painted ones included, which the mesher and `block_mean` index by cell. Shrinking it to leaves, flora and water needs a new cell order.
 - A log's end grain is a world-space layer, so its rings aren't centred on the trunk, and a chamfered trunk top blends the end grain, not the bark, into the wall at its rim.
-- Bevel, blended boundaries and painterly lighting are separate, later stages.
+- Leaves repeat per block, so a faint block grid shows in near canopies, and tree crowns are still cubes. Painting them in world space needs normals in the shadow pass or a mesher change.
+- Blended material boundaries are not built, and the biome is not available to the shaders, so painterly constants can't vary per biome yet.
