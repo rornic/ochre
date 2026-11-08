@@ -296,6 +296,13 @@ impl Shapes {
         } else {
             [false; 4]
         };
+        // ground between walls on opposite sides is a trench a block wide, where ramps from both sides would only lift the whole floor
+        let walled = |k: usize| base.edges[k] == Edge::Concave;
+        let raised = if (walled(0) && walled(1)) || (walled(2) && walled(3)) {
+            [false; 4]
+        } else {
+            raised
+        };
         let shape = Shape {
             edges: base.edges,
             raised,
@@ -324,6 +331,15 @@ pub(super) fn wall_foot(
     let opaque = |c: IVec3| source.block(c).is_opaque();
     let ground = coord - IVec3::Y + normal;
     if !(opaque(coord - IVec3::Y) && opaque(ground) && source.block(ground) == own) {
+        return [false; 2];
+    }
+    // ground in a trench a block wide isn't raised, see `Shapes::shape`
+    let walled = |side: IVec3| {
+        opaque(ground + side)
+            && opaque(ground + side + IVec3::Y)
+            && source.block(ground + side + IVec3::Y) == own
+    };
+    if walled(normal) || (walled(ta) && walled(-ta)) {
         return [false; 2];
     }
     [-ta, ta].map(|side| {

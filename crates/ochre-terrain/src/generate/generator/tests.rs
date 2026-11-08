@@ -4477,3 +4477,36 @@ fn test_a_painted_ramp_is_marked_with_the_way_its_wall_faces_away_from_it() {
     }
     assert!(checked >= 4, "only {checked} ramp vertices are marked");
 }
+
+#[test]
+fn test_a_trench_a_block_wide_has_a_level_floor() {
+    // a floor with two walls along it a block apart, so the ground between has a wall on both sides
+    let mut blocks: Vec<(u16, u16, u16)> = (2..11)
+        .flat_map(|x| (2..11).map(move |z| (x, 4, z)))
+        .collect();
+    blocks.extend((3..10).flat_map(|z| [(5, 5, z), (7, 5, z)]));
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(VertexAttributeValues::Float32x2(modes)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
+    )
+    else {
+        panic!("missing attributes");
+    };
+    let mut floor = 0;
+    for ((p, n), mode) in positions.iter().zip(normals).zip(modes) {
+        // the trench's floor, in the middle of its length
+        if n[1] > 0.99 && (5.4..6.6).contains(&p[0]) && (3.0..9.0).contains(&p[2]) {
+            assert!(p[1] < 4.51, "a trench's floor is raised to {} at {p:?}", p[1]);
+            assert!(mode[1] <= 0.0, "a trench's floor is blended into a wall: {mode:?}");
+            floor += 1;
+        }
+    }
+    assert!(floor >= 4, "only {floor} floor vertices found");
+    assert_eq!(Vec::<String>::new(), open_edges(&mesh));
+}
