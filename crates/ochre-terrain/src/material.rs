@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use bevy::{
     asset::{Asset, RenderAssetUsages},
     ecs::system::SystemParam,
@@ -30,11 +32,26 @@ pub fn water_level() -> ShaderDefVal {
     ShaderDefVal::Int("WATER_LEVEL".into(), WATER_LEVEL as i32)
 }
 
+static PAINTERLY: AtomicBool = AtomicBool::new(false);
+
+/// Whether the painterly look is on, set from `painterly_lighting` before any pipeline is built: it turns on `PAINTERLY` in every terrain, water and cloud shader.
+pub fn set_painterly(on: bool) {
+    PAINTERLY.store(on, Ordering::Relaxed);
+    crate::generate::generator::set_painterly_ao(on);
+}
+
 // Every stage needs every def its file's imports use, since each is built from the whole file.
 pub fn push_shader_defs(descriptor: &mut RenderPipelineDescriptor, defs: &[ShaderDefVal]) {
+    let painterly: Vec<ShaderDefVal> = if PAINTERLY.load(Ordering::Relaxed) {
+        vec!["PAINTERLY".into()]
+    } else {
+        vec![]
+    };
     descriptor.vertex.shader_defs.extend_from_slice(defs);
+    descriptor.vertex.shader_defs.extend_from_slice(&painterly);
     if let Some(fragment) = &mut descriptor.fragment {
         fragment.shader_defs.extend_from_slice(defs);
+        fragment.shader_defs.extend_from_slice(&painterly);
     }
 }
 
@@ -192,8 +209,6 @@ pub struct ChunkMaterial {
     pub non_cutout: bool,
     /// Blocks before a painted material repeats, compiled into the shaders.
     pub period: u32,
-    /// Painted faces use `painterly_light`, compiled into the shaders.
-    pub painterly: bool,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -201,7 +216,6 @@ pub struct ChunkMaterialKey {
     pub debug: DebugSettings,
     pub non_cutout: bool,
     pub period: u32,
-    pub painterly: bool,
 }
 
 impl From<&ChunkMaterial> for ChunkMaterialKey {
@@ -210,7 +224,6 @@ impl From<&ChunkMaterial> for ChunkMaterialKey {
             debug: material.debug,
             non_cutout: material.non_cutout,
             period: material.period,
-            painterly: material.painterly,
         }
     }
 }
@@ -268,9 +281,6 @@ impl Material for ChunkMaterial {
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
         ];
         // compiled in or out, so the switches leave no trace of the code they turn off
-        if key.bind_group_data.painterly {
-            defs.push("PAINTERLY".into());
-        }
         if key.bind_group_data.debug.still_leaves {
             defs.push("STILL_LEAVES".into());
         }
@@ -311,7 +321,6 @@ impl TerrainMaterials {
     pub fn new(
         debug: DebugSettings,
         period: u32,
-        painterly: bool,
         inputs: &ShaderInputs,
         assets: &mut TerrainAssets,
     ) -> Self {
@@ -327,7 +336,6 @@ impl TerrainMaterials {
             debug,
             non_cutout: false,
             period,
-            painterly,
         });
         let base_chunk = assets.chunk.get(&chunk).unwrap().clone();
         let solid_chunk = assets.chunk.add(ChunkMaterial {

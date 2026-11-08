@@ -2,7 +2,7 @@ use bevy::{
     color::{Alpha, Color, ColorToComponents, LinearRgba},
     core_pipeline::tonemapping::Tonemapping,
     math::{Mat3, Vec3},
-    render::view::{ColorGrading, ColorGradingGlobal},
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
 };
 
 /// Rolls sunlit highlights off instead of clipping them, while keeping shade's colour:
@@ -13,16 +13,42 @@ pub const TONEMAPPING: Tonemapping = Tonemapping::SomewhatBoringDisplayTransform
 /// tonemapping curve has bent it. `water.wesl` reads it from the view's colour grading.
 pub(crate) const EXPOSURE: f32 = 0.5;
 
-/// The camera's colour grading out of water.
-pub fn dry_color_grading() -> ColorGrading {
+/// The camera's colour grading out of water, with the painterly look's warmth, lifted shadows and softer contrast if `painterly`.
+pub fn dry_color_grading(painterly: bool) -> ColorGrading {
+    if !painterly {
+        return ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: EXPOSURE,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+    }
     ColorGrading {
         global: ColorGradingGlobal {
             exposure: EXPOSURE,
+            temperature: PAINTERLY_WARMTH,
+            post_saturation: PAINTERLY_SATURATION,
+            ..Default::default()
+        },
+        shadows: ColorGradingSection {
+            lift: PAINTERLY_SHADOW_LIFT,
+            contrast: PAINTERLY_CONTRAST,
+            ..Default::default()
+        },
+        midtones: ColorGradingSection {
+            contrast: PAINTERLY_CONTRAST,
             ..Default::default()
         },
         ..Default::default()
     }
 }
+
+// The painterly grade: a little warmer and richer, with the blacks lifted and the contrast eased, for a cosy rather than punchy picture.
+const PAINTERLY_WARMTH: f32 = 0.015;
+const PAINTERLY_SATURATION: f32 = 1.04;
+const PAINTERLY_SHADOW_LIFT: f32 = 0.0;
+const PAINTERLY_CONTRAST: f32 = 1.0;
 
 // rows: luma, then the two chroma channels
 const RGB_TO_YCBCR: Mat3 = Mat3::from_cols(

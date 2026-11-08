@@ -582,7 +582,7 @@ pub fn spawn_player(
             TONEMAPPING,
             // Just a soft glow around the brightest sunlit faces and sky.
             Bloom {
-                intensity: 0.05,
+                intensity: if renderer.painterly_lighting { 0.08 } else { 0.05 },
                 ..Bloom::NATURAL
             },
             // TAA for the thin faces and one-block steps that shimmer at a distance
@@ -613,7 +613,7 @@ pub fn spawn_player(
                 aperture_f_stops: 2.2,
                 ..default()
             },
-            dry_color_grading(),
+            dry_color_grading(renderer.painterly_lighting),
             // a light darkening toward the corners, which draws the eye in
             Vignette {
                 intensity: 0.35,
