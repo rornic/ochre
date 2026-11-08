@@ -227,7 +227,7 @@ pub enum Tile {
 pub const TILE_COUNT: usize = 35;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 24] = [
+pub const MATERIAL_FILES: [&str; 31] = [
     "stone",
     "dirt",
     "grass_top",
@@ -252,6 +252,14 @@ pub const MATERIAL_FILES: [&str; 24] = [
     "compacted_sandstone",
     "compacted_granite",
     "compacted_shale",
+    // RGBA, drawn across a tile's own uv instead of by world position, see `Tile::foliage_layer`
+    "leaves",
+    "tall_grass",
+    "fern",
+    "poppy",
+    "dandelion",
+    "short_grass",
+    "seed_grass",
 ];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
@@ -290,6 +298,23 @@ impl Tile {
             _ => None,
         }
     }
+
+    // The RGBA layer a leaf or plant draws instead of its atlas tile, across the tile's own uv. Leaves repeat it every
+    // block and a plant's sprite is drawn once across its quad, so neither needs the world-space projection that
+    // `material_layer` is for, and the depth and shadow passes, which have no normals, cut them just as the main pass does.
+    // The flora layers follow `FIRST_FLORA`'s order.
+    pub fn foliage_layer(self) -> Option<u8> {
+        match self {
+            Tile::Leaves => Some(Self::LEAVES_LAYER),
+            flora if flora as u8 >= Self::FIRST_FLORA as u8 => {
+                Some(Self::FIRST_FLORA_LAYER + flora as u8 - Self::FIRST_FLORA as u8)
+            }
+            _ => None,
+        }
+    }
+
+    pub const LEAVES_LAYER: u8 = 24;
+    pub const FIRST_FLORA_LAYER: u8 = 25;
 
     // What meshes carry in vertex alpha for `block_texture.wesl`.
     pub fn atlas_cell(self) -> f32 {
@@ -436,6 +461,29 @@ mod tests {
         ] {
             assert_eq!(None, tile.material_layer());
         }
+    }
+
+    #[test]
+    fn test_foliage_layers_follow_the_file_list() {
+        for tile in [
+            Tile::Leaves,
+            Tile::TallGrass,
+            Tile::Fern,
+            Tile::Poppy,
+            Tile::Dandelion,
+            Tile::ShortGrass,
+            Tile::SeedGrass,
+        ] {
+            let layer = tile.foliage_layer().unwrap() as usize;
+            assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
+        }
+        assert_eq!(None, Tile::Water.foliage_layer());
+        assert_eq!(None, Tile::Stone.foliage_layer());
+        // every layer is a world-space material or a foliage layer, so none is orphaned
+        assert_eq!(
+            MATERIAL_LAYERS,
+            Tile::FIRST_FLORA_LAYER as usize + (Tile::SeedGrass as usize - Tile::FIRST_FLORA as usize) + 1
+        );
     }
 
     #[test]

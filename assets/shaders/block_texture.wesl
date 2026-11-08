@@ -14,14 +14,68 @@
 const ATLAS_CELLS: f32 = 35.0;
 const TILE_INSET: f32 = 0.002;
 
-// Just the alpha of `block_sample`, at full detail: without screen-space derivatives, so
-// it's fine where only some fragments sample, as the shadow pass does for leaves.
-fn block_alpha(uv: vec2<f32>, vertex_alpha: f32) -> f32 {
-    return block_alpha_at(uv, vertex_alpha, 0.0);
+// The `materials` layer a leaf or plant draws across its tile's own uv, -1 for any other cell: `Tile::foliage_layer`.
+// `LEAVES_LAYER` and `FIRST_FLORA_LAYER` come from `ChunkMaterial::specialize`.
+fn foliage_layer(vertex_alpha: f32) -> i32 {
+    let cell = i32(floor(vertex_alpha + 0.5));
+    if cell == i32(constants::LEAF_CELL) {
+        return i32(constants::LEAVES_LAYER);
+    }
+    if cell >= i32(constants::FIRST_FLORA_CELL) {
+        return i32(constants::FIRST_FLORA_LAYER) + cell - i32(constants::FIRST_FLORA_CELL);
+    }
+    return -1;
 }
 
-// `block_alpha` from mip `level`, which averages away holes smaller than the lookup's footprint.
+fn is_flora_cell(vertex_alpha: f32) -> bool {
+    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5;
+}
+
+// Texels along a foliage layer, which is 512px against the atlas's 16.
+const FOLIAGE_TEXELS: f32 = 512.0;
+
+// A leaf or plant's colour at `uv`: leaves repeat their layer every block, a sprite is drawn once, kept inside its
+// edge so the repeat doesn't bleed its far side in. `dx` and `dy` are `uv`'s screen derivatives.
+fn foliage_sample(uv: vec2<f32>, layer: i32, flora: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+    var p = uv;
+    if flora {
+        let texels = max(length(dx), length(dy)) * FOLIAGE_TEXELS;
+        let coarsest = exp2(clamp(ceil(log2(max(texels, 1.0))), 0.0, log2(FOLIAGE_TEXELS)));
+        let inset = max(TILE_INSET, 0.5 * coarsest / FOLIAGE_TEXELS);
+        p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
+    }
+    return material_color * textureSampleGrad(materials, materials_sampler, p, layer, dx, dy);
+}
+
+// How blurred a leaf or plant is cut out at `distance` blocks from the camera: a texel a block deep is far finer
+// than a pixel past a block or two, and cut at full detail it would shimmer. Both the main and depth passes cut at
+// this, so they agree. `view` is the camera's.
+fn foliage_level(distance: f32, viewport_height: f32, focal: f32) -> f32 {
+    let blocks_per_pixel = 2.0 * distance / (viewport_height * focal);
+    return clamp(log2(max(blocks_per_pixel * FOLIAGE_TEXELS, 1.0)), 0.0, log2(FOLIAGE_TEXELS));
+}
+
+// Blurred alpha loses thin leaves and stems, which average below the cut, so it's scaled up as the level climbs to cut at
+// a lower coverage: a field of grass stays a field rather than fading out a few blocks away.
+const COVERAGE_CUT_FAR: f32 = 0.1;
+const COVERAGE_LEVELS: f32 = 5.0;
+fn foliage_cut(alpha: f32, level: f32) -> f32 {
+    let cut = mix(0.5, COVERAGE_CUT_FAR, clamp(level / COVERAGE_LEVELS, 0.0, 1.0));
+    return min(alpha * 0.5 / cut, 1.0);
+}
+
+// A leaf or plant's alpha from mip `level`, which averages away holes smaller than the lookup's footprint, scaled by `foliage_cut`.
+// The atlas cells with no foliage layer have the alpha of their tile.
 fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, level: f32) -> f32 {
+    let layer = foliage_layer(vertex_alpha);
+    if layer >= 0 {
+        var p = uv;
+        if is_flora_cell(vertex_alpha) {
+            let inset = max(TILE_INSET, 0.5 * exp2(level) / FOLIAGE_TEXELS);
+            p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
+        }
+        return foliage_cut(textureSampleLevel(materials, materials_sampler, p, layer, level).a, level) * material_color.a;
+    }
     let atlas_cell = floor(vertex_alpha + 0.5);
     // a coarse level's texels are wider, so the lookup stays half of one inside the tile
     let inset = max(TILE_INSET, 0.5 * exp2(level) / f32(textureDimensions(material_color_texture).y));
@@ -54,6 +108,11 @@ fn block_footprint(uv: vec2<f32>) -> BlockFootprint {
 // Block meshes put tile counts in uv and the atlas cell in vertex alpha, so merged faces
 // repeat their texture.
 fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> vec4<f32> {
+    let layer = foliage_layer(vertex_alpha);
+    if layer >= 0 {
+        // the footprint's derivatives are in atlas cells
+        return foliage_sample(uv, layer, is_flora_cell(vertex_alpha), vec2<f32>(footprint.dx.x * ATLAS_CELLS, footprint.dx.y), vec2<f32>(footprint.dy.x * ATLAS_CELLS, footprint.dy.y));
+    }
     let atlas_cell = floor(vertex_alpha + 0.5);
     let tile_uv = clamp(fract(uv), vec2<f32>(footprint.inset), vec2<f32>(1.0 - footprint.inset));
     let atlas_uv = vec2<f32>((atlas_cell + tile_uv.x) / ATLAS_CELLS, tile_uv.y);
@@ -181,7 +240,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
         vec3<f32>(0.6173, 0.7140, 0.8183), // snow
         vec3<f32>(0.0755, 0.0383, 0.0301), // log bark
-        vec3<f32>(0.2433, 0.2433, 0.2433), // leaves
+        vec3<f32>(0.2499, 0.2499, 0.2499), // leaves
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
         vec3<f32>(0.2403, 0.1078, 0.0716), // dirt
         vec3<f32>(0.4026, 0.2195, 0.1318), // log end
@@ -204,12 +263,12 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.1033, 0.0949, 0.1022), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
         vec3<f32>(0.0739, 0.0680, 0.0731), // compacted shale
-        vec3<f32>(0.5186, 0.5186, 0.5186), // tall grass
-        vec3<f32>(0.3112, 0.3112, 0.3112), // fern
-        vec3<f32>(0.2675, 0.0986, 0.0166), // poppy
-        vec3<f32>(0.3420, 0.3242, 0.0266), // dandelion
-        vec3<f32>(0.5175, 0.5175, 0.5175), // short grass
-        vec3<f32>(0.5246, 0.5246, 0.5246), // seed grass
+        vec3<f32>(0.4954, 0.4954, 0.4954), // tall grass
+        vec3<f32>(0.3000, 0.3000, 0.3000), // fern
+        vec3<f32>(0.3995, 0.0742, 0.0164), // poppy
+        vec3<f32>(0.3838, 0.3697, 0.0299), // dandelion
+        vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
+        vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);

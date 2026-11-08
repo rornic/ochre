@@ -5,7 +5,7 @@ description: Generate or regenerate Ochre's 16px seamless block textures (stone,
 
 # Block textures
 
-The atlas `assets/textures/blocks.png` is one 16px-tall strip, for the tiles not yet painted (see Painted materials below). Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. `pack.py` asserts the length.
+The atlas `assets/textures/blocks.png` is one 16px-tall strip. Only water still draws from it: every other tile is painted (see Painted materials and Foliage below), and the strip's cells for them are placeholders the mesher and `block_mean` still index. Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. `pack.py` asserts the length.
 
 ## One-time setup
 
@@ -38,7 +38,7 @@ Open `out/contact.png` (each tile repeated 3x3, 9x zoom) and check seams. Re-rol
 - `block_texture.json` is the txt2img graph. SD1.5 renders 512px with circular padding in both axes so the result tiles. `generate.py` saves the render as `out/raw_<Tile>.png` and `finish()` turns it into 16x16: Lanczos down, wrap-around blur (`smooth`, keeps seams), normalise mean colour and luminance contrast, then a 4-colour quantise (`COLORS`). Plain `area` averaging gives flat grey, so don't use it.
 - Normalisation targets come from `reference.png`, the hand-drawn 7-tile atlas from before the procedural generator (commit 1d2587c), not the live atlas, because `pack.py` overwrites that. Its alpha also supplies the leaf holes, since SD can't draw cut-outs. A tile past the reference's 7 can set `mean=(r, g, b)` in `TILES` (sandstone, log end, ice, dirt and gravel do) and `std`, or it keeps the colour SD produced with `DEFAULT_STD` contrast.
 - `GrassTop` and `Leaves` are greyscale and tinted per climate by the shader, which assumes mean brightness 187 and 135 (sRGB), so `grey=` fixes their mean.
-- Flora tiles (`derive="sprite"`, the atlas's last six) aren't AI-generated either: SD can't draw a lone plant on transparency at 16px. `flora.py` draws them pixel by pixel, greyscale grasses and fern levelled by `grey=` for the climate tint, flowers in colour. The shaders treat every tile from `Tile::FIRST_FLORA` on as a sprite, so new flora goes on the end.
+- The flora atlas cells (`derive="sprite"`, the atlas's last six) are no longer drawn, see Foliage; they were never AI-generated either: SD can't draw a lone plant on transparency at 16px. `flora.py` draws them pixel by pixel, greyscale grasses and fern levelled by `grey=` for the climate tint, flowers in colour. The shaders treat every tile from `Tile::FIRST_FLORA` on as a sprite, so new flora goes on the end.
 - Side tiles are not AI-generated, since SD can't draw a fringe. `derive()` builds them from the picked tiles, so after picking new sources rerun `generate.py GrassSide SnowSide SandstoneSide`. `GrassSide` is `overlay`: only a greyscale grass fringe on transparency (shifted GrassTop pixels, 2-4 rows deep), which `world.wesl` layers over the Dirt tile by its alpha, tinting just the grass, so changing Dirt changes grass sides too. `SnowSide` is `fringe`: a snow fringe baked over Dirt. `SandstoneSide` is `strata`: darker rows over SandstoneTop.
 - `pack.py` rewrites the `block_mean` table in `block_texture.wesl`, which `material.rs` tests against the atlas.
 - Don't add the Plixel Minecraft LoRA. It was trained on sprites, so it draws a sprite on a white or checkerboard background and ignores tiling. At 512px it only produces dither noise.
@@ -71,3 +71,15 @@ python materials.py                               # copy to assets/textures/mate
 The compacted rocks aren't painted: `materials.py` derives each from its rock's picked layer (`derive="shade"` in `TILES`, 85% brightness) before installing, so repick the rock, then rerun it. `PROMPTS` holds each other tile's prompt after the LoRA's trigger words. Renders are downscaled to 512. `--pick` moves only the mean (`TARGET_MEAN`, the atlas tile's mean, so the world keeps its tones) and contrast (`CONTRAST`) and makes GrassTop greyscale at the mean the biome tint assumes. Stop ComfyUI before running the game, as both want the card.
 
 What reads well in play: a block is 32px of a layer at repeat 16 (64px at the default 8). Detail much finer than a block averages into grain, and flat colour reads as plastic, so ask for shapes of about a block with soft shading. Reject any candidate with one large distinctive feature (a long crack, a big blob). It shows as an obvious repeat across the world, so prefer even, uniform candidates, and look at them tiled 2x2. Judge in the game, not on the contact sheet, which exaggerates detail the mip chain removes.
+
+## Foliage
+
+Leaves and the six flora sprites draw 512px RGBA layers 24 to 30 of the materials array, see `Tile::foliage_layer` and `docs/materials.md`. They are made by `foliage.py`, not `materials.py`:
+
+```
+python lora_paint.py Leaves --tag l --seeds 1 2 3 4 --prompt "overlapping painted green leaves, dense foliage, broad simple leaf shapes each edged with darker green, small dark gaps between the leaf clumps, flat front view" --avoid "flowers, branches, trunk, sky, fruit, border, frame, single leaf, vein detail"
+python foliage.py --leaves 4      # cut holes in candidate Leaves_l4, draw the plants, install all seven, rewrite block_mean
+python foliage.py                 # just the plants again (--seed, --paint to vary them)
+```
+
+Leaves are the SDXL painting made greyscale at the mean the tint assumes (0.25 linear), with holes where it is darkest once veins are blurred away (30% gap), so they are leaf-shaped. Plants are brush strokes drawn at 2x with Pillow and filled with the painting's tone: SD can't draw a lone plant on transparency. Grass, short grass, seed grass and fern are greyscale and tinted by the climate (means 0.5, 0.5, 0.5, 0.3); poppy and dandelion are colour. Strokes are kept off the top and sides, which the clamped sprite lookup needs clear. Look at `out/foliage_contact.png` (each layer over leaf green and sky). `foliage.py` doesn't need ComfyUI once the leaves candidate exists.
