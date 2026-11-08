@@ -14,11 +14,9 @@ const EDGE_FADE_START: f32 = 0.9;
 // so mountains a few kilometres off are already softened: it's 1 - exp(-d / scale), stretched to just
 // reach full at the end. A quadratic ramp to half at the farthest LOD level's start left all but the
 // last stretch looking crisp.
-const FOG_SCALE: f32 = 0.25;
+const FOG_SCALE: f32 = 0.16;
 
-// The painterly look thickens the haze sooner, so the distance steps back in soft planes, and warms it toward the sun,
-// more as the sun sinks: how much of the haze's own brightness the glow adds there.
-const PAINTERLY_FOG_SCALE: f32 = 0.16;
+// The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
 const SUN_HAZE: f32 = 0.35;
 const SUN_HAZE_COLOUR: vec3<f32> = vec3<f32>(1.0, 0.62, 0.32);
 
@@ -38,9 +36,7 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     let across = world_position.xz - view_position.xz;
     let distance = length(across);
     var sky = horizon_haze(across);
-    var scale = end * FOG_SCALE;
-@if(PAINTERLY) {
-    scale = end * PAINTERLY_FOG_SCALE;
+    let scale = end * FOG_SCALE;
     if view_bindings::lights.n_directional_lights > 0u {
         let to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         let toward = max(dot(normalize(across), normalize(to_sun.xz + vec2<f32>(1e-5))), 0.0);
@@ -48,7 +44,6 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
         let glow = toward * toward * toward * (0.25 + 0.75 * low) * smoothstep(-0.1, 0.1, to_sun.y);
         sky += SUN_HAZE * glow * SUN_HAZE_COLOUR * dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
     }
-}
     let amount = (1.0 - exp(-distance / scale)) / (1.0 - exp(-end / scale));
     let opacity = mix(amount * fog.base_color.a, 1.0, smoothstep(EDGE_FADE_START, 1.0, distance / end));
     return vec4<f32>(mix(color.rgb, sky, opacity), color.a);

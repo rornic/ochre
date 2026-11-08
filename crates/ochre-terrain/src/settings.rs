@@ -37,8 +37,6 @@ pub struct RendererSettings {
     pub material_period: u32,
     /// Anisotropic filtering taps on painted materials, 1 to 16.
     pub material_anisotropy: u16,
-    /// The painterly look: its lighting on every face, with its haze, grade and gentler AO, see `docs/designs/painterly-lighting.md`. Restart to change.
-    pub painterly_lighting: bool,
 }
 
 /// Maximum cloud target width; smaller windows still march at half display resolution.
@@ -126,7 +124,6 @@ impl Default for RendererSettings {
             pack_meshes: true,
             material_period: 8,
             material_anisotropy: 8,
-            painterly_lighting: true,
         }
     }
 }

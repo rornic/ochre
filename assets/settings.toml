@@ -11,8 +11,6 @@ cloud_resolution = "medium"
 # Blocks before a painted material repeats (a power of two up to 64), and its anisotropic filtering taps (1 to 16).
 material_period = 8
 material_anisotropy = 8
-# The painterly look (soft wrapped light, cool shadows, warm haze and grade); false restores the previous lighting. Restart to change.
-painterly_lighting = true
 
 [debug]
 still_leaves = false

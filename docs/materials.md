@@ -26,11 +26,11 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 
 ## Lighting
 
-Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is on by default and described in `docs/designs/painterly-lighting.md`. `painterly_lighting = false` restores the previous lighting.
+Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is described in `docs/designs/painterly-lighting.md`.
 
 ## Settings
 
-`[renderer]` in `assets/settings.toml`: `material_period` (blocks before the texture repeats, a power of two up to 64, default 8), `material_anisotropy` (1 to 16, default 8) and `painterly_lighting` (default true). All need a restart. The sandbox reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC=1` to read frame times at a fixed size.
+`[renderer]` in `assets/settings.toml`: `material_period` (blocks before the texture repeats, a power of two up to 64, default 8) and `material_anisotropy` (1 to 16, default 8). Both need a restart. The sandbox reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC=1` to read frame times at a fixed size.
 
 ## The fps gate
 

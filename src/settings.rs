@@ -33,7 +33,6 @@ mod tests {
         assert_eq!(32, settings.renderer.full_detail_distance);
         assert_eq!(8, settings.renderer.material_period());
         assert_eq!(8, settings.renderer.material_anisotropy);
-        assert!(settings.renderer.painterly_lighting);
         assert_eq!(
             super::CloudResolution::Medium,
             settings.renderer.cloud_resolution
@@ -47,15 +46,6 @@ mod tests {
     fn test_material_period_must_be_a_power_of_two() {
         let settings: Settings = toml::from_str("[renderer]\nmaterial_period = 12").unwrap();
         settings.renderer.material_period();
-    }
-
-    #[test]
-    fn test_painterly_lighting_parses_and_ships_on() {
-        let off: Settings = toml::from_str("[renderer]\npainterly_lighting = false").unwrap();
-        assert!(!off.renderer.painterly_lighting);
-        let file = std::fs::read_to_string("assets/settings.toml").unwrap();
-        let shipped: Settings = toml::from_str(&file).unwrap();
-        assert!(shipped.renderer.painterly_lighting);
     }
 
     #[test]
