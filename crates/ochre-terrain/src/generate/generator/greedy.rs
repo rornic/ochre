@@ -666,7 +666,7 @@ pub(super) fn mesh_opaque_greedy(
                     BlockType::Grass => source.forest_shade(position),
                     _ => 1.0,
                 };
-                (tint * ao.powf(ao_gamma(painted)) * shade)
+                (tint * ao.powf(ao_gamma()) * shade)
                     .extend(atlas_cell)
                     .to_array()
             };

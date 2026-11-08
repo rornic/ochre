@@ -75,7 +75,7 @@ fn sunlight(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky
     return light * sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz)) + moon;
 }
 
-// The light on a painted face when the painterly model has it, see `painterly.wesl`.
+// The light on a face when the painterly model has it, see `painterly.wesl`.
 fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
     var to_sun = vec3<f32>(0.0, 1.0, 0.0);
@@ -287,12 +287,10 @@ fn fragment(
     var painterly = false;
     var lit = 1.0;
 @if(PAINTERLY) {
-    if painted {
-        let result = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy);
-        light = result.light + glow;
-        lit = result.lit;
-        painterly = true;
-    }
+    let result = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy);
+    light = result.light + glow;
+    lit = result.lit;
+    painterly = true;
 }
     if !painterly {
         light = sunlight(in.world_position, normal, shaded, sky, in.position.xy) + sky_ambient(sky, shaded) + glow;
