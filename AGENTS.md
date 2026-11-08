@@ -14,7 +14,7 @@ cargo clippy --workspace --all-targets
 
 Always `--release`: debug generation is unusably slow. Run from the repo root, since assets and shaders load by relative path. Rust 1.97.1+ (Bevy 0.20), plus `libudev-dev` and `pkg-config` on Linux. Wayland is deliberately off (X11 only).
 
-Env vars: `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLYTHROUGH`, `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_LOOK`. The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
+Env vars: `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLYTHROUGH`, `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
 
 ## Crates
 
@@ -41,7 +41,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 - Lakes, rivers and the sea, and the rule that keeps them from leaking: `docs/water.md`. Read it before changing water.
 - Chamfers, ramps and the seam pass that closes the gaps between them, and the tests that keep every mesh closed: `docs/bevels.md`. Read it before changing a cut.
 - What the world is made of and why: `docs/world-plan.md` (scope, gates, open defects, glossary), `docs/landforms.md` (the landforms and relief features), `docs/climate.md` (climate, biomes, transitions, trees), `docs/terrain-glossary.md` (what each landform and feature is). A seed draws its own plates, relief, warmth, wind, humidity and landform counts (`worldmap/character.rs`); `OCHRE_CHARACTER=off` keeps the config as given.
-- Shaders: `assets/shaders/`. Block textures: `assets/textures/blocks.png` (16px atlas) and the painted materials in `assets/textures/materials/` (one 512px PNG per tile, see `docs/materials.md`), both built by the `block-textures` skill.
+- Shaders: `assets/shaders/`. The lighting is `painterly.wesl` plus the haze, grade and AO that go with it: `docs/designs/painterly-lighting.md`. Block textures: `assets/textures/blocks.png` (a 16px atlas that only water still draws from) and the painted materials in `assets/textures/materials/` (one 512px PNG per material, RGBA for leaves and flora, see `docs/materials.md`), both built by the `block-textures` skill.
 - Examples double as tools: `worldprobe` (CLI probe of a spot, plus `edges`, `features` and `sites`), `world_map` (PNG), `water_audit`, `seams`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report).
 
 ## Conventions

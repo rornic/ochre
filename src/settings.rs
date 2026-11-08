@@ -49,6 +49,15 @@ mod tests {
     }
 
     #[test]
+    fn test_world_shader_imports_painterly_light() {
+        let world = std::fs::read_to_string("assets/shaders/world.wesl").unwrap();
+        let painterly = std::fs::read_to_string("assets/shaders/painterly.wesl").unwrap();
+        assert!(world.contains("import super::painterly::{FAR_VISIBILITY, Painterly, painterly_light, painterly_saturation};"));
+        assert!(painterly.contains("const FAR_VISIBILITY"));
+        assert!(painterly.contains("fn painterly_light("));
+    }
+
+    #[test]
     fn test_world_size_is_config() {
         let settings: Settings =
             toml::from_str("[renderer]\n[world]\nsize = 16384\nmap_cell = 16").unwrap();

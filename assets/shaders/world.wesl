@@ -7,13 +7,14 @@ import bevy_pbr::render::{
     view_transformations::{position_world_to_clip, position_world_to_view},
 };
 import super::block_texture::{
-    block_alpha, block_footprint, block_mean, block_sample, material_fade, material_footprint, material_layer,
+    block_alpha_at, block_footprint, block_mean, block_sample, foliage_level, material_fade, material_footprint, material_layer,
     material_sample, material_uv,
 };
 import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
 import super::fog::fogged;
-import super::lighting::{direct_moon, direct_sun, open_sky};
+import super::lighting::{direct_moon, open_sky, sun_radiance};
+import super::painterly::{FAR_VISIBILITY, Painterly, painterly_light, painterly_saturation};
 import super::sky::SUN_LIGHT;
 import super::cloud_shadow::cloud_shadow;
 import super::lod_patch::patch_tint;
@@ -49,24 +50,27 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     let reach = (*sun).cascades[(*sun).num_cascades - 1u].far_bound;
     // faded out wholly, so nothing to look up
     if -view_z >= reach {
-        return 1.0;
+        return FAR_VISIBILITY;
     }
     let shadow = fetch_directional_shadow(SUN_LIGHT, world_position, normal, view_z, frag_coord);
-    return mix(shadow, 1.0, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
+    return mix(shadow, FAR_VISIBILITY, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
 }
 
-// Sunlight reaching a face, shadowed by the land and the clouds, and moonlight, kept out of caves
-// by sky light but not shadowed.
-fn sunlight(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> vec3<f32> {
+// The light on a face, shadowed by the land and the clouds, and moonlight, kept out of caves by sky light but not shadowed, see `painterly.wesl`.
+fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
-    let moon = direct_moon(shaded) * gate;
-    let light = direct_sun(shaded, uncurved(world_position.xyz)) * gate;
-    // faces it can't reach need no shadow lookups
-    if all(light == vec3<f32>(0.0)) {
-        return moon;
+    var to_sun = vec3<f32>(0.0, 1.0, 0.0);
+    var sun = vec3<f32>(0.0);
+    var visibility = 0.0;
+    if view_bindings::lights.n_directional_lights > 0u {
+        to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
+        sun = sun_radiance(uncurved(world_position.xyz)) * gate;
+        // no sun, nothing to shadow
+        if any(sun > vec3<f32>(0.0)) {
+            visibility = sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz));
+        }
     }
-    // the clouds are flat, so their shadows fall where the land really is
-    return light * sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz)) + moon;
+    return painterly_light(shaded, to_sun, sun, visibility, sky_ambient(sky, shaded), direct_moon(shaded) * gate);
 }
 
 // Faces turn toward up between these distances in blocks, to this much of the way: past
@@ -92,6 +96,13 @@ fn drift(p: vec2<f32>) -> vec3<f32> {
     let warm = DRIFT_WARMTH * (value_noise(p / 91.0 + vec2<f32>(17.0, 5.0)) * 2.0 - 1.0);
     return vec3<f32>(1.0 + bright + warm, 1.0 + bright, 1.0 + bright - warm);
 }
+
+// How a painted top's blend mark is laid out, see `BLEND_BAND` in `buffers.rs`.
+const BLEND_BAND: f32 = 0.125;
+const BLEND_BASE: f32 = 0.0125;
+const BLEND_SPAN: f32 = 0.1;
+// How far toward its wall a ramp is lit, at the most: it meets the wall in a crease, not a turn.
+const RAMP_LIT_TURN: f32 = 0.5;
 
 // The normal to light by: turned toward up with distance, which evens out the sun's and sky's contrast between faces.
 fn lit_normal(normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
@@ -152,14 +163,21 @@ fn fragment(
 
     let footprint = block_footprint(in.uv);
     let painted_footprint = material_footprint(in.uv);
-    // a painted top that meets a wall is drawn partly in the wall's projection, which the texture then runs on into:
-    // how much, and which way the wall faces, are in its mode, see `BLEND_SPAN` in `buffers.rs`
+    // a painted top that meets a wall is drawn partly in the wall's projection, which the texture then runs on into, and
+    // lit partly as the wall: how much, and which way the wall faces, are in its mode, see `BLEND_BAND` in `buffers.rs`
     var wall_blend = 0.0;
     var wall_faces_z = false;
+    // the way the wall faces, as the stored normals have it, and whether this face has one
+    var wall_side = vec2<f32>(0.0);
+    var has_wall = false;
 @if(VERTEX_UVS_B) {
     if in.uv_b.y > 0.0 && in.uv_b.y < 0.5 {
-        wall_faces_z = in.uv_b.y >= 0.25;
-        wall_blend = clamp((in.uv_b.y - select(0.0, 0.25, wall_faces_z)) / 0.2, 0.0, 1.0);
+        let band = floor(in.uv_b.y / BLEND_BAND);
+        has_wall = true;
+        wall_faces_z = band >= 2.0;
+        wall_blend = clamp((in.uv_b.y - band * BLEND_BAND - BLEND_BASE) / BLEND_SPAN, 0.0, 1.0);
+        let facing = select(1.0, -1.0, band % 2.0 >= 1.0);
+        wall_side = select(vec2<f32>(facing, 0.0), vec2<f32>(0.0, facing), wall_faces_z);
     }
 }
     // the wall's own coordinates: along it the top's, and down it world up, as `material_uv` has them
@@ -213,9 +231,8 @@ fn fragment(
         }
         color.a = 1.0;
     } else if is_leaf(in.color.a) || is_flora(in.color.a) {
-        // cut where the depth prepass and shadows do, at full detail: a blurred alpha agrees
-        // with them only up close, and where it doesn't the holes flicker
-        color.a = block_alpha(in.uv, in.color.a);
+        // cut where the depth prepass does, at the same blur, so the two agree and the holes don't flicker
+        color.a = block_alpha_at(in.uv, in.color.a, foliage_level(distance(world_position, eye()), view_bindings::view.viewport.w, view_bindings::view.clip_from_view[1][1]));
     }
 }
     // `DebugSettings::solid_leaves`: leaves without their holes, as coarse LODs draw them
@@ -237,10 +254,17 @@ fn fragment(
     sky = in.uv_b.x;
 }
 
-    let shaded = lit_normal(normal, world_position);
-    let light = sunlight(in.world_position, normal, shaded, sky, in.position.xy) + sky_ambient(sky, shaded)
-        + point_light_glow(world_position, normal, in.position.xy);
-    color = vec4<f32>(color.rgb * light, color.a);
+    // a chamfer grades from the top's light to the wall's across its strip, and a ramp, stored flat, part of the way;
+    // the shadow lookup keeps the faceted normal, so its bias is as it was
+    var smooth_normal = normal;
+    if has_wall {
+        let turn = wall_blend * select(1.0, RAMP_LIT_TURN, normal.y > 0.99);
+        smooth_normal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(wall_side.x, 0.0, wall_side.y), turn));
+    }
+    let shaded = lit_normal(smooth_normal, world_position);
+    let glow = point_light_glow(world_position, normal, in.position.xy);
+    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy);
+    color = vec4<f32>(painterly_saturation(color.rgb * (lighting.light + glow), lighting.lit), color.a);
 
     // so distant chunks fade into the sky instead of popping in and out
     color = fogged(color, world_position, in.position.xy);

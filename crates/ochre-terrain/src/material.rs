@@ -255,7 +255,13 @@ impl Material for ChunkMaterial {
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
         let inner_leaves_band =
             ShaderDefVal::UInt("INNER_LEAVES_BAND".into(), INNER_LEAVES_BAND as u32);
+        // the RGBA layers leaves and plants draw, see `Tile::foliage_layer`
+        let leaves_layer = ShaderDefVal::UInt("LEAVES_LAYER".into(), Tile::LEAVES_LAYER as u32);
+        let first_flora_layer =
+            ShaderDefVal::UInt("FIRST_FLORA_LAYER".into(), Tile::FIRST_FLORA_LAYER as u32);
         let mut defs = vec![
+            leaves_layer,
+            first_flora_layer,
             leaf_cell,
             inner_leaves_reach,
             inner_leaves_band,
@@ -647,6 +653,7 @@ mod tests {
                 // grass sides draw the dirt layer but keep their own row
                 match tile_of
                     .material_layer()
+                    .or(tile_of.foliage_layer())
                     .filter(|l| snake_case(&format!("{tile_of:?}")) == MATERIAL_FILES[*l as usize])
                 {
                     Some(layer) => {
@@ -661,6 +668,83 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    // A foliage layer's RGBA texels.
+    fn foliage(tile: Tile) -> image::RgbaImage {
+        let name = MATERIAL_FILES[tile.foliage_layer().unwrap() as usize];
+        image::open(asset(&format!("textures/materials/{name}.png")))
+            .unwrap()
+            .to_rgba8()
+    }
+
+    fn coverage(image: &image::RgbaImage, region: impl Fn(u32, u32) -> bool) -> f32 {
+        let (mut seen, mut drawn) = (0, 0);
+        for (x, y, p) in image.enumerate_pixels() {
+            if region(x, y) {
+                seen += 1;
+                drawn += (p[3] >= 128) as u32;
+            }
+        }
+        drawn as f32 / seen as f32
+    }
+
+    #[test]
+    fn test_leaves_have_holes() {
+        let share = coverage(&foliage(Tile::Leaves), |_, _| true);
+        assert!((0.6..0.85).contains(&share), "leaves are {share} opaque");
+    }
+
+    #[test]
+    fn test_sprites_stand_on_the_ground_and_stay_off_the_other_edges() {
+        for tile in [
+            Tile::TallGrass,
+            Tile::Fern,
+            Tile::Poppy,
+            Tile::Dandelion,
+            Tile::ShortGrass,
+            Tile::SeedGrass,
+        ] {
+            let sprite = foliage(tile);
+            let (w, h) = (sprite.width(), sprite.height());
+            let share = coverage(&sprite, |_, _| true);
+            assert!((0.04..0.5).contains(&share), "{tile:?} is {share} opaque");
+            // a sprite is clamped, not repeated: its sides and top are clear, so no edge bleeds in
+            assert_eq!(
+                0.0,
+                coverage(&sprite, |x, y| y == 0 || x == 0 || x == w - 1),
+                "{tile:?} touches its top or sides"
+            );
+            assert!(
+                coverage(&sprite, |_, y| y == h - 1) > 0.02,
+                "{tile:?} doesn't stand on the ground"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tinted_foliage_is_greyscale_at_the_mean_the_tint_assumes() {
+        for (tile, mean) in [
+            (Tile::Leaves, 0.25),
+            (Tile::TallGrass, 0.5),
+            (Tile::ShortGrass, 0.5),
+            (Tile::SeedGrass, 0.5),
+            (Tile::Fern, 0.3),
+        ] {
+            assert!(tile.tinted());
+            let layer = foliage(tile);
+            assert!(
+                layer
+                    .pixels()
+                    .all(|p| p[3] < 128 || p[0] == p[1] && p[1] == p[2]),
+                "{tile:?} must be greyscale, the climate tint multiplies it"
+            );
+            let got = image_mean(&layer, 0, layer.height())[0];
+            assert!(
+                (got - mean).abs() < 0.015,
+                "{tile:?} averages {got}, the tint assumes {mean}"
+            );
+        }
     }
 
     #[test]

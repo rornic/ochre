@@ -227,7 +227,7 @@ pub enum Tile {
 pub const TILE_COUNT: usize = 35;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 13] = [
+pub const MATERIAL_FILES: [&str; 31] = [
     "stone",
     "dirt",
     "grass_top",
@@ -241,6 +241,25 @@ pub const MATERIAL_FILES: [&str; 13] = [
     "shale",
     "sandstone_top",
     "gravel",
+    "ice",
+    "log_bark",
+    "log_end",
+    "compacted_stone",
+    "compacted_limestone",
+    "compacted_clay",
+    "compacted_basalt",
+    "compacted_marble",
+    "compacted_sandstone",
+    "compacted_granite",
+    "compacted_shale",
+    // RGBA, drawn across a tile's own uv instead of by world position, see `Tile::foliage_layer`
+    "leaves",
+    "tall_grass",
+    "fern",
+    "poppy",
+    "dandelion",
+    "short_grass",
+    "seed_grass",
 ];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
@@ -253,7 +272,8 @@ impl Tile {
             // a grass block's sides are the same grass as its top
             Tile::GrassTop | Tile::GrassSide => Some(2),
             Tile::Sand => Some(3),
-            Tile::Snow => Some(4),
+            // a snow block is snow on every face, so a snow side is the snow layer
+            Tile::Snow | Tile::SnowSide => Some(4),
             Tile::Limestone => Some(5),
             Tile::Clay => Some(6),
             Tile::Basalt => Some(7),
@@ -263,9 +283,38 @@ impl Tile {
             // a sandstone block's sides are the same rock as its top
             Tile::SandstoneTop | Tile::SandstoneSide => Some(11),
             Tile::Gravel => Some(12),
+            Tile::Ice => Some(13),
+            Tile::LogBark => Some(14),
+            Tile::LogEnd => Some(15),
+            // each compacted rock is its rock's layer packed darker, see `materials.py`
+            Tile::CompactedStone => Some(16),
+            Tile::CompactedLimestone => Some(17),
+            Tile::CompactedClay => Some(18),
+            Tile::CompactedBasalt => Some(19),
+            Tile::CompactedMarble => Some(20),
+            Tile::CompactedSandstone => Some(21),
+            Tile::CompactedGranite => Some(22),
+            Tile::CompactedShale => Some(23),
             _ => None,
         }
     }
+
+    // The RGBA layer a leaf or plant draws instead of its atlas tile, across the tile's own uv. Leaves repeat it every
+    // block and a plant's sprite is drawn once across its quad, so neither needs the world-space projection that
+    // `material_layer` is for, and the depth and shadow passes, which have no normals, cut them just as the main pass does.
+    // The flora layers follow `FIRST_FLORA`'s order.
+    pub fn foliage_layer(self) -> Option<u8> {
+        match self {
+            Tile::Leaves => Some(Self::LEAVES_LAYER),
+            flora if flora as u8 >= Self::FIRST_FLORA as u8 => {
+                Some(Self::FIRST_FLORA_LAYER + flora as u8 - Self::FIRST_FLORA as u8)
+            }
+            _ => None,
+        }
+    }
+
+    pub const LEAVES_LAYER: u8 = 24;
+    pub const FIRST_FLORA_LAYER: u8 = 25;
 
     // What meshes carry in vertex alpha for `block_texture.wesl`.
     pub fn atlas_cell(self) -> f32 {
@@ -379,6 +428,17 @@ mod tests {
             Tile::Shale,
             Tile::SandstoneTop,
             Tile::Gravel,
+            Tile::Ice,
+            Tile::LogBark,
+            Tile::LogEnd,
+            Tile::CompactedStone,
+            Tile::CompactedLimestone,
+            Tile::CompactedClay,
+            Tile::CompactedBasalt,
+            Tile::CompactedMarble,
+            Tile::CompactedSandstone,
+            Tile::CompactedGranite,
+            Tile::CompactedShale,
         ] {
             let layer = tile.material_layer().unwrap() as usize;
             assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
@@ -391,16 +451,39 @@ mod tests {
             Tile::SandstoneTop.material_layer(),
             Tile::SandstoneSide.material_layer()
         );
+        assert_eq!(Tile::Snow.material_layer(), Tile::SnowSide.material_layer());
         assert!(Tile::Dirt.material_layer().unwrap() < MATERIAL_LAYERS as u8);
         for tile in [
             Tile::Leaves,
             Tile::Water,
             Tile::TallGrass,
             Tile::SeedGrass,
-            Tile::CompactedStone,
         ] {
             assert_eq!(None, tile.material_layer());
         }
+    }
+
+    #[test]
+    fn test_foliage_layers_follow_the_file_list() {
+        for tile in [
+            Tile::Leaves,
+            Tile::TallGrass,
+            Tile::Fern,
+            Tile::Poppy,
+            Tile::Dandelion,
+            Tile::ShortGrass,
+            Tile::SeedGrass,
+        ] {
+            let layer = tile.foliage_layer().unwrap() as usize;
+            assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
+        }
+        assert_eq!(None, Tile::Water.foliage_layer());
+        assert_eq!(None, Tile::Stone.foliage_layer());
+        // every layer is a world-space material or a foliage layer, so none is orphaned
+        assert_eq!(
+            MATERIAL_LAYERS,
+            Tile::FIRST_FLORA_LAYER as usize + (Tile::SeedGrass as usize - Tile::FIRST_FLORA as usize) + 1
+        );
     }
 
     #[test]

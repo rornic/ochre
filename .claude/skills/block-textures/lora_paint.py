@@ -31,6 +31,9 @@ PROMPTS = {
     "Shale": "dark grey shale rock, painted thin flaky layers and cracks, top-down",
     "SandstoneTop": "tan sandstone, painted soft strata and small pits, top-down",
     "Gravel": "loose gravel of mixed grey, tan and brown pebbles, painted rounded stones, top-down",
+    "Ice": "pale cyan ice, smooth painted frozen surface with soft white frost patches and a few faint cracks, top-down",
+    "LogBark": "dark brown oak bark, painted deep vertical furrows and ridges, grain running straight up and down",
+    "LogEnd": "light tan wood end grain, many fine painted growth rings and soft radial cracks, even all over, top-down",
 }
 
 
@@ -48,11 +51,12 @@ def build(name, seed, steps, cfg, strength, prompt=None, avoid=None):
 TARGET_MEAN = {
     "Stone": 0.16, "Dirt": 0.14, "Sand": 0.45, "Snow": 0.72,
     "Limestone": 0.47, "Clay": 0.23, "Basalt": 0.06, "Marble": 0.71, "Granite": 0.34, "Shale": 0.10, "SandstoneTop": 0.48, "Gravel": 0.24,
+    "Ice": 0.585, "LogBark": 0.048, "LogEnd": 0.252,
 }  # the atlas tiles' mean linear luminance, so the world keeps its tones
 
 CONTRAST = {"Sand": 0.5}  # painted dunes read too strongly at full contrast
 # how far to level the detail across the layer, 0 none to 1 fully: one big crack or blob reads as an obvious repeat in the world
-EQUALISE = {"Stone": 0.5, "Limestone": 0.8, "Clay": 0.8, "Basalt": 0.5, "Marble": 0.5, "Granite": 0.8, "Shale": 0.5, "SandstoneTop": 0.8}
+EQUALISE = {"Stone": 0.5, "Limestone": 0.8, "Clay": 0.8, "Basalt": 0.5, "Marble": 0.5, "Granite": 0.8, "Shale": 0.5, "SandstoneTop": 0.8, "Ice": 0.5, "LogBark": 0.5, "LogEnd": 0.8}
 
 
 def linear(v):
@@ -110,7 +114,7 @@ def greyscale_for_tint(img):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("tiles", nargs="*", default=PAINTED)
+    ap.add_argument("tiles", nargs="*", default=[n for n in PAINTED if n in PROMPTS])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1])
     ap.add_argument("--steps", type=int, default=28)
     ap.add_argument("--cfg", type=float, default=6.5)

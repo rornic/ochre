@@ -4390,6 +4390,13 @@ fn test_a_painted_chamfer_runs_the_texture_on_from_the_top() {
     );
 }
 
+// The mark's band and how far into it: which way the wall faces, 0 to 3 for x+, x-, z+ and z- as the normals are stored,
+// and how much of the wall the vertex is drawn as.
+fn decode_blend(mode: f32) -> (usize, f32) {
+    let band = (mode / 0.125).floor();
+    (band as usize, (mode - band * 0.125 - 0.0125) / 0.1)
+}
+
 #[test]
 fn test_a_painted_chamfer_blends_into_the_wall_at_its_foot() {
     let mesh = mesh_chunk_bevelled(blocks_chunk(&[(4, 4, 4)])).opaque;
@@ -4408,12 +4415,17 @@ fn test_a_painted_chamfer_blends_into_the_wall_at_its_foot() {
         if !(n[1] > 0.6 && n[1] < 0.8) {
             continue;
         }
-        // 0 or 0.25 is none of the wall's projection, and 0.2 or 0.45 is all of it
-        let amount = (mode[1] % 0.25) / 0.2;
         assert!(mode[1] < 0.5, "a chamfer is marked as a coarse cell");
-        if amount < 0.01 {
+        let (band, amount) = decode_blend(mode[1]);
+        // the strip faces the way its band says
+        let side = [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]][band];
+        assert!(
+            side[0] * n[0] + side[1] * n[2] > 0.5,
+            "a chamfer stored as {n:?} is marked as band {band}"
+        );
+        if amount.abs() < 0.01 {
             top_edge += 1;
-        } else if amount > 0.99 {
+        } else if (amount - 1.0).abs() < 0.01 {
             foot += 1;
         } else {
             panic!("a chamfer vertex is part way: {mode:?}");
@@ -4421,4 +4433,80 @@ fn test_a_painted_chamfer_blends_into_the_wall_at_its_foot() {
     }
     // each of the four strips has two vertices on the top's edge and two on its foot
     assert_eq!((8, 8), (top_edge, foot));
+}
+
+#[test]
+fn test_a_painted_ramp_is_marked_with_the_way_its_wall_faces_away_from_it() {
+    // a floor with one block stood on it, which the floor beside it ramps up
+    let mut blocks: Vec<(u16, u16, u16)> = (2..11)
+        .flat_map(|x| (2..11).map(move |z| (x, 4, z)))
+        .collect();
+    blocks.push((6, 5, 6));
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(VertexAttributeValues::Float32x2(modes)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
+    )
+    else {
+        panic!("missing attributes");
+    };
+    let mut checked = 0;
+    for ((p, n), mode) in positions.iter().zip(normals).zip(modes) {
+        // flat tops, which are ramps where they are marked, and part way up
+        if n[1] < 0.99 || mode[1] <= 0.0 || mode[1] >= 0.5 {
+            continue;
+        }
+        let (band, amount) = decode_blend(mode[1]);
+        if amount < 0.01 {
+            continue;
+        }
+        // z+ and z- are as stored, so the other way round in the mesh's own axes
+        let facing = [[1.0, 0.0], [-1.0, 0.0], [0.0, -1.0], [0.0, 1.0]][band];
+        // blocks are centred on their coordinates
+        let away = [p[0] - 6.0, p[2] - 6.0];
+        assert!(
+            facing[0] * away[0] + facing[1] * away[1] > 0.0,
+            "a ramp vertex at {p:?} is marked as facing band {band}, toward its wall"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 4, "only {checked} ramp vertices are marked");
+}
+
+#[test]
+fn test_a_trench_a_block_wide_has_a_level_floor() {
+    // a floor with two walls along it a block apart, so the ground between has a wall on both sides
+    let mut blocks: Vec<(u16, u16, u16)> = (2..11)
+        .flat_map(|x| (2..11).map(move |z| (x, 4, z)))
+        .collect();
+    blocks.extend((3..10).flat_map(|z| [(5, 5, z), (7, 5, z)]));
+    let mesh = mesh_chunk_bevelled(blocks_chunk(&blocks)).opaque;
+    let (
+        Some(VertexAttributeValues::Float32x3(positions)),
+        Some(VertexAttributeValues::Float32x3(normals)),
+        Some(VertexAttributeValues::Float32x2(modes)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
+    )
+    else {
+        panic!("missing attributes");
+    };
+    let mut floor = 0;
+    for ((p, n), mode) in positions.iter().zip(normals).zip(modes) {
+        // the trench's floor, in the middle of its length
+        if n[1] > 0.99 && (5.4..6.6).contains(&p[0]) && (3.0..9.0).contains(&p[2]) {
+            assert!(p[1] < 4.51, "a trench's floor is raised to {} at {p:?}", p[1]);
+            assert!(mode[1] <= 0.0, "a trench's floor is blended into a wall: {mode:?}");
+            floor += 1;
+        }
+    }
+    assert!(floor >= 4, "only {floor} floor vertices found");
+    assert_eq!(Vec::<String>::new(), open_edges(&mesh));
 }

@@ -582,7 +582,7 @@ pub fn spawn_player(
             TONEMAPPING,
             // Just a soft glow around the brightest sunlit faces and sky.
             Bloom {
-                intensity: 0.05,
+                intensity: 0.08,
                 ..Bloom::NATURAL
             },
             // TAA for the thin faces and one-block steps that shimmer at a distance

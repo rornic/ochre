@@ -26,14 +26,19 @@ pub(super) struct MeshBuffers {
     pub(super) blends: Vec<f32>,
 }
 
-// A painted top meeting a wall is drawn partly in the wall's projection so the texture runs on into the wall. Each of its
-// vertices carries how much, 0 to 1, in its mode (`uv_b.y`) as `BLEND_SPAN` times it, plus `BLEND_Z` when the wall faces
-// along z, which stays under the 0.5 that marks coarse cells. See `material_blend` in `world.wesl`.
+// A painted top meeting a wall is drawn partly in the wall's projection so the texture runs on into the wall, and lit
+// partly as the wall. Each of its vertices carries how much, 0 to 1, in its mode (`uv_b.y`) as `BLEND_BASE` plus
+// `BLEND_SPAN` times it, in the band for which way the wall faces: x+, x-, z+ or z-, each `BLEND_BAND` wide, so the
+// largest mode stays under the 0.5 that marks coarse cells. See `world.wesl`.
 // How far up a ramp, as a share of its rise, the wall's projection starts to show.
 const RAMP_BLEND_FROM: f32 = 0.6;
 
-const BLEND_SPAN: f32 = 0.2;
-const BLEND_Z: f32 = 0.25;
+const BLEND_BAND: f32 = 0.125;
+
+// Keeps a marked vertex off its band's edge, where interpolation could tip it into the next, and above 0, which is unmarked.
+const BLEND_BASE: f32 = 0.0125;
+
+const BLEND_SPAN: f32 = 0.1;
 
 // How far a bevelled edge is cut back along each face that meets there, in blocks: the chamfer is
 // a 45 degree strip across the corner this big on each side.
@@ -178,13 +183,20 @@ impl MeshBuffers {
         self.push_quad_indices(start);
     }
 
-    // Draws the vertex `vertex` of a painted top `amount` in the projection of a wall facing along x, or along z if not.
-    pub(super) fn set_blend(&mut self, vertex: usize, wall_faces_x: bool, amount: f32) {
+    // Draws the vertex `vertex` of a painted top `amount` in the projection and light of a wall facing `facing`, which
+    // is horizontal along one axis, in the mesh's own axes.
+    pub(super) fn set_blend(&mut self, vertex: usize, facing: Vec3, amount: f32) {
         if self.blends.len() < self.vertices.len() {
             self.blends.resize(self.vertices.len(), 0.0);
         }
+        // the cube's faces along z store their normals reversed, and the shader reads the band as they are stored
+        let band = if facing.x.abs() >= facing.z.abs() {
+            (facing.x < 0.0) as u32
+        } else {
+            2 + (facing.z > 0.0) as u32
+        };
         self.blends[vertex] =
-            amount.clamp(0.0, 1.0) * BLEND_SPAN + if wall_faces_x { 0.0 } else { BLEND_Z };
+            band as f32 * BLEND_BAND + BLEND_BASE + amount.clamp(0.0, 1.0) * BLEND_SPAN;
     }
 
     fn push_quad_indices(&mut self, start: u32) {
@@ -308,16 +320,14 @@ impl MeshBuffers {
         }
 
         // a painted top that climbs a wall is drawn partly in the wall's projection at its foot, so the texture runs on
-        // into the wall: the wall is on the side whose corners rise
+        // into the wall: the wall is on the side whose corners rise, and faces away from it
         let [c0, c1, c2, c3] = quad.corner_lift;
-        let (across_a, across_b) = ((c1 + c3 - c0 - c2).abs(), (c2 + c3 - c0 - c1).abs());
-        let wall_faces_x = if across_b >= across_a {
-            quad.tb.x
+        let (rise_a, rise_b) = (c1 + c3 - c0 - c2, c2 + c3 - c0 - c1);
+        let wall_facing = -if rise_b.abs() >= rise_a.abs() {
+            quad.tb * rise_b.signum()
         } else {
-            quad.ta.x
-        }
-        .abs()
-            > 0.5;
+            quad.ta * rise_a.signum()
+        };
         let blended = quad.painted && !wall && quad.corner_lift.iter().any(|&l| l > 0.0);
         let blend = blend_corners;
         let mut push = |i: f32, j: f32, near: Option<usize>| {
@@ -348,7 +358,7 @@ impl MeshBuffers {
             if blended {
                 // the last part of the ramp up to the wall: further out the ground's own projection is the better fit
                 let amount = (raised / RAMP - RAMP_BLEND_FROM) / (1.0 - RAMP_BLEND_FROM);
-                self.set_blend(self.vertices.len() - 1, wall_faces_x, amount);
+                self.set_blend(self.vertices.len() - 1, wall_facing, amount);
             }
             self.vertices.len() as u32 - 1
         };

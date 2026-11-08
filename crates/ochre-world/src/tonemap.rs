@@ -13,16 +13,22 @@ pub const TONEMAPPING: Tonemapping = Tonemapping::SomewhatBoringDisplayTransform
 /// tonemapping curve has bent it. `water.wesl` reads it from the view's colour grading.
 pub(crate) const EXPOSURE: f32 = 0.5;
 
-/// The camera's colour grading out of water.
+/// The camera's colour grading out of water: a touch warmer and richer, for a cosy rather than punchy picture.
 pub fn dry_color_grading() -> ColorGrading {
     ColorGrading {
         global: ColorGradingGlobal {
             exposure: EXPOSURE,
+            temperature: WARMTH,
+            post_saturation: SATURATION,
             ..Default::default()
         },
         ..Default::default()
     }
 }
+
+// Small on purpose: Bevy's grade is sensitive, and a warmth of 0.08 turned noon into sunset.
+const WARMTH: f32 = 0.015;
+const SATURATION: f32 = 1.04;
 
 // rows: luma, then the two chroma channels
 const RGB_TO_YCBCR: Mat3 = Mat3::from_cols(

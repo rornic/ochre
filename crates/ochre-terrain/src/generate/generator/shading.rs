@@ -24,8 +24,8 @@ pub(super) const FACE_TANGENTS: [(IVec3, IVec3); 6] = [
 
 // How dark a fully occluded corner gets, 0..1; two solid sides already count as fully occluded, see `vertex_ao`.
 pub(super) const AO_STRENGTH: f32 = 0.6;
-// AO reads as the brightness it should show, so it's raised to this to multiply in linear light: a 0.7 straight in linear shows as 0.85.
-pub(super) const AO_GAMMA: f32 = 2.2;
+// AO is raised to this before it multiplies in, gentler than the 2.2 of a straight sRGB to linear so creases stay soft and coloured.
+pub(super) const AO_GAMMA: f32 = 1.5;
 
 // Height of the water surface within a full-detail block, whose cube spans -0.5..0.5.
 pub(super) const WATER_TOP: f32 = 0.4;
