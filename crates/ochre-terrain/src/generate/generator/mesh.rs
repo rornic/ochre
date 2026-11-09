@@ -1,6 +1,6 @@
 use super::buffers::{
     tiled_uvs, ChunkMeshes, GrassTint, MeshBuffers, MeshStyle, BOX_TEXTURE_MAX_CELL, CUBE,
-    TEXTURED, TEXTURED_SOLID,
+    MAUVE_TINT, RUSSET_TINT, TEXTURED, TEXTURED_SOLID,
 };
 use super::greedy::{convex_sides, mesh_opaque_greedy, Shapes};
 use super::shading::{
@@ -497,6 +497,9 @@ fn push_spray(
     }
 }
 
+// How much of the way to the mauve tint the long grasses go, where it is coldest.
+const MAUVE_STRENGTH: f32 = 0.7;
+
 // How far in from the block's corners flora's quads reach, so neighbouring plants don't touch.
 const FLORA_INSET: f32 = 0.05;
 // How far a plant may stand off its block's centre, and how much shorter than a block grass
@@ -512,6 +515,14 @@ const SIZE_RANGE: (f32, f32) = (0.7, 1.25);
 const WIDTH_RANGE: (f32, f32) = (0.6, 1.3);
 // How far a block's further plants stand off its centre, at the most.
 const FLORA_EXTRA_REACH: f32 = 0.3;
+// Shrubs and heath are one plant to a block, drawn as six planes in a star that reach well past it: their quad's height
+// and half width in blocks. The sprite fills nearly all of the width and, for a shrub, 70% of the height, and a heath's
+// low mound 43%, so a shrub stands up to about three blocks across and one and three quarters high, and heath lies
+// low and wide. They grow in clusters, see `flora.rs`, so the planes of neighbours overlap into a carpet.
+const SHRUB_HEIGHT: (f32, f32) = (1.8, 2.5);
+const SHRUB_HALF_WIDTH: (f32, f32) = (1.3, 1.8);
+const HEATH_HEIGHT: (f32, f32) = (1.6, 2.2);
+const HEATH_HALF_WIDTH: (f32, f32) = (1.2, 1.6);
 // How likely the grass at the edge of a grass top is to have tufts hanging over it, and how likely it has a
 // further one.
 const FRINGE_CHANCE: f32 = 0.95;
@@ -621,11 +632,52 @@ fn mesh_flora(
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
         let ground = coord.as_vec3() - Vec3::Y * 0.5;
         let tint = if tile.tinted() {
-            grass_tint.at(ground) * source.forest_shade(ground)
+            let tint = grass_tint.at(ground);
+            // the long grasses in the cold go mauve, to bridge between the heath, the short ones less so
+            let mauve = match block {
+                BlockType::TallGrass | BlockType::SeedGrass => MAUVE_STRENGTH,
+                BlockType::ShortGrass => MAUVE_STRENGTH * 0.4,
+                _ => 0.0,
+            } * grass_tint.mauve_at(ground);
+            // and in the reddish patches the ground has, so a tuft is the colour of the grass it stands in
+            let russet = match block {
+                BlockType::TallGrass | BlockType::SeedGrass | BlockType::ShortGrass => grass_tint.russet_at(ground),
+                _ => 0.0,
+            };
+            tint.lerp(MAUVE_TINT, mauve).lerp(RUSSET_TINT, russet) * source.forest_shade(ground)
         } else {
             Vec3::ONE
         };
         let lit = light.level(coord) as f32 / MAX_LIGHT as f32;
+        let big = match block {
+            BlockType::Shrub => Some((SHRUB_HEIGHT, SHRUB_HALF_WIDTH)),
+            BlockType::Heath => Some((HEATH_HEIGHT, HEATH_HALF_WIDTH)),
+            _ => None,
+        };
+        if let Some((heights, widths)) = big {
+            // under a roof or a branch it stays within its block
+            let height = between(heights, jitter(3)).min(if room { f32::MAX } else { 1.0 });
+            let angle = jitter(5) * std::f32::consts::FRAC_PI_2;
+            // three crossed pairs, 30 degrees apart, so it fills in seen from above and not a star of arms
+            for turn in [0.0, std::f32::consts::FRAC_PI_6, std::f32::consts::FRAC_PI_3] {
+                push_tuft(
+                    buffers,
+                    &Tuft {
+                        root: coord.as_vec3()
+                            - Vec3::Y * 0.5
+                            + Vec3::new((jitter(1) - 0.5) * FLORA_JITTER, 0.0, (jitter(2) - 0.5) * FLORA_JITTER),
+                        height,
+                        half_width: between(widths, jitter(4)),
+                        angle: angle + turn,
+                        lean: Vec3::ZERO,
+                    },
+                    tile.atlas_cell(),
+                    tint,
+                    lit,
+                );
+            }
+            continue;
+        }
         // the first plant is where it always was, the rest stand round it
         let extras = match block {
             _ if grass => 1 + (jitter(10) < 0.55) as u32,
@@ -706,7 +758,7 @@ fn mesh_grass_fringe(
                 u if u < 0.85 => Tile::TallGrass,
                 _ => Tile::SeedGrass,
             };
-            let tint = grass_tint.at(top) * source.forest_shade(top);
+            let tint = grass_tint.ground_at(top) * source.forest_shade(top);
             push_tuft(
                 buffers,
                 &Tuft {

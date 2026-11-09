@@ -11,7 +11,7 @@
 @group(constants::MATERIAL_BIND_GROUP) @binding(13) var materials_sampler: sampler;
 
 // textures in blocks.png, see `Tile` in block.rs
-const ATLAS_CELLS: f32 = 35.0;
+const ATLAS_CELLS: f32 = 37.0;
 const TILE_INSET: f32 = 0.002;
 
 // The `materials` layer a leaf or plant draws across its tile's own uv, -1 for any other cell: `Tile::foliage_layer`.
@@ -59,22 +59,34 @@ fn foliage_level(distance: f32, viewport_height: f32, focal: f32) -> f32 {
 // a lower coverage: a field of grass stays a field rather than fading out a few blocks away.
 const COVERAGE_CUT_FAR: f32 = 0.1;
 const COVERAGE_LEVELS: f32 = 5.0;
-fn foliage_cut(alpha: f32, level: f32) -> f32 {
-    let cut = mix(0.5, COVERAGE_CUT_FAR, clamp(level / COVERAGE_LEVELS, 0.0, 1.0));
+fn foliage_cut(alpha: f32, level: f32, far: f32) -> f32 {
+    let cut = mix(0.5, far, clamp(level / COVERAGE_LEVELS, 0.0, 1.0));
     return min(alpha * 0.5 / cut, 1.0);
+}
+
+// Shrubs and heath are broad solid sprites, not thin blades, so the blur and the lowered cut that keep a meadow from thinning
+// out would draw them as flat slabs: past level 6 or so a mip texel is half the sprite and its average passes the cut
+// whole, the quad drawn solid above the mound. They are cut at no more than this level and at a higher coverage.
+const BIG_FLORA_MAX_LEVEL: f32 = 5.0;
+const BIG_FLORA_CUT_FAR: f32 = 0.3;
+
+fn is_big_flora_cell(vertex_alpha: f32) -> bool {
+    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5;
 }
 
 // A leaf or plant's alpha from mip `level`, which averages away holes smaller than the lookup's footprint, scaled by `foliage_cut`.
 // The atlas cells with no foliage layer have the alpha of their tile.
-fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, level: f32) -> f32 {
+fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, blurred: f32) -> f32 {
     let layer = foliage_layer(vertex_alpha);
+    let big = is_big_flora_cell(vertex_alpha);
+    let level = select(blurred, min(blurred, BIG_FLORA_MAX_LEVEL), big);
     if layer >= 0 {
         var p = uv;
         if is_flora_cell(vertex_alpha) {
             let inset = max(TILE_INSET, 0.5 * exp2(level) / FOLIAGE_TEXELS);
             p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
         }
-        return foliage_cut(textureSampleLevel(materials, materials_sampler, p, layer, level).a, level) * material_color.a;
+        return foliage_cut(textureSampleLevel(materials, materials_sampler, p, layer, level).a, level, select(COVERAGE_CUT_FAR, BIG_FLORA_CUT_FAR, big)) * material_color.a;
     }
     let atlas_cell = floor(vertex_alpha + 0.5);
     // a coarse level's texels are wider, so the lookup stays half of one inside the tile
@@ -122,7 +134,7 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
 
 // The painted material layer each atlas cell draws, -1 for the leaves, flora and water that stay in the atlas: `Tile::material_layer`,
 // which a test checks this against.
-const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
+const MATERIAL_LAYER_TABLE: array<i32, 37> = array<i32, 37>(
     0, // stone
     2, // grass top
     3, // sand
@@ -158,6 +170,8 @@ const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
     -1, // dandelion
     -1, // short grass
     -1, // seed grass
+    -1, // shrub
+    -1, // heath
 );
 
 fn material_layer(vertex_alpha: f32) -> i32 {
@@ -233,7 +247,7 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 // order. `gen_atlas` prints these and the block-textures skill's `pack.py`
 // rewrites them, and `material.rs`'s tests check them against blocks.png.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
-    var means = array<vec3<f32>, 35>(
+    var means = array<vec3<f32>, 37>(
         vec3<f32>(0.1612, 0.1542, 0.1649), // stone
         vec3<f32>(0.4981, 0.4981, 0.4981), // grass top
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
@@ -244,7 +258,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
         vec3<f32>(0.2403, 0.1078, 0.0716), // dirt
         vec3<f32>(0.4026, 0.2195, 0.1318), // log end
-        vec3<f32>(0.3113, 0.2217, 0.1859), // gravel
+        vec3<f32>(0.2730, 0.2296, 0.2106), // gravel
         vec3<f32>(0.4181, 0.6444, 0.6924), // ice
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
@@ -260,7 +274,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
         vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
-        vec3<f32>(0.1033, 0.0949, 0.1022), // shale
+        vec3<f32>(0.1032, 0.0949, 0.1021), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
         vec3<f32>(0.0739, 0.0680, 0.0731), // compacted shale
         vec3<f32>(0.4954, 0.4954, 0.4954), // tall grass
@@ -269,6 +283,8 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.3838, 0.3697, 0.0299), // dandelion
         vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
         vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
+        vec3<f32>(0.2699, 0.2699, 0.2699), // shrub
+        vec3<f32>(0.1522, 0.1146, 0.1861), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);

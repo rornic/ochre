@@ -21,6 +21,9 @@ pub enum BlockType {
     Dandelion,
     ShortGrass,
     SeedGrass,
+    // bigger plants, up to two blocks across, see `mesh_flora`
+    Shrub,
+    Heath,
     // stone packed hard under the ground, which only explosives break
     CompactedStone,
     // the rocks of the geology, see `TerrainSource::rock`, each with a compacted form
@@ -132,6 +135,8 @@ impl BlockType {
             BlockType::Dandelion => "dandelion",
             BlockType::ShortGrass => "short grass",
             BlockType::SeedGrass => "seed grass",
+            BlockType::Shrub => "shrub",
+            BlockType::Heath => "heath",
             BlockType::CompactedStone => "compacted stone",
             BlockType::Limestone => "limestone",
             BlockType::Clay => "clay",
@@ -160,6 +165,8 @@ impl BlockType {
                 | BlockType::Dandelion
                 | BlockType::ShortGrass
                 | BlockType::SeedGrass
+                | BlockType::Shrub
+                | BlockType::Heath
         )
     }
 }
@@ -222,12 +229,14 @@ pub enum Tile {
     Dandelion,
     ShortGrass,
     SeedGrass,
+    Shrub,
+    Heath,
 }
 
-pub const TILE_COUNT: usize = 35;
+pub const TILE_COUNT: usize = 37;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 31] = [
+pub const MATERIAL_FILES: [&str; 33] = [
     "stone",
     "dirt",
     "grass_top",
@@ -260,6 +269,8 @@ pub const MATERIAL_FILES: [&str; 31] = [
     "dandelion",
     "short_grass",
     "seed_grass",
+    "shrub",
+    "heath",
 ];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
@@ -321,7 +332,7 @@ impl Tile {
         self as u8 as f32
     }
 
-    // Greyscale tiles that vertex colours tint to the climate's grass.
+    // Greyscale tiles that vertex colours tint to the climate's grass. Heath keeps its own purple.
     pub fn tinted(self) -> bool {
         matches!(
             self,
@@ -332,6 +343,7 @@ impl Tile {
                 | Tile::Fern
                 | Tile::ShortGrass
                 | Tile::SeedGrass
+                | Tile::Shrub
         )
     }
 
@@ -379,6 +391,8 @@ impl BlockType {
             (BlockType::Dandelion, _) => Tile::Dandelion,
             (BlockType::ShortGrass, _) => Tile::ShortGrass,
             (BlockType::SeedGrass, _) => Tile::SeedGrass,
+            (BlockType::Shrub, _) => Tile::Shrub,
+            (BlockType::Heath, _) => Tile::Heath,
         }
     }
 
@@ -397,7 +411,9 @@ mod tests {
 
     #[test]
     fn test_tile_count_matches_the_last_tile() {
-        assert_eq!(TILE_COUNT, Tile::SeedGrass as usize + 1);
+        assert_eq!(TILE_COUNT, Tile::Heath as usize + 1);
+        // the shaders take every cell from the shrub's on as a big plant's, see `block_alpha_at`
+        assert_eq!(Tile::Heath as usize, Tile::Shrub as usize + 1);
     }
 
     // `GrassTop` as `grass_top`.
@@ -473,6 +489,8 @@ mod tests {
             Tile::Dandelion,
             Tile::ShortGrass,
             Tile::SeedGrass,
+            Tile::Shrub,
+            Tile::Heath,
         ] {
             let layer = tile.foliage_layer().unwrap() as usize;
             assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
@@ -482,7 +500,7 @@ mod tests {
         // every layer is a world-space material or a foliage layer, so none is orphaned
         assert_eq!(
             MATERIAL_LAYERS,
-            Tile::FIRST_FLORA_LAYER as usize + (Tile::SeedGrass as usize - Tile::FIRST_FLORA as usize) + 1
+            Tile::FIRST_FLORA_LAYER as usize + (Tile::Heath as usize - Tile::FIRST_FLORA as usize) + 1
         );
     }
 
@@ -521,6 +539,8 @@ mod tests {
             BlockType::Dandelion,
             BlockType::ShortGrass,
             BlockType::SeedGrass,
+            BlockType::Shrub,
+            BlockType::Heath,
         ] {
             assert!(flora.is_flora() && !flora.is_opaque());
             assert_eq!(0, flora.light_opacity());
@@ -529,7 +549,7 @@ mod tests {
         }
         assert!(!BlockType::Grass.is_flora() && !BlockType::Leaves.is_flora());
         // the shaders take every tile from the first flora's on as a plant's, see `foliage.wesl`
-        assert_eq!(6, TILE_COUNT - Tile::FIRST_FLORA as usize);
+        assert_eq!(8, TILE_COUNT - Tile::FIRST_FLORA as usize);
     }
 
     #[test]

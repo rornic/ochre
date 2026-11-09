@@ -1,5 +1,5 @@
 use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
-use super::flora::{flora_at, understory};
+use super::flora::flora_at;
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
 use super::terrain::{
@@ -294,7 +294,7 @@ pub fn generate_chunk_with(
                 world_z,
                 shaded,
                 temperature,
-                understory(biomes.name(biome)),
+                biomes.name(biome),
             ) {
                 chunk_data.set_block_at(coord, plant);
             }

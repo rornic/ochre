@@ -119,7 +119,9 @@ pub fn material_array(dir: &str, anisotropy: u16) -> Image {
 }
 
 // Appends `levels` - 1 box-filtered mip levels to an RGBA8 sRGB image, averaging in linear
-// light and weighting colour by alpha so cut-out texels don't darken what's left.
+// light and weighting colour by alpha so cut-out texels don't darken what's left. Texels with no
+// cover anywhere under them keep the plain average of the colour painted there, which a sprite
+// fills out past its edge, so a smooth lookup near it blends in that and not black.
 fn mip_tiles(image: &mut Image, levels: u32) {
     let (mut width, mut height) = (image.width() as usize, image.height() as usize);
     let data = image.data.get_or_insert_with(Vec::new);
@@ -129,7 +131,7 @@ fn mip_tiles(image: &mut Image, levels: u32) {
         let mut next = Vec::with_capacity(next_width * next_height * 4);
         for y in 0..next_height {
             for x in 0..next_width {
-                let (mut rgb, mut alpha) = ([0.0f32; 3], 0.0f32);
+                let (mut rgb, mut alpha, mut plain) = ([0.0f32; 3], 0.0f32, [0.0f32; 3]);
                 for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                     let at = ((2 * y + dy) * width + 2 * x + dx) * 4;
                     let texel = &level[at..at + 4];
@@ -139,12 +141,18 @@ fn mip_tiles(image: &mut Image, levels: u32) {
                     rgb[1] += linear.green * a;
                     rgb[2] += linear.blue * a;
                     alpha += a;
+                    plain = [
+                        plain[0] + linear.red,
+                        plain[1] + linear.green,
+                        plain[2] + linear.blue,
+                    ];
                 }
-                let weight = alpha.max(f32::EPSILON);
+                let covered = alpha > 1e-3;
+                let (sum, weight) = if covered { (rgb, alpha) } else { (plain, 4.0) };
                 let colour = Srgba::from(LinearRgba::rgb(
-                    rgb[0] / weight,
-                    rgb[1] / weight,
-                    rgb[2] / weight,
+                    sum[0] / weight,
+                    sum[1] / weight,
+                    sum[2] / weight,
                 ))
                 .to_u8_array();
                 next.extend_from_slice(&[
@@ -250,6 +258,11 @@ impl Material for ChunkMaterial {
             "FIRST_FLORA_CELL".into(),
             Tile::FIRST_FLORA.atlas_cell() as u32,
         );
+        // shrubs and heath are broad solid sprites, which the blur that suits thin grass would draw as slabs, see `block_alpha_at`
+        let first_big_flora_cell = ShaderDefVal::UInt(
+            "FIRST_BIG_FLORA_CELL".into(),
+            Tile::Shrub.atlas_cell() as u32,
+        );
         // leaves' holes fill in past where the faces between leaves are drawn, see `InnerLeaves`
         let inner_leaves_reach =
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
@@ -266,6 +279,7 @@ impl Material for ChunkMaterial {
             inner_leaves_reach,
             inner_leaves_band,
             first_flora_cell,
+            first_big_flora_cell,
             water_level(),
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
         ];
@@ -506,6 +520,33 @@ mod tests {
     use bevy::color::{LinearRgba, Srgba};
     use ochre_base::block::{Tile, MATERIAL_FILES, MATERIAL_LAYERS};
 
+    // A mip texel with no cover under it keeps the colour painted there, so a smooth lookup near a sprite's edge doesn't
+    // blend black in: that was a dark rim round every big shrub at a distance.
+    #[test]
+    fn test_a_clear_mip_texel_keeps_the_colour_painted_there() {
+        use bevy::{
+            asset::RenderAssetUsages,
+            image::Image,
+            render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+        };
+        // 4 by 4: the left half drawn at 200, the right half clear but painted 150
+        let data: Vec<u8> = (0..16)
+            .flat_map(|i| if i % 4 < 2 { [200, 200, 200, 255] } else { [150, 150, 150, 0] })
+            .collect();
+        let mut image = Image::new(
+            Extent3d { width: 4, height: 4, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        super::mip_tiles(&mut image, 2);
+        let level_one = &image.data.as_ref().unwrap()[64..];
+        // the drawn texel is as it was, and the clear one keeps its colour, with no cover
+        assert_eq!([200, 200, 200, 255], level_one[0..4]);
+        assert_eq!([150, 150, 150, 0], level_one[4..8]);
+    }
+
     #[test]
     fn fragment_stage_is_removed_only_for_solid_native_directional_shadows() {
         use bevy::render::render_resource::{FragmentState, RenderPipelineDescriptor};
@@ -587,6 +628,31 @@ mod tests {
             .take_while(|line| !line.starts_with(')'))
             .map(|line| line.split(',').next().unwrap().trim().parse().unwrap())
             .collect()
+    }
+
+    #[test]
+    fn test_the_shader_cools_the_neutral_rocks() {
+        let shader = std::fs::read_to_string(asset("shaders/world.wesl")).unwrap();
+        let line = shader.split("fn is_neutral_rock").nth(1).unwrap();
+        let line = line.lines().nth(1).unwrap();
+        let mut in_shader: Vec<usize> = line
+            .split("layer == ")
+            .skip(1)
+            .map(|n| n.split(|c: char| !c.is_ascii_digit()).next().unwrap().parse().unwrap())
+            .collect();
+        in_shader.sort();
+        let mut expected: Vec<usize> = MATERIAL_FILES
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| {
+                ["stone", "basalt", "granite", "shale"]
+                    .iter()
+                    .any(|rock| *name == rock || *name == &format!("compacted_{rock}"))
+            })
+            .map(|(layer, _)| layer)
+            .collect();
+        expected.sort();
+        assert_eq!(expected, in_shader);
     }
 
     #[test]
@@ -722,6 +788,33 @@ mod tests {
         }
     }
 
+    // The shader cuts a shrub or heath at no more than mip level 5 and a coverage of 0.3 (`block_alpha_at`), as a blurrier cut at the
+    // threshold that keeps thin grass from vanishing draws the whole quad solid above the mound: this replays that on the layers.
+    #[test]
+    fn test_big_plants_keep_their_silhouette_at_the_blur_they_are_cut_at() {
+        for tile in [Tile::Shrub, Tile::Heath] {
+            let layer = foliage(tile);
+            let size = layer.width() as usize;
+            let alpha: Vec<f32> = layer.pixels().map(|p| p[3] as f32 / 255.0).collect();
+            let truth = alpha.iter().filter(|&&a| a >= 0.5).count() as f32 / alpha.len() as f32;
+            let texel = 1usize << 5;
+            let (mut passed, mut texels) = (0, 0);
+            for ty in 0..size / texel {
+                for tx in 0..size / texel {
+                    let sum: f32 = (0..texel)
+                        .flat_map(|y| (0..texel).map(move |x| (x, y)))
+                        .map(|(x, y)| alpha[(ty * texel + y) * size + tx * texel + x])
+                        .sum();
+                    let mean = sum / (texel * texel) as f32;
+                    passed += (mean * 0.5 / 0.3 >= 0.5) as usize;
+                    texels += 1;
+                }
+            }
+            let drawn = passed as f32 / texels as f32;
+            assert!(drawn < truth + 0.12, "{tile:?} is drawn {drawn:.2} solid at its blurriest, against {truth:.2} painted");
+        }
+    }
+
     #[test]
     fn test_tinted_foliage_is_greyscale_at_the_mean_the_tint_assumes() {
         for (tile, mean) in [
@@ -730,6 +823,7 @@ mod tests {
             (Tile::ShortGrass, 0.5),
             (Tile::SeedGrass, 0.5),
             (Tile::Fern, 0.3),
+            (Tile::Shrub, 0.27),
         ] {
             assert!(tile.tinted());
             let layer = foliage(tile);

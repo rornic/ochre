@@ -302,7 +302,11 @@ pub(super) fn mesh_seams(
                     let start = buffers.vertices.len() as u32;
                     for position in corners {
                         let tint = if tile.tinted() {
-                            grass_tint.at(position)
+                            if owner == BlockType::Grass {
+                                grass_tint.ground_at(position)
+                            } else {
+                                grass_tint.at(position)
+                            }
                         } else {
                             Vec3::ONE
                         };

@@ -1,4 +1,5 @@
 use super::{Biome, TreeScale};
+use crate::block::BlockType;
 use crate::features::ReliefKind;
 
 /// A biome that sets how thickly trees grow, how big they get and how lush or dry the grass reads: a
@@ -9,6 +10,8 @@ pub struct Plain {
     shift: (f32, f32),
     scale: TreeScale,
     relief: &'static [ReliefKind],
+    // the height over the sea below which snow thaws, and the gradient from which the ground is gravel, not grass
+    thaw: Option<(i64, f64)>,
 }
 
 impl Plain {
@@ -19,6 +22,7 @@ impl Plain {
             shift: (0.0, 0.0),
             scale: TreeScale::default(),
             relief: &[],
+            thaw: None,
         }
     }
 
@@ -42,6 +46,13 @@ impl Plain {
     /// Lays `relief` over the biome's ground.
     pub fn with_relief(mut self, relief: &'static [ReliefKind]) -> Self {
         self.relief = relief;
+        self
+    }
+
+    /// Bares the ground below `line` blocks over the sea that the climate would snow over: grass, and gravel on ground
+    /// with a gradient of `scree` or more. Snow stays on the heights.
+    pub fn with_thaw(mut self, line: i64, scree: f64) -> Self {
+        self.thaw = Some((line, scree));
         self
     }
 
@@ -71,5 +82,34 @@ impl Biome for Plain {
 
     fn relief(&self) -> &'static [ReliefKind] {
         self.relief
+    }
+
+    fn block(&self, base: BlockType, above_sea: i64, gradient: f64) -> BlockType {
+        match (self.thaw, base) {
+            (Some((line, scree)), BlockType::Snow) if above_sea < line => {
+                if gradient >= scree {
+                    BlockType::Gravel
+                } else {
+                    BlockType::Grass
+                }
+            }
+            _ => base,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_a_thawed_biome_has_grass_and_scree_low_down_and_keeps_its_snow_high_up() {
+        let tundra = Plain::new("tundra", 0.0).with_thaw(300, 0.45);
+        assert_eq!(BlockType::Grass, tundra.block(BlockType::Snow, 30, 0.1));
+        assert_eq!(BlockType::Gravel, tundra.block(BlockType::Snow, 30, 0.6));
+        assert_eq!(BlockType::Snow, tundra.block(BlockType::Snow, 300, 0.1));
+        // only snow thaws
+        assert_eq!(BlockType::Stone, tundra.block(BlockType::Stone, 30, 3.0));
+        assert_eq!(BlockType::Snow, Plain::new("glacier", 0.0).block(BlockType::Snow, 30, 0.1));
     }
 }

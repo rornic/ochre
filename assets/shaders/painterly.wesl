@@ -11,8 +11,12 @@ const SHADOW_TRUST_TO: f32 = 0.1;
 // What the sky's light is pushed toward in shadow, and how far, keeping its brightness.
 const SHADOW_TINT: vec3<f32> = vec3<f32>(0.55, 0.63, 1.0);
 const SHADOW_TINT_AMOUNT: f32 = 0.3;
-// The least shadow is lit to, as a share of a fully lit face's brightness.
+// The least shadow is lit to, as a share of a fully lit face's brightness, and leaves', which light passes through.
 const SHADOW_FLOOR: f32 = 0.35;
+const LEAF_SHADOW_FLOOR: f32 = 0.55;
+// The floor rises by this share while the sun is near the horizon, when the light it's a share of is dim, up to `MAX_SHADOW_FLOOR`.
+const LOW_SUN_FLOOR: f32 = 0.6;
+const MAX_SHADOW_FLOOR: f32 = 0.85;
 // Terrain past the shadows' reach is lit as if this much of the sun gets through, so it isn't brighter than shadowed land nearer.
 const FAR_VISIBILITY: f32 = 0.8;
 
@@ -32,14 +36,16 @@ struct Painterly {
 
 // The light on a face turned to `normal`, from `sun` (its colour at normal incidence, gated by sky light) coming from `to_sun`
 // and shadowed to `visibility`, the sky's `ambient`, and the `moon`, which isn't shadowed or wrapped.
-fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibility: f32, ambient: vec3<f32>, moon: vec3<f32>) -> Painterly {
+fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibility: f32, ambient: vec3<f32>, moon: vec3<f32>, leaf: bool) -> Painterly {
     let along = dot(normal, to_sun);
     let wrap = smoothstep(0.0, 1.0, clamp((along + WRAP) / (1.0 + WRAP), 0.0, 1.0));
     let shadow = smoothstep(SHADOW_FROM, SHADOW_TO, visibility);
     let lit = wrap * mix(1.0, shadow, smoothstep(SHADOW_TRUST_FROM, SHADOW_TRUST_TO, along));
     let full = sun + ambient;
     let tinted = mix(ambient, SHADOW_TINT * luma(ambient) / luma(SHADOW_TINT), SHADOW_TINT_AMOUNT);
-    let fill = tinted * max(1.0, SHADOW_FLOOR * luma(full) / max(luma(tinted), 1e-4));
+    let low_sun = smoothstep(-0.1, 0.0, to_sun.y) * (1.0 - smoothstep(0.0, 0.5, to_sun.y));
+    let floor = min(select(SHADOW_FLOOR, LEAF_SHADOW_FLOOR, leaf) * (1.0 + LOW_SUN_FLOOR * low_sun), MAX_SHADOW_FLOOR);
+    let fill = tinted * max(1.0, floor * luma(full) / max(luma(tinted), 1e-4));
     return Painterly(mix(fill, full, lit) + moon, lit);
 }
 

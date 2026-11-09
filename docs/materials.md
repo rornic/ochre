@@ -10,11 +10,13 @@ GrassTop is greyscale at the mean `GRASS_TEXTURE_MEAN` assumes, because the biom
 
 ## Foliage
 
-Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps them to RGBA layers 24 to 30 of the materials array (`leaves`, then `tall_grass`, `fern`, `poppy`, `dandelion`, `short_grass`, `seed_grass`, in `FIRST_FLORA` order). They aren't projected by world position: the depth and shadow passes have no normals to choose a plane by, and they must cut holes exactly as the main pass does. So they keep their tile uv. The leaves layer is seamless and repeats every block, its holes the painted gaps between leaf clumps; a plant's sprite is drawn once across its quad, clamped half a texel in.
+Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps them to RGBA layers 24 to 32 of the materials array (`leaves`, then `tall_grass`, `fern`, `poppy`, `dandelion`, `short_grass`, `seed_grass`, `shrub`, `heath`, in `FIRST_FLORA` order). They aren't projected by world position: the depth and shadow passes have no normals to choose a plane by, and they must cut holes exactly as the main pass does. So they keep their tile uv. The leaves layer is seamless and repeats every block, its holes the painted gaps between leaf clumps; a plant's sprite is drawn once across its quad, clamped half a texel in.
 
 - Alpha is cut in `block_alpha_at` (`block_texture.wesl`), by the main pass, the depth prepass and the sun's shadow pass alike, at a mip level that depends on distance, `foliage_level` for the camera's view and a blurrier one for shadow maps (`cut_level` in `world_prepass.wesl`). A 512px sprite is far finer than a pixel past a block or two, so cut at full detail it would shimmer. `foliage_cut` scales alpha up as the level climbs so thin leaves and stems still pass the 0.5 cut when blurred: a meadow stays a meadow a few blocks off, and distant crowns go solid, as the shadows already did.
-- Colour mips are alpha weighted (`mip_tiles`), so a hole doesn't darken what's left. Clear texels carry the colour of their neighbours, so bilinear lookups don't bleed a dark edge.
-- The tinted layers (leaves, grass, short grass, seed grass, fern) are greyscale at the mean the climate tint assumes: 0.25 linear for leaves (`LEAF_TEXTURE_MEAN`), 0.5 for the grasses, 0.3 for the fern. Poppy and dandelion keep their colours. Tests check this, the sprites' clear top and sides, and the leaves' coverage.
+- Colour mips are alpha weighted (`mip_tiles`), so a hole doesn't darken what's left, and a mip texel with no cover under it keeps the plain average of the colour painted there. Clear texels carry the colour of the nearest drawn one, all the way out (`bleed` in `foliage.py`), so bilinear lookups near an edge find colour. Without both, big sprites had a black rim at a distance, since a blurred alpha cut draws texels past an edge and the mips and the fill gave them black.
+- The tinted layers (leaves, grass, short grass, seed grass, fern, shrub) are greyscale at the mean the climate tint assumes: 0.25 linear for leaves (`LEAF_TEXTURE_MEAN`), 0.5 for the grasses, 0.3 for the fern, 0.27 for the shrub. Poppy, dandelion and heath keep their colours, the heath a muted greyish mauve.
+- Shrubs and heath are cut at no more than mip level 5 and at a coverage of 0.3, not the 0.1 that keeps thin grass from vanishing (`BIG_FLORA_*` in `block_texture.wesl`, `FIRST_BIG_FLORA_CELL`). Past level 7, from about 70 blocks, one mip texel is half the sprite, and its average passes a 0.1 cut whole, so the quad above the mound would be drawn solid, a flat slab (half of a heath's quad from 70 blocks, all of a shrub's from 135). A test replays the cut on the layers.
+- Shrubs and heath are plants up to three blocks across: one to a block, drawn as six planes in a star, 30 degrees apart, that reach past it (`SHRUB_HALF_WIDTH` and the rest in `mesh.rs`). A plant's shadow lookup is moved toward the sun and fades out with distance, since its own cut-out shadow falls on its quad. Tests check this, the sprites' clear top and sides, and the leaves' coverage.
 - `foliage.py` makes them: leaves from an SDXL candidate with holes cut where it is darkest, plants as brush strokes drawn at 2x and filled with a painting's tone, since SD can't draw a lone plant on transparency.
 - The atlas cells for these tiles are no longer drawn, but stay in `blocks.png` as placeholders, and `block_mean` rows come from the layers.
 
@@ -27,6 +29,8 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 ## Lighting
 
 Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is described in `docs/designs/painterly-lighting.md`.
+
+Gravel is tiled three times over and shale twice (`SCALE` in `materials.py`), since their painted cobbles and slabs were a block or more across: the features are that much smaller, and still seamless. Gravel is also pulled halfway to grey (`DESATURATE`), as its orange cobbles read as bright pink scree.
 
 ## Settings
 
