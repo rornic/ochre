@@ -30,7 +30,7 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 
 Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is described in `docs/designs/painterly-lighting.md`.
 
-Gravel is tiled three times over and shale twice (`SCALE` in `materials.py`), since their painted cobbles and slabs were a block or more across: the features are that much smaller, and still seamless. Gravel is also pulled halfway to grey (`DESATURATE`), as its orange cobbles read as bright pink scree.
+Gravel is tiled three times over (`SCALE` in `materials.py`), since its painted cobbles were a block or more across: the features are that much smaller, and still seamless. Shale draws the grey cracked flagstone that was the stone layer's (`ALIAS` in `materials.py`), and compacted shale is that at 85%. The stone layer itself is the placeholder's, with the same art, and could be dropped by renumbering the layers after it. Gravel is also pulled halfway to grey (`DESATURATE`), as its orange cobbles read as bright pink scree.
 
 ## Settings
 

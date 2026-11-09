@@ -24,8 +24,15 @@ def linear(v):
 
 
 # Layers painted with features too big for what they are: tiled this many times over and brought back to 512, which keeps them
-# seamless. Gravel's cobbles were a block across, and shale a slab of several.
-SCALE = {"Gravel": 3, "Shale": 2}
+# seamless. Gravel's cobbles were a block across.
+SCALE = {"Gravel": 3}
+# Layers that install another's painting: shale is the grey cracked flagstone that was the stone layer's, which is a placeholder
+# (`BlockType::Rock`) that a real world never shows, see docs/materials.md. Its compacted form follows it.
+ALIAS = {"Shale": "Stone"}
+
+
+def painting(name):
+    return Image.open(PAINTED_OUT / f"{ALIAS.get(name, name)}.png")
 # Layers whose colour is pulled toward grey by this much of its saturation: gravel's orange cobbles read as bright pink scree.
 DESATURATE = {"Gravel": 0.5}
 
@@ -38,12 +45,12 @@ DEST.mkdir(exist_ok=True)
 # a compacted rock is its rock's layer packed darker, as `derive()` in generate.py does the atlas tile
 for t in TILES:
     if t["name"] in PAINTED and t.get("derive") == "shade":
-        body = Image.open(PAINTED_OUT / f"{t['body']}.png")
+        body = painting(t["body"])
         body = np.asarray(tile_down(body, SCALE[t["body"]]) if t["body"] in SCALE else body.convert("RGB"), float)
         Image.fromarray(np.clip((body * t["factor"] * np.array(t["tint"])).round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}.png")
 means = {}
 for name in PAINTED:
-    img = Image.open(PAINTED_OUT / f"{name}.png").convert("RGB")
+    img = painting(name).convert("RGB")
     assert img.size == (512, 512), f"{name} is {img.size}, layers are 512x512"
     if name in SCALE:
         img = tile_down(img, SCALE[name])

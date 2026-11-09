@@ -274,9 +274,9 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
         vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
-        vec3<f32>(0.1032, 0.0949, 0.1021), // shale
+        vec3<f32>(0.1612, 0.1542, 0.1649), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
-        vec3<f32>(0.0739, 0.0680, 0.0731), // compacted shale
+        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted shale
         vec3<f32>(0.4954, 0.4954, 0.4954), // tall grass
         vec3<f32>(0.3000, 0.3000, 0.3000), // fern
         vec3<f32>(0.3995, 0.0742, 0.0164), // poppy
