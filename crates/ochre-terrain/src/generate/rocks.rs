@@ -4,7 +4,7 @@ use super::trees::{hash, TreeGround};
 use bevy::math::{I64Vec2, I64Vec3, IVec3};
 use ochre_base::biome::Modifier;
 use ochre_base::block::BlockType;
-use ochre_base::terrain_source::TerrainSource;
+use ochre_base::terrain_source::{RockColumn, TerrainSource};
 use ochre_base::WATER_LEVEL;
 
 // Objects stand on a grid of cells this many blocks across, at most one in each.
@@ -42,6 +42,8 @@ pub struct Rock {
     height: f64,
     // how tall an erratic is against how wide: 0.7 for a boulder, much less for a ledge of an outcrop
     squash: f64,
+    // what it is made of: the rock the geology has under it, for a boulder, see `rock_in_cell`
+    stone: BlockType,
     seed: u64,
 }
 
@@ -65,6 +67,15 @@ const FIELD_FACTOR: (f64, f64) = (0.1, 2.0);
 fn field(seed: u64, x: i64, z: i64) -> f64 {
     let p = (hash(seed ^ 0xF1E1_D5ED, x.div_euclid(FIELD), z.div_euclid(FIELD)) >> 11) as f64 / (1u64 << 53) as f64;
     FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p
+}
+
+// What a rock of `kind` standing at `ground` is made of: a boulder is the rock under it, so it matches the cliffs and the ground round
+// it and not a stone of its own, and a mound is earth.
+fn stone_of(kind: RockKind, column: &mut dyn RockColumn, ground: i64) -> BlockType {
+    match kind {
+        RockKind::Erratic => column.at(ground),
+        RockKind::Mound => BlockType::Dirt,
+    }
 }
 
 // Every rock that could reach into the columns `min..=max` (x, z).
@@ -143,6 +154,7 @@ fn rock_in_cell(
     } else {
         heights.base_height(x, z)
     };
+    let stone = stone_of(kind, &mut *noise.rock_column(x, z), ground);
     let (radius, height) = match kind {
         _ if outcrop => (OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth, 0.0),
         RockKind::Erratic => (2.0 + 3.0 * growth, 0.0),
@@ -154,6 +166,7 @@ fn rock_in_cell(
         radius,
         height,
         squash: if outcrop { OUTCROP_SQUASH } else { 0.7 },
+        stone,
         seed,
     })
 }
@@ -162,7 +175,7 @@ impl Rock {
     /// The block this rock is made of.
     pub fn block(&self) -> BlockType {
         match self.kind {
-            RockKind::Erratic => BlockType::Stone,
+            RockKind::Erratic => self.stone,
             RockKind::Mound => BlockType::Dirt,
         }
     }
@@ -253,6 +266,7 @@ mod tests {
             radius,
             height,
             squash: 0.7,
+            stone: BlockType::Stone,
             seed: 3,
         }
     }
@@ -276,7 +290,7 @@ mod tests {
         }
         // some of it under the ground and some over
         assert!(found.iter().any(|at| at.y < 100) && found.iter().any(|at| at.y >= 100));
-        assert_eq!(BlockType::Stone, r.block());
+        assert_eq!(r.stone, r.block());
     }
 
     #[test]
@@ -327,6 +341,28 @@ mod tests {
         assert!(height(&ledge) / width(&ledge) < 0.7 * height(&ball) / width(&ball), "{} by {}", width(&ledge), height(&ledge));
         // the biggest outcrop still fits inside the reach neighbouring chunks look for rocks in
         assert!(OUTCROP_RADIUS.1 + 1.0 <= ROCK_REACH as f64);
+    }
+
+    // A boulder is the rock the geology has at its foot, not a plain stone of its own, and a mound is earth whatever is under it.
+    #[test]
+    fn a_boulder_is_the_rock_the_geology_has_at_its_foot() {
+        struct Beds;
+        impl ochre_base::terrain_source::RockColumn for Beds {
+            fn bed(&mut self, y: i64) -> (i64, i64, BlockType) {
+                if y < 100 {
+                    (i64::MIN, 100, BlockType::Granite)
+                } else {
+                    (100, i64::MAX, BlockType::Limestone)
+                }
+            }
+        }
+        assert_eq!(BlockType::Limestone, stone_of(RockKind::Erratic, &mut Beds, 130));
+        assert_eq!(BlockType::Granite, stone_of(RockKind::Erratic, &mut Beds, 60));
+        assert_eq!(BlockType::Dirt, stone_of(RockKind::Mound, &mut Beds, 130));
+        // and it is what the rock is made of
+        let boulder = Rock { stone: BlockType::Basalt, ..rock(RockKind::Erratic, 4.0, 0.0) };
+        assert_eq!(BlockType::Basalt, boulder.block());
+        assert_eq!(BlockType::Dirt, rock(RockKind::Mound, 3.0, 6.0).block());
     }
 
     #[test]
