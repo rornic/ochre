@@ -258,6 +258,11 @@ impl Material for ChunkMaterial {
             "FIRST_FLORA_CELL".into(),
             Tile::FIRST_FLORA.atlas_cell() as u32,
         );
+        // shrubs and heath are broad solid sprites, which the blur that suits thin grass would draw as slabs, see `block_alpha_at`
+        let first_big_flora_cell = ShaderDefVal::UInt(
+            "FIRST_BIG_FLORA_CELL".into(),
+            Tile::Shrub.atlas_cell() as u32,
+        );
         // leaves' holes fill in past where the faces between leaves are drawn, see `InnerLeaves`
         let inner_leaves_reach =
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
@@ -274,6 +279,7 @@ impl Material for ChunkMaterial {
             inner_leaves_reach,
             inner_leaves_band,
             first_flora_cell,
+            first_big_flora_cell,
             water_level(),
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
         ];
@@ -779,6 +785,33 @@ mod tests {
                 coverage(&sprite, |_, y| y == h - 1) > 0.02,
                 "{tile:?} doesn't stand on the ground"
             );
+        }
+    }
+
+    // The shader cuts a shrub or heath at no more than mip level 5 and a coverage of 0.3 (`block_alpha_at`), as a blurrier cut at the
+    // threshold that keeps thin grass from vanishing draws the whole quad solid above the mound: this replays that on the layers.
+    #[test]
+    fn test_big_plants_keep_their_silhouette_at_the_blur_they_are_cut_at() {
+        for tile in [Tile::Shrub, Tile::Heath] {
+            let layer = foliage(tile);
+            let size = layer.width() as usize;
+            let alpha: Vec<f32> = layer.pixels().map(|p| p[3] as f32 / 255.0).collect();
+            let truth = alpha.iter().filter(|&&a| a >= 0.5).count() as f32 / alpha.len() as f32;
+            let texel = 1usize << 5;
+            let (mut passed, mut texels) = (0, 0);
+            for ty in 0..size / texel {
+                for tx in 0..size / texel {
+                    let sum: f32 = (0..texel)
+                        .flat_map(|y| (0..texel).map(move |x| (x, y)))
+                        .map(|(x, y)| alpha[(ty * texel + y) * size + tx * texel + x])
+                        .sum();
+                    let mean = sum / (texel * texel) as f32;
+                    passed += (mean * 0.5 / 0.3 >= 0.5) as usize;
+                    texels += 1;
+                }
+            }
+            let drawn = passed as f32 / texels as f32;
+            assert!(drawn < truth + 0.12, "{tile:?} is drawn {drawn:.2} solid at its blurriest, against {truth:.2} painted");
         }
     }
 

@@ -412,6 +412,8 @@ mod tests {
     #[test]
     fn test_tile_count_matches_the_last_tile() {
         assert_eq!(TILE_COUNT, Tile::Heath as usize + 1);
+        // the shaders take every cell from the shrub's on as a big plant's, see `block_alpha_at`
+        assert_eq!(Tile::Heath as usize, Tile::Shrub as usize + 1);
     }
 
     // `GrassTop` as `grass_top`.

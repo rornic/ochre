@@ -59,22 +59,34 @@ fn foliage_level(distance: f32, viewport_height: f32, focal: f32) -> f32 {
 // a lower coverage: a field of grass stays a field rather than fading out a few blocks away.
 const COVERAGE_CUT_FAR: f32 = 0.1;
 const COVERAGE_LEVELS: f32 = 5.0;
-fn foliage_cut(alpha: f32, level: f32) -> f32 {
-    let cut = mix(0.5, COVERAGE_CUT_FAR, clamp(level / COVERAGE_LEVELS, 0.0, 1.0));
+fn foliage_cut(alpha: f32, level: f32, far: f32) -> f32 {
+    let cut = mix(0.5, far, clamp(level / COVERAGE_LEVELS, 0.0, 1.0));
     return min(alpha * 0.5 / cut, 1.0);
+}
+
+// Shrubs and heath are broad solid sprites, not thin blades, so the blur and the lowered cut that keep a meadow from thinning
+// out would draw them as flat slabs: past level 6 or so a mip texel is half the sprite and its average passes the cut
+// whole, the quad drawn solid above the mound. They are cut at no more than this level and at a higher coverage.
+const BIG_FLORA_MAX_LEVEL: f32 = 5.0;
+const BIG_FLORA_CUT_FAR: f32 = 0.3;
+
+fn is_big_flora_cell(vertex_alpha: f32) -> bool {
+    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5;
 }
 
 // A leaf or plant's alpha from mip `level`, which averages away holes smaller than the lookup's footprint, scaled by `foliage_cut`.
 // The atlas cells with no foliage layer have the alpha of their tile.
-fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, level: f32) -> f32 {
+fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, blurred: f32) -> f32 {
     let layer = foliage_layer(vertex_alpha);
+    let big = is_big_flora_cell(vertex_alpha);
+    let level = select(blurred, min(blurred, BIG_FLORA_MAX_LEVEL), big);
     if layer >= 0 {
         var p = uv;
         if is_flora_cell(vertex_alpha) {
             let inset = max(TILE_INSET, 0.5 * exp2(level) / FOLIAGE_TEXELS);
             p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
         }
-        return foliage_cut(textureSampleLevel(materials, materials_sampler, p, layer, level).a, level) * material_color.a;
+        return foliage_cut(textureSampleLevel(materials, materials_sampler, p, layer, level).a, level, select(COVERAGE_CUT_FAR, BIG_FLORA_CUT_FAR, big)) * material_color.a;
     }
     let atlas_cell = floor(vertex_alpha + 0.5);
     // a coarse level's texels are wider, so the lookup stays half of one inside the tile
