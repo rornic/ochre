@@ -246,7 +246,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
         vec3<f32>(0.2403, 0.1078, 0.0716), // dirt
         vec3<f32>(0.4026, 0.2195, 0.1318), // log end
-        vec3<f32>(0.3103, 0.2209, 0.1851), // gravel
+        vec3<f32>(0.2730, 0.2296, 0.2106), // gravel
         vec3<f32>(0.4181, 0.6444, 0.6924), // ice
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top

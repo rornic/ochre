@@ -5,6 +5,7 @@ use bevy::render::mesh::Indices;
 use bevy::render::mesh::Mesh;
 use bevy::render::mesh::VertexAttributeValues;
 use ochre_base::biome::grass_tint;
+use ochre_base::math::smoothstep;
 use ochre_base::block::TILE_COUNT;
 use ochre_base::terrain_source::TerrainSource;
 
@@ -505,11 +506,19 @@ pub const INNER_LEAVES_REACH: f32 = 64.0;
 
 pub const INNER_LEAVES_BAND: f32 = 16.0;
 
+// The temperatures between which the long grasses go from mauve to the grass's own colour: full below the first, and none above the second.
+const MAUVE_FULL_BELOW: f32 = 0.08;
+const MAUVE_NONE_ABOVE: f32 = 0.17;
+/// What the cold's long grasses are tinted toward, a dusty mauve about as bright as the tan grass round them.
+pub(super) const MAUVE_TINT: Vec3 = Vec3::new(0.40, 0.31, 0.44);
+
 // Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
 // sampled at the mesh's four corners and blended across it, rather than at every vertex.
 pub(super) struct GrassTint {
     // at the mesh's edges, so neighbouring meshes share their tints along each edge: (-x, -z), (+x, -z), (-x, +z), (+x, +z)
     pub(super) corners: [Vec3; 4],
+    // how cold it is at the same corners, 0 to 1, over which the long grasses go mauve, as the heath does, see `mauve_at`
+    cold: [f32; 4],
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
 }
@@ -518,14 +527,25 @@ impl GrassTint {
     // `origin` is where the mesh's local origin is in the world, and `scale` how many blocks one local unit is.
     pub(super) fn new(noise: &dyn TerrainSource, origin: Vec3, scale: f32) -> Self {
         let size = CHUNK_SIZE as f32;
-        let corners = [(0.0, 0.0), (size, 0.0), (0.0, size), (size, size)].map(|(x, z)| {
+        let climates = [(0.0, 0.0), (size, 0.0), (0.0, size), (size, size)].map(|(x, z)| {
             let world = origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale;
-            grass_tint(noise.climate(world.x as f64, world.z as f64))
+            noise.climate(world.x as f64, world.z as f64)
         });
         Self {
-            corners,
+            corners: climates.map(grass_tint),
+            // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
+            cold: climates.map(|c| 1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, c.temperature)),
             origin: origin.floor().as_ivec3(),
         }
+    }
+
+    // How far the long grasses at `local` have gone from the grass's tint to `MAUVE_TINT`, 0 to 1.
+    pub(super) fn mauve_at(&self, local: Vec3) -> f32 {
+        let size = CHUNK_SIZE as f32;
+        let (u, v) = ((local.x + 0.5) / size, (local.z + 0.5) / size);
+        let [a, b, c, d] = self.cold;
+        let (top, bottom) = (a + (b - a) * u, c + (d - c) * u);
+        top + (bottom - top) * v
     }
 
     pub(super) fn at(&self, local: Vec3) -> Vec3 {

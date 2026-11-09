@@ -1,6 +1,6 @@
 use super::buffers::{
     tiled_uvs, ChunkMeshes, GrassTint, MeshBuffers, MeshStyle, BOX_TEXTURE_MAX_CELL, CUBE,
-    TEXTURED, TEXTURED_SOLID,
+    MAUVE_TINT, TEXTURED, TEXTURED_SOLID,
 };
 use super::greedy::{convex_sides, mesh_opaque_greedy, Shapes};
 use super::shading::{
@@ -497,6 +497,9 @@ fn push_spray(
     }
 }
 
+// How much of the way to the mauve tint the long grasses go, where it is coldest.
+const MAUVE_STRENGTH: f32 = 0.7;
+
 // How far in from the block's corners flora's quads reach, so neighbouring plants don't touch.
 const FLORA_INSET: f32 = 0.05;
 // How far a plant may stand off its block's centre, and how much shorter than a block grass
@@ -629,7 +632,14 @@ fn mesh_flora(
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
         let ground = coord.as_vec3() - Vec3::Y * 0.5;
         let tint = if tile.tinted() {
-            grass_tint.at(ground) * source.forest_shade(ground)
+            let tint = grass_tint.at(ground);
+            // the long grasses in the cold go mauve, to bridge between the heath, the short ones less so
+            let mauve = match block {
+                BlockType::TallGrass | BlockType::SeedGrass => MAUVE_STRENGTH,
+                BlockType::ShortGrass => MAUVE_STRENGTH * 0.4,
+                _ => 0.0,
+            } * grass_tint.mauve_at(ground);
+            tint.lerp(MAUVE_TINT, mauve) * source.forest_shade(ground)
         } else {
             Vec3::ONE
         };

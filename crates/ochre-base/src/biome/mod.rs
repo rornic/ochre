@@ -122,7 +122,7 @@ pub struct Biomes {
 // The tundra is bare ground, tan grass and scree, below this height over the sea, not snow as the cold would make it, and the
 // ground is scree from this gradient.
 const TUNDRA_THAW_LINE: i64 = 350;
-const TUNDRA_SCREE_GRADIENT: f64 = 0.45;
+const TUNDRA_SCREE_GRADIENT: f64 = 0.38;
 
 impl Biomes {
     pub fn new(_seed: u32) -> Self {

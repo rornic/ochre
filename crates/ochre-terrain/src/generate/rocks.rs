@@ -12,10 +12,18 @@ const CELL: i64 = 24;
 /// The widest cell, in blocks, of a LOD mesh that shows rocks: past it one is under a pixel.
 pub const ROCK_MAX_CELL: i64 = 4;
 /// How far out from its centre any rock reaches.
-pub const ROCK_REACH: i64 = 6;
+pub const ROCK_REACH: i64 = 12;
 const MAX_GRADIENT: f64 = 0.4;
 const MAX_SLOPE: f64 = 0.9;
 const SEA_CLEARANCE: i64 = 3;
+
+// Some of a biome's boulders are outcrops instead, wide low ledges of rock, this share of them where the biome has any,
+// between these radii and this much of their width tall.
+const OUTCROP_SHARE: f64 = 0.5;
+const OUTCROP_RADIUS: (f64, f64) = (5.5, 11.0);
+const OUTCROP_SQUASH: f64 = 0.32;
+// How far height may differ over an outcrop's foot before it would hang or be buried.
+const OUTCROP_SPREAD: i64 = 6;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RockKind {
@@ -32,6 +40,8 @@ pub struct Rock {
     pub base: I64Vec3,
     radius: f64,
     height: f64,
+    // how tall an erratic is against how wide: 0.7 for a boulder, much less for a ledge of an outcrop
+    squash: f64,
     seed: u64,
 }
 
@@ -107,8 +117,18 @@ fn rock_in_cell(
         return None;
     }
     let (mut low, mut high) = (i64::MAX, i64::MIN);
+    let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
+    // an outcrop, where the biome has them: wide, low and on ground that may vary under it
+    let outcrop = kind == RockKind::Erratic
+        && noise.biomes().name(biome) == Some("tundra")
+        && ((seed >> 52) & 0xff) as f64 / 256.0 < OUTCROP_SHARE;
+    let (spread, foot) = if outcrop {
+        (OUTCROP_SPREAD, ((OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth) * 0.5).round() as i64)
+    } else {
+        (spread, 3)
+    };
     // dry under it and within its spread of height, or its foot would hang or drown
-    for (dx, dz) in [(0, 0), (3, 0), (-3, 0), (0, 3), (0, -3)] {
+    for (dx, dz) in [(0, 0), (foot, 0), (-foot, 0), (0, foot), (0, -foot)] {
         if heights.wet(x + dx, z + dz) {
             return None;
         }
@@ -123,8 +143,8 @@ fn rock_in_cell(
     } else {
         heights.base_height(x, z)
     };
-    let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     let (radius, height) = match kind {
+        _ if outcrop => (OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth, 0.0),
         RockKind::Erratic => (2.0 + 3.0 * growth, 0.0),
         RockKind::Mound => (2.5 + 1.5 * growth, 3.0 + 4.0 * growth),
     };
@@ -133,6 +153,7 @@ fn rock_in_cell(
         base: I64Vec3::new(x, ground, z),
         radius,
         height,
+        squash: if outcrop { OUTCROP_SQUASH } else { 0.7 },
         seed,
     })
 }
@@ -204,7 +225,7 @@ impl Rock {
                 let dy = y - (self.base.y as f64 + self.radius * 0.25);
                 let across = self.radius;
                 let d2 =
-                    (dx / across).powi(2) + (dy / (across * 0.7)).powi(2) + (dz / across).powi(2);
+                    (dx / across).powi(2) + (dy / (across * self.squash)).powi(2) + (dz / across).powi(2);
                 let nibble = (hash(self.seed, at.x ^ (at.y << 20), at.z) % 1000) as f64 / 1000.0;
                 d2 <= 1.0 - 0.3 * nibble
             }
@@ -231,6 +252,7 @@ mod tests {
             base: I64Vec3::new(40, 100, -20),
             radius,
             height,
+            squash: 0.7,
             seed: 3,
         }
     }
@@ -287,6 +309,24 @@ mod tests {
         // and the fields vary: patches hold between a tenth and twice the share
         let factors: Vec<f64> = (0..200).map(|i| field(3, i * FIELD, 0)).collect();
         assert!(factors.iter().cloned().fold(f64::MAX, f64::min) < 0.3 && factors.iter().cloned().fold(0.0, f64::max) > 1.5);
+    }
+
+    #[test]
+    fn an_outcrop_is_a_wide_low_ledge_where_a_boulder_is_a_ball() {
+        let width = |found: &[IVec3]| {
+            let (lo, hi) = found.iter().fold((i32::MAX, i32::MIN), |(lo, hi), at| (lo.min(at.x), hi.max(at.x)));
+            (hi - lo + 1) as f64
+        };
+        let height = |found: &[IVec3]| {
+            let (lo, hi) = found.iter().fold((i32::MAX, i32::MIN), |(lo, hi), at| (lo.min(at.y), hi.max(at.y)));
+            (hi - lo + 1) as f64
+        };
+        let ball = blocks(&rock(RockKind::Erratic, 4.0, 0.0));
+        let ledge = blocks(&Rock { squash: OUTCROP_SQUASH, ..rock(RockKind::Erratic, 9.0, 0.0) });
+        assert!(width(&ledge) >= 17.0, "{} wide", width(&ledge));
+        assert!(height(&ledge) / width(&ledge) < 0.7 * height(&ball) / width(&ball), "{} by {}", width(&ledge), height(&ledge));
+        // the biggest outcrop still fits inside the reach neighbouring chunks look for rocks in
+        assert!(OUTCROP_RADIUS.1 + 1.0 <= ROCK_REACH as f64);
     }
 
     #[test]

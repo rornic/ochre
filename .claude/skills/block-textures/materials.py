@@ -4,7 +4,7 @@ from their mean linear colour, and write out/materials_contact.png (each layer 3
 import re
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 from generate import HERE, OUT, PAINTED, PAINTED_OUT, TILES
 
@@ -26,6 +26,8 @@ def linear(v):
 # Layers painted with features too big for what they are: tiled this many times over and brought back to 512, which keeps them
 # seamless. Gravel's cobbles were a block across, and shale a slab of several.
 SCALE = {"Gravel": 3, "Shale": 2}
+# Layers whose colour is pulled toward grey by this much of its saturation: gravel's orange cobbles read as bright pink scree.
+DESATURATE = {"Gravel": 0.5}
 
 
 def tile_down(img, n):
@@ -45,6 +47,8 @@ for name in PAINTED:
     assert img.size == (512, 512), f"{name} is {img.size}, layers are 512x512"
     if name in SCALE:
         img = tile_down(img, SCALE[name])
+    if name in DESATURATE:
+        img = ImageEnhance.Color(img).enhance(DESATURATE[name])
     means[name] = linear(np.asarray(img, float).reshape(-1, 3)).mean(0)
     if name == "GrassTop":
         assert np.ptp(np.asarray(img, int).reshape(-1, 3), axis=1).max() == 0, "GrassTop must be greyscale, the biome tint multiplies it"
