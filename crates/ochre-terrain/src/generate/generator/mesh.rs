@@ -1,6 +1,6 @@
 use super::buffers::{
     tiled_uvs, ChunkMeshes, GrassTint, MeshBuffers, MeshStyle, BOX_TEXTURE_MAX_CELL, CUBE,
-    MAUVE_TINT, TEXTURED, TEXTURED_SOLID,
+    MAUVE_TINT, RUSSET_TINT, TEXTURED, TEXTURED_SOLID,
 };
 use super::greedy::{convex_sides, mesh_opaque_greedy, Shapes};
 use super::shading::{
@@ -639,7 +639,12 @@ fn mesh_flora(
                 BlockType::ShortGrass => MAUVE_STRENGTH * 0.4,
                 _ => 0.0,
             } * grass_tint.mauve_at(ground);
-            tint.lerp(MAUVE_TINT, mauve) * source.forest_shade(ground)
+            // and in the reddish patches the ground has, so a tuft is the colour of the grass it stands in
+            let russet = match block {
+                BlockType::TallGrass | BlockType::SeedGrass | BlockType::ShortGrass => grass_tint.russet_at(ground),
+                _ => 0.0,
+            };
+            tint.lerp(MAUVE_TINT, mauve).lerp(RUSSET_TINT, russet) * source.forest_shade(ground)
         } else {
             Vec3::ONE
         };
@@ -753,7 +758,7 @@ fn mesh_grass_fringe(
                 u if u < 0.85 => Tile::TallGrass,
                 _ => Tile::SeedGrass,
             };
-            let tint = grass_tint.at(top) * source.forest_shade(top);
+            let tint = grass_tint.ground_at(top) * source.forest_shade(top);
             push_tuft(
                 buffers,
                 &Tuft {

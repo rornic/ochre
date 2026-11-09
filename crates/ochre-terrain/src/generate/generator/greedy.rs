@@ -60,6 +60,8 @@ pub(super) struct FaceCell {
     pub(super) corner: [bool; 4],
     // which corners the top is cut down at, between the strips of the two blocks beside it, see `corner_dips`
     pub(super) dip: [bool; 4],
+    // grass whose tint varies across the world, which its faces must not merge over, see `GrassTint::russet_at`
+    pub(super) varied: bool,
 }
 
 impl FaceCell {
@@ -106,6 +108,8 @@ impl FaceCell {
             && self.corner == other.corner
             && self.corner_even_along(axis)
             && self.dip == other.dip
+            && !self.varied
+            && !other.varied
             && !self.dip.contains(&true)
             && self.even_along(corners, axis)
     }
@@ -615,6 +619,7 @@ pub(super) fn mesh_opaque_greedy(
             let bevelled = bevel && span.is_none() && !skirt;
             Some(FaceCell {
                 span,
+                varied: block == BlockType::Grass && grass_tint.varied_at(coord.as_vec3()),
                 inner: between_leaves,
                 corner: match (bevelled, normal.y) {
                     (true, 1) => shapes.shape(source, coord).raised,
@@ -673,7 +678,12 @@ pub(super) fn mesh_opaque_greedy(
             let color = |ao: f32, position: Vec3| {
                 // leaves share grass's tint, over a darker texture
                 let tint = if tile.tinted() {
-                    grass_tint.at(position) * cell.tint
+                    let ground = if cell.block == BlockType::Grass {
+                        grass_tint.ground_at(position)
+                    } else {
+                        grass_tint.at(position)
+                    };
+                    ground * cell.tint
                 } else {
                     Vec3::ONE
                 };

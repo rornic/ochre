@@ -6,6 +6,7 @@ use bevy::render::mesh::Mesh;
 use bevy::render::mesh::VertexAttributeValues;
 use ochre_base::biome::grass_tint;
 use ochre_base::math::smoothstep;
+use crate::generate::trees::hash;
 use ochre_base::block::TILE_COUNT;
 use ochre_base::terrain_source::TerrainSource;
 
@@ -512,6 +513,15 @@ const MAUVE_NONE_ABOVE: f32 = 0.17;
 /// What the cold's long grasses are tinted toward, a dusty mauve about as bright as the tan grass round them.
 pub(super) const MAUVE_TINT: Vec3 = Vec3::new(0.40, 0.31, 0.44);
 
+// Reddish patches in the cold country's grass, in the world's grid of `RUSSET_PATCH` blocks, where noise is over `RUSSET_FROM`
+// and fully red past `RUSSET_TO`, so about a third of the ground, and a rust-red tint a little darker than the tan.
+const RUSSET_PATCH: f32 = 40.0;
+const RUSSET_SALT: u64 = 0x2E55_E7ED;
+const RUSSET_FROM: f32 = 0.5;
+const RUSSET_TO: f32 = 0.78;
+const RUSSET_STRENGTH: f32 = 0.9;
+pub(super) const RUSSET_TINT: Vec3 = Vec3::new(0.58, 0.19, 0.12);
+
 // Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
 // sampled at the mesh's four corners and blended across it, rather than at every vertex.
 pub(super) struct GrassTint {
@@ -521,6 +531,8 @@ pub(super) struct GrassTint {
     cold: [f32; 4],
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
+    // how many blocks one local unit is, to find where a local position is in the world
+    scale: f32,
 }
 
 impl GrassTint {
@@ -536,7 +548,39 @@ impl GrassTint {
             // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
             cold: climates.map(|c| 1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, c.temperature)),
             origin: origin.floor().as_ivec3(),
+            scale,
         }
+    }
+
+    // Whether grass here is varied by `russet_at`, so its faces mustn't merge into quads that would smear the patches.
+    pub(super) fn varied_at(&self, local: Vec3) -> bool {
+        self.scale <= 1.0 && self.mauve_at(local) > 0.01
+    }
+
+    // How far the grass at `local` has gone to `RUSSET_TINT`, 0 to 1: patches of reddish grass across the cold country, from smooth
+    // noise over the world `RUSSET_PATCH` blocks across, in the cold only, as the long grasses' mauve is.
+    pub(super) fn russet_at(&self, local: Vec3) -> f32 {
+        let cold = self.mauve_at(local);
+        // far terrain, drawn in cells wider than a block, keeps the plain tint: patches 40 blocks across are a few cells there, and a third
+        // of the far land going red read as a flat brown band along the horizon
+        if cold <= 0.01 || self.scale > 1.0 {
+            return 0.0;
+        }
+        let world = (self.origin.as_vec3() + local * self.scale) / RUSSET_PATCH;
+        let (cell, at) = (world.floor(), world - world.floor());
+        let corner = |dx: f32, dz: f32| {
+            (hash(RUSSET_SALT, (cell.x + dx) as i64, (cell.z + dz) as i64) >> 11) as f32 / (1u64 << 53) as f32
+        };
+        let (u, v) = (smoothstep(0.0, 1.0, at.x), smoothstep(0.0, 1.0, at.z));
+        let top = corner(0.0, 0.0) + (corner(1.0, 0.0) - corner(0.0, 0.0)) * u;
+        let bottom = corner(0.0, 1.0) + (corner(1.0, 1.0) - corner(0.0, 1.0)) * u;
+        let patch = top + (bottom - top) * v;
+        cold * RUSSET_STRENGTH * smoothstep(RUSSET_FROM, RUSSET_TO, patch)
+    }
+
+    // The tint of the grass on the ground at `local`: the climate's, with its reddish patches.
+    pub(super) fn ground_at(&self, local: Vec3) -> Vec3 {
+        self.at(local).lerp(RUSSET_TINT, self.russet_at(local))
     }
 
     // How far the long grasses at `local` have gone from the grass's tint to `MAUVE_TINT`, 0 to 1.
@@ -646,3 +690,46 @@ pub(super) const CUBE: [[Vertex; 4]; 6] = [
         v([0.5, -0.5, 0.5], [0.0, -1.0, 0.0], [1.0, 0.0]),
     ],
 ];
+
+#[cfg(test)]
+mod russet_tests {
+    use super::*;
+
+    fn tint(cold: f32) -> GrassTint {
+        GrassTint {
+            corners: [Vec3::ONE; 4],
+            cold: [cold; 4],
+            origin: IVec3::new(1000, 0, -2000),
+            scale: 1.0,
+        }
+    }
+
+    #[test]
+    fn test_russet_patches_are_in_the_cold_only_cover_a_part_of_it_and_vary_smoothly() {
+        let (cold, warm) = (tint(1.0), tint(0.0));
+        let at = |x: i32, z: i32| Vec3::new(x as f32, 0.0, z as f32);
+        let mut russet = Vec::new();
+        for x in 0..200 {
+            for z in 0..200 {
+                assert_eq!(0.0, warm.russet_at(at(x, z)), "russet in a warm climate");
+                assert!(!warm.varied_at(at(x, z)));
+                russet.push(cold.russet_at(at(x, z)));
+            }
+        }
+        let share = |f: &dyn Fn(f32) -> bool| russet.iter().filter(|&&r| f(r)) .count() as f32 / russet.len() as f32;
+        // about a third of the ground is mostly red, a third not at all
+        assert!((0.15..0.5).contains(&share(&|r| r > 0.45)), "{}", share(&|r| r > 0.45));
+        assert!((0.2..0.6).contains(&share(&|r| r == 0.0)), "{}", share(&|r| r == 0.0));
+        // and a block along it changes little, so the patches are soft
+        for x in 0..199 {
+            for z in 0..199 {
+                let step = (cold.russet_at(at(x + 1, z)) - cold.russet_at(at(x, z))).abs();
+                assert!(step < 0.3, "{step} between neighbours at {x}, {z}");
+            }
+        }
+        // far terrain, in cells wider than a block, keeps the plain tint, or the far land reads as a brown band
+        let coarse = GrassTint { scale: 4.0, ..tint(1.0) };
+        assert!((0..200).all(|x| coarse.russet_at(at(x, x)) == 0.0));
+        assert!(cold.varied_at(at(0, 0)));
+    }
+}
