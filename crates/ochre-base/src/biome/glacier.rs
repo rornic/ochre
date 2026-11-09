@@ -14,7 +14,7 @@ impl Biome for Glacier {
     }
 
     fn spring_block(&self) -> BlockType {
-        BlockType::Stone
+        BlockType::Rock
     }
 
     fn tree_density(&self) -> Option<f64> {
@@ -30,7 +30,7 @@ impl Biome for Glacier {
             BlockType::Grass | BlockType::Snow if gradient < ICE_GRADIENT => BlockType::Ice,
             BlockType::Grass if gradient < SNOW_GRADIENT => BlockType::Snow,
             // steep faces, banks and shores are ice too: the ice under them is what a glacier is made of
-            BlockType::Grass | BlockType::Sand | BlockType::Stone => BlockType::Ice,
+            BlockType::Grass | BlockType::Sand | BlockType::Rock => BlockType::Ice,
             other => other,
         }
     }
@@ -46,7 +46,7 @@ mod tests {
         assert_eq!(BlockType::Snow, Glacier.block(BlockType::Grass, 20, 1.0));
         assert_eq!(BlockType::Ice, Glacier.block(BlockType::Grass, 20, 2.5));
         assert_eq!(BlockType::Ice, Glacier.block(BlockType::Sand, 2, 0.1));
-        assert_eq!(BlockType::Ice, Glacier.block(BlockType::Stone, 20, 2.5));
+        assert_eq!(BlockType::Ice, Glacier.block(BlockType::Rock, 20, 2.5));
         assert_eq!(BlockType::Water, Glacier.block(BlockType::Water, -5, 0.0));
     }
 }

@@ -39,7 +39,7 @@ mod tests {
     fn test_grass_turns_to_sand_but_rock_and_snow_stay() {
         assert_eq!(BlockType::Sand, Desert.block(BlockType::Grass, 10, 0.0));
         for block in [
-            BlockType::Stone,
+            BlockType::Rock,
             BlockType::Snow,
             BlockType::Water,
             BlockType::Sand,

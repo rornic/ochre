@@ -146,7 +146,7 @@ pub fn generate_chunk_with(
             // a spring's rim and the bed of its pool are the biome's own block
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
-            let ice_cliffs = biomes.block(biome, BlockType::Stone, 20, 0.0) == BlockType::Ice;
+            let ice_cliffs = biomes.block(biome, BlockType::Rock, 20, 0.0) == BlockType::Ice;
             let soil = soil_depth(slope);
             let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
@@ -181,16 +181,16 @@ pub fn generate_chunk_with(
                     + cliff * cliff_density(seed, world_x, y, world_z, column_height);
                 let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top);
                 // a glacier's built-up faces are ice, not the stone a cliff builds elsewhere
-                if cut == BlockType::Stone && block != BlockType::Stone && ice_cliffs {
+                if cut == BlockType::Rock && block != BlockType::Rock && ice_cliffs {
                     BlockType::Ice
                 } else {
                     cut
                 }
             };
-            let (mut rock, mut bed) = (None, (0, 0, BlockType::Stone));
+            let (mut rock, mut bed) = (None, (0, 0, BlockType::Rock));
             cells.extend((world_y..world_y + size).map(|y| {
                 if y < bedrock_top {
-                    return BlockType::CompactedStone;
+                    return BlockType::CompactedRock;
                 }
                 // stone is the rock the geology has there, found a bed at a time
                 rocked(column_block_at(y), || {

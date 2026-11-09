@@ -165,8 +165,8 @@ fn test_chunks_from_a_fixed_map_and_seed_hash_the_same_on_every_machine() {
     for block in [
         BlockType::Grass,
         BlockType::Dirt,
-        BlockType::Stone,
-        BlockType::CompactedStone,
+        BlockType::Rock,
+        BlockType::CompactedRock,
         BlockType::Sand,
         BlockType::Water,
         BlockType::Leaves,

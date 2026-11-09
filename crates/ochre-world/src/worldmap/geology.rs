@@ -50,7 +50,7 @@ impl Rock {
     /// The block this rock is drawn as.
     pub fn block(self) -> BlockType {
         match self {
-            Self::Stone => BlockType::Stone,
+            Self::Stone => BlockType::Rock,
             Self::Basalt => BlockType::Basalt,
             Self::Marble => BlockType::Marble,
             Self::Limestone => BlockType::Limestone,

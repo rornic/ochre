@@ -51,7 +51,7 @@ impl World {
             bounds,
             chunks: HashMap::new(),
             below: Arc::new(ChunkData::from_cells(std::iter::repeat_n(
-                BlockType::Stone,
+                BlockType::Rock,
                 (CHUNK_SIZE as usize).pow(3),
             ))),
             above: Arc::new(ChunkData::default()),
@@ -235,7 +235,7 @@ mod tests {
         };
         let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
         let centre = ChunkCoordinate(I64Vec3::ZERO);
-        world.insert_chunk(centre, filled(BlockType::Stone));
+        world.insert_chunk(centre, filled(BlockType::Rock));
         // its diagonal neighbours don't matter, as faces only meet the chunks against them
         for side in centre.adjacent() {
             world.insert_chunk(side, filled(BlockType::Dirt));
@@ -278,11 +278,11 @@ mod tests {
     fn test_compacted_stone_air_and_ungenerated_chunks_are_not_broken() {
         let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
         let mut data = ChunkData::default();
-        data.set_block_at(bevy::math::U16Vec3::ZERO, BlockType::CompactedStone);
+        data.set_block_at(bevy::math::U16Vec3::ZERO, BlockType::CompactedRock);
         world.insert_chunk(ChunkCoordinate(I64Vec3::ZERO), data);
 
         assert_eq!(None, world.break_block(I64Vec3::ZERO));
-        assert_eq!(BlockType::CompactedStone, world.get_block_at(I64Vec3::ZERO));
+        assert_eq!(BlockType::CompactedRock, world.get_block_at(I64Vec3::ZERO));
         assert_eq!(None, world.break_block(I64Vec3::new(1, 0, 0)));
         // not generated, and under the world
         assert_eq!(None, world.break_block(I64Vec3::new(100, 0, 0)));
@@ -304,7 +304,7 @@ mod tests {
         assert!(world.get_chunk_data(below).unwrap().opaque());
         assert!(world.get_chunk_data(above).unwrap().empty());
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             world.get_block_at(I64Vec3::new(0, world.bounds.min_y - 1, 0))
         );
     }

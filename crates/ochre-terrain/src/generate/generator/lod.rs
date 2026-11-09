@@ -800,7 +800,7 @@ mod tests {
             (0, 0),
             id,
             (height, 0.0, temperature, water_top),
-            &mut |_| BlockType::Stone,
+            &mut |_| BlockType::Rock,
         );
         (-1..=size)
             .map(|cy| {

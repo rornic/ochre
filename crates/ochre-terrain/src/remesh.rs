@@ -294,7 +294,7 @@ mod tests {
                     cells.push(if hash.rem_euclid(5) < 2 {
                         BlockType::Air
                     } else {
-                        BlockType::Stone
+                        BlockType::Rock
                     });
                 }
             }
@@ -387,8 +387,8 @@ mod tests {
         let block = (1..15)
             .map(|y| centre.0 * CHUNK_SIZE as i64 + I64Vec3::new(15, y, 3))
             .find(|&b| {
-                world.get_block_at(b) == BlockType::Stone
-                    && world.get_block_at(b + I64Vec3::X) == BlockType::Stone
+                world.get_block_at(b) == BlockType::Rock
+                    && world.get_block_at(b + I64Vec3::X) == BlockType::Rock
             })
             .unwrap();
         let near: Vec<ChunkCoordinate> = (-2..=2)
@@ -422,7 +422,7 @@ mod tests {
         let mut floor = ChunkData::default();
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
-                floor.set_block_at(U16Vec3::new(x, 0, z), BlockType::Stone);
+                floor.set_block_at(U16Vec3::new(x, 0, z), BlockType::Rock);
             }
         }
         for x in -1..=2 {
@@ -458,7 +458,7 @@ mod tests {
         };
         let whole = vertices(&world);
         assert_eq!(
-            Some(BlockType::Stone),
+            Some(BlockType::Rock),
             world.break_block(I64Vec3::new(5, 0, 5))
         );
         // the floor's top is split around the hole, and the hole has walls
@@ -539,14 +539,14 @@ mod tests {
         // two stone blocks inside the group's first chunk
         let stones: Vec<I64Vec3> = (1..15)
             .map(|y| I64Vec3::new(5, y, 5))
-            .filter(|&b| app.world().resource::<World>().get_block_at(b) == BlockType::Stone)
+            .filter(|&b| app.world().resource::<World>().get_block_at(b) == BlockType::Rock)
             .take(2)
             .collect();
         let broken = app
             .world_mut()
             .resource_mut::<World>()
             .break_block(stones[0]);
-        assert_eq!(Some(BlockType::Stone), broken);
+        assert_eq!(Some(BlockType::Rock), broken);
         draw(&mut app);
         let group = app
             .world()
@@ -567,7 +567,7 @@ mod tests {
             .world_mut()
             .resource_mut::<World>()
             .break_block(stones[1]);
-        assert_eq!(Some(BlockType::Stone), broken);
+        assert_eq!(Some(BlockType::Rock), broken);
         draw(&mut app);
         assert_eq!(
             Some(group),
@@ -597,7 +597,7 @@ mod tests {
             .insert_resource(world);
         let block = (0..CHUNK_SIZE as i64)
             .map(|y| I64Vec3::new(1, y, 1))
-            .find(|&b| app.world().resource::<World>().get_block_at(b) == BlockType::Stone)
+            .find(|&b| app.world().resource::<World>().get_block_at(b) == BlockType::Rock)
             .unwrap();
         app.world_mut().resource_mut::<World>().break_block(block);
         app.update();

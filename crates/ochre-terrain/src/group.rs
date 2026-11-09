@@ -378,7 +378,7 @@ mod tests {
 
     fn block_mesh(at: U16Vec3) -> ChunkMeshes {
         let mut chunk = ChunkData::default();
-        chunk.set_block_at(at, BlockType::Stone);
+        chunk.set_block_at(at, BlockType::Rock);
         generate_chunk_mesh(
             Arc::new(chunk),
             vec![None; 26],

@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(BlockType::Gravel, tundra.block(BlockType::Snow, 30, 0.6));
         assert_eq!(BlockType::Snow, tundra.block(BlockType::Snow, 300, 0.1));
         // only snow thaws
-        assert_eq!(BlockType::Stone, tundra.block(BlockType::Stone, 30, 3.0));
+        assert_eq!(BlockType::Rock, tundra.block(BlockType::Rock, 30, 3.0));
         assert_eq!(BlockType::Snow, Plain::new("glacier", 0.0).block(BlockType::Snow, 30, 0.1));
     }
 }

@@ -266,7 +266,7 @@ mod tests {
             radius,
             height,
             squash: 0.7,
-            stone: BlockType::Stone,
+            stone: BlockType::Rock,
             seed: 3,
         }
     }

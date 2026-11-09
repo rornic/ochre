@@ -3,7 +3,8 @@
 pub enum BlockType {
     #[default]
     Air,
-    Stone,
+    // stone as the terrain rules lay it, before `rocked` turns it into the rock the geology has there
+    Rock,
     Grass,
     Sand,
     Water,
@@ -25,7 +26,7 @@ pub enum BlockType {
     Shrub,
     Heath,
     // stone packed hard under the ground, which only explosives break
-    CompactedStone,
+    CompactedRock,
     // the rocks of the geology, see `TerrainSource::rock`, each with a compacted form
     Limestone,
     Clay,
@@ -89,7 +90,7 @@ impl BlockType {
     pub fn is_compacted(&self) -> bool {
         matches!(
             self,
-            BlockType::CompactedStone
+            BlockType::CompactedRock
                 | BlockType::CompactedLimestone
                 | BlockType::CompactedClay
                 | BlockType::CompactedBasalt
@@ -103,7 +104,7 @@ impl BlockType {
     // This rock packed hard, as it lies deep under the ground.
     pub fn compacted(&self) -> BlockType {
         match self {
-            BlockType::Stone => BlockType::CompactedStone,
+            BlockType::Rock => BlockType::CompactedRock,
             BlockType::Limestone => BlockType::CompactedLimestone,
             BlockType::Clay => BlockType::CompactedClay,
             BlockType::Basalt => BlockType::CompactedBasalt,
@@ -118,7 +119,7 @@ impl BlockType {
     pub fn name(&self) -> &'static str {
         match self {
             BlockType::Air => "air",
-            BlockType::Stone => "stone",
+            BlockType::Rock => "rock",
             BlockType::Grass => "grass",
             BlockType::Sand => "sand",
             BlockType::Water => "water",
@@ -137,7 +138,7 @@ impl BlockType {
             BlockType::SeedGrass => "seed grass",
             BlockType::Shrub => "shrub",
             BlockType::Heath => "heath",
-            BlockType::CompactedStone => "compacted stone",
+            BlockType::CompactedRock => "compacted rock",
             BlockType::Limestone => "limestone",
             BlockType::Clay => "clay",
             BlockType::Basalt => "basalt",
@@ -356,8 +357,8 @@ impl BlockType {
     pub fn tile(&self, face: Face) -> Tile {
         match (self, face) {
             (BlockType::Air, _) => Tile::Stone, // never drawn
-            (BlockType::Stone, _) => Tile::Stone,
-            (BlockType::CompactedStone, _) => Tile::CompactedStone,
+            (BlockType::Rock, _) => Tile::Stone,
+            (BlockType::CompactedRock, _) => Tile::CompactedStone,
             (BlockType::Limestone, _) => Tile::Limestone,
             (BlockType::Clay, _) => Tile::Clay,
             (BlockType::Basalt, _) => Tile::Basalt,
@@ -555,18 +556,18 @@ mod tests {
     #[test]
     fn test_occlusion_weights() {
         assert_eq!(0.0, BlockType::Air.occlusion_weight());
-        assert_eq!(1.0, BlockType::Stone.occlusion_weight());
+        assert_eq!(1.0, BlockType::Rock.occlusion_weight());
         let w = BlockType::Water.occlusion_weight();
         assert!(w > 0.0 && w < 1.0);
     }
 
     #[test]
     fn test_compacted_stone_air_and_water_cannot_be_broken() {
-        assert!(BlockType::Stone.is_breakable());
+        assert!(BlockType::Rock.is_breakable());
         assert!(BlockType::Poppy.is_breakable());
-        assert!(!BlockType::CompactedStone.is_breakable());
+        assert!(!BlockType::CompactedRock.is_breakable());
         // it can still be pointed at, to see what it is
-        assert!(BlockType::CompactedStone.is_targetable());
+        assert!(BlockType::CompactedRock.is_targetable());
         for passed_through in [BlockType::Air, BlockType::Water] {
             assert!(!passed_through.is_targetable() && !passed_through.is_breakable());
         }
@@ -575,7 +576,7 @@ mod tests {
     #[test]
     fn test_every_rock_has_a_compacted_form_that_cannot_be_broken() {
         for rock in [
-            BlockType::Stone,
+            BlockType::Rock,
             BlockType::Limestone,
             BlockType::Clay,
             BlockType::Basalt,
@@ -593,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_only_solid_blocks_are_opaque() {
-        assert!(BlockType::Stone.is_opaque());
+        assert!(BlockType::Rock.is_opaque());
         assert!(BlockType::Log.is_opaque());
         assert!(!BlockType::Leaves.is_opaque());
         assert!(!BlockType::Water.is_opaque());
