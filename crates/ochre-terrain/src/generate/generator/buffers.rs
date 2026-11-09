@@ -50,7 +50,7 @@ pub(super) const RAMP: f32 = 0.3;
 
 // How much of a crease's ambient occlusion goes where a ramp fills it, at the top of the ramp: the geometry
 // does the shading there, and the darkening would count it twice.
-const AO_RELIEF: f32 = 0.7;
+const AO_RELIEF: f32 = 0.3;
 
 // Where a point `(i, j)` cells along a quad's tangents ends up, `size` cells wide and tall, with the
 // quad's edge pulled in on each side, -ta, +ta, -tb, +tb, by `inset` blocks.

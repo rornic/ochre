@@ -590,6 +590,31 @@ mod tests {
     }
 
     #[test]
+    fn test_the_shader_cools_the_neutral_rocks() {
+        let shader = std::fs::read_to_string(asset("shaders/world.wesl")).unwrap();
+        let line = shader.split("fn is_neutral_rock").nth(1).unwrap();
+        let line = line.lines().nth(1).unwrap();
+        let mut in_shader: Vec<usize> = line
+            .split("layer == ")
+            .skip(1)
+            .map(|n| n.split(|c: char| !c.is_ascii_digit()).next().unwrap().parse().unwrap())
+            .collect();
+        in_shader.sort();
+        let mut expected: Vec<usize> = MATERIAL_FILES
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| {
+                ["stone", "basalt", "granite", "shale"]
+                    .iter()
+                    .any(|rock| *name == rock || *name == &format!("compacted_{rock}"))
+            })
+            .map(|(layer, _)| layer)
+            .collect();
+        expected.sort();
+        assert_eq!(expected, in_shader);
+    }
+
+    #[test]
     fn test_shader_layer_table_matches_the_tiles() {
         let layers = shader_layers();
         assert_eq!(ochre_base::block::TILE_COUNT, layers.len());

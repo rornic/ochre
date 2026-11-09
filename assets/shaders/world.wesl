@@ -57,7 +57,7 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
 }
 
 // The light on a face, shadowed by the land and the clouds, and moonlight, kept out of caves by sky light but not shadowed, see `painterly.wesl`.
-fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>) -> Painterly {
+fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>, leaf: bool) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
     var to_sun = vec3<f32>(0.0, 1.0, 0.0);
     var sun = vec3<f32>(0.0);
@@ -70,7 +70,7 @@ fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: v
             visibility = sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz));
         }
     }
-    return painterly_light(shaded, to_sun, sun, visibility, sky_ambient(sky, shaded), direct_moon(shaded) * gate);
+    return painterly_light(shaded, to_sun, sun, visibility, sky_ambient(sky, shaded), direct_moon(shaded) * gate, leaf);
 }
 
 // Faces turn toward up between these distances in blocks, to this much of the way: past
@@ -103,6 +103,14 @@ const BLEND_BASE: f32 = 0.0125;
 const BLEND_SPAN: f32 = 0.1;
 // How far toward its wall a ramp is lit, at the most: it meets the wall in a crease, not a turn.
 const RAMP_LIT_TURN: f32 = 0.5;
+
+// Neutral rock under the warm key reads peach, where grass only reads sunny, so it's cooled a little. This covers stone,
+// basalt, granite, shale and their compacted forms, by material layer, and a test checks the layers against `MATERIAL_FILES`.
+const ROCK_COOL: vec3<f32> = vec3<f32>(0.93, 0.99, 1.06);
+
+fn is_neutral_rock(layer: i32) -> bool {
+    return layer == 0 || layer == 7 || layer == 9 || layer == 10 || layer == 16 || layer == 19 || layer == 22 || layer == 23;
+}
 
 // The normal to light by: turned toward up with distance, which evens out the sun's and sky's contrast between faces.
 fn lit_normal(normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
@@ -246,6 +254,10 @@ fn fragment(
     if painted {
         tinted = tinted * drift(world_position.xz);
     }
+    // coarse LOD cells too, which keep their block's cell in vertex alpha
+    if is_neutral_rock(material_layer(in.color.a)) {
+        tinted = tinted * ROCK_COOL;
+    }
     color = vec4<f32>(tinted, color.a);
 
     // block meshes carry smoothed sky light, all but those with no faces at all
@@ -263,7 +275,7 @@ fn fragment(
     }
     let shaded = lit_normal(smooth_normal, world_position);
     let glow = point_light_glow(world_position, normal, in.position.xy);
-    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy);
+    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a));
     color = vec4<f32>(painterly_saturation(color.rgb * (lighting.light + glow), lighting.lit), color.a);
 
     // so distant chunks fade into the sky instead of popping in and out
