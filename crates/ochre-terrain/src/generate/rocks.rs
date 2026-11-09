@@ -38,12 +38,23 @@ pub struct Rock {
 // The kind of object a biome has and the share of its cells that hold one.
 fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
     match biome? {
-        // the tundra is strewn with boulders, about one in a twenty five block square, where a taiga has one in a hundred
-        "tundra" => Some((RockKind::Erratic, 0.85)),
+        // the tundra is strewn with boulder fields, where a taiga has one in a hundred
+        "tundra" => Some((RockKind::Erratic, 0.9)),
         "taiga" => Some((RockKind::Erratic, 0.04)),
         "savanna" => Some((RockKind::Mound, 0.075)),
         _ => None,
     }
+}
+
+// Boulders come in fields: the share of cells that hold one is scaled by a factor that varies over patches this many blocks
+// across, from `FIELD_FACTOR`'s first, near bare ground, to its second, where nearly every cell has one.
+const FIELD: i64 = 96;
+const FIELD_FACTOR: (f64, f64) = (0.1, 2.0);
+
+// How much of the biome's `share` the cell at (x, z) keeps: a field of boulders or open ground between.
+fn field(seed: u64, x: i64, z: i64) -> f64 {
+    let p = (hash(seed ^ 0xF1E1_D5ED, x.div_euclid(FIELD), z.div_euclid(FIELD)) >> 11) as f64 / (1u64 << 53) as f64;
+    FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p
 }
 
 // Every rock that could reach into the columns `min..=max` (x, z).
@@ -79,6 +90,10 @@ fn rock_in_cell(
     let biome = heights.biome(x, z);
     let (kind, share) = share(noise.biomes().name(biome))?;
     // a mountain's slopes and its screes are not where a glacier dropped one or termites build
+    let share = match kind {
+        RockKind::Erratic => (share * field(noise.seed() as u64, x, z)).min(1.0),
+        RockKind::Mound => share,
+    };
     if chance >= share || noise.biomes().modifier(biome) != Modifier::None {
         return None;
     }
@@ -267,8 +282,11 @@ mod tests {
         let density = |biome| share(Some(biome)).unwrap().1 / (CELL * CELL) as f64;
         assert_eq!(RockKind::Erratic, share(Some("tundra")).unwrap().0);
         assert!(density("tundra") > 8.0 * density("taiga"));
-        // about one in a square thirty or so blocks across
-        assert!((1.0 / density("tundra")).sqrt() < 40.0);
+        // up to about one in a square 25 blocks across, where its fields are thickest
+        assert!((1.0 / density("tundra")).sqrt() < 30.0);
+        // and the fields vary: patches hold between a tenth and twice the share
+        let factors: Vec<f64> = (0..200).map(|i| field(3, i * FIELD, 0)).collect();
+        assert!(factors.iter().cloned().fold(f64::MAX, f64::min) < 0.3 && factors.iter().cloned().fold(0.0, f64::max) > 1.5);
     }
 
     #[test]

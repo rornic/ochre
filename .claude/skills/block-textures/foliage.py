@@ -28,7 +28,7 @@ N = SIZE * SS
 LEAF_MEAN = 0.25  # LEAF_TEXTURE_MEAN in crates/ochre-base/src/biome/mod.rs, linear
 GRASS_MEAN = 0.5  # GRASS_TEXTURE_MEAN
 FERN_MEAN = 0.3  # a darker fern, as the atlas tile was
-SHRUB_MEAN = 0.4  # shrubs are a little darker than grass
+SHRUB_MEAN = 0.27  # shrubs are clearly darker than the grass they stand in
 HOLES = 0.3  # share of a leaf layer that is gap
 
 

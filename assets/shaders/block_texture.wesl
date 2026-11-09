@@ -271,7 +271,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.3838, 0.3697, 0.0299), // dandelion
         vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
         vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
-        vec3<f32>(0.3999, 0.3999, 0.3999), // shrub
+        vec3<f32>(0.2699, 0.2699, 0.2699), // shrub
         vec3<f32>(0.1522, 0.1146, 0.1861), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));

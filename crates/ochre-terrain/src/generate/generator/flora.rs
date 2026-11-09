@@ -122,24 +122,6 @@ pub(super) fn flora_at(
         GRASS_DENSITY
     };
 
-    let drift = hash(seed ^ DRIFT_SALT, x.div_euclid(DRIFT), z.div_euclid(DRIFT));
-    let in_drift = unit(drift);
-    let flowers = if in_drift < DRIFT_SHARE && biome != Some("tundra") {
-        DRIFT_DENSITY * (1.0 - in_drift / DRIFT_SHARE)
-    } else {
-        0.0
-    };
-    let ferns = if shaded {
-        FERN_DENSITY * understory
-    } else {
-        0.0
-    };
-    let grass = if shaded {
-        FOREST_GRASS_DENSITY * understory
-    } else {
-        GRASS_DENSITY
-    };
-
     let roll = roll / warm.max(f64::EPSILON);
     if roll < flowers {
         // one kind of flower to a drift

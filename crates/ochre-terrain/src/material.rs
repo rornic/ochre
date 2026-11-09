@@ -790,6 +790,7 @@ mod tests {
             (Tile::ShortGrass, 0.5),
             (Tile::SeedGrass, 0.5),
             (Tile::Fern, 0.3),
+            (Tile::Shrub, 0.27),
         ] {
             assert!(tile.tinted());
             let layer = foliage(tile);
