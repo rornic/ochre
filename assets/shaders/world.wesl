@@ -56,8 +56,12 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     return mix(shadow, FAR_VISIBILITY, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
 }
 
+// How far toward the sun a plant's shadow lookup is moved, in blocks, and the distances between which its shadows fade out.
+const FLORA_SHADOW_BIAS: f32 = 0.3;
+const FLORA_SHADOW_FADE: vec2<f32> = vec2<f32>(40.0, 120.0);
+
 // The light on a face, shadowed by the land and the clouds, and moonlight, kept out of caves by sky light but not shadowed, see `painterly.wesl`.
-fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>, leaf: bool) -> Painterly {
+fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>, leaf: bool, flora: bool) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
     var to_sun = vec3<f32>(0.0, 1.0, 0.0);
     var sun = vec3<f32>(0.0);
@@ -67,7 +71,15 @@ fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: v
         sun = sun_radiance(uncurved(world_position.xyz)) * gate;
         // no sun, nothing to shadow
         if any(sun > vec3<f32>(0.0)) {
-            visibility = sun_shadow(world_position, normal, frag_coord) * cloud_shadow(uncurved(world_position.xyz));
+            // a plant's own cut-out shadow falls on its quad, which the map's texels are too coarse to keep off it, so
+            // its lookup is moved toward the sun and it takes the land's shadows less the further it is
+            var lookup = world_position;
+            var unshadowed = 0.0;
+            if flora {
+                lookup = vec4<f32>(world_position.xyz + to_sun * FLORA_SHADOW_BIAS, world_position.w);
+                unshadowed = smoothstep(FLORA_SHADOW_FADE.x, FLORA_SHADOW_FADE.y, distance(world_position.xyz, view_bindings::view.world_position));
+            }
+            visibility = mix(sun_shadow(lookup, normal, frag_coord), 1.0, unshadowed) * cloud_shadow(uncurved(world_position.xyz));
         }
     }
     return painterly_light(shaded, to_sun, sun, visibility, sky_ambient(sky, shaded), direct_moon(shaded) * gate, leaf);
@@ -275,7 +287,7 @@ fn fragment(
     }
     let shaded = lit_normal(smooth_normal, world_position);
     let glow = point_light_glow(world_position, normal, in.position.xy);
-    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a));
+    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a), is_flora(in.color.a));
     color = vec4<f32>(painterly_saturation(color.rgb * (lighting.light + glow), lighting.lit), color.a);
 
     // so distant chunks fade into the sky instead of popping in and out

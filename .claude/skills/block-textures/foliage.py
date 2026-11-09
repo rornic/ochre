@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Leaves and ground flora as 512px RGBA painted layers: assets/textures/materials/<name>.png, see `Tile::foliage_layer`.
+"""Leaves, ground flora and shrubs as 512px RGBA painted layers: assets/textures/materials/<name>.png, see `Tile::foliage_layer`.
 
     python lora_paint.py Leaves --tag l --seeds 1 2 3 4 --prompt "..."   # SDXL candidates, as for any painted tile
     python foliage.py --leaves 4            # holes cut from the dark gaps of out/sdxl/Leaves_l4.png, greyscale for the tint
@@ -15,6 +15,7 @@ import re
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
+from scipy import ndimage
 
 from generate import HERE, OUT, TILES
 from lora_paint import SDXL_OUT, linear, srgb, wrap_blur
@@ -27,6 +28,8 @@ N = SIZE * SS
 LEAF_MEAN = 0.25  # LEAF_TEXTURE_MEAN in crates/ochre-base/src/biome/mod.rs, linear
 GRASS_MEAN = 0.5  # GRASS_TEXTURE_MEAN
 FERN_MEAN = 0.3  # a darker fern, as the atlas tile was
+SHRUB_MEAN = 0.4  # shrubs are a little darker than grass
+HEATH_MEAN = 0.4
 HOLES = 0.3  # share of a leaf layer that is gap
 
 
@@ -49,6 +52,14 @@ def fill_clear(rgb, alpha):
         near = wrap_blur(rgb[..., c] * alpha, 25) / weight
         rgb[..., c] = np.where(alpha > 0.999, rgb[..., c], np.where(alpha > 0.0, rgb[..., c], near))
     return rgb
+
+
+def bleed(rgb, alpha):
+    """Every clear texel takes the colour of the nearest drawn one, however far, so that no mip or bilinear lookup near an edge finds black.
+    `fill_clear` reaches only so far, and a big sprite with a lot of empty canvas has texels past that, which a blurred alpha cut draws at a distance."""
+    solid = alpha > 0.02
+    nearest = ndimage.distance_transform_edt(~solid, return_distances=False, return_indices=True)
+    return np.where(solid[..., None], rgb, rgb[nearest[0], nearest[1]])
 
 
 def leaves(src):
@@ -95,7 +106,7 @@ class Canvas:
         pre = np.asarray(pre.filter(ImageFilter.GaussianBlur(softness * SS)).resize((SIZE, SIZE), Image.LANCZOS), np.float32)
         out = pre / np.maximum(alpha[..., None], 1e-3)
         out = out * (0.78 + 0.44 * paint[..., None])  # brush-stroke variation, +-22%
-        out = fill_clear(np.clip(out, 0, 255), alpha)
+        out = bleed(np.clip(out, 0, 255), alpha)
         return out, alpha
 
 
@@ -203,8 +214,55 @@ def dandelion(rng, cv):
         cv.ellipse(x, top, 26, 26, (232, 176, 24))
 
 
-DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass}
-GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN}
+def leaf(cv, x, y, length, width, angle, tone):
+    """A rounded leaf from its base at (x, y) out along `angle`."""
+    cv.ellipse(x + np.cos(angle) * length / 2, y + np.sin(angle) * length / 2, length / 2, width / 2, (int(tone), int(tone), int(tone)), angle=angle, steps=22)
+
+
+def shrub(rng, cv):
+    """A dome of leaves: fanned out from the middle, dark deep in and low down, light at the tips and top."""
+    cx, cy, rx, ry = 256, 325, 200, 188
+    for _ in range(3):  # woody stems under the leaves
+        x = cx + rng.uniform(-50, 50)
+        stroke(cv, x, 511, x + rng.uniform(-25, 25), 430, rng.uniform(-12, 12), 14, 8, 50, 76)
+    cv.ellipse(cx, cy + 30, rx * 0.7, ry * 0.75, (44, 44, 44))  # the shade deep inside, so the middle isn't hollow
+    spots = []
+    while len(spots) < 300:
+        x, y = rng.uniform(-1, 1), rng.uniform(-1, 1)
+        if x * x + y * y <= 1 and y < 0.82:
+            spots.append((x, y))
+    # back to front: low and inner first, so the light outer leaves lie over the dark inner ones
+    spots.sort(key=lambda p: -(p[1] * 0.7 - (p[0] ** 2 + p[1] ** 2) * 0.5))
+    for x, y in spots:
+        out = np.arctan2(y * 0.9 - 0.3, x)  # outward and up from the dome's heart
+        edge = min(np.hypot(x, y), 1.0)
+        tone = 78 + 86 * (0.5 - y * 0.5) + 44 * edge + rng.uniform(-16, 16)
+        leaf(cv, cx + x * rx, cy + y * ry, rng.uniform(42, 68), rng.uniform(15, 24), out + rng.uniform(-0.7, 0.7), tone)
+
+
+def heath(rng, cv):
+    """Low scrub: wiry stems arching out from the root, small leaves along them and pale flowers at the tips."""
+    for k in range(13):
+        a = (k / 12 - 0.5) * 2.5 + rng.uniform(-0.08, 0.08)  # fanned evenly either side of upright
+        side = 1 if a >= 0 else -1
+        length = rng.uniform(190, 270)
+        x0 = 256 + rng.uniform(-16, 16)
+        x1, y1 = 256 + np.sin(a) * length * 0.95, 511 - np.cos(a) * length * 0.7
+        bend = side * rng.uniform(-20, 45)
+        stroke(cv, x0, 511, x1, y1, bend, 6, 2.4, 58, 100)
+        heading = np.arctan2(y1 - 511, x1 - x0)
+        for i in range(4, 22):
+            t = i / 21
+            x, y = curve(x0, 511, x1, y1, bend, t)
+            for j in (-1, 1):
+                leaf(cv, x, y, rng.uniform(22, 36) * (1.15 - t * 0.45), rng.uniform(8, 12), heading + j * rng.uniform(0.6, 1.1), 92 + 86 * t + rng.uniform(-12, 12))
+        if rng.uniform() < 0.75:
+            for _ in range(4):  # a few pale flowers at the tip
+                cv.ellipse(x1 + rng.uniform(-24, 24), y1 + rng.uniform(-16, 12), rng.uniform(8, 12), rng.uniform(8, 12), (238, 238, 238))
+
+
+DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass, "Shrub": shrub, "Heath": heath}
+GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN, "Shrub": SHRUB_MEAN, "Heath": HEATH_MEAN}
 
 
 def file_name(tile):
@@ -225,7 +283,7 @@ def flora(name, seed, paint):
     if name in GREY:
         grey = rgb.mean(-1)
         grey = level(grey, alpha > 0.5, GREY[name])
-        rgb = fill_clear(np.repeat(grey[..., None], 3, -1), alpha)
+        rgb = bleed(np.repeat(grey[..., None], 3, -1), alpha)
     return np.dstack([rgb, alpha * 255]).round().clip(0, 255).astype(np.uint8)
 
 

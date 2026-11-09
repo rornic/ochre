@@ -11,7 +11,7 @@
 @group(constants::MATERIAL_BIND_GROUP) @binding(13) var materials_sampler: sampler;
 
 // textures in blocks.png, see `Tile` in block.rs
-const ATLAS_CELLS: f32 = 35.0;
+const ATLAS_CELLS: f32 = 37.0;
 const TILE_INSET: f32 = 0.002;
 
 // The `materials` layer a leaf or plant draws across its tile's own uv, -1 for any other cell: `Tile::foliage_layer`.
@@ -122,7 +122,7 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
 
 // The painted material layer each atlas cell draws, -1 for the leaves, flora and water that stay in the atlas: `Tile::material_layer`,
 // which a test checks this against.
-const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
+const MATERIAL_LAYER_TABLE: array<i32, 37> = array<i32, 37>(
     0, // stone
     2, // grass top
     3, // sand
@@ -158,6 +158,8 @@ const MATERIAL_LAYER_TABLE: array<i32, 35> = array<i32, 35>(
     -1, // dandelion
     -1, // short grass
     -1, // seed grass
+    -1, // shrub
+    -1, // heath
 );
 
 fn material_layer(vertex_alpha: f32) -> i32 {
@@ -233,7 +235,7 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 // order. `gen_atlas` prints these and the block-textures skill's `pack.py`
 // rewrites them, and `material.rs`'s tests check them against blocks.png.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
-    var means = array<vec3<f32>, 35>(
+    var means = array<vec3<f32>, 37>(
         vec3<f32>(0.1612, 0.1542, 0.1649), // stone
         vec3<f32>(0.4981, 0.4981, 0.4981), // grass top
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
@@ -269,6 +271,8 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.3838, 0.3697, 0.0299), // dandelion
         vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
         vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
+        vec3<f32>(0.3999, 0.3999, 0.3999), // shrub
+        vec3<f32>(0.3998, 0.3998, 0.3998), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);

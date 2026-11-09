@@ -73,6 +73,8 @@ TILES = [
     dict(name="Dandelion", derive="sprite"),
     dict(name="ShortGrass", derive="sprite", grey=187),
     dict(name="SeedGrass", derive="sprite", grey=187),
+    dict(name="Shrub", derive="sprite", grey=187),
+    dict(name="Heath", derive="sprite", grey=187),
 ]
 
 

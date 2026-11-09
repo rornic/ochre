@@ -119,7 +119,9 @@ pub fn material_array(dir: &str, anisotropy: u16) -> Image {
 }
 
 // Appends `levels` - 1 box-filtered mip levels to an RGBA8 sRGB image, averaging in linear
-// light and weighting colour by alpha so cut-out texels don't darken what's left.
+// light and weighting colour by alpha so cut-out texels don't darken what's left. Texels with no
+// cover anywhere under them keep the plain average of the colour painted there, which a sprite
+// fills out past its edge, so a smooth lookup near it blends in that and not black.
 fn mip_tiles(image: &mut Image, levels: u32) {
     let (mut width, mut height) = (image.width() as usize, image.height() as usize);
     let data = image.data.get_or_insert_with(Vec::new);
@@ -129,7 +131,7 @@ fn mip_tiles(image: &mut Image, levels: u32) {
         let mut next = Vec::with_capacity(next_width * next_height * 4);
         for y in 0..next_height {
             for x in 0..next_width {
-                let (mut rgb, mut alpha) = ([0.0f32; 3], 0.0f32);
+                let (mut rgb, mut alpha, mut plain) = ([0.0f32; 3], 0.0f32, [0.0f32; 3]);
                 for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                     let at = ((2 * y + dy) * width + 2 * x + dx) * 4;
                     let texel = &level[at..at + 4];
@@ -139,12 +141,18 @@ fn mip_tiles(image: &mut Image, levels: u32) {
                     rgb[1] += linear.green * a;
                     rgb[2] += linear.blue * a;
                     alpha += a;
+                    plain = [
+                        plain[0] + linear.red,
+                        plain[1] + linear.green,
+                        plain[2] + linear.blue,
+                    ];
                 }
-                let weight = alpha.max(f32::EPSILON);
+                let covered = alpha > 1e-3;
+                let (sum, weight) = if covered { (rgb, alpha) } else { (plain, 4.0) };
                 let colour = Srgba::from(LinearRgba::rgb(
-                    rgb[0] / weight,
-                    rgb[1] / weight,
-                    rgb[2] / weight,
+                    sum[0] / weight,
+                    sum[1] / weight,
+                    sum[2] / weight,
                 ))
                 .to_u8_array();
                 next.extend_from_slice(&[
@@ -505,6 +513,33 @@ impl Material for WaterMaterial {
 mod tests {
     use bevy::color::{LinearRgba, Srgba};
     use ochre_base::block::{Tile, MATERIAL_FILES, MATERIAL_LAYERS};
+
+    // A mip texel with no cover under it keeps the colour painted there, so a smooth lookup near a sprite's edge doesn't
+    // blend black in: that was a dark rim round every big shrub at a distance.
+    #[test]
+    fn test_a_clear_mip_texel_keeps_the_colour_painted_there() {
+        use bevy::{
+            asset::RenderAssetUsages,
+            image::Image,
+            render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+        };
+        // 4 by 4: the left half drawn at 200, the right half clear but painted 150
+        let data: Vec<u8> = (0..16)
+            .flat_map(|i| if i % 4 < 2 { [200, 200, 200, 255] } else { [150, 150, 150, 0] })
+            .collect();
+        let mut image = Image::new(
+            Extent3d { width: 4, height: 4, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        super::mip_tiles(&mut image, 2);
+        let level_one = &image.data.as_ref().unwrap()[64..];
+        // the drawn texel is as it was, and the clear one keeps its colour, with no cover
+        assert_eq!([200, 200, 200, 255], level_one[0..4]);
+        assert_eq!([150, 150, 150, 0], level_one[4..8]);
+    }
 
     #[test]
     fn fragment_stage_is_removed_only_for_solid_native_directional_shadows() {
