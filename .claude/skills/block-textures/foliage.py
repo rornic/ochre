@@ -29,7 +29,6 @@ LEAF_MEAN = 0.25  # LEAF_TEXTURE_MEAN in crates/ochre-base/src/biome/mod.rs, lin
 GRASS_MEAN = 0.5  # GRASS_TEXTURE_MEAN
 FERN_MEAN = 0.3  # a darker fern, as the atlas tile was
 SHRUB_MEAN = 0.4  # shrubs are a little darker than grass
-HEATH_MEAN = 0.4
 HOLES = 0.3  # share of a leaf layer that is gap
 
 
@@ -214,9 +213,10 @@ def dandelion(rng, cv):
         cv.ellipse(x, top, 26, 26, (232, 176, 24))
 
 
-def leaf(cv, x, y, length, width, angle, tone):
-    """A rounded leaf from its base at (x, y) out along `angle`."""
-    cv.ellipse(x + np.cos(angle) * length / 2, y + np.sin(angle) * length / 2, length / 2, width / 2, (int(tone), int(tone), int(tone)), angle=angle, steps=22)
+def leaf(cv, x, y, length, width, angle, tone, rgb=None):
+    """A rounded leaf from its base at (x, y) out along `angle`, a grey of `tone` or `rgb` scaled by it."""
+    colour = (int(tone),) * 3 if rgb is None else tuple(int(min(c * tone / 150, 255)) for c in rgb)
+    cv.ellipse(x + np.cos(angle) * length / 2, y + np.sin(angle) * length / 2, length / 2, width / 2, colour, angle=angle, steps=22)
 
 
 def shrub(rng, cv):
@@ -240,29 +240,32 @@ def shrub(rng, cv):
         leaf(cv, cx + x * rx, cy + y * ry, rng.uniform(42, 68), rng.uniform(15, 24), out + rng.uniform(-0.7, 0.7), tone)
 
 
+HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (112, 92, 138), (78, 58, 74), (192, 142, 218)  # dusty violet, as a Skyrim tundra's scrub
+
+
 def heath(rng, cv):
-    """Low scrub: wiry stems arching out from the root, small leaves along them and pale flowers at the tips."""
-    for k in range(13):
-        a = (k / 12 - 0.5) * 2.5 + rng.uniform(-0.08, 0.08)  # fanned evenly either side of upright
+    """Low purple scrub: wiry stems arching out from the root, small violet leaves along them and lilac flowers at the tips.
+    It keeps its own colour, not the climate's grass tint."""
+    for k in range(14):
+        a = (k / 13 - 0.5) * 2.6 + rng.uniform(-0.08, 0.08)  # fanned evenly either side of upright
         side = 1 if a >= 0 else -1
         length = rng.uniform(190, 270)
         x0 = 256 + rng.uniform(-16, 16)
         x1, y1 = 256 + np.sin(a) * length * 0.95, 511 - np.cos(a) * length * 0.7
         bend = side * rng.uniform(-20, 45)
-        stroke(cv, x0, 511, x1, y1, bend, 6, 2.4, 58, 100)
+        stroke(cv, x0, 511, x1, y1, bend, 6, 2.4, 0, 0, rgb=(HEATH_STEM, tuple(int(c * 1.3) for c in HEATH_STEM)))
         heading = np.arctan2(y1 - 511, x1 - x0)
         for i in range(4, 22):
             t = i / 21
             x, y = curve(x0, 511, x1, y1, bend, t)
             for j in (-1, 1):
-                leaf(cv, x, y, rng.uniform(22, 36) * (1.15 - t * 0.45), rng.uniform(8, 12), heading + j * rng.uniform(0.6, 1.1), 92 + 86 * t + rng.uniform(-12, 12))
-        if rng.uniform() < 0.75:
-            for _ in range(4):  # a few pale flowers at the tip
-                cv.ellipse(x1 + rng.uniform(-24, 24), y1 + rng.uniform(-16, 12), rng.uniform(8, 12), rng.uniform(8, 12), (238, 238, 238))
+                leaf(cv, x, y, rng.uniform(22, 36) * (1.15 - t * 0.45), rng.uniform(8, 12), heading + j * rng.uniform(0.6, 1.1), 100 + 70 * t + rng.uniform(-14, 14), HEATH_LEAF)
+        for _ in range(5):  # clustered flowers at the tip
+            cv.ellipse(x1 + rng.uniform(-26, 26), y1 + rng.uniform(-18, 14), rng.uniform(8, 13), rng.uniform(8, 13), tuple(int(c * rng.uniform(0.85, 1.1)) for c in HEATH_FLOWER))
 
 
 DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass, "Shrub": shrub, "Heath": heath}
-GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN, "Shrub": SHRUB_MEAN, "Heath": HEATH_MEAN}
+GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN, "Shrub": SHRUB_MEAN}
 
 
 def file_name(tile):

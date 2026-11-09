@@ -20,4 +20,8 @@ The map holds, for each land cell, `biome_alt` (the climate biome across its nea
 
 ## Trees and flora
 
-Tree density is the map's per-cell density times a grove multiplier from noise at wavelength 160 (0.4 in a clearing to 1 in a grove, filtered for the sample's cell so wide cells see an average). Under trees, ferns and shaded grass are twice as thick in jungle and half as thick in taiga as in forest.
+Tree density is the map's per-cell density times a grove multiplier from noise at wavelength 160 (0.4 in a clearing to 1 in a grove, filtered for the sample's cell so wide cells see an average). Under trees, ferns and shaded grass are twice as thick in jungle and half as thick in taiga as in forest. Flora thins out in the cold, to none below temperature 0.10 (`COLD` in `flora.rs`).
+
+Shrubs and heath (`flora_at`) grow in the open ground of some biomes, in patches 14 blocks across between a quarter and one and three quarters of the biome's average cover: shrubs in grassland (3% of cells on average), savanna, steppe and swamp, and heath, low and violet, in taiga (2%) and tundra (8%). None grow in shade, forest, jungle or desert.
+
+The tundra is bare ground, not snow: the climate would snow every block of it, but the biome thaws the snow below 350 blocks over the sea into tan grass, with gravel on ground steeper than gradient 0.45 (`Plain::with_thaw`), and the snow stays on the heights. Its grass is read from a drier, colder climate, and the cold dry end of the grass palette is tan.

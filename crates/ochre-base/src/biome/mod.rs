@@ -119,6 +119,11 @@ pub struct Biomes {
     entries: Vec<Entry>,
 }
 
+// The tundra is bare ground, tan grass and scree, below this height over the sea, not snow as the cold would make it, and the
+// ground is scree from this gradient.
+const TUNDRA_THAW_LINE: i64 = 350;
+const TUNDRA_SCREE_GRADIENT: f64 = 0.45;
+
 impl Biomes {
     pub fn new(_seed: u32) -> Self {
         Self::with(vec![
@@ -127,7 +132,8 @@ impl Biomes {
             Box::new(Forest),
             Box::new(
                 Plain::new("tundra", 0.01)
-                    .shifted(-0.10, -0.05)
+                    .shifted(-0.10, -0.20)
+                    .with_thaw(TUNDRA_THAW_LINE, TUNDRA_SCREE_GRADIENT)
                     .with_relief(&[ReliefKind::Pingos, ReliefKind::PatternedGround]),
             ),
             Box::new(
@@ -277,7 +283,7 @@ impl Biomes {
 // yellow, hot and wet lush green, and the cold side duller versions of both.
 const GRASS_HOT_DRY: [f32; 3] = [200.0, 170.0, 60.0];
 const GRASS_HOT_WET: [f32; 3] = [40.0, 130.0, 12.0];
-const GRASS_COLD_DRY: [f32; 3] = [140.0, 140.0, 60.0];
+const GRASS_COLD_DRY: [f32; 3] = [158.0, 140.0, 86.0];
 const GRASS_COLD_WET: [f32; 3] = [30.0, 96.0, 24.0];
 
 // The mean linear value of the greyscale grass and leaves tiles in blocks.png, which vertex

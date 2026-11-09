@@ -332,7 +332,7 @@ impl Tile {
         self as u8 as f32
     }
 
-    // Greyscale tiles that vertex colours tint to the climate's grass.
+    // Greyscale tiles that vertex colours tint to the climate's grass. Heath keeps its own purple.
     pub fn tinted(self) -> bool {
         matches!(
             self,
@@ -344,7 +344,6 @@ impl Tile {
                 | Tile::ShortGrass
                 | Tile::SeedGrass
                 | Tile::Shrub
-                | Tile::Heath
         )
     }
 

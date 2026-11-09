@@ -272,7 +272,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
         vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
         vec3<f32>(0.3999, 0.3999, 0.3999), // shrub
-        vec3<f32>(0.3998, 0.3998, 0.3998), // heath
+        vec3<f32>(0.2343, 0.1350, 0.3232), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);

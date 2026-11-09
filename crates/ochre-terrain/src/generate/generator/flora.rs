@@ -28,7 +28,7 @@ const JUNGLE_UNDERSTORY: f64 = 2.0;
 const TAIGA_UNDERSTORY: f64 = 0.5;
 // The temperatures, see `NoiseGenerator::temperature`, the flora thins out between, to none
 // at the first.
-const COLD: (f32, f32) = (0.25, 0.4);
+const COLD: (f32, f32) = (0.10, 0.35);
 
 // How wide the patches of shrubland are, in blocks, and how much thicker than average the thickest are and thinner the
 // thinnest: shrubs grow in clumps with bare grass between, not evenly.
@@ -44,7 +44,7 @@ fn shrubs(biome: Option<&str>) -> Option<(BlockType, f64)> {
         Some("steppe") => Some((BlockType::Shrub, 0.025)),
         Some("swamp") => Some((BlockType::Shrub, 0.02)),
         Some("taiga") => Some((BlockType::Heath, 0.02)),
-        Some("tundra") => Some((BlockType::Heath, 0.045)),
+        Some("tundra") => Some((BlockType::Heath, 0.08)),
         _ => None,
     }
 }
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_flora_thins_out_in_the_cold() {
-        let (mild, chilly, frozen) = (count(false, 0.6), count(false, 0.32), count(false, 0.2));
+        let (mild, chilly, frozen) = (count(false, 0.6), count(false, 0.2), count(false, 0.05));
         let sum = |c: [usize; 4]| c.iter().sum::<usize>();
         assert!(sum(chilly) < sum(mild) && sum(chilly) > 0);
         assert_eq!(0, sum(frozen));

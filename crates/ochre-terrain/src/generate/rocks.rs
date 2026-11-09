@@ -8,7 +8,7 @@ use ochre_base::terrain_source::TerrainSource;
 use ochre_base::WATER_LEVEL;
 
 // Objects stand on a grid of cells this many blocks across, at most one in each.
-const CELL: i64 = 48;
+const CELL: i64 = 24;
 /// The widest cell, in blocks, of a LOD mesh that shows rocks: past it one is under a pixel.
 pub const ROCK_MAX_CELL: i64 = 4;
 /// How far out from its centre any rock reaches.
@@ -38,9 +38,10 @@ pub struct Rock {
 // The kind of object a biome has and the share of its cells that hold one.
 fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
     match biome? {
-        "tundra" => Some((RockKind::Erratic, 0.20)),
-        "taiga" => Some((RockKind::Erratic, 0.16)),
-        "savanna" => Some((RockKind::Mound, 0.30)),
+        // the tundra is strewn with boulders, about one a thirty block square, where a taiga has one in a hundred
+        "tundra" => Some((RockKind::Erratic, 0.50)),
+        "taiga" => Some((RockKind::Erratic, 0.04)),
+        "savanna" => Some((RockKind::Mound, 0.075)),
         _ => None,
     }
 }
@@ -259,6 +260,15 @@ mod tests {
             wide(top)
         );
         assert_eq!(BlockType::Dirt, r.block());
+    }
+
+    #[test]
+    fn the_tundra_is_strewn_with_boulders_and_a_taiga_has_few() {
+        let density = |biome| share(Some(biome)).unwrap().1 / (CELL * CELL) as f64;
+        assert_eq!(RockKind::Erratic, share(Some("tundra")).unwrap().0);
+        assert!(density("tundra") > 8.0 * density("taiga"));
+        // about one in a square thirty or so blocks across
+        assert!((1.0 / density("tundra")).sqrt() < 40.0);
     }
 
     #[test]
