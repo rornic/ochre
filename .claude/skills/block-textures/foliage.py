@@ -244,24 +244,29 @@ HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (108, 96, 120), (74, 62, 66), (164, 134, 
 
 
 def heath(rng, cv):
-    """Low mauve scrub: wiry stems arching out from the root, small greyish leaves along them and muted lilac flowers at the tips.
-    It keeps its own colour, not the climate's grass tint."""
-    for k in range(14):
-        a = (k / 13 - 0.5) * 2.6 + rng.uniform(-0.08, 0.08)  # fanned evenly either side of upright
-        side = 1 if a >= 0 else -1
-        length = rng.uniform(190, 270)
-        x0 = 256 + rng.uniform(-16, 16)
-        x1, y1 = 256 + np.sin(a) * length * 0.95, 511 - np.cos(a) * length * 0.7
-        bend = side * rng.uniform(-20, 45)
-        stroke(cv, x0, 511, x1, y1, bend, 6, 2.4, 0, 0, rgb=(HEATH_STEM, tuple(int(c * 1.3) for c in HEATH_STEM)))
-        heading = np.arctan2(y1 - 511, x1 - x0)
-        for i in range(4, 22):
-            t = i / 21
-            x, y = curve(x0, 511, x1, y1, bend, t)
-            for j in (-1, 1):
-                leaf(cv, x, y, rng.uniform(22, 36) * (1.15 - t * 0.45), rng.uniform(8, 12), heading + j * rng.uniform(0.6, 1.1), 100 + 70 * t + rng.uniform(-14, 14), HEATH_LEAF)
-        for _ in range(3):  # a few flowers at the tip
-            cv.ellipse(x1 + rng.uniform(-26, 26), y1 + rng.uniform(-18, 14), rng.uniform(8, 13), rng.uniform(8, 13), tuple(int(c * rng.uniform(0.85, 1.1)) for c in HEATH_FLOWER))
+    """Low mauve scrub: a dense flat dome of small greyish leaves, lighter on top, with muted lilac flowers dotted over its crown.
+    It keeps its own colour, not the climate's grass tint, and is a mat for a cluster to make a carpet of, not arms."""
+    cx, cy, rx, ry = 256, 430, 238, 112
+    for _ in range(3):  # a few woody stems under it
+        x = cx + rng.uniform(-60, 60)
+        stroke(cv, x, 511, x + rng.uniform(-20, 20), 470, rng.uniform(-8, 8), 12, 7, 0, 0, rgb=(HEATH_STEM, HEATH_STEM))
+    cv.ellipse(cx, cy + 22, rx * 0.8, ry * 0.8, tuple(int(c * 0.55) for c in HEATH_LEAF))  # shade deep inside, so it isn't hollow
+    spots = []
+    while len(spots) < 520:
+        x, y = rng.uniform(-1, 1), rng.uniform(-1, 1)
+        if x * x + y * y <= 1 and y < 0.85:
+            spots.append((x, y))
+    spots.sort(key=lambda p: -(p[1] * 0.7 - (p[0] ** 2 + p[1] ** 2) * 0.5))
+    for x, y in spots:
+        out = np.arctan2(y * 0.8 - 0.35, x)
+        edge = min(np.hypot(x, y), 1.0)
+        tone = 92 + 70 * (0.5 - y * 0.5) + 30 * edge + rng.uniform(-14, 14)
+        leaf(cv, cx + x * rx, cy + y * ry, rng.uniform(26, 44), rng.uniform(9, 14), out + rng.uniform(-0.7, 0.7), tone, HEATH_LEAF)
+    for _ in range(26):  # flowers over the crown
+        a = rng.uniform(0, np.pi)
+        r = rng.uniform(0.05, 0.95)
+        fx, fy = cx + np.cos(a) * r * rx * 0.95, cy - np.sin(a) * r * ry * 0.95 - 6
+        cv.ellipse(fx, fy, rng.uniform(7, 11), rng.uniform(7, 11), tuple(int(c * rng.uniform(0.85, 1.1)) for c in HEATH_FLOWER))
 
 
 DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass, "Shrub": shrub, "Heath": heath}
