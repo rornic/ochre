@@ -30,7 +30,6 @@ use std::f32::consts::{PI, TAU};
 use crate::clouds::CloudPlugin;
 use crate::sky_dome::{NightSkyPlugin, SunGlarePlugin};
 use crate::weather::WeatherPlugin;
-use ochre_base::math::smoothstep;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
 use ochre_terrain::settings::{CloudResolution, RendererSettings};
@@ -123,9 +122,9 @@ pub struct Sun;
 #[derive(Component)]
 struct SunShadows(Quat);
 
-// The shadow map turns 20 times a second, holding before it slides to its next angle.
-const SHADOW_STEP_TICKS: u64 = TICKS_PER_SECOND / 20;
-const SHADOW_SLIDE: f32 = 0.5;
+// The shadow map turns every few seconds and holds between, so its texels stay put and shadow edges don't crawl. The sun
+// moves under 0.02 degrees a second, so a step is a pop of under a texel.
+const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
 /// On the moon, see `move_sky`. Without shadows, so Bevy puts it before the sun among the
 /// lights, matching `MOON_LIGHT` and `SUN_LIGHT` in `sky.wesl`.
@@ -210,19 +209,17 @@ fn move_sky(
     let days = clock.days() + *carry / DAY_TICKS as f32;
     if let Ok((mut transform, mut shadows)) = sun.single_mut() {
         *transform = shining_from(sun_direction(days));
-        shadows.0 = shining_from(sun_direction(shadow_days(clock.0, *carry))).rotation;
+        shadows.0 = shining_from(sun_direction(shadow_days(clock.0))).rotation;
     }
     if let Ok(mut transform) = moon.single_mut() {
         *transform = shining_from(moon_direction(days));
     }
 }
 
-/// The day fraction the sun's shadows follow: held at the last step, then slid to the next at its end.
-fn shadow_days(ticks: u64, carry: f32) -> f32 {
+/// The day fraction the sun's shadows follow: held at the last step until the next.
+fn shadow_days(ticks: u64) -> f32 {
     let step = ticks.div_euclid(SHADOW_STEP_TICKS) * SHADOW_STEP_TICKS;
-    let into = ((ticks - step) as f32 + carry) / SHADOW_STEP_TICKS as f32;
-    let slid = smoothstep(1.0 - SHADOW_SLIDE, 1.0, into);
-    ((step % DAY_TICKS) as f32 + slid * SHADOW_STEP_TICKS as f32) / DAY_TICKS as f32
+    (step % DAY_TICKS) as f32 / DAY_TICKS as f32
 }
 
 /// Turns the sun to `SunShadows` while its shadow maps fit, as turning them every frame makes the texels crawl.
@@ -372,17 +369,15 @@ impl Plugin for SkyPlugin {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_shadows_hold_then_slide_on_to_the_next_step() {
+    fn test_shadows_hold_for_a_step_then_jump_to_the_next() {
         let step = super::SHADOW_STEP_TICKS;
         let day = super::DAY_TICKS as f32;
-        assert_eq!(step, 1);
-        let start = super::shadow_days(3 * step, 0.0);
-        assert_eq!(start, super::shadow_days(3 * step, 0.3));
-        let middle = super::shadow_days(3 * step, 0.75);
-        let end = super::shadow_days(4 * step - 1, 0.999);
-        assert!(start < middle && middle < end);
-        assert!((end - 4.0 * step as f32 / day).abs() < 1e-8, "{end}");
-        assert!((super::shadow_days(4 * step, 0.0) - end).abs() < 1e-8);
+        assert_eq!(step, 3 * super::TICKS_PER_SECOND);
+        let held = super::shadow_days(3 * step);
+        assert_eq!(held, super::shadow_days(4 * step - 1));
+        let next = super::shadow_days(4 * step);
+        assert!(next > held);
+        assert!((next - 4.0 * step as f32 / day).abs() < 1e-8, "{next}");
     }
 
     use super::*;

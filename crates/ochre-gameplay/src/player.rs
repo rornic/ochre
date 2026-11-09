@@ -19,7 +19,7 @@ use bevy::{
         mouse::{MouseButton, MouseMotion},
         ButtonInput,
     },
-    light::{NotShadowCaster, NotShadowReceiver},
+    light::{NotShadowCaster, NotShadowReceiver, ShadowFilteringMethod},
     log::info,
     math::{Dir3, EulerRot, I64Vec3, Quat, Vec3, Vec3Swizzles},
     mesh::{Mesh, Mesh3d, MeshVertexBufferLayoutRef},
@@ -614,6 +614,8 @@ pub fn spawn_player(
                 ..default()
             },
             dry_color_grading(),
+            // TAA averages the randomised filter over frames, which hides what's left of the shadow edges' crawl
+            ShadowFilteringMethod::Temporal,
             // a light darkening toward the corners, which draws the eye in
             Vignette {
                 intensity: 0.35,

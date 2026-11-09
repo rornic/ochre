@@ -97,3 +97,12 @@ Read the per pass GPU ms in the debug overlay (`OCHRE_STATS=1`). Change one thin
 - `still_leaves = true`: vertex sway cost, expected small.
 
 If `solid_leaves` moves the shadow pass little, the pass is geometry bound and options 1 and 2 are the work. If it moves it a lot, option 3 comes first.
+
+## Flicker from the sun's movement
+
+Shadow edges crawl a texel at a time as the sun moves, since turning the light moves every texel's footprint on the ground, even though Bevy snaps each cascade's centre to whole texels so camera movement doesn't swim them. The sun turns 0.0167 degrees a second, so a texel is crossed about every 7 s per edge. The near cascade's texels are about 0.04 blocks, several pixels wide, the middle one's 0.3 and the far one's 2. Two changes, neither measured with a meter, only checked by eye:
+
+- The camera uses `ShadowFilteringMethod::Temporal`, not Bevy's default `Gaussian`, which its docs say suits a camera without TAA. TAA averages the randomised filter over frames.
+- The shadow map's sun angle holds for `SHADOW_STEP_TICKS` (3 s) and jumps to the next, with no slide. The earlier 20 Hz step moved 0.0008 degrees at a time, which is effectively continuous and so never held a shadow still. Between steps the maps are static. A step is a pop of about 0.4 texel in the near cascade, and under 1 in the far one.
+
+If flicker remains, the options still open are 4096 maps or tighter cascades (about 1 ms for 4096 on the RTX 2060), prefiltered shadow maps, and replacing the far cascades with a horizon map from the world heightmap, one sample per far fragment. Leaf shadows (alpha cut at a distance-dependent mip) and low-sun slope acne are separate causes this doesn't touch.
