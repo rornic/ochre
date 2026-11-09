@@ -102,6 +102,9 @@ const MAX_PITCH: f32 = 89.0_f32.to_radians();
 /// How high the camera sits above the player's feet, far enough under the top of its head
 /// that the camera's near plane stays out of the ceiling.
 pub const EYE_HEIGHT: f32 = 1.9;
+// How close the camera's near plane is. A 90 degree view's near plane reaches `NEAR * (sin(pitch) + cos(pitch))` above the eye, at most
+// `NEAR * sqrt 2`, which has to stay under the 0.1 between the eye and the top of the head, or a two-block gap shows the inside of its ceiling.
+const NEAR: f32 = 0.05;
 // The player's size: two blocks tall, so it just fits through a two-block gap.
 const BODY: Aabb = Aabb {
     min: Vec3::new(-0.3, 0.0, -0.3),
@@ -573,6 +576,7 @@ pub fn spawn_player(
             Projection::Perspective(PerspectiveProjection {
                 // vertical, as Minecraft's field of view setting is
                 fov: 90f32.to_radians(),
+                near: NEAR,
                 far: fog_distance + WORLD_HEIGHT as f32,
                 ..default()
             }),
@@ -629,4 +633,25 @@ pub fn spawn_player(
     let (murk, handle) = murk(&mut assets.meshes, &mut assets.murk);
     commands.spawn((murk, ChildOf(camera)));
     commands.insert_resource(handle);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // In a two-block gap the camera is `BODY.max.y - EYE_HEIGHT` under the ceiling, and a view of `fov` degrees at `pitch` has its near
+    // plane's top edge `NEAR * (sin(pitch) + cos(pitch) * tan(fov / 2))` above the eye: it must never reach it, however far up the
+    // player looks, or the camera is inside the block above.
+    #[test]
+    fn test_the_near_plane_stays_out_of_the_ceiling_of_a_two_block_gap() {
+        let headroom = BODY.max.y - EYE_HEIGHT;
+        let reach = |pitch: f32| NEAR * (pitch.sin() + pitch.cos() * (90f32.to_radians() / 2.0).tan());
+        for degrees in 0..=89 {
+            let up = reach((degrees as f32).to_radians());
+            assert!(up < headroom, "at {degrees} degrees up the near plane reaches {up}, headroom {headroom}");
+        }
+        assert!(reach(MAX_PITCH) < headroom);
+        // the eye is inside the body, which fits a two-block gap exactly
+        const { assert!(EYE_HEIGHT < BODY.max.y && BODY.max.y == 2.0) };
+    }
 }
