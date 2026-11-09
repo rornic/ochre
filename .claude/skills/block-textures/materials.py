@@ -23,16 +23,28 @@ def linear(v):
     return np.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4)
 
 
+# Layers painted with features too big for what they are: tiled this many times over and brought back to 512, which keeps them
+# seamless. Gravel's cobbles were a block across, and shale a slab of several.
+SCALE = {"Gravel": 3, "Shale": 2}
+
+
+def tile_down(img, n):
+    return Image.fromarray(np.tile(np.asarray(img.convert("RGB")), (n, n, 1))).resize((512, 512), Image.LANCZOS)
+
+
 DEST.mkdir(exist_ok=True)
 # a compacted rock is its rock's layer packed darker, as `derive()` in generate.py does the atlas tile
 for t in TILES:
     if t["name"] in PAINTED and t.get("derive") == "shade":
-        body = np.asarray(Image.open(PAINTED_OUT / f"{t['body']}.png").convert("RGB"), float)
+        body = Image.open(PAINTED_OUT / f"{t['body']}.png")
+        body = np.asarray(tile_down(body, SCALE[t["body"]]) if t["body"] in SCALE else body.convert("RGB"), float)
         Image.fromarray(np.clip((body * t["factor"] * np.array(t["tint"])).round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}.png")
 means = {}
 for name in PAINTED:
     img = Image.open(PAINTED_OUT / f"{name}.png").convert("RGB")
     assert img.size == (512, 512), f"{name} is {img.size}, layers are 512x512"
+    if name in SCALE:
+        img = tile_down(img, SCALE[name])
     means[name] = linear(np.asarray(img, float).reshape(-1, 3)).mean(0)
     if name == "GrassTop":
         assert np.ptp(np.asarray(img, int).reshape(-1, 3), axis=1).max() == 0, "GrassTop must be greyscale, the biome tint multiplies it"

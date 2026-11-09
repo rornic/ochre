@@ -62,6 +62,8 @@ fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
+// The tundra has no poppies or dandelions, only its grass and heath.
+
 /// The plant on the grass at (x, z), if any: shrubs or heath in patches of the open ground of some biomes,
 /// grasses in the open, ferns in the shade, flowers in drifts of one kind, all thinning out in the cold.
 pub(super) fn flora_at(
@@ -86,7 +88,7 @@ pub(super) fn flora_at(
 
     let drift = hash(seed ^ DRIFT_SALT, x.div_euclid(DRIFT), z.div_euclid(DRIFT));
     let in_drift = unit(drift);
-    let flowers = if in_drift < DRIFT_SHARE {
+    let flowers = if in_drift < DRIFT_SHARE && biome != Some("tundra") {
         DRIFT_DENSITY * (1.0 - in_drift / DRIFT_SHARE)
     } else {
         0.0
@@ -226,6 +228,21 @@ mod tests {
         let sum = |c: [usize; 4]| c.iter().sum::<usize>();
         assert!(sum(chilly) < sum(mild) && sum(chilly) > 0);
         assert_eq!(0, sum(frozen));
+    }
+
+    #[test]
+    fn test_the_tundra_has_grass_and_heath_but_no_flowers() {
+        let mut grass = 0;
+        for x in 0..300 {
+            for z in 0..300 {
+                match flora_at(7, x, z, false, 0.2, Some("tundra")) {
+                    Some(BlockType::Poppy | BlockType::Dandelion) => panic!("a flower in the tundra"),
+                    Some(BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass) => grass += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert!(grass > 1000, "{grass} tufts");
     }
 
     #[test]

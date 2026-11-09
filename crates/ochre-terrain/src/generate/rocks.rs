@@ -38,8 +38,8 @@ pub struct Rock {
 // The kind of object a biome has and the share of its cells that hold one.
 fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
     match biome? {
-        // the tundra is strewn with boulders, about one a thirty block square, where a taiga has one in a hundred
-        "tundra" => Some((RockKind::Erratic, 0.50)),
+        // the tundra is strewn with boulders, about one in a twenty five block square, where a taiga has one in a hundred
+        "tundra" => Some((RockKind::Erratic, 0.85)),
         "taiga" => Some((RockKind::Erratic, 0.04)),
         "savanna" => Some((RockKind::Mound, 0.075)),
         _ => None,

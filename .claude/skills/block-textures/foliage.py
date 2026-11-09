@@ -240,11 +240,11 @@ def shrub(rng, cv):
         leaf(cv, cx + x * rx, cy + y * ry, rng.uniform(42, 68), rng.uniform(15, 24), out + rng.uniform(-0.7, 0.7), tone)
 
 
-HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (112, 92, 138), (78, 58, 74), (192, 142, 218)  # dusty violet, as a Skyrim tundra's scrub
+HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (108, 96, 120), (74, 62, 66), (164, 134, 172)  # a greyish mauve, muted as a tundra's scrub is, not a bright violet
 
 
 def heath(rng, cv):
-    """Low purple scrub: wiry stems arching out from the root, small violet leaves along them and lilac flowers at the tips.
+    """Low mauve scrub: wiry stems arching out from the root, small greyish leaves along them and muted lilac flowers at the tips.
     It keeps its own colour, not the climate's grass tint."""
     for k in range(14):
         a = (k / 13 - 0.5) * 2.6 + rng.uniform(-0.08, 0.08)  # fanned evenly either side of upright
@@ -260,7 +260,7 @@ def heath(rng, cv):
             x, y = curve(x0, 511, x1, y1, bend, t)
             for j in (-1, 1):
                 leaf(cv, x, y, rng.uniform(22, 36) * (1.15 - t * 0.45), rng.uniform(8, 12), heading + j * rng.uniform(0.6, 1.1), 100 + 70 * t + rng.uniform(-14, 14), HEATH_LEAF)
-        for _ in range(5):  # clustered flowers at the tip
+        for _ in range(3):  # a few flowers at the tip
             cv.ellipse(x1 + rng.uniform(-26, 26), y1 + rng.uniform(-18, 14), rng.uniform(8, 13), rng.uniform(8, 13), tuple(int(c * rng.uniform(0.85, 1.1)) for c in HEATH_FLOWER))
 
 

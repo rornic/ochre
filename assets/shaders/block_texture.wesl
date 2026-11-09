@@ -246,7 +246,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5106, 0.5106, 0.5106), // grass side
         vec3<f32>(0.2403, 0.1078, 0.0716), // dirt
         vec3<f32>(0.4026, 0.2195, 0.1318), // log end
-        vec3<f32>(0.3113, 0.2217, 0.1859), // gravel
+        vec3<f32>(0.3103, 0.2209, 0.1851), // gravel
         vec3<f32>(0.4181, 0.6444, 0.6924), // ice
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
@@ -262,7 +262,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
         vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
-        vec3<f32>(0.1033, 0.0949, 0.1022), // shale
+        vec3<f32>(0.1032, 0.0949, 0.1021), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
         vec3<f32>(0.0739, 0.0680, 0.0731), // compacted shale
         vec3<f32>(0.4954, 0.4954, 0.4954), // tall grass
@@ -272,7 +272,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
         vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
         vec3<f32>(0.3999, 0.3999, 0.3999), // shrub
-        vec3<f32>(0.2343, 0.1350, 0.3232), // heath
+        vec3<f32>(0.1748, 0.1281, 0.2082), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);
