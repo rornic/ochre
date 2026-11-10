@@ -632,7 +632,7 @@ fn mesh_flora(
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
         let ground = coord.as_vec3() - Vec3::Y * 0.5;
         let tint = if tile.tinted() {
-            let tint = grass_tint.at(ground);
+            let tint = grass_tint.cold_at(ground);
             // the long grasses in the cold go mauve, to bridge between the heath, the short ones less so
             let mauve = match block {
                 BlockType::TallGrass | BlockType::SeedGrass => MAUVE_STRENGTH,
