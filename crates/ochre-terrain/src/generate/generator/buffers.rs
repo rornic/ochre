@@ -521,6 +521,13 @@ const RUSSET_FROM: f32 = 0.5;
 const RUSSET_TO: f32 = 0.78;
 const RUSSET_STRENGTH: f32 = 0.9;
 pub(super) const RUSSET_TINT: Vec3 = Vec3::new(0.58, 0.19, 0.12);
+// What the cold's grass is tinted toward, how far where it is coldest: a brown, redder and darker than the tan the cold dry palette gives.
+// The plain tint's red is only 1.05 to 1.24 times its green at the tundra's median, an olive, and its warmest quarter, up to 0.15, is
+// olive green, so the brown holds to 0.12 and is gone by 0.19, which leaves the warm half of a taiga its own colour.
+const BROWN_FULL_BELOW: f32 = 0.12;
+const BROWN_NONE_ABOVE: f32 = 0.19;
+const BROWN_TINT: Vec3 = Vec3::new(0.49, 0.28, 0.11);
+const BROWN_STRENGTH: f32 = 0.92;
 
 // Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
 // sampled at the mesh's four corners and blended across it, rather than at every vertex.
@@ -529,6 +536,8 @@ pub(super) struct GrassTint {
     pub(super) corners: [Vec3; 4],
     // how cold it is at the same corners, 0 to 1, over which the long grasses go mauve, as the heath does, see `mauve_at`
     cold: [f32; 4],
+    // and over a warmer ramp, how far grass on the ground goes brown, see `cold_at`
+    brown: [f32; 4],
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
     // how many blocks one local unit is, to find where a local position is in the world
@@ -547,6 +556,7 @@ impl GrassTint {
             corners: climates.map(grass_tint),
             // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
             cold: climates.map(|c| 1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, c.temperature)),
+            brown: climates.map(|c| 1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, c.temperature)),
             origin: origin.floor().as_ivec3(),
             scale,
         }
@@ -578,16 +588,32 @@ impl GrassTint {
         cold * RUSSET_STRENGTH * smoothstep(RUSSET_FROM, RUSSET_TO, patch)
     }
 
-    // The tint of the grass on the ground at `local`: the climate's, with its reddish patches.
+    // The tint of grass at `local` in the cold: the climate's, pulled to `BROWN_TINT` by how cold it is, so the tundra's grass is brown and
+    // never the olive the dry cold palette gives, and a taiga's fringe fades from its green to brown with the temperature.
+    pub(super) fn cold_at(&self, local: Vec3) -> Vec3 {
+        self.at(local).lerp(BROWN_TINT, self.brown_at(local) * BROWN_STRENGTH)
+    }
+
+    // The tint of the grass on the ground at `local`: brown in the cold, with its reddish patches.
     pub(super) fn ground_at(&self, local: Vec3) -> Vec3 {
-        self.at(local).lerp(RUSSET_TINT, self.russet_at(local))
+        self.cold_at(local).lerp(RUSSET_TINT, self.russet_at(local))
     }
 
     // How far the long grasses at `local` have gone from the grass's tint to `MAUVE_TINT`, 0 to 1.
     pub(super) fn mauve_at(&self, local: Vec3) -> f32 {
+        self.across(self.cold, local)
+    }
+
+    // How far the grass at `local` goes to `BROWN_TINT`, 0 to 1.
+    pub(super) fn brown_at(&self, local: Vec3) -> f32 {
+        self.across(self.brown, local)
+    }
+
+    // `values` at the mesh's four corners, blended to `local`.
+    fn across(&self, values: [f32; 4], local: Vec3) -> f32 {
         let size = CHUNK_SIZE as f32;
         let (u, v) = ((local.x + 0.5) / size, (local.z + 0.5) / size);
-        let [a, b, c, d] = self.cold;
+        let [a, b, c, d] = values;
         let (top, bottom) = (a + (b - a) * u, c + (d - c) * u);
         top + (bottom - top) * v
     }
@@ -699,9 +725,48 @@ mod russet_tests {
         GrassTint {
             corners: [Vec3::ONE; 4],
             cold: [cold; 4],
+            brown: [cold; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         }
+    }
+
+    // The tundra reads a temperature of 0.03 to 0.15 and a humidity up to about 0.13 on a seed measured, so this runs well past both: at
+    // every climate there, the grass on the ground is brown or red, never green, with or without a reddish patch, while grassland stays green.
+    #[test]
+    fn test_cold_grass_is_brown_or_red_and_never_green_where_warm_grass_stays_green() {
+        use ochre_base::biome::{grass_tint, Climate};
+        let at = |temperature: f32, humidity: f32| GrassTint {
+            corners: [grass_tint(Climate { temperature, humidity }); 4],
+            cold: [1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, temperature); 4],
+            brown: [1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, temperature); 4],
+            origin: IVec3::new(1000, 0, -2000),
+            scale: 1.0,
+        };
+        // below 0.12 grass is firmly brown or red whatever the humidity, and the warmest tundra, at up to 0.15, which reads a humidity of
+        // at most about 0.13, still has red a clear third over its green, where the plain tint had 1.05
+        for (temperatures, humidities, over) in [
+            (&[0.03, 0.06, 0.08, 0.10, 0.12][..], &[0.0, 0.1, 0.2, 0.4, 0.6][..], 1.5),
+            (&[0.14, 0.15][..], &[0.0, 0.07, 0.13][..], 1.3),
+        ] {
+            for &temperature in temperatures {
+                for &humidity in humidities {
+                    let tint = at(temperature, humidity);
+                    for x in 0..40 {
+                        let ground = tint.ground_at(Vec3::new(x as f32 * 5.0, 0.0, 0.0));
+                        assert!(ground.x > ground.y * over, "not brown at temperature {temperature}, humidity {humidity}: {ground}");
+                        assert!(ground.x > ground.z, "{ground}");
+                    }
+                }
+            }
+        }
+        // the plain tint does go green in the same cold wet corner, which is what this replaces, and warm grass keeps its own
+        let wet = grass_tint(Climate { temperature: 0.10, humidity: 0.6 });
+        assert!(wet.y > wet.x, "{wet}");
+        let warm = at(0.5, 0.7);
+        let grassland = warm.ground_at(Vec3::ZERO);
+        assert!(grassland.y > grassland.x, "{grassland}");
+        assert_eq!(grassland, warm.at(Vec3::ZERO));
     }
 
     #[test]
