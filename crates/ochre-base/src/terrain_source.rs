@@ -64,7 +64,7 @@ struct StoneColumn;
 
 impl RockColumn for StoneColumn {
     fn bed(&mut self, _y: i64) -> (i64, i64, crate::block::BlockType) {
-        (i64::MIN, i64::MAX, crate::block::BlockType::Stone)
+        (i64::MIN, i64::MAX, crate::block::BlockType::Rock)
     }
 }
 

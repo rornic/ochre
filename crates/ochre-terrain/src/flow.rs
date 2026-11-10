@@ -137,7 +137,7 @@ mod tests {
     fn channel() -> World {
         let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
         let mut data = ChunkData::from_cells(std::iter::repeat_n(
-            BlockType::Stone,
+            BlockType::Rock,
             (CHUNK_SIZE as usize).pow(3),
         ));
         for x in 2..CHUNK_SIZE {
@@ -210,7 +210,7 @@ mod tests {
         let mut world = channel();
         world.set_block_at(DAM, BlockType::Air);
         settle(&mut world);
-        world.set_block_at(DAM, BlockType::Stone);
+        world.set_block_at(DAM, BlockType::Rock);
         settle(&mut world);
         assert!(levels(&world, FLOOR).iter().skip(1).all(Option::is_none));
         assert_eq!(

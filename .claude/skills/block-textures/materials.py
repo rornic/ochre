@@ -24,8 +24,24 @@ def linear(v):
 
 
 # Layers painted with features too big for what they are: tiled this many times over and brought back to 512, which keeps them
-# seamless. Gravel's cobbles were a block across, and shale a slab of several.
-SCALE = {"Gravel": 3, "Shale": 2}
+# seamless. Gravel's cobbles were a block across.
+SCALE = {"Gravel": 3}
+# Layers that install another's painting: shale is the grey cracked flagstone that was the stone layer's, which is a placeholder
+# (`BlockType::Rock`) that a real world never shows, see docs/materials.md. Its compacted form follows it.
+ALIAS = {"Shale": "Stone"}
+
+
+def painting(name):
+    return Image.open(PAINTED_OUT / f"{ALIAS.get(name, name)}.png")
+
+
+# Tiles with no layer of their own, which draw another's (`Tile::material_layer`): the placeholder rock, and its compacted form. Their block
+# means are those layers'.
+NO_LAYER = {"Stone": "Shale", "CompactedStone": "CompactedShale"}
+LAYERS = [n for n in PAINTED if n not in NO_LAYER]
+# the layers installed are `MATERIAL_FILES`, in order, up to its foliage, which foliage.py makes
+files = re.search(r"MATERIAL_FILES: \[&str; \d+\] = \[(.*?)// RGBA", (HERE / "../../../crates/ochre-base/src/block.rs").read_text(), re.S).group(1)
+assert [file_name(n) for n in LAYERS] == re.findall(r'"(\w+)"', files), "PAINTED has drifted from MATERIAL_FILES in block.rs"
 # Layers whose colour is pulled toward grey by this much of its saturation: gravel's orange cobbles read as bright pink scree.
 DESATURATE = {"Gravel": 0.5}
 
@@ -38,12 +54,12 @@ DEST.mkdir(exist_ok=True)
 # a compacted rock is its rock's layer packed darker, as `derive()` in generate.py does the atlas tile
 for t in TILES:
     if t["name"] in PAINTED and t.get("derive") == "shade":
-        body = Image.open(PAINTED_OUT / f"{t['body']}.png")
+        body = painting(t["body"])
         body = np.asarray(tile_down(body, SCALE[t["body"]]) if t["body"] in SCALE else body.convert("RGB"), float)
         Image.fromarray(np.clip((body * t["factor"] * np.array(t["tint"])).round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}.png")
 means = {}
-for name in PAINTED:
-    img = Image.open(PAINTED_OUT / f"{name}.png").convert("RGB")
+for name in LAYERS:
+    img = painting(name).convert("RGB")
     assert img.size == (512, 512), f"{name} is {img.size}, layers are 512x512"
     if name in SCALE:
         img = tile_down(img, SCALE[name])
@@ -54,6 +70,9 @@ for name in PAINTED:
         assert np.ptp(np.asarray(img, int).reshape(-1, 3), axis=1).max() == 0, "GrassTop must be greyscale, the biome tint multiplies it"
         assert abs(means[name][0] - GRASS_TEXTURE_MEAN) < 0.01, f"GrassTop mean is {means[name][0]:.4f}, the tint assumes {GRASS_TEXTURE_MEAN}"
     img.save(DEST / f"{file_name(name)}.png")
+
+for name, layer in NO_LAYER.items():
+    means[name] = means[layer]
 
 cell = {t["name"]: i for i, t in enumerate(TILES)}
 row = -1
@@ -72,9 +91,9 @@ text = "\n".join(lines) + "\n"
 if text != SHADER.read_text():  # an untouched shader keeps its mtime, so it isn't hot-reloaded for nothing
     SHADER.write_text(text)
 
-sheet = Image.new("RGB", (len(PAINTED) * 384, 384))
-for i, name in enumerate(PAINTED):
+sheet = Image.new("RGB", (len(LAYERS) * 384, 384))
+for i, name in enumerate(LAYERS):
     layer = Image.open(DEST / f"{file_name(name)}.png").resize((128, 128), Image.LANCZOS)
     sheet.paste(Image.fromarray(np.tile(np.asarray(layer), (3, 3, 1))), (i * 384, 0))
 sheet.save(OUT / "materials_contact.png")
-print("installed", ", ".join(PAINTED), "; seam check:", OUT / "materials_contact.png")
+print("installed", ", ".join(LAYERS), "; seam check:", OUT / "materials_contact.png")

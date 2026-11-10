@@ -306,10 +306,10 @@ mod tests {
     #[test]
     fn test_set_then_get_round_trip() {
         let mut chunk_data = ChunkData::default();
-        chunk_data.set_block_at(U16Vec3::new(7, 8, 9), BlockType::Stone);
+        chunk_data.set_block_at(U16Vec3::new(7, 8, 9), BlockType::Rock);
 
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             chunk_data.get_block_at(U16Vec3::new(7, 8, 9))
         );
     }
@@ -319,14 +319,14 @@ mod tests {
         let mut chunk_data = ChunkData::default();
         // a single Air run covers everything by default - set the middle cell of one
         // column and confirm the cells immediately above/below it are untouched.
-        chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Stone);
+        chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Rock);
 
         assert_eq!(
             BlockType::Air,
             chunk_data.get_block_at(U16Vec3::new(0, 4, 0))
         );
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             chunk_data.get_block_at(U16Vec3::new(0, 5, 0))
         );
         assert_eq!(
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn test_set_block_back_to_neighbour_type_merges_runs() {
         let mut chunk_data = ChunkData::default();
-        chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Stone);
+        chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Rock);
         assert_eq!(3, chunk_data.runs.len()); // air, stone, air
 
         chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Air);
@@ -351,14 +351,14 @@ mod tests {
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
-                    chunk_data.set_block_at(U16Vec3::new(x, y, z), BlockType::Stone);
+                    chunk_data.set_block_at(U16Vec3::new(x, y, z), BlockType::Rock);
                 }
             }
         }
 
         assert_eq!(1, chunk_data.runs.len());
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             chunk_data.get_block_at(U16Vec3::new(0, 0, 0))
         );
     }
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn test_from_cells_matches_setting_each_block() {
         let block_at = |c: U16Vec3| match (c.x + 3 * c.y + c.z) % 7 {
-            0 => BlockType::Stone,
+            0 => BlockType::Rock,
             1 | 2 => BlockType::Dirt,
             _ => BlockType::Air,
         };
@@ -409,7 +409,7 @@ mod tests {
     fn test_iter_non_air_yields_exactly_the_set_blocks() {
         let mut chunk_data = ChunkData::default();
         chunk_data.set_block_at(U16Vec3::new(1, 1, 1), BlockType::Sand);
-        chunk_data.set_block_at(U16Vec3::new(2, 2, 2), BlockType::Stone);
+        chunk_data.set_block_at(U16Vec3::new(2, 2, 2), BlockType::Rock);
 
         let mut found: Vec<_> = chunk_data.iter_non_air().collect();
         found.sort_by_key(|(coord, _)| (coord.x, coord.y, coord.z));
@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(
             vec![
                 (U16Vec3::new(1, 1, 1), BlockType::Sand),
-                (U16Vec3::new(2, 2, 2), BlockType::Stone),
+                (U16Vec3::new(2, 2, 2), BlockType::Rock),
             ],
             found
         );

@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_looks_through_water_to_the_block_under_it() {
         use BlockType::*;
-        let world = world_with_column(&[Stone, Sand, Water, Water]);
+        let world = world_with_column(&[Rock, Sand, Water, Water]);
         let eye = Vec3::new(4.0, 6.0, 4.0);
         let (hit, block) = block_looked_at(&world, eye, Vec3::NEG_Y).unwrap();
         assert_eq!((I64Vec3::new(4, 1, 4), Sand), (hit.block, block));
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_nothing_is_looked_at_out_of_reach() {
-        let world = world_with_column(&[BlockType::Stone]);
+        let world = world_with_column(&[BlockType::Rock]);
         let eye = Vec3::new(4.0, REACH + 1.0, 4.0);
         assert!(block_looked_at(&world, eye, Vec3::NEG_Y).is_none());
         let eye = Vec3::new(4.0, REACH, 4.0);
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_compacted_stone_is_looked_at_but_not_broken() {
         use BlockType::*;
-        let mut world = world_with_column(&[CompactedStone, Grass, TallGrass]);
+        let mut world = world_with_column(&[CompactedRock, Grass, TallGrass]);
         let eye = Vec3::new(4.0, 5.0, 4.0);
         let mut broken = Vec::new();
         while let Some((hit, _)) = block_looked_at(&world, eye, Vec3::NEG_Y) {
@@ -197,7 +197,7 @@ mod tests {
         }
         assert_eq!(vec![TallGrass, Grass], broken);
         let (hit, block) = block_looked_at(&world, eye, Vec3::NEG_Y).unwrap();
-        assert_eq!((I64Vec3::new(4, 0, 4), CompactedStone), (hit.block, block));
+        assert_eq!((I64Vec3::new(4, 0, 4), CompactedRock), (hit.block, block));
     }
 
     #[test]

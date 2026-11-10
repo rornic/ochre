@@ -139,8 +139,8 @@ fn block_colour(b: BlockType) -> Option<Rgb> {
     use BlockType::*;
     Some(match b {
         Air => return None,
-        Stone => [128.0, 128.0, 128.0],
-        CompactedStone => [90.0, 90.0, 95.0],
+        Rock => [128.0, 128.0, 128.0],
+        CompactedRock => [90.0, 90.0, 95.0],
         Limestone => [200.0, 194.0, 172.0],
         Clay => [178.0, 122.0, 80.0],
         Basalt => [62.0, 64.0, 70.0],

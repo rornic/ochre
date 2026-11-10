@@ -74,7 +74,7 @@ impl Biome for Modified {
             Modifier::Volcanic => BARE_GRADIENT,
         };
         match block {
-            BlockType::Grass if gradient >= bare_above => BlockType::Stone,
+            BlockType::Grass if gradient >= bare_above => BlockType::Rock,
             BlockType::Sand => BlockType::Gravel,
             other => other,
         }
@@ -83,7 +83,7 @@ impl Biome for Modified {
     fn spring_block(&self) -> BlockType {
         match self.modifier {
             Modifier::None => self.inner.spring_block(),
-            _ => BlockType::Stone,
+            _ => BlockType::Rock,
         }
     }
 
@@ -113,10 +113,10 @@ mod tests {
         let biomes = Biomes::new(1);
         let grass = biomes.with_modifier(super::super::BiomeId::BASE, Modifier::Mountain);
         let rock = |above, gradient| biomes.block(grass, BlockType::Grass, above, gradient);
-        assert_eq!(BlockType::Stone, rock(120, 1.7));
+        assert_eq!(BlockType::Rock, rock(120, 1.7));
         assert_eq!(BlockType::Grass, rock(300, 0.2));
         assert_eq!(BlockType::Grass, rock(300, 0.9));
-        assert_eq!(BlockType::Stone, rock(800, 1.1));
+        assert_eq!(BlockType::Rock, rock(800, 1.1));
         assert_eq!(BlockType::Grass, rock(200, 0.2));
         assert_eq!(
             BlockType::Gravel,
@@ -137,7 +137,7 @@ mod tests {
         let biomes = Biomes::new(1);
         let volcanic = biomes.with_modifier(super::super::BiomeId::BASE, Modifier::Volcanic);
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             biomes.block(volcanic, BlockType::Grass, 200, 0.8)
         );
         assert_eq!(

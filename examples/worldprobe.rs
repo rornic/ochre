@@ -36,8 +36,8 @@ fn letter(block: BlockType) -> char {
     match block {
         BlockType::Air => '.',
         BlockType::Water => '~',
-        BlockType::Stone => '#',
-        BlockType::CompactedStone => '%',
+        BlockType::Rock => '#',
+        BlockType::CompactedRock => '%',
         BlockType::CompactedLimestone => 'n',
         BlockType::CompactedClay => 'k',
         BlockType::CompactedBasalt => 'a',
@@ -67,7 +67,7 @@ fn letter(block: BlockType) -> char {
 fn colour(block: BlockType) -> [u8; 3] {
     match block {
         BlockType::Water => [40, 110, 220],
-        BlockType::Stone | BlockType::CompactedStone => [120, 120, 120],
+        BlockType::Rock | BlockType::CompactedRock => [120, 120, 120],
         BlockType::Limestone => [200, 194, 172],
         BlockType::Clay => [178, 122, 80],
         BlockType::Basalt => [62, 64, 70],

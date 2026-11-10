@@ -132,7 +132,7 @@ mod tests {
         light(IVec3::new(9, 12, 9), |c| {
             let roofed = (2..=6).contains(&c.x) && (2..=6).contains(&c.z) && c.y == 8;
             if c.y == 0 {
-                BlockType::Stone
+                BlockType::Rock
             } else if roofed {
                 roof
             } else {
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_light_creeps_under_a_roof_and_fades_inwards() {
-        let light = under_roof(BlockType::Stone);
+        let light = under_roof(BlockType::Rock);
         let edge = light.level(IVec3::new(2, 4, 4));
         let middle = light.level(IVec3::new(4, 4, 4));
         // the cell under the roof's edge is one step in from open sky
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_leaves_shade_less_than_stone() {
         let leaves = under_roof(BlockType::Leaves).level(IVec3::new(4, 4, 4));
-        let stone = under_roof(BlockType::Stone).level(IVec3::new(4, 4, 4));
+        let stone = under_roof(BlockType::Rock).level(IVec3::new(4, 4, 4));
         assert_eq!(MAX_LIGHT - 1, leaves);
         assert!(leaves > stone);
     }
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_outside_the_box_is_lit() {
-        let light = under_roof(BlockType::Stone);
+        let light = under_roof(BlockType::Rock);
         assert_eq!(MAX_LIGHT, light.level(IVec3::new(-1, 4, 4)));
     }
 }

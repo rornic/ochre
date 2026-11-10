@@ -66,6 +66,7 @@ python lora_paint.py Stone Dirt --seeds 1 2 3 4   # candidates to out/sdxl/<Tile
 python lora_paint.py Granite --tag g --seeds 31 32 --prompt "..." --avoid "..."   # own prompt, files <Tile>_g<seed>.png
 python lora_paint.py --pick Stone=3 Granite=g31   # install as out/512/<Tile>.png
 python materials.py                               # copy to assets/textures/materials/, update block_mean, write out/materials_contact.png
+                                                  # Stone's painting is installed as shale (ALIAS), the placeholder rock having no layer of its own
 ```
 
 The compacted rocks aren't painted: `materials.py` derives each from its rock's picked layer (`derive="shade"` in `TILES`, 85% brightness) before installing, so repick the rock, then rerun it. `PROMPTS` holds each other tile's prompt after the LoRA's trigger words. Renders are downscaled to 512. `--pick` moves only the mean (`TARGET_MEAN`, the atlas tile's mean, so the world keeps its tones) and contrast (`CONTRAST`) and makes GrassTop greyscale at the mean the biome tint assumes. Stop ComfyUI before running the game, as both want the card.
@@ -74,7 +75,7 @@ What reads well in play: a block is 32px of a layer at repeat 16 (64px at the de
 
 ## Foliage
 
-Leaves and the six flora sprites draw 512px RGBA layers 24 to 30 of the materials array, see `Tile::foliage_layer` and `docs/materials.md`. They are made by `foliage.py`, not `materials.py`:
+Leaves and the eight flora sprites draw 512px RGBA layers 22 to 30 of the materials array, see `Tile::foliage_layer` and `docs/materials.md`. They are made by `foliage.py`, not `materials.py`:
 
 ```
 python lora_paint.py Leaves --tag l --seeds 1 2 3 4 --prompt "overlapping painted green leaves, dense foliage, broad simple leaf shapes each edged with darker green, small dark gaps between the leaf clumps, flat front view" --avoid "flowers, branches, trunk, sky, fruit, border, frame, single leaf, vein detail"

@@ -42,30 +42,30 @@ fn no_neighbors() -> [Option<Arc<ChunkData>>; 26] {
 #[test]
 fn test_neighbourhood_within_chunk() {
     let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Rock);
 
     let block = ChunkNeighbourhood::new(&chunk, &no_neighbors()).block(IVec3::new(4, 4, 4));
-    assert_eq!(BlockType::Stone, block);
+    assert_eq!(BlockType::Rock, block);
 }
 
 #[test]
 fn test_neighbourhood_crosses_single_axis_into_adjacent_chunk() {
     let chunk = ChunkData::default();
     let mut adjacent = ChunkData::default();
-    adjacent.set_block_at(U16Vec3::new(0, 4, 4), BlockType::Stone);
+    adjacent.set_block_at(U16Vec3::new(0, 4, 4), BlockType::Rock);
 
     let mut neighbors = no_neighbors();
     neighbors[neighbor_26_index(1, 0, 0)] = Some(Arc::new(adjacent));
     let block =
         ChunkNeighbourhood::new(&chunk, &neighbors).block(IVec3::new(CHUNK_SIZE as i32, 4, 4));
-    assert_eq!(BlockType::Stone, block);
+    assert_eq!(BlockType::Rock, block);
 }
 
 #[test]
 fn test_neighbourhood_crosses_two_axes_into_diagonal_chunk() {
     let chunk = ChunkData::default();
     let mut diagonal = ChunkData::default();
-    diagonal.set_block_at(U16Vec3::new(0, 0, 4), BlockType::Stone);
+    diagonal.set_block_at(U16Vec3::new(0, 0, 4), BlockType::Rock);
 
     let mut neighbors = no_neighbors();
     neighbors[neighbor_26_index(1, 1, 0)] = Some(Arc::new(diagonal));
@@ -74,7 +74,7 @@ fn test_neighbourhood_crosses_two_axes_into_diagonal_chunk() {
         CHUNK_SIZE as i32,
         4,
     ));
-    assert_eq!(BlockType::Stone, block);
+    assert_eq!(BlockType::Rock, block);
 }
 
 #[test]
@@ -101,9 +101,9 @@ fn test_vertex_ao_no_occluders_is_unlit() {
 fn test_vertex_ao_fully_occluded_corner() {
     let mut chunk = ChunkData::default();
     // Top face (index 4) at (4,4,4): occluders are the y+1 layer's tangent/diagonal cells.
-    chunk.set_block_at(U16Vec3::new(5, 5, 4), BlockType::Stone);
-    chunk.set_block_at(U16Vec3::new(4, 5, 5), BlockType::Stone);
-    chunk.set_block_at(U16Vec3::new(5, 5, 5), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(5, 5, 4), BlockType::Rock);
+    chunk.set_block_at(U16Vec3::new(4, 5, 5), BlockType::Rock);
+    chunk.set_block_at(U16Vec3::new(5, 5, 5), BlockType::Rock);
 
     let neighbors = no_neighbors();
     let source = ChunkNeighbourhood::new(&chunk, &neighbors);
@@ -115,12 +115,12 @@ fn test_vertex_ao_fully_occluded_corner() {
 fn test_neighbouring_water_columns_agree_on_shared_corner_depth() {
     let mut chunk = ChunkData::default();
     // two columns with their surface at y = 5: one 5 deep, its +x neighbour 2 deep
-    chunk.set_block_at(U16Vec3::new(4, 0, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(4, 0, 4), BlockType::Rock);
     for y in 1..=5 {
         chunk.set_block_at(U16Vec3::new(4, y, 4), BlockType::Water);
     }
     for y in 0..=3 {
-        chunk.set_block_at(U16Vec3::new(5, y, 4), BlockType::Stone);
+        chunk.set_block_at(U16Vec3::new(5, y, 4), BlockType::Rock);
     }
     for y in 4..=5 {
         chunk.set_block_at(U16Vec3::new(5, y, 4), BlockType::Water);
@@ -328,8 +328,8 @@ fn test_wide_cells_freeze_when_they_reach_the_ice() {
         freeze_cell(BlockType::Water, 0.5, top, (32, WATER_LEVEL))
     );
     assert_eq!(
-        BlockType::Stone,
-        freeze_cell(BlockType::Stone, 0.0, top, (32, WATER_LEVEL))
+        BlockType::Rock,
+        freeze_cell(BlockType::Rock, 0.0, top, (32, WATER_LEVEL))
     );
 }
 
@@ -367,7 +367,7 @@ fn test_polar_lowlands_are_snow_covered_and_glacier_ice_runs_deep_before_stone()
         )
     );
     assert_eq!(
-        BlockType::CompactedStone,
+        BlockType::CompactedRock,
         under_grass(
             BlockType::Ice,
             ground - 50,
@@ -389,7 +389,7 @@ fn test_a_cliff_face_shows_its_surface_material_as_far_down_as_it_clings() {
     assert_eq!(5, skin_depth(BlockType::Grass, 5));
     assert_eq!(8, skin_depth(BlockType::Grass, 60));
     assert_eq!(40, skin_depth(BlockType::Ice, 60));
-    assert_eq!(0, skin_depth(BlockType::Stone, 60));
+    assert_eq!(0, skin_depth(BlockType::Rock, 60));
     // a 12-block grassy face: grass for 8 blocks, then packed stone, not dirt and stone from the first block
     let at = |depth| {
         under_grass(
@@ -403,7 +403,7 @@ fn test_a_cliff_face_shows_its_surface_material_as_far_down_as_it_clings() {
         )
     };
     assert_eq!(BlockType::Grass, at(8));
-    assert_eq!(BlockType::CompactedStone, at(9));
+    assert_eq!(BlockType::CompactedRock, at(9));
     // gentle ground is as before: one block of grass over dirt
     assert_eq!(
         BlockType::Dirt,
@@ -456,7 +456,7 @@ fn test_snow_line_drops_in_the_cold_and_hot_ground_is_bare() {
     assert_eq!(BlockType::Snow, at(600, 0.35));
     assert_eq!(BlockType::Snow, at(1100, 0.5));
     // too hot for snow however high, so the peaks are rock
-    assert_eq!(BlockType::Stone, at(1100, 0.8));
+    assert_eq!(BlockType::Rock, at(1100, 0.8));
     assert_eq!(BlockType::Grass, at(100, 0.8));
 }
 
@@ -505,7 +505,7 @@ fn flat_lod(surface_y: i32) -> LodBlocks {
     for x in -1..=size {
         for z in -1..=size {
             for y in -1..surface_y {
-                cells[LodBlocks::index(size, IVec3::new(x, y, z))] = BlockType::Stone;
+                cells[LodBlocks::index(size, IVec3::new(x, y, z))] = BlockType::Rock;
             }
         }
     }
@@ -689,7 +689,7 @@ fn mesh_vertices(chunk: ChunkData) -> usize {
 #[test]
 fn test_single_block_has_six_quads() {
     let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Rock);
     assert_eq!(24, mesh_vertices(chunk));
 }
 
@@ -698,7 +698,7 @@ fn test_flat_floor_merges_into_one_quad_per_face() {
     let mut chunk = ChunkData::default();
     for x in 0..16 {
         for z in 0..16 {
-            chunk.set_block_at(U16Vec3::new(x, 0, z), BlockType::Stone);
+            chunk.set_block_at(U16Vec3::new(x, 0, z), BlockType::Rock);
         }
     }
     // each quad is a centre point plus a vertex per block step round its border: the top
@@ -723,7 +723,7 @@ fn test_flat_floor_merges_into_one_quad_per_face() {
 #[test]
 fn test_different_block_types_do_not_merge() {
     let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Rock);
     chunk.set_block_at(U16Vec3::new(5, 4, 4), BlockType::Grass);
     // 5 faces each, the shared one hidden
     assert_eq!(10 * 4, mesh_vertices(chunk));
@@ -733,7 +733,7 @@ fn floor_chunk() -> ChunkData {
     let mut chunk = ChunkData::default();
     for x in 0..16 {
         for z in 0..16 {
-            chunk.set_block_at(U16Vec3::new(x, 0, z), BlockType::Stone);
+            chunk.set_block_at(U16Vec3::new(x, 0, z), BlockType::Rock);
         }
     }
     chunk
@@ -781,7 +781,7 @@ fn top_face_triangles(mesh: &Mesh) -> Vec<f32> {
 #[test]
 fn test_merged_quads_keep_the_winding_of_single_faces() {
     let mut single = ChunkData::default();
-    single.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Stone);
+    single.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Rock);
     let single = mesh_chunk(single).opaque;
     let merged = mesh_chunk(floor_chunk()).opaque;
     let expected = top_face_triangles(&single)[0].signum();
@@ -815,7 +815,7 @@ fn tints(mesh: &Mesh) -> Vec<Vec3> {
 #[test]
 fn test_only_grass_tops_and_sides_are_tinted() {
     let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Rock);
     chunk.set_block_at(U16Vec3::new(10, 4, 10), BlockType::Grass);
     let colours = tints(&mesh_chunk(chunk).opaque);
     assert_eq!(28, colours.iter().filter(|c| **c == Vec3::ONE).count());
@@ -837,8 +837,8 @@ fn test_only_full_detail_grass_below_the_top_layer_is_dirt() {
         under_grass(BlockType::Grass, 10, 20, 4, false, SOIL_DEPTH, 0)
     );
     assert_eq!(
-        BlockType::Stone,
-        under_grass(BlockType::Stone, 16, 20, 1, false, SOIL_DEPTH, 0)
+        BlockType::Rock,
+        under_grass(BlockType::Rock, 16, 20, 1, false, SOIL_DEPTH, 0)
     );
 }
 
@@ -936,7 +936,7 @@ fn test_ground_under_a_roof_is_shaded_smoothly() {
     // a stone roof over x 4..12, z 4..12, three blocks up
     for x in 4..12 {
         for z in 4..12 {
-            chunk.set_block_at(U16Vec3::new(x, 3, z), BlockType::Stone);
+            chunk.set_block_at(U16Vec3::new(x, 3, z), BlockType::Rock);
         }
     }
     let lights = top_lights(&mesh_chunk(chunk).opaque);
@@ -1088,7 +1088,7 @@ fn test_lods_up_to_four_blocks_are_textured_with_the_texture_repeating_over_each
 #[test]
 fn test_ambient_occlusion_stops_faces_merging() {
     let mut chunk = floor_chunk();
-    chunk.set_block_at(U16Vec3::new(8, 1, 8), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(8, 1, 8), BlockType::Rock);
     // one quad per face of the floor and of the pillar would be 44; the shaded ring around it splits the top
     assert!(mesh_vertices(chunk) > 44);
 }
@@ -1097,15 +1097,15 @@ fn test_ambient_occlusion_stops_faces_merging() {
 fn walled_chunk() -> ChunkData {
     let mut chunk = floor_chunk();
     for x in 2..14 {
-        chunk.set_block_at(U16Vec3::new(x, 1, 4), BlockType::Stone);
-        chunk.set_block_at(U16Vec3::new(x, 2, 4), BlockType::Stone);
+        chunk.set_block_at(U16Vec3::new(x, 1, 4), BlockType::Rock);
+        chunk.set_block_at(U16Vec3::new(x, 2, 4), BlockType::Rock);
     }
     for x in 0..16 {
         for z in 10..16 {
-            chunk.set_block_at(U16Vec3::new(x, 1, z), BlockType::Stone);
+            chunk.set_block_at(U16Vec3::new(x, 1, z), BlockType::Rock);
         }
     }
-    chunk.set_block_at(U16Vec3::new(7, 2, 12), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(7, 2, 12), BlockType::Rock);
     chunk
 }
 
@@ -1297,7 +1297,7 @@ fn test_full_detail_leaves_mesh_the_leaves_behind_them_apart() {
 fn test_leaves_alone_have_no_inner_faces() {
     let mut chunk = ChunkData::default();
     chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Leaves);
-    chunk.set_block_at(U16Vec3::new(5, 4, 4), BlockType::Stone);
+    chunk.set_block_at(U16Vec3::new(5, 4, 4), BlockType::Rock);
     let meshes = mesh_chunk(chunk);
     assert!(meshes.inner_leaves.is_none());
 }
@@ -1346,10 +1346,10 @@ fn test_lod_border_exposes_surface_cells_as_skirt() {
     assert_eq!(BlockType::Air, lod.block(IVec3::new(-1, 6, 4)));
     assert_eq!(BlockType::Air, lod.block(IVec3::new(4, 7, 16)));
     // deeper border cells and every interior cell read as they are
-    assert_eq!(BlockType::Stone, lod.block(IVec3::new(-1, 4, 4)));
-    assert_eq!(BlockType::Stone, lod.block(IVec3::new(4, 7, 4)));
+    assert_eq!(BlockType::Rock, lod.block(IVec3::new(-1, 4, 4)));
+    assert_eq!(BlockType::Rock, lod.block(IVec3::new(4, 7, 4)));
     // below the node isn't a horizontal border, so no skirt
-    assert_eq!(BlockType::Stone, lod.block(IVec3::new(4, -1, 4)));
+    assert_eq!(BlockType::Rock, lod.block(IVec3::new(4, -1, 4)));
 }
 
 #[test]
@@ -1391,7 +1391,7 @@ fn test_lod_skirt_hangs_from_the_nodes_own_ground_not_its_neighbours() {
     for x in -1..=size {
         for z in -1..=size {
             for y in -1..=size {
-                cells[LodBlocks::index(size, IVec3::new(x, y, z))] = BlockType::Stone;
+                cells[LodBlocks::index(size, IVec3::new(x, y, z))] = BlockType::Rock;
             }
         }
     }
@@ -1403,12 +1403,12 @@ fn test_lod_skirt_hangs_from_the_nodes_own_ground_not_its_neighbours() {
         0,
         1,
     );
-    assert_eq!(BlockType::Stone, lod.block(IVec3::new(-1, 8, 4)));
+    assert_eq!(BlockType::Rock, lod.block(IVec3::new(-1, 8, 4)));
     // ground ending in the top row: the cells within three of it have walls, though the top row is solid
     let lod = LodBlocks::new(size, cells, vec![size as i64 + 1; padded * padded], 0, 1);
     assert_eq!(BlockType::Air, lod.block(IVec3::new(-1, 16, 4)));
     assert_eq!(BlockType::Air, lod.block(IVec3::new(-1, 15, 4)));
-    assert_eq!(BlockType::Stone, lod.block(IVec3::new(-1, 13, 4)));
+    assert_eq!(BlockType::Rock, lod.block(IVec3::new(-1, 13, 4)));
 }
 
 #[test]
@@ -1507,7 +1507,7 @@ fn test_buried_chunk_has_no_geometry() {
     for (x, y, z) in
         (0..16).flat_map(|x| (0..16).flat_map(move |y| (0..16).map(move |z| (x, y, z))))
     {
-        stone.set_block_at(U16Vec3::new(x, y, z), BlockType::Stone);
+        stone.set_block_at(U16Vec3::new(x, y, z), BlockType::Rock);
     }
     let stone = Arc::new(stone);
     let meshes = generate_chunk_mesh(
@@ -2369,7 +2369,7 @@ fn test_soil_thins_from_flat_ground_to_bare_rock_on_steep_ground() {
     assert_eq!(1, soil_depth(1.2));
     let top = 600;
     assert_eq!(
-        BlockType::Stone,
+        BlockType::Rock,
         under_grass(BlockType::Grass, top - 2, top, 1, false, soil_depth(1.2), 0)
     );
     assert_eq!(
@@ -2396,24 +2396,24 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
     }
     for depth in SOIL_DEPTH..COMPACTED_DEPTH {
         assert_eq!(
-            BlockType::Stone,
+            BlockType::Rock,
             at(BlockType::Grass, depth),
             "depth {depth}"
         );
         if depth >= SAND_DEPTH {
-            assert_eq!(BlockType::Stone, at(BlockType::Sand, depth));
+            assert_eq!(BlockType::Rock, at(BlockType::Sand, depth));
         }
-        assert_eq!(BlockType::Stone, at(BlockType::Stone, depth));
+        assert_eq!(BlockType::Rock, at(BlockType::Rock, depth));
     }
     for depth in [COMPACTED_DEPTH, COMPACTED_DEPTH + 1, 40] {
         for block in [
             BlockType::Grass,
             BlockType::Sand,
-            BlockType::Stone,
+            BlockType::Rock,
             BlockType::Snow,
         ] {
             assert_eq!(
-                BlockType::CompactedStone,
+                BlockType::CompactedRock,
                 at(block, depth),
                 "{block:?} {depth}"
             );
@@ -2431,12 +2431,12 @@ fn test_ground_is_soil_over_stone_over_compacted_stone_by_depth_below_the_surfac
         );
     }
     assert_eq!(
-        BlockType::Stone,
+        BlockType::Rock,
         snow_at(BlockType::Snow, super::terrain::SNOW_DEPTH)
     );
     assert_eq!(
-        BlockType::CompactedStone,
-        snow_at(BlockType::Stone, super::terrain::SNOW_COMPACTED_DEPTH)
+        BlockType::CompactedRock,
+        snow_at(BlockType::Rock, super::terrain::SNOW_COMPACTED_DEPTH)
     );
     assert_eq!(
         BlockType::Grass,
@@ -2582,20 +2582,20 @@ fn test_cliffs_are_cut_before_the_water_fills_what_they_open() {
     // ground cut away under the water floods, and over it is open air
     assert_eq!(
         BlockType::Water,
-        cut_cliff(BlockType::Stone, false, sea - 10, 0.5, sea)
+        cut_cliff(BlockType::Rock, false, sea - 10, 0.5, sea)
     );
     assert_eq!(
         BlockType::Air,
-        cut_cliff(BlockType::Stone, false, sea + 3, 0.5, sea)
+        cut_cliff(BlockType::Rock, false, sea + 3, 0.5, sea)
     );
     // the top layer of a frozen sea freezes in the cut too
     assert_eq!(
         BlockType::Ice,
-        cut_cliff(BlockType::Stone, false, sea - 1, 0.0, sea)
+        cut_cliff(BlockType::Rock, false, sea - 1, 0.0, sea)
     );
     // rock builds up into air but never into water, and what was already right is left alone
     assert_eq!(
-        BlockType::Stone,
+        BlockType::Rock,
         cut_cliff(BlockType::Air, true, sea + 2, 0.5, sea)
     );
     assert_eq!(
@@ -2769,7 +2769,7 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
                     "a meadow that is no gentler than the face"
                 );
             }
-            BlockType::Stone => rock += 1,
+            BlockType::Rock => rock += 1,
             other => panic!("{other:?} on a mountain face"),
         }
     }
@@ -3074,7 +3074,7 @@ fn test_flowing_water_stands_over_its_floor_and_falls_away_from_its_source() {
     let mut chunk = ChunkData::default();
     for x in 0..CHUNK_SIZE {
         for z in 0..CHUNK_SIZE {
-            chunk.set_block_at(U16Vec3::new(x, floor, z), BlockType::Stone);
+            chunk.set_block_at(U16Vec3::new(x, floor, z), BlockType::Rock);
         }
     }
     // a channel's levels, highest beside its source at x = 1
@@ -3120,7 +3120,7 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
     // a channel at y = 8 from still water at x = 0, over a drop of three into a wide basin at y = 5
     let (channel, basin) = (8u16, 5u16);
     let mut data = ChunkData::from_cells(std::iter::repeat_n(
-        BlockType::Stone,
+        BlockType::Rock,
         (CHUNK_SIZE as usize).pow(3),
     ));
     for x in 0..CHUNK_SIZE {
@@ -3329,10 +3329,10 @@ fn test_a_steep_rivers_water_is_drawn_over_its_bed() {
 fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
     use super::terrain::rocked;
     let rock = || BlockType::Limestone;
-    assert_eq!(BlockType::Limestone, rocked(BlockType::Stone, rock));
+    assert_eq!(BlockType::Limestone, rocked(BlockType::Rock, rock));
     assert_eq!(
         BlockType::CompactedLimestone,
-        rocked(BlockType::CompactedStone, rock)
+        rocked(BlockType::CompactedRock, rock)
     );
     assert_eq!(BlockType::Dirt, rocked(BlockType::Dirt, || unreachable!()));
     // a world's mountains show more than one rock
@@ -3486,7 +3486,7 @@ fn open_edges(mesh: &Mesh) -> Vec<String> {
 }
 
 fn blocks_chunk(blocks: &[(u16, u16, u16)]) -> ChunkData {
-    blocks_chunk_of(BlockType::Stone, blocks)
+    blocks_chunk_of(BlockType::Rock, blocks)
 }
 
 fn blocks_chunk_of(block: BlockType, blocks: &[(u16, u16, u16)]) -> ChunkData {
@@ -3602,7 +3602,7 @@ fn test_bevelled_surfaces_stay_closed() {
         ),
     ] {
         // stone is cut back, and grass is left sharp
-        for block in [BlockType::Stone, BlockType::Grass] {
+        for block in [BlockType::Rock, BlockType::Grass] {
             let mesh = mesh_chunk_bevelled(blocks_chunk_of(block, &blocks)).opaque;
             let open = open_edges(&mesh);
             assert!(
@@ -3788,13 +3788,13 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
         };
         type Kind<'a> = Box<dyn Fn(usize, usize, u16) -> BlockType + 'a>;
         let kinds: [(&str, Kind); 3] = [
-            ("stone", Box::new(|_, _, _| BlockType::Stone)),
+            ("stone", Box::new(|_, _, _| BlockType::Rock)),
             ("grass", Box::new(|_, _, _| BlockType::Grass)),
             (
                 "mixed",
                 Box::new(move |r, c, y| {
                     if hash(r, c, y) & 1 == 0 {
-                        BlockType::Stone
+                        BlockType::Rock
                     } else {
                         BlockType::Grass
                     }
@@ -3867,7 +3867,7 @@ fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
     let surfaces = [
         BlockType::Grass,
         BlockType::Sand,
-        BlockType::Stone,
+        BlockType::Rock,
         BlockType::Dirt,
         BlockType::Snow,
     ];
@@ -3890,7 +3890,7 @@ fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
                         } else if y + 2 >= top {
                             BlockType::Dirt
                         } else {
-                            BlockType::Stone
+                            BlockType::Rock
                         };
                         chunk.set_block_at(U16Vec3::new(x, y, z), block);
                     }
@@ -3922,7 +3922,7 @@ fn test_chunk_seams_leave_no_hole() {
     let surfaces = [
         BlockType::Grass,
         BlockType::Sand,
-        BlockType::Stone,
+        BlockType::Rock,
         BlockType::Dirt,
     ];
     let size = CHUNK_SIZE as usize;
@@ -3952,7 +3952,7 @@ fn test_chunk_seams_leave_no_hole() {
                             } else if y + 2 >= top as usize {
                                 BlockType::Dirt
                             } else {
-                                BlockType::Stone
+                                BlockType::Rock
                             };
                             chunk.set_block_at(
                                 U16Vec3::new(x as u16, (y % size) as u16, z as u16),
@@ -4068,7 +4068,7 @@ fn test_columns_across_a_chunk_seam_leave_no_hole() {
                 }
             }
         }
-        let open = open_edges(&seam_mesh(&blocks, BlockType::Stone));
+        let open = open_edges(&seam_mesh(&blocks, BlockType::Rock));
         if !open.is_empty() {
             failures.push((
                 heights.iter().map(|&h| h as u32).sum(),
@@ -4127,7 +4127,7 @@ fn test_steep_ground_a_block_a_step_leaves_no_hole() {
     let surfaces = [
         BlockType::Grass,
         BlockType::Sand,
-        BlockType::Stone,
+        BlockType::Rock,
         BlockType::Dirt,
     ];
     let mut seed = 99u32;
@@ -4154,21 +4154,21 @@ fn test_steep_ground_a_block_a_step_leaves_no_hole() {
                     let surface = surfaces[rand() % surfaces.len()];
                     for y in 1..=top {
                         let block = match mode {
-                            "stone" => BlockType::Stone,
+                            "stone" => BlockType::Rock,
                             "grass-dirt-stone" => {
                                 if y == top {
                                     BlockType::Grass
                                 } else if y + 2 >= top {
                                     BlockType::Dirt
                                 } else {
-                                    BlockType::Stone
+                                    BlockType::Rock
                                 }
                             }
                             _ => {
                                 if y == top {
                                     surface
                                 } else {
-                                    BlockType::Stone
+                                    BlockType::Rock
                                 }
                             }
                         };

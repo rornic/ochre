@@ -121,7 +121,7 @@ const RAMP_LIT_TURN: f32 = 0.5;
 const ROCK_COOL: vec3<f32> = vec3<f32>(0.93, 0.99, 1.06);
 
 fn is_neutral_rock(layer: i32) -> bool {
-    return layer == 0 || layer == 7 || layer == 9 || layer == 10 || layer == 16 || layer == 19 || layer == 22 || layer == 23;
+    return layer == 6 || layer == 8 || layer == 9 || layer == 17 || layer == 20 || layer == 21;
 }
 
 // The normal to light by: turned toward up with distance, which evens out the sun's and sky's contrast between faces.

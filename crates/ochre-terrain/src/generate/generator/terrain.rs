@@ -123,7 +123,7 @@ pub(super) fn terrain_block(
             || above_sea >= 120 && combined_gradient >= 2.0
             || (above_water >= 2 && combined_gradient >= 3.5)
         {
-            BlockType::Stone
+            BlockType::Rock
         } else if above_water >= 2 || water_top > WATER_LEVEL {
             // only the sea has beaches: ground by a river or lake is grass
             if temperature < SNOWY_GRASS_TEMPERATURE && world_y == column_height - 1 {
@@ -217,8 +217,8 @@ pub(super) fn under_grass(
         (SAND_DEPTH, COMPACTED_DEPTH)
     };
     match block {
-        _ if depth >= compacted_depth && is_solid(block) => BlockType::CompactedStone,
-        _ if depth >= soil_depth && soil => BlockType::Stone,
+        _ if depth >= compacted_depth && is_solid(block) => BlockType::CompactedRock,
+        _ if depth >= soil_depth && soil => BlockType::Rock,
         other => other,
     }
 }
@@ -226,8 +226,8 @@ pub(super) fn under_grass(
 // Stone as the rock it is there, `rock` being asked only when the block is stone.
 pub(super) fn rocked(block: BlockType, rock: impl FnOnce() -> BlockType) -> BlockType {
     match block {
-        BlockType::Stone => rock(),
-        BlockType::CompactedStone => rock().compacted(),
+        BlockType::Rock => rock(),
+        BlockType::CompactedRock => rock().compacted(),
         other => other,
     }
 }
@@ -245,7 +245,7 @@ pub(super) fn cut_cliff(
     match (solid, is_solid(block)) {
         // cliffs build up only into air: water stays water
         (true, false) if matches!(block, BlockType::Water | BlockType::Ice) => block,
-        (true, false) => BlockType::Stone,
+        (true, false) => BlockType::Rock,
         (false, true) => {
             if y < water_top {
                 // The cut can be below zero: a dummy ground height would refill it with sand.
@@ -359,15 +359,15 @@ mod negative_elevation_tests {
     #[test]
     fn underwater_cliff_cut_below_zero_fills_with_water() {
         assert_eq!(
-            cut_cliff(BlockType::Stone, false, -40, 0.68, 0),
+            cut_cliff(BlockType::Rock, false, -40, 0.68, 0),
             BlockType::Water
         );
         assert_eq!(
-            cut_cliff(BlockType::Stone, false, -1, 0.0, 0),
+            cut_cliff(BlockType::Rock, false, -1, 0.0, 0),
             BlockType::Ice
         );
         assert_eq!(
-            cut_cliff(BlockType::Stone, false, 5, 0.68, 0),
+            cut_cliff(BlockType::Rock, false, 5, 0.68, 0),
             BlockType::Air
         );
     }
