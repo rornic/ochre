@@ -716,11 +716,15 @@ mod tests {
             .map(|cell| {
                 // SAFETY: as in `test_shader_layer_table_matches_the_tiles`
                 let tile_of: Tile = unsafe { std::mem::transmute(cell as u8) };
-                // grass sides draw the dirt layer but keep their own row
+                // grass sides draw the dirt layer but keep their own row, and the placeholder rocks have none and draw shale's
+                let placeholder = matches!(tile_of, Tile::Stone | Tile::CompactedStone);
                 match tile_of
                     .material_layer()
                     .or(tile_of.foliage_layer())
-                    .filter(|l| snake_case(&format!("{tile_of:?}")) == MATERIAL_FILES[*l as usize])
+                    .filter(|l| {
+                        placeholder
+                            || snake_case(&format!("{tile_of:?}")) == MATERIAL_FILES[*l as usize]
+                    })
                 {
                     Some(layer) => {
                         let name = MATERIAL_FILES[layer as usize];

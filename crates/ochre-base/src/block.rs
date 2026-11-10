@@ -236,9 +236,9 @@ pub enum Tile {
 
 pub const TILE_COUNT: usize = 37;
 
-// The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`.
-pub const MATERIAL_FILES: [&str; 33] = [
-    "stone",
+// The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`. `Tile::Stone` and `Tile::CompactedStone`, which
+// terrain only lays as placeholders, have none of their own and draw shale's and compacted shale's.
+pub const MATERIAL_FILES: [&str; 31] = [
     "dirt",
     "grass_top",
     "sand",
@@ -254,7 +254,6 @@ pub const MATERIAL_FILES: [&str; 33] = [
     "ice",
     "log_bark",
     "log_end",
-    "compacted_stone",
     "compacted_limestone",
     "compacted_clay",
     "compacted_basalt",
@@ -279,34 +278,33 @@ impl Tile {
     // The painted material layer a face draws instead of its atlas tile, if it has one.
     pub fn material_layer(self) -> Option<u8> {
         match self {
-            Tile::Stone => Some(0),
-            Tile::Dirt => Some(1),
+            Tile::Dirt => Some(0),
             // a grass block's sides are the same grass as its top
-            Tile::GrassTop | Tile::GrassSide => Some(2),
-            Tile::Sand => Some(3),
+            Tile::GrassTop | Tile::GrassSide => Some(1),
+            Tile::Sand => Some(2),
             // a snow block is snow on every face, so a snow side is the snow layer
-            Tile::Snow | Tile::SnowSide => Some(4),
-            Tile::Limestone => Some(5),
-            Tile::Clay => Some(6),
-            Tile::Basalt => Some(7),
-            Tile::Marble => Some(8),
-            Tile::Granite => Some(9),
-            Tile::Shale => Some(10),
+            Tile::Snow | Tile::SnowSide => Some(3),
+            Tile::Limestone => Some(4),
+            Tile::Clay => Some(5),
+            Tile::Basalt => Some(6),
+            Tile::Marble => Some(7),
+            Tile::Granite => Some(8),
+            // the placeholder rock draws as shale, whose flagstone was stone's
+            Tile::Shale | Tile::Stone => Some(9),
             // a sandstone block's sides are the same rock as its top
-            Tile::SandstoneTop | Tile::SandstoneSide => Some(11),
-            Tile::Gravel => Some(12),
-            Tile::Ice => Some(13),
-            Tile::LogBark => Some(14),
-            Tile::LogEnd => Some(15),
+            Tile::SandstoneTop | Tile::SandstoneSide => Some(10),
+            Tile::Gravel => Some(11),
+            Tile::Ice => Some(12),
+            Tile::LogBark => Some(13),
+            Tile::LogEnd => Some(14),
             // each compacted rock is its rock's layer packed darker, see `materials.py`
-            Tile::CompactedStone => Some(16),
-            Tile::CompactedLimestone => Some(17),
-            Tile::CompactedClay => Some(18),
-            Tile::CompactedBasalt => Some(19),
-            Tile::CompactedMarble => Some(20),
-            Tile::CompactedSandstone => Some(21),
-            Tile::CompactedGranite => Some(22),
-            Tile::CompactedShale => Some(23),
+            Tile::CompactedLimestone => Some(15),
+            Tile::CompactedClay => Some(16),
+            Tile::CompactedBasalt => Some(17),
+            Tile::CompactedMarble => Some(18),
+            Tile::CompactedSandstone => Some(19),
+            Tile::CompactedGranite => Some(20),
+            Tile::CompactedShale | Tile::CompactedStone => Some(21),
             _ => None,
         }
     }
@@ -325,8 +323,8 @@ impl Tile {
         }
     }
 
-    pub const LEAVES_LAYER: u8 = 24;
-    pub const FIRST_FLORA_LAYER: u8 = 25;
+    pub const LEAVES_LAYER: u8 = 22;
+    pub const FIRST_FLORA_LAYER: u8 = 23;
 
     // What meshes carry in vertex alpha for `block_texture.wesl`.
     pub fn atlas_cell(self) -> f32 {
@@ -432,7 +430,6 @@ mod tests {
     #[test]
     fn test_material_layers_follow_the_file_list() {
         for tile in [
-            Tile::Stone,
             Tile::Dirt,
             Tile::GrassTop,
             Tile::Sand,
@@ -448,7 +445,6 @@ mod tests {
             Tile::Ice,
             Tile::LogBark,
             Tile::LogEnd,
-            Tile::CompactedStone,
             Tile::CompactedLimestone,
             Tile::CompactedClay,
             Tile::CompactedBasalt,
@@ -469,6 +465,12 @@ mod tests {
             Tile::SandstoneSide.material_layer()
         );
         assert_eq!(Tile::Snow.material_layer(), Tile::SnowSide.material_layer());
+        // the placeholder rock has no layer of its own, and draws as shale
+        assert_eq!(Tile::Shale.material_layer(), Tile::Stone.material_layer());
+        assert_eq!(
+            Tile::CompactedShale.material_layer(),
+            Tile::CompactedStone.material_layer()
+        );
         assert!(Tile::Dirt.material_layer().unwrap() < MATERIAL_LAYERS as u8);
         for tile in [
             Tile::Leaves,

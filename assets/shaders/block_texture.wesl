@@ -135,35 +135,35 @@ fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> 
 // The painted material layer each atlas cell draws, -1 for the leaves, flora and water that stay in the atlas: `Tile::material_layer`,
 // which a test checks this against.
 const MATERIAL_LAYER_TABLE: array<i32, 37> = array<i32, 37>(
-    0, // stone
-    2, // grass top
-    3, // sand
+    9, // stone
+    1, // grass top
+    2, // sand
     -1, // water
-    4, // snow
-    14, // log bark
+    3, // snow
+    13, // log bark
     -1, // leaves
-    2, // grass side
-    1, // dirt
-    15, // log end
-    12, // gravel
-    13, // ice
-    11, // sandstone side
-    11, // sandstone top
-    4, // snow side
-    16, // compacted stone
-    5, // limestone
-    6, // clay
-    7, // basalt
-    8, // marble
-    17, // compacted limestone
-    18, // compacted clay
-    19, // compacted basalt
-    20, // compacted marble
-    21, // compacted sandstone
-    9, // granite
-    10, // shale
-    22, // compacted granite
-    23, // compacted shale
+    1, // grass side
+    0, // dirt
+    14, // log end
+    11, // gravel
+    12, // ice
+    10, // sandstone side
+    10, // sandstone top
+    3, // snow side
+    21, // compacted stone
+    4, // limestone
+    5, // clay
+    6, // basalt
+    7, // marble
+    15, // compacted limestone
+    16, // compacted clay
+    17, // compacted basalt
+    18, // compacted marble
+    19, // compacted sandstone
+    8, // granite
+    9, // shale
+    20, // compacted granite
+    21, // compacted shale
     -1, // tall grass
     -1, // fern
     -1, // poppy
@@ -263,7 +263,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
         vec3<f32>(0.4256, 0.3341, 0.2906), // snow side
-        vec3<f32>(0.1049, 0.1048, 0.1322), // compacted stone
+        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted stone
         vec3<f32>(0.5822, 0.4646, 0.3619), // limestone
         vec3<f32>(0.4313, 0.1646, 0.0943), // clay
         vec3<f32>(0.0618, 0.0582, 0.0596), // basalt
