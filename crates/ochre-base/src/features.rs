@@ -14,6 +14,7 @@ pub enum ReliefKind {
     Seracs,
     Pingos,
     PatternedGround,
+    TundraHills,
     Drumlins,
     Yardangs,
     Kopjes,
@@ -45,6 +46,7 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
         ReliefKind::Seracs => seracs(seed, x, z, ctx),
         ReliefKind::Pingos => pingos(seed, x, z, ctx),
         ReliefKind::PatternedGround => patterned_ground(seed, x, z, ctx),
+        ReliefKind::TundraHills => tundra_hills(seed, x, z, ctx),
         ReliefKind::Drumlins => drumlins(seed, x, z, ctx),
         ReliefKind::Yardangs => yardangs(seed, x, z, ctx),
         ReliefKind::Kopjes => kopjes(seed, x, z, ctx),
@@ -52,6 +54,36 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
         ReliefKind::Hummocks => hummocks(seed, x, z, ctx),
     };
     (raw * detail).clamp(-MAX_OFFSET, MAX_OFFSET)
+}
+
+// Occasional broad, asymmetric glacial hills rising above the open tundra.
+fn tundra_hills(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let gentle = 1.0 - smoothstep(0.3, 0.6, ctx.gradient);
+    if gentle <= 0.0 {
+        return 0.0;
+    }
+    const CELL: f64 = 240.0;
+    let (gx, gz) = ((x / CELL).floor() as i64, (z / CELL).floor() as i64);
+    let mut best: f64 = 0.0;
+    for cz in gz - 1..=gz + 1 {
+        for cx in gx - 1..=gx + 1 {
+            let h = cell_hash(seed ^ 0x741D_A111, cx, cz);
+            if unit_of(h, 1) >= 0.45 { continue; }
+            let px = (cx as f64 + 0.2 + 0.6 * unit_of(h, 2)) * CELL;
+            let pz = (cz as f64 + 0.2 + 0.6 * unit_of(h, 3)) * CELL;
+            let angle = unit_of(h, 4) * std::f64::consts::TAU;
+            let (sin, cos) = (libm::sin(angle), libm::cos(angle));
+            let (dx, dz) = (x - px, z - pz);
+            let (u, v) = (dx * cos + dz * sin, -dx * sin + dz * cos);
+            let (a, b) = (35.0 + 30.0 * unit_of(h, 5), 22.0 + 18.0 * unit_of(h, 6));
+            let d = (u / a).powi(2) + (v / b).powi(2);
+            if d < 1.0 {
+                let t = 1.0 - d;
+                best = best.max((10.0 + 8.0 * unit_of(h, 7)) * t * t);
+            }
+        }
+    }
+    best * gentle
 }
 
 fn cell_hash(seed: u32, cx: i64, cz: i64) -> u32 {
@@ -330,11 +362,12 @@ mod tests {
     use super::*;
     use crate::noise::unit;
 
-    const KINDS: [ReliefKind; 9] = [
+    const KINDS: [ReliefKind; 10] = [
         ReliefKind::Crevasses,
         ReliefKind::Seracs,
         ReliefKind::Pingos,
         ReliefKind::PatternedGround,
+        ReliefKind::TundraHills,
         ReliefKind::Drumlins,
         ReliefKind::Yardangs,
         ReliefKind::Kopjes,
@@ -379,6 +412,20 @@ mod tests {
             }
             assert!(moved > 5, "{kind:?} moves only {moved} of 10,000 points");
         }
+    }
+
+    #[test]
+    fn tundra_hills_are_raised_and_spaced_apart() {
+        let ctx = ctx(0.05);
+        let (mut open, mut high) = (0, 0);
+        for (x, z) in grid() {
+            let height = offset(ReliefKind::TundraHills, 5, x, z, 1.0, &ctx);
+            assert!(height >= 0.0);
+            open += usize::from(height < 0.1);
+            high += usize::from(height > 5.0);
+        }
+        assert!(open > 7000, "{open} open samples");
+        assert!(high > 50, "{high} raised samples");
     }
 
     #[test]

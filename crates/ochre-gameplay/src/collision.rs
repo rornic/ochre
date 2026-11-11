@@ -267,4 +267,79 @@ mod tests {
         assert_eq!(position, Vec3::new(0.5, 0.0, 4.5));
         assert_eq!(hit, BVec3::FALSE);
     }
+
+    // SCRATCH: a simulated player walks random block fields, as `walk` in player.rs moves it, and must never end a frame inside a block.
+    #[test]
+    fn tmp_random_walks_never_enter_a_block() {
+        const BODY: Aabb = Aabb { min: Vec3::new(-0.3, 0.0, -0.3), max: Vec3::new(0.3, 2.0, 0.3) };
+        let hash = |a: i64, b: i64, c: i64, seed: u64| -> u64 {
+            let mut h = seed ^ (a as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (b as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F) ^ (c as u64).wrapping_mul(0x1656_67B1_9E37_79F9);
+            h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            h ^ (h >> 31)
+        };
+        let mut worst: Option<String> = None;
+        let mut violations = 0;
+        for world in 0..300u64 {
+            let ceilings = world % 2 == 1;
+            let solid = |c: I64Vec3| -> bool {
+                if c.y < 0 {
+                    return true;
+                }
+                let ground = (hash(c.x, c.z, 0, world) % 4) as i64; // 0 to 3 high columns
+                if c.y < ground {
+                    return true;
+                }
+                // floating ledges two or three above the ground, in half the worlds
+                ceilings && c.y >= ground + 2 && c.y <= ground + 3 && hash(c.x, c.z, 1, world) % 100 < 35
+            };
+            let mut position = Vec3::new(0.5, 12.0, 0.5);
+            let mut velocity = Vec3::ZERO;
+            let (mut grounded, mut cooldown) = (false, 0.0f32);
+            let mut wish = Vec3::ZERO;
+            let dt = 1.0 / 60.0;
+            for frame in 0..6000u64 {
+                if frame % 37 == 0 {
+                    let r = hash(frame as i64, 7, 7, world);
+                    let a = (r % 8) as f32 * std::f32::consts::FRAC_PI_4;
+                    wish = if r % 11 == 0 { Vec3::ZERO } else { Vec3::new(a.cos(), 0.0, a.sin()) * 5.0 };
+                }
+                velocity.x = wish.x;
+                velocity.z = wish.z;
+                if grounded && hash(frame as i64, 3, 3, world) % 60 == 0 {
+                    velocity.y = 9.0;
+                }
+                velocity.y = (velocity.y - 32.0 * dt).max(-60.0);
+                cooldown = (cooldown - dt).max(0.0);
+                let step = if grounded && cooldown == 0.0 { 1.0 } else { 0.0 };
+                let before = position;
+                let (moved, hit) = move_and_step(position, velocity * dt, BODY, step, solid);
+                if step > 0.0 && moved.y > before.y {
+                    cooldown = 0.3;
+                }
+                position = moved;
+                grounded = hit.y && velocity.y < 0.0;
+                if hit.y { velocity.y = 0.0; }
+                if hit.x { velocity.x = 0.0; }
+                if hit.z { velocity.z = 0.0; }
+                // inside a block, by more than rounding
+                let (lo, hi) = (position + BODY.min, position + BODY.max);
+                let cells = |i: usize| (lo[i] + EPSILON * 5.0).floor() as i64..=(hi[i] - EPSILON * 5.0).floor() as i64;
+                let inside = cells(0).flat_map(|x| cells(1).flat_map(move |y| cells(2).map(move |z| I64Vec3::new(x, y, z)))).find(|&c| solid(c));
+                if let Some(cell) = inside {
+                    violations += 1;
+                    if worst.is_none() {
+                        worst = Some(format!("world {world} (ceilings {ceilings}) frame {frame}: body at {position}, inside block {cell}, was at {before}, step {step}, velocity {velocity}"));
+                    }
+                    break; // one per world
+                }
+            }
+        }
+        eprintln!("RANDOM WALKS: {violations} of 300 worlds ended a frame inside a block");
+        if let Some(w) = &worst {
+            eprintln!("FIRST: {w}");
+        }
+        assert_eq!(0, violations, "{worst:?}");
+    }
 }
+

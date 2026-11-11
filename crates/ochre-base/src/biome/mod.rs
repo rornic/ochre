@@ -123,6 +123,9 @@ pub struct Biomes {
 // ground is scree from this gradient.
 const TUNDRA_THAW_LINE: i64 = 350;
 const TUNDRA_SCREE_GRADIENT: f64 = 0.38;
+// Keep taiga lowlands forested and green, with snow remaining on higher ground.
+const TAIGA_THAW_LINE: i64 = 250;
+const TAIGA_SCREE_GRADIENT: f64 = 0.6;
 
 impl Biomes {
     pub fn new(_seed: u32) -> Self {
@@ -134,10 +137,11 @@ impl Biomes {
                 Plain::new("tundra", 0.01)
                     .shifted(-0.10, -0.20)
                     .with_thaw(TUNDRA_THAW_LINE, TUNDRA_SCREE_GRADIENT)
-                    .with_relief(&[ReliefKind::Pingos, ReliefKind::PatternedGround]),
+                    .with_relief(&[ReliefKind::Pingos, ReliefKind::PatternedGround, ReliefKind::TundraHills]),
             ),
             Box::new(
                 Plain::new("taiga", 0.3)
+                    .with_thaw(TAIGA_THAW_LINE, TAIGA_SCREE_GRADIENT)
                     .scaled(1.2, 0.8, 1.0)
                     .with_relief(&[ReliefKind::Drumlins]),
             ),

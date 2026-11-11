@@ -47,7 +47,6 @@ fn shrubs(biome: Option<&str>) -> Option<(BlockType, f64)> {
         Some("steppe") => Some((BlockType::Shrub, 0.3)),
         Some("swamp") => Some((BlockType::Shrub, 0.25)),
         Some("taiga") => Some((BlockType::Heath, 0.25)),
-        Some("tundra") => Some((BlockType::Heath, 0.7)),
         _ => None,
     }
 }
@@ -67,6 +66,41 @@ fn in_cluster(seed: u64, x: i64, z: i64, cells: f64) -> bool {
     let radius = CLUSTER_RADIUS.0 + (CLUSTER_RADIUS.1 - CLUSTER_RADIUS.0) * unit(h >> 40 | 1);
     let (dx, dz) = ((x - centre.0) as f64 + 0.0, (z - centre.1) as f64);
     dx * dx + dz * dz <= radius * radius && unit(hash(seed ^ SHRUB_SALT, x, z)) < CLUSTER_DENSITY
+}
+
+// Large, irregular heath drifts, with the existing small clusters supplying their texture.
+fn heath_drift(seed: u64, x: i64, z: i64) -> bool {
+    let seed = seed as u32 ^ 0xD81F_7A31;
+    let (x, z) = (x as f64, z as f64);
+    ochre_base::noise::fbm(seed, x, z, 120.0, 3) > -0.04
+}
+
+// Larger, uneven carpets, with centres and radii varying independently from one another.
+fn tundra_heath(seed: u64, x: i64, z: i64) -> bool {
+    const CELL: i64 = 24;
+    let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let (gx, gz) = (cx + dx, cz + dz);
+            let h = hash(seed ^ SHRUB_PATCH_SALT ^ 0xCA4E_71, gx, gz);
+            let px = gx * CELL + ((h >> 8) % CELL as u64) as i64;
+            let pz = gz * CELL + ((h >> 24) % CELL as u64) as i64;
+            if unit(h) >= 0.75 || !heath_drift(seed, px, pz) {
+                continue;
+            }
+            let radius = 3.0 + 6.0 * unit(hash(h, 1, 0));
+            let dx = (x - px) as f64;
+            let dz = (z - pz) as f64;
+            if dx * dx + dz * dz >= (radius + 1.5).powi(2) {
+                continue;
+            }
+            let edge = radius + 1.5 * ochre_base::noise::perlin(seed as u32 ^ 0x4EA7, x as f64 / 8.0, z as f64 / 8.0);
+            if dx * dx + dz * dz < edge * edge && unit(hash(seed ^ SHRUB_SALT, x, z)) < 0.45 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// How thick the floor under trees grows in a biome by name, 1 being a forest's.
@@ -96,6 +130,9 @@ pub(super) fn flora_at(
 ) -> Option<BlockType> {
     let understory = understory(biome);
     let seed = seed as u64;
+    if !shaded && biome == Some("tundra") && tundra_heath(seed, x, z) {
+        return Some(BlockType::Heath);
+    }
     if let Some((plant, cells)) = shrubs(biome).filter(|_| !shaded) {
         if in_cluster(seed, x, z, cells) {
             return Some(plant);
@@ -233,17 +270,40 @@ mod tests {
         assert!(big(Some("grassland"), true).is_empty());
         // they stand together: each in a cluster has its own cell's others, and most clusters hold several
         let mut clusters = std::collections::HashMap::new();
-        for &(x, z, _) in &tundra {
+        for &(x, z, _) in &grassland {
             *clusters.entry((x.div_euclid(CLUSTER), z.div_euclid(CLUSTER))).or_insert(0usize) += 1;
         }
-        let mean = tundra.len() as f64 / clusters.len() as f64;
+        let mean = grassland.len() as f64 / clusters.len() as f64;
         assert!((3.0..10.0).contains(&mean), "{mean} to a cluster");
         // and each is within a few blocks of the rest of its cluster, so none is out on its own
-        let alone = tundra
+        let alone = grassland
             .iter()
-            .filter(|&&(x, z, _)| !tundra.iter().any(|&(ox, oz, _)| (ox, oz) != (x, z) && (ox - x).abs() <= 3 && (oz - z).abs() <= 3))
+            .filter(|&&(x, z, _)| !grassland.iter().any(|&(ox, oz, _)| (ox, oz) != (x, z) && (ox - x).abs() <= 3 && (oz - z).abs() <= 3))
             .count();
-        assert!((alone as f64) < 0.1 * tundra.len() as f64, "{alone} of {} are alone", tundra.len());
+        assert!((alone as f64) < 0.1 * grassland.len() as f64, "{alone} of {} are alone", grassland.len());
+    }
+
+    #[test]
+    fn tundra_heath_drifts_have_broad_connected_ground_and_gaps() {
+        let mut within = 0;
+        let mut outside = 0;
+        let mut same_as_next = 0;
+        for x in -200..200 {
+            for z in -200..200 {
+                let drift = heath_drift(7, x, z);
+                within += usize::from(drift);
+                outside += usize::from(!drift);
+                same_as_next += usize::from(drift == heath_drift(7, x + 1, z));
+            }
+        }
+        assert!(within > 20_000 && outside > 20_000, "{within} in, {outside} out");
+        assert!(same_as_next > 150_000, "{same_as_next} adjacent pairs agree");
+        let counts: Vec<_> = (0..40).flat_map(|cx| (0..40).map(move |cz| {
+            (0..8).flat_map(|dx| (0..8).map(move |dz| (cx * 8 + dx, cz * 8 + dz)))
+                .filter(|&(x, z)| tundra_heath(7, x, z)).count()
+        })).collect();
+        assert!(counts.iter().any(|&n| n >= 20), "no broad heath carpets");
+        assert!(counts.iter().filter(|&&n| n == 0).count() > 400, "no open ground");
     }
 
     #[test]

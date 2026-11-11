@@ -19,7 +19,7 @@ const SEA_CLEARANCE: i64 = 3;
 
 // Some of a biome's boulders are outcrops instead, wide low ledges of rock, this share of them where the biome has any,
 // between these radii and this much of their width tall.
-const OUTCROP_SHARE: f64 = 0.5;
+const OUTCROP_SHARE: f64 = 0.25;
 const OUTCROP_RADIUS: (f64, f64) = (5.5, 11.0);
 const OUTCROP_SQUASH: f64 = 0.32;
 // How far height may differ over an outcrop's foot before it would hang or be buried.
@@ -42,6 +42,9 @@ pub struct Rock {
     height: f64,
     // how tall an erratic is against how wide: 0.7 for a boulder, much less for a ledge of an outcrop
     squash: f64,
+    // Outcrops narrow across one axis, sometimes turned diagonally.
+    aspect: f64,
+    direction: u8,
     // what it is made of: the rock the geology has under it, for a boulder, see `rock_in_cell`
     stone: BlockType,
     seed: u64,
@@ -65,7 +68,15 @@ const FIELD_FACTOR: (f64, f64) = (0.1, 2.0);
 
 // How much of the biome's `share` the cell at (x, z) keeps: a field of boulders or open ground between.
 fn field(seed: u64, x: i64, z: i64) -> f64 {
-    let p = (hash(seed ^ 0xF1E1_D5ED, x.div_euclid(FIELD), z.div_euclid(FIELD)) >> 11) as f64 / (1u64 << 53) as f64;
+    let (cx, cz) = (x.div_euclid(FIELD), z.div_euclid(FIELD));
+    let fade = |v: i64| {
+        let t = v.rem_euclid(FIELD) as f64 / FIELD as f64;
+        t * t * (3.0 - 2.0 * t)
+    };
+    let sample = |x, z| (hash(seed ^ 0xF1E1_D5ED, x, z) >> 11) as f64 / (1u64 << 53) as f64;
+    let lerp = |a, b, t| a + (b - a) * t;
+    let (u, v) = (fade(x), fade(z));
+    let p = lerp(lerp(sample(cx, cz), sample(cx + 1, cz), u), lerp(sample(cx, cz + 1), sample(cx + 1, cz + 1), u), v);
     FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p
 }
 
@@ -112,7 +123,11 @@ fn rock_in_cell(
     let (kind, share) = share(noise.biomes().name(biome))?;
     // a mountain's slopes and its screes are not where a glacier dropped one or termites build
     let share = match kind {
-        RockKind::Erratic => (share * field(noise.seed() as u64, x, z)).min(1.0),
+        RockKind::Erratic if noise.biomes().name(biome) == Some("tundra") => (share * field(noise.seed() as u64, x, z)).min(1.0),
+        RockKind::Erratic => {
+            let p = (hash(noise.seed() as u64 ^ 0xF1E1_D5ED, x.div_euclid(FIELD), z.div_euclid(FIELD)) >> 11) as f64 / (1u64 << 53) as f64;
+            (share * (FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p)).min(1.0)
+        }
         RockKind::Mound => share,
     };
     if chance >= share || noise.biomes().modifier(biome) != Modifier::None {
@@ -157,6 +172,7 @@ fn rock_in_cell(
     let stone = stone_of(kind, &mut *noise.rock_column(x, z), ground);
     let (radius, height) = match kind {
         _ if outcrop => (OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth, 0.0),
+        RockKind::Erratic if noise.biomes().name(biome) == Some("tundra") => (1.5 + 4.0 * growth, 0.0),
         RockKind::Erratic => (2.0 + 3.0 * growth, 0.0),
         RockKind::Mound => (2.5 + 1.5 * growth, 3.0 + 4.0 * growth),
     };
@@ -165,7 +181,9 @@ fn rock_in_cell(
         base: I64Vec3::new(x, ground, z),
         radius,
         height,
-        squash: if outcrop { OUTCROP_SQUASH } else { 0.7 },
+        squash: if outcrop { OUTCROP_SQUASH } else if noise.biomes().name(biome) == Some("tundra") { 0.5 + 0.4 * ((seed >> 42) & 255) as f64 / 255.0 } else { 0.7 },
+        aspect: if outcrop { 0.45 + 0.3 * ((seed >> 12) & 255) as f64 / 255.0 } else { 1.0 },
+        direction: ((seed >> 60) & 3) as u8,
         stone,
         seed,
     })
@@ -237,8 +255,14 @@ impl Rock {
                 // half sunk, squashed, and nibbled at the rim so it is not a smooth ball
                 let dy = y - (self.base.y as f64 + self.radius * 0.25);
                 let across = self.radius;
+                let (major, minor) = match self.direction {
+                    0 => (dx, dz),
+                    1 => (dz, dx),
+                    2 => ((dx + dz) * std::f64::consts::FRAC_1_SQRT_2, (dx - dz) * std::f64::consts::FRAC_1_SQRT_2),
+                    _ => ((dx - dz) * std::f64::consts::FRAC_1_SQRT_2, (dx + dz) * std::f64::consts::FRAC_1_SQRT_2),
+                };
                 let d2 =
-                    (dx / across).powi(2) + (dy / (across * self.squash)).powi(2) + (dz / across).powi(2);
+                    (major / across).powi(2) + (dy / (across * self.squash)).powi(2) + (minor / (across * self.aspect)).powi(2);
                 let nibble = (hash(self.seed, at.x ^ (at.y << 20), at.z) % 1000) as f64 / 1000.0;
                 d2 <= 1.0 - 0.3 * nibble
             }
@@ -266,6 +290,8 @@ mod tests {
             radius,
             height,
             squash: 0.7,
+            aspect: 1.0,
+            direction: 0,
             stone: BlockType::Rock,
             seed: 3,
         }
@@ -323,6 +349,9 @@ mod tests {
         // and the fields vary: patches hold between a tenth and twice the share
         let factors: Vec<f64> = (0..200).map(|i| field(3, i * FIELD, 0)).collect();
         assert!(factors.iter().cloned().fold(f64::MAX, f64::min) < 0.3 && factors.iter().cloned().fold(0.0, f64::max) > 1.5);
+        for x in -200..200 {
+            assert!((field(3, x, 17) - field(3, x + 1, 17)).abs() < 0.05);
+        }
     }
 
     #[test]
@@ -336,8 +365,10 @@ mod tests {
             (hi - lo + 1) as f64
         };
         let ball = blocks(&rock(RockKind::Erratic, 4.0, 0.0));
-        let ledge = blocks(&Rock { squash: OUTCROP_SQUASH, ..rock(RockKind::Erratic, 9.0, 0.0) });
+        let ledge = blocks(&Rock { squash: OUTCROP_SQUASH, aspect: 0.5, ..rock(RockKind::Erratic, 9.0, 0.0) });
         assert!(width(&ledge) >= 17.0, "{} wide", width(&ledge));
+        let depth = ledge.iter().map(|p| p.z).max().unwrap() - ledge.iter().map(|p| p.z).min().unwrap() + 1;
+        assert!((depth as f64) < width(&ledge) * 0.7);
         assert!(height(&ledge) / width(&ledge) < 0.7 * height(&ball) / width(&ball), "{} by {}", width(&ledge), height(&ledge));
         // the biggest outcrop still fits inside the reach neighbouring chunks look for rocks in
         assert!(OUTCROP_RADIUS.1 + 1.0 <= ROCK_REACH as f64);

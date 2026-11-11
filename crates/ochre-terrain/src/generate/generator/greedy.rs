@@ -133,6 +133,11 @@ pub(super) fn cuts(block: BlockType) -> bool {
     block != BlockType::Leaves
 }
 
+// Ice transmits light but fills its cell for the geometry of bevels and ramps.
+pub(super) fn shape_occupied(block: BlockType) -> bool {
+    block.is_opaque() || block == BlockType::Ice
+}
+
 // Blocks that meet the ground in a cove, which grass does as well: nothing covers a crease.
 fn coves(block: BlockType) -> bool {
     block != BlockType::Leaves
@@ -151,7 +156,7 @@ pub(super) fn top_edges(
     if !coves(own) {
         return [Edge::Flat; 4];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     let convex = if cuts(own) {
         convex_sides(opaque, coord, normal, ta, tb)
     } else {
@@ -184,7 +189,7 @@ pub(super) fn corner_lifts(
     if !coves(own) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     let floor = |c: IVec3| opaque(c) && !opaque(c + normal) && source.block(c) == own;
     let sides = [-ta, ta, -tb, tb];
     std::array::from_fn(|k| {
@@ -276,7 +281,7 @@ impl Shapes {
         let base = self.base(source, coord);
         let (normal, ta, tb) = TOP;
         let sides = [-ta, ta, -tb, tb];
-        let opaque = |c: IVec3| source.block(c).is_opaque();
+        let opaque = |c: IVec3| shape_occupied(source.block(c));
         // whether a ramp along side `wall` goes on past corner `k` at the end of it toward side `other`
         let goes_on = |k: usize, wall: usize, other: usize| match base.edges[other] {
             Edge::Convex | Edge::Concave => true,
@@ -332,7 +337,7 @@ pub(super) fn wall_foot(
     if !coves(own) {
         return [false; 2];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     let ground = coord - IVec3::Y + normal;
     if !(opaque(coord - IVec3::Y) && opaque(ground) && source.block(ground) == own) {
         return [false; 2];
@@ -386,7 +391,7 @@ pub(super) fn corner_dips(
     if !cuts(source.block(coord)) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     // a block level with this one, with a chamfer of its own to cut
     let level = |c: IVec3| opaque(c) && !opaque(c + normal) && cuts(source.block(c));
     let sides = [-ta, ta, -tb, tb];
@@ -411,7 +416,7 @@ pub(super) fn wall_dips(
     if !coves(own) || !cuts(own) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     let ground = coord - IVec3::Y + normal;
     // the foot is raised only against ground of the same block, see `wall_edges`
     if !(opaque(coord - IVec3::Y) && opaque(ground) && source.block(ground) == own) {
@@ -428,7 +433,7 @@ pub(super) fn wall_edges(source: &impl BlockSource, coord: IVec3, normal: IVec3)
     if !coves(own) {
         return [Edge::Flat; 4];
     }
-    let opaque = |c: IVec3| source.block(c).is_opaque();
+    let opaque = |c: IVec3| shape_occupied(source.block(c));
     let top = if cuts(own) && !opaque(coord + IVec3::Y) && !opaque(coord + IVec3::Y + normal) {
         Edge::Convex
     } else {

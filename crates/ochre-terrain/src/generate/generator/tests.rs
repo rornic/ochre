@@ -470,6 +470,20 @@ fn test_only_the_top_of_frozen_grass_is_snow() {
     assert_eq!(BlockType::Grass, at(top - 1, 0.05));
 }
 
+#[test]
+fn taiga_lowlands_thaw_but_high_taiga_and_glaciers_keep_snow() {
+    let biomes = ochre_base::biome::Biomes::new(1);
+    let taiga = biomes.id("taiga").unwrap();
+    let tundra = biomes.id("tundra").unwrap();
+    let glacier = biomes.id("glacier").unwrap();
+    let top = |biome, y, slope| super::terrain::column_block(&biomes, biome, y, y + 1, slope, 0.2, WATER_LEVEL);
+    assert_eq!(BlockType::Grass, top(taiga, 100, 0.1));
+    assert_eq!(BlockType::Gravel, top(taiga, 100, 0.8));
+    assert_eq!(BlockType::Snow, top(taiga, 300, 0.1));
+    assert_eq!(BlockType::Grass, top(tundra, 100, 0.1));
+    assert_eq!(BlockType::Ice, top(glacier, 100, 0.1));
+}
+
 fn test_regions() -> Arc<RegionStore> {
     Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(3)))
 }
@@ -3856,6 +3870,42 @@ fn test_no_arrangement_of_columns_leaves_a_hole() {
     );
 }
 
+#[test]
+fn ice_steps_ramp_and_close_for_all_small_column_arrangements() {
+    let mut raised = false;
+    for n in 0..3usize.pow(9) {
+        let mut heights = [0u8; 9];
+        let mut rest = n;
+        for h in &mut heights {
+            *h = (rest % 3) as u8;
+            rest /= 3;
+        }
+        if canonical_grid(heights) != heights { continue; }
+        let mesh = mesh_chunk_bevelled(grid_chunk(heights, |_, _, _| BlockType::Ice)).opaque;
+        let open = open_edges(&mesh);
+        assert!(open.is_empty(), "ice {heights:?}: {}", open.join("\n"));
+        if let Some(VertexAttributeValues::Float32x3(positions)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            raised |= positions.iter().any(|p| {
+                let y = p[1] - 0.5 - RAMP;
+                (y - y.round()).abs() < 0.001
+            });
+        }
+    }
+    assert!(raised, "no ramp vertices on ice");
+}
+
+#[test]
+fn ice_and_snow_terraces_have_no_open_edges() {
+    for heights in [[0, 1, 2, 0, 1, 2, 0, 1, 2], [2, 1, 0, 1, 0, 1, 0, 1, 2]] {
+        let chunk = grid_chunk(heights, |_, col, _| {
+            if col == 0 { BlockType::Snow } else { BlockType::Ice }
+        });
+        let mesh = mesh_chunk_bevelled(chunk).opaque;
+        let open = open_edges(&mesh);
+        assert!(open.is_empty(), "{heights:?}: {}", open.join("\n"));
+    }
+}
+
 // Rolling ground in layers, with its own surface block in each column, as the game's is: no hole in it.
 #[test]
 fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
@@ -4068,20 +4118,22 @@ fn test_columns_across_a_chunk_seam_leave_no_hole() {
                 }
             }
         }
-        let open = open_edges(&seam_mesh(&blocks, BlockType::Rock));
-        if !open.is_empty() {
-            failures.push((
-                heights.iter().map(|&h| h as u32).sum(),
-                heights,
-                open.len(),
-                open[0].clone(),
-            ));
+        for block in [BlockType::Rock, BlockType::Ice] {
+            let open = open_edges(&seam_mesh(&blocks, block));
+            if !open.is_empty() {
+                failures.push((
+                    heights.iter().map(|&h| h as u32).sum(),
+                    heights,
+                    open.len(),
+                    format!("{block:?}: {}", open[0]),
+                ));
+            }
         }
     }
     failures.sort();
     assert!(
         failures.is_empty(),
-        "{} of 729 arrangements have holes, the simplest:\n{}",
+        "{} arrangements have holes, the simplest:\n{}",
         failures.len(),
         failures
             .iter()

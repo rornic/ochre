@@ -17,6 +17,7 @@ use bevy::render::{diagnostic::RenderDiagnosticsPlugin, Render, RenderApp, Rende
 
 use crate::breaking::LookedAt;
 use crate::player::Player;
+use ochre_terrain::chunk::ChunkCoordinate;
 use ochre_terrain::chunk_loader::Chunk;
 use ochre_terrain::lod::LodNode;
 use ochre_terrain::world::World;
@@ -223,6 +224,7 @@ fn update_overlay(
     diagnostics: Res<DiagnosticsStore>,
     world: Option<Res<World>>,
     player: Query<&GlobalTransform, With<Player>>,
+    camera: Query<&GlobalTransform, (With<Camera3d>, With<ChildOf>)>,
     chunks: Query<(), With<Chunk>>,
     lod_nodes: Query<&LodNode>,
     counts: Res<DrawCounts>,
@@ -258,12 +260,30 @@ fn update_overlay(
             modifier => format!("{name} ({})", format!("{modifier:?}").to_lowercase()),
         };
         let climate = noise.climate(x, z);
-        let _ = writeln!(out, "pos: {:.0} {:.0} {:.0}", pos.x, pos.y, pos.z);
+        let _ = writeln!(
+            out,
+            "seed: {}  pos: {:.0} {:.0} {:.0}",
+            world.seed(),
+            pos.x,
+            pos.y,
+            pos.z
+        );
         let _ = writeln!(
             out,
             "biome: {biome}  temp: {:.2}  humidity: {:.2}",
             climate.temperature, climate.humidity
         );
+    }
+    if let (Some(world), Ok(camera)) = (&world, camera.single()) {
+        let eye = camera.translation();
+        let cell = (eye + Vec3::splat(0.5)).floor().as_i64vec3();
+        let _ = write!(out, "camera block: ");
+        if world.is_chunk_generated(ChunkCoordinate::containing(cell)) {
+            let block = world.get_block_at(cell);
+            let _ = writeln!(out, "{}  solid: {}", block.name(), block.is_solid());
+        } else {
+            let _ = writeln!(out, "unloaded  solid: true (collision)");
+        }
     }
     if let Some((hit, block)) = looked_at.and_then(|l| l.0) {
         let b = hit.block;

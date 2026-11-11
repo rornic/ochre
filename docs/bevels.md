@@ -4,7 +4,7 @@ Full-detail chunks cut the cube's hard edges into chamfers and ramps. LOD meshes
 
 ## The rules
 
-- **Chamfer.** A top edge with open air beside it and above-beside is cut back `BEVEL` (0.2) and joined by a 45 degree strip, with the wall's top inset to match (`top_edges`, `wall_edges`). Leaves are never cut (`cuts`).
+- **Chamfer.** A top edge with open air beside it and above-beside is cut back `BEVEL` (0.2) and joined by a 45 degree strip, with the wall's top inset to match (`top_edges`, `wall_edges`). Leaves are never cut (`cuts`). Ice transmits light but counts as filled ground for bevel, ramp and seam geometry.
 - **Ramp.** Ground beside a taller wall of the same block rises `RAMP` (0.3) at the wall, and the wall's foot is raised to meet it. The rise is set at each corner of a cell and blended across it (`lift_at`), so two pieces that agree on a corner agree along the whole edge.
 - **Where a ramp ends.** A ramp runs to the end of its wall, and on only where the wall goes on or the ground turns away, at a chamfer or a second wall (`Shapes::shape`, `wall_foot`). Level ground that goes on with no wall brings the ramp down to meet it. The outside corner of a wall lifts the ground round it (`corner_lifts`). Ground with a wall on opposite sides, a trench a block wide, has no ramp, in `Shapes::shape` and in `wall_foot` alike: ramps from both sides would lift the whole floor level and draw all of it in the wall's projection, which smears the texture into streaks.
 - **Corner cuts.** The inside corner of a plus is cut down 0.2 so the chamfers beside it join (`corner_dips`). A wall's raised foot comes down to the chamfer's foot where the ground beside it is chamfered (`wall_dips`).

@@ -139,7 +139,7 @@ const BLOCK_CORNER: Vec3 = Vec3::splat(0.5);
 // The tallest ledge a grounded player walks up without jumping.
 const STEP_HEIGHT: f32 = 1.0;
 // Seconds between steps up.
-const STEP_COOLDOWN: f32 = 0.3;
+const STEP_COOLDOWN: f32 = 0.1;
 // How fast, a share a second, the eyes catch up with the body after a step up.
 const STEP_EASE: f32 = 10.0;
 // The longest frame moved in one step, so a hitch doesn't fling the player.
