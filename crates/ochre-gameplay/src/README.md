@@ -46,4 +46,3 @@ What moves through the world (`lib.rs`: module doc): the player and its collisio
 
 ## Verification
 - Run: `cargo test --release -p ochre-gameplay` (or `cargo test --release --workspace`). Tests are unit tests inside `player.rs`, `collision.rs`, `breaking.rs`, `birds.rs`, `critters.rs` and `flythrough.rs`; `breaking.rs` tests build a `World` via `ochre_world::worldmap::test_terrain` (`test-support` dev feature).
-- Note: `collision.rs` carries a `tmp_random_walks_never_enter_a_block` test marked `// SCRATCH`; it simulates 300 random block fields, each for 6000 frames.
