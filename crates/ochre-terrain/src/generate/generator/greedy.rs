@@ -60,7 +60,7 @@ pub(super) struct FaceCell {
     pub(super) corner: [bool; 4],
     // which corners the top is cut down at, between the strips of the two blocks beside it, see `corner_dips`
     pub(super) dip: [bool; 4],
-    // grass whose tint varies across the world, which its faces must not merge over, see `GrassTint::russet_at`
+    // grass or rock whose tint varies across the world, which its faces must not merge over, see `GrassTint::varied_at`
     pub(super) varied: bool,
 }
 
@@ -133,10 +133,6 @@ pub(super) fn cuts(block: BlockType) -> bool {
     block != BlockType::Leaves
 }
 
-// Ice transmits light but fills its cell for the geometry of bevels and ramps.
-pub(super) fn shape_occupied(block: BlockType) -> bool {
-    block.is_opaque() || block == BlockType::Ice
-}
 
 // Blocks that meet the ground in a cove, which grass does as well: nothing covers a crease.
 fn coves(block: BlockType) -> bool {
@@ -156,7 +152,7 @@ pub(super) fn top_edges(
     if !coves(own) {
         return [Edge::Flat; 4];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let convex = if cuts(own) {
         convex_sides(opaque, coord, normal, ta, tb)
     } else {
@@ -189,7 +185,7 @@ pub(super) fn corner_lifts(
     if !coves(own) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let floor = |c: IVec3| opaque(c) && !opaque(c + normal) && source.block(c) == own;
     let sides = [-ta, ta, -tb, tb];
     std::array::from_fn(|k| {
@@ -281,7 +277,7 @@ impl Shapes {
         let base = self.base(source, coord);
         let (normal, ta, tb) = TOP;
         let sides = [-ta, ta, -tb, tb];
-        let opaque = |c: IVec3| shape_occupied(source.block(c));
+        let opaque = |c: IVec3| source.block(c).is_opaque();
         // whether a ramp along side `wall` goes on past corner `k` at the end of it toward side `other`
         let goes_on = |k: usize, wall: usize, other: usize| match base.edges[other] {
             Edge::Convex | Edge::Concave => true,
@@ -337,7 +333,7 @@ pub(super) fn wall_foot(
     if !coves(own) {
         return [false; 2];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let ground = coord - IVec3::Y + normal;
     if !(opaque(coord - IVec3::Y) && opaque(ground) && source.block(ground) == own) {
         return [false; 2];
@@ -391,7 +387,7 @@ pub(super) fn corner_dips(
     if !cuts(source.block(coord)) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     // a block level with this one, with a chamfer of its own to cut
     let level = |c: IVec3| opaque(c) && !opaque(c + normal) && cuts(source.block(c));
     let sides = [-ta, ta, -tb, tb];
@@ -416,7 +412,7 @@ pub(super) fn wall_dips(
     if !coves(own) || !cuts(own) {
         return [false; 4];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let ground = coord - IVec3::Y + normal;
     // the foot is raised only against ground of the same block, see `wall_edges`
     if !(opaque(coord - IVec3::Y) && opaque(ground) && source.block(ground) == own) {
@@ -433,7 +429,7 @@ pub(super) fn wall_edges(source: &impl BlockSource, coord: IVec3, normal: IVec3)
     if !coves(own) {
         return [Edge::Flat; 4];
     }
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let top = if cuts(own) && !opaque(coord + IVec3::Y) && !opaque(coord + IVec3::Y + normal) {
         Edge::Convex
     } else {
@@ -464,8 +460,7 @@ pub(super) fn face_span(
     }
     let neighbour = coord + normal;
     let neighbour_block = source.block(neighbour);
-    let covered = neighbour_block.is_opaque()
-        || (block == BlockType::Ice && neighbour_block == BlockType::Ice);
+    let covered = neighbour_block.is_opaque();
     // every face is asked about, and most are hidden, so those leave before any lookups
     if !source.has_surface_tops() || normal.y < 0 {
         return (!covered).then_some(None);
@@ -690,7 +685,7 @@ pub(super) fn mesh_opaque_greedy(
                     };
                     ground * cell.tint
                 } else {
-                    Vec3::ONE
+                    grass_tint.weathered_at(cell.block, position)
                 };
                 let shade = match cell.block {
                     BlockType::Leaves => source.canopy_shade(position),
@@ -962,9 +957,7 @@ pub(super) fn mesh_opaque_greedy(
                     // most blocks are buried, and face_span would turn each down after looking where we can
                     if inside_next && hidden_is_final {
                         let beyond = source.blocks[(at as i32 + toward * step_n) as usize];
-                        if beyond.is_opaque()
-                            || (block == BlockType::Ice && beyond == BlockType::Ice)
-                        {
+                        if beyond.is_opaque() {
                             continue;
                         }
                     }

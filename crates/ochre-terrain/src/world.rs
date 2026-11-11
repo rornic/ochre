@@ -242,8 +242,8 @@ mod tests {
         }
         assert!(world.is_chunk_buried(centre));
 
-        // ice and leaves show what's behind them
-        world.insert_chunk(ChunkCoordinate(I64Vec3::Y), filled(BlockType::Ice));
+        // leaves show what's behind them
+        world.insert_chunk(ChunkCoordinate(I64Vec3::Y), filled(BlockType::Leaves));
         assert!(!world.is_chunk_buried(centre));
         world.insert_chunk(ChunkCoordinate(I64Vec3::Y), ChunkData::default());
         assert!(!world.is_chunk_buried(centre));

@@ -10,7 +10,7 @@ Source of `ochre-world` (`../Cargo.toml`): the world map and terrain source (`wo
 - `clouds.rs`: `CloudPlugin { resolution }`, `CloudMaterial` (`set_shade`), re-exported `CloudLayer`, `CLOUD_BASE` (2400.0). A low-resolution ray-march of a seamlessly tiling cover pattern is drawn by `march_clouds` in the render graph and blended up by a dome (see `docs/clouds.md` at the repo root).
 - `sky_dome.rs`: `SunGlareMaterial` / `SunGlarePlugin` (`shaders/sun_glare.wesl`), `NightSkyMaterial` / `NightSkyPlugin` (`shaders/night_sky.wesl`), `dome(meshes, material, camera)`, `SKY_DEPTH_BIAS`.
 - `weather.rs`: `WeatherPlugin`, `Weather` resource (`pub rain`, `sheltering()`), `RainMaterial`, `RainbowMaterial`, `RainSound` / `RainDecoder`, `ThunderDecoder`; `pub(crate)` `Thunder` and `weather_seconds`.
-- `tonemap.rs`: `TONEMAPPING` (`SomewhatBoringDisplayTransform`), `dry_color_grading()`, `displayed(LinearRgba)`, `scene_colour(Color)`; `pub(crate)` `EXPOSURE`.
+- `tonemap.rs`: `TONEMAPPING` (`SomewhatBoringDisplayTransform`), `dry_color_grading()`, `cold_color_grading(&ColorGrading, cold)` (exactly the input at 0), `displayed(LinearRgba)`, `scene_colour(Color)`; `pub(crate)` `EXPOSURE`.
 
 ## Invariants
 - The clock counts whole ticks (`sky.rs:TimeOfDay`, `TICKS_PER_SECOND`) so it stays exact however long the game runs; `days()` is `ticks % DAY_TICKS / DAY_TICKS`. One day is six game hours, three of daylight (`sky.rs:DAY_SECONDS`).

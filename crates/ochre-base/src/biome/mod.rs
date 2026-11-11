@@ -68,6 +68,11 @@ pub trait Biome: Send + Sync {
         TreeScale::default()
     }
 
+    // How much of the frost the cold would give its ground it keeps, 0..1: a tundra or taiga thaws what the climate alone would freeze.
+    fn frost(&self) -> f32 {
+        1.0
+    }
+
     // The relief features the biome lays over its ground.
     fn relief(&self) -> &'static [ReliefKind] {
         &[]
@@ -126,6 +131,9 @@ const TUNDRA_SCREE_GRADIENT: f64 = 0.38;
 // Keep taiga lowlands forested and green, with snow remaining on higher ground.
 const TAIGA_THAW_LINE: i64 = 250;
 const TAIGA_SCREE_GRADIENT: f64 = 0.6;
+// How much of the frost the cold gives its ground a thawed biome keeps.
+const TUNDRA_FROST: f32 = 0.5;
+const TAIGA_FROST: f32 = 0.6;
 
 impl Biomes {
     pub fn new(_seed: u32) -> Self {
@@ -137,11 +145,13 @@ impl Biomes {
                 Plain::new("tundra", 0.01)
                     .shifted(-0.10, -0.20)
                     .with_thaw(TUNDRA_THAW_LINE, TUNDRA_SCREE_GRADIENT)
+                    .with_frost(TUNDRA_FROST)
                     .with_relief(&[ReliefKind::Pingos, ReliefKind::PatternedGround, ReliefKind::TundraHills]),
             ),
             Box::new(
                 Plain::new("taiga", 0.3)
                     .with_thaw(TAIGA_THAW_LINE, TAIGA_SCREE_GRADIENT)
+                    .with_frost(TAIGA_FROST)
                     .scaled(1.2, 0.8, 1.0)
                     .with_relief(&[ReliefKind::Drumlins]),
             ),
@@ -250,6 +260,11 @@ impl Biomes {
     pub fn tree_scale(&self, biome: BiomeId) -> TreeScale {
         self.entry(biome)
             .map_or_else(TreeScale::default, |e| e.biome.tree_scale())
+    }
+
+    /// How much of the frost the cold would give the ground in `biome` it keeps, 0 to 1.
+    pub fn frost(&self, biome: BiomeId) -> f32 {
+        self.entry(biome).map_or(1.0, |e| e.biome.frost())
     }
 
     /// The relief features `biome` lays over its ground.
@@ -393,5 +408,15 @@ mod tests {
     fn test_tint_draws_grass_colour_from_texture() {
         let c = climate(0.3, 0.8);
         assert!((grass_tint(c) * GRASS_TEXTURE_MEAN - grass_colour(c)).length() < 1e-6);
+    }
+
+    #[test]
+    fn test_thawed_biomes_keep_part_of_the_frost_and_modifiers_pass_it_through() {
+        let biomes = Biomes::new(1);
+        let (tundra, taiga, forest) = (biomes.id("tundra").unwrap(), biomes.id("taiga").unwrap(), biomes.id("forest").unwrap());
+        assert_eq!((0.5, 0.6, 1.0), (biomes.frost(tundra), biomes.frost(taiga), biomes.frost(forest)));
+        assert_eq!(1.0, biomes.frost(BiomeId::BASE));
+        let mountain = biomes.with_modifier(tundra, Modifier::Mountain);
+        assert_eq!(0.5, biomes.frost(mountain));
     }
 }

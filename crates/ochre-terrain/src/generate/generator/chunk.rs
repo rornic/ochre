@@ -227,7 +227,7 @@ pub fn generate_chunk_with(
         }
         chunk_data.trees = TreeTints::new(&trees, origin, 1);
         // boulders and mounds after the trees, so a trunk keeps its place
-        for rock in rocks_near(regions.terrain(), &mut heights, min, min + size - 1) {
+        for rock in rocks_near(regions.terrain(), &mut heights, min, min + size - 1, 1) {
             rock.plant(
                 origin,
                 1,

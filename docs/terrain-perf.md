@@ -62,7 +62,7 @@ stream-power pass for valleys and fewer, longer, higher-inertia droplets for fla
 
 ## Phase 4: climate and biomes (not yet used by the game)
 
-Warmth from latitude, lapse rate of 1/800 per block (the rate `snow_line` already uses), moisture from a
+Warmth from latitude, lapse rate of 1/800 per block (`snow_line` has since come to use 1/2600, in `ochre_base::cold`, and climate 1/3500, `LAPSE_PER_BLOCK`), moisture from a
 westerly sweep over each row (sea evaporates, rising ground rains out, 60% of rain is recycled inland),
 blended with its rank among the land so every seed has dry and wet ground. A Whittaker table picks one
 of ten biomes per cell. The default world takes 3.5 s. Seed 1 comes out at 18% desert, 14% steppe, 21%
@@ -924,3 +924,7 @@ The bevel work finished with ramps joined at shared corners, corner cuts and a s
 Seed 2070026479 forest meadow, measured while `painterly_lighting` was still a setting (since removed, so painterly off is the previous model) (`OCHRE_SPAWN=10832,-3952,5 OCHRE_LOOK=10832,30,-3940 OCHRE_TIME=0.5`), 1920x1080, `OCHRE_NOVSYNC=1 OCHRE_STATS=1`, one 30 s run each on the real display, so differences under about 0.4 ms are noise. `main` (painterly off): 71 fps, 14.66 ms frame, GPU 12.30 ms (opaque 3.22, shadow 2.89, early prepass 0.92). Painterly off on `feat/painterly-integration` (painted foliage with alpha): 71 fps, 14.00 ms, GPU 12.84 (3.09, 3.06, 0.98). Painterly on: 67 fps, 14.85 ms, GPU 12.92 (3.39, 3.05, 1.13). Painterly lighting costs about 0.3 ms in the opaque pass and the foliage alpha cut about 0.15 ms in the shadow pass, so 60 fps holds with 1.8 ms to spare. Under Xephyr the frame read 44 ms against a 12 ms GPU on every build, including `main`: that gap is the nested X server's presentation, not the game.
 
 A floor cell with walls on opposite sides no longer ramps, so a one block wide trench stays level (`Shapes::shape`, `wall_foot`): chunk vertices 1,437,029 to 1,437,397 on the default `bench`, LOD unchanged.
+
+## Frost skin (2026-11-11)
+
+`frost.wesl` runs per fragment on ground in cold country, with no change to vertices, so `bench` chunk vertices are unchanged (1,440,365, LOD 289,742). Timed in the sandbox with `OCHRE_STATS` on seed 4 at (12148, 109, -16955), looking 16 degrees down over tundra where frost covers most of the screen (the worst case), 12 one-second samples each, RTX 2060, 1280x720: frost on 87.6 fps (11.4 ms), `no_frost` 92.3 fps (10.8 ms), so about 0.6 ms, 5%. In warm country the shader leaves after one comparison of the camera's frost strength. Not yet timed: the fps gate in `docs/materials.md`, and a glacier or temperate mountain route.

@@ -1,5 +1,5 @@
 use super::buffers::{GrassTint, MeshBuffers, Vertex, BEVEL, RAMP};
-use super::greedy::{cuts, shape_occupied, Edge, Shape, Shapes};
+use super::greedy::{cuts, Edge, Shape, Shapes};
 use super::shading::face_light;
 use super::source::BlockSource;
 use crate::generate::light::SkyLight;
@@ -204,7 +204,7 @@ pub(super) fn mesh_seams(
     light: &impl Deref<Target = SkyLight>,
     shapes: &Shapes,
 ) {
-    let opaque = |c: IVec3| shape_occupied(source.block(c));
+    let opaque = |c: IVec3| source.block(c).is_opaque();
     let top = |c: IVec3| opaque(c) && !opaque(c + IVec3::Y);
     for &(coord, block) in non_air {
         if !top(coord) || !cuts(block) {
@@ -308,7 +308,7 @@ pub(super) fn mesh_seams(
                                 grass_tint.at(position)
                             }
                         } else {
-                            Vec3::ONE
+                            grass_tint.weathered_at(owner, position)
                         };
                         let shade = match owner {
                             BlockType::Grass => source.forest_shade(position),

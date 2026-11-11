@@ -1,6 +1,9 @@
 use ochre_base::biome::BiomeId;
 use ochre_base::biome::Biomes;
 use ochre_base::block::BlockType;
+use ochre_base::cold::{
+    snow_line, SNOWCAP_ABOVE, SNOWY_GRASS_TEMPERATURE, SNOW_LINE, SNOW_MAX_TEMPERATURE,
+};
 use ochre_base::math::smoothstep_f64;
 use ochre_base::WATER_LEVEL;
 
@@ -28,24 +31,6 @@ pub(super) fn underwater(
 pub(super) fn is_solid(block: BlockType) -> bool {
     block.occlusion_weight() == 1.0
 }
-
-// Height above the sea where snow starts to settle in a temperate climate (temperature 0.5).
-pub(super) const SNOW_LINE: i64 = 950;
-
-// How many blocks the snow line climbs per unit of temperature.
-pub(super) const SNOW_LINE_PER_DEGREE: f64 = 2600.0;
-
-// At or above this temperature it's too hot for snow, and the heights are bare rock.
-pub(super) const SNOW_MAX_TEMPERATURE: f32 = 0.62;
-
-// Above this height over the sea the ground is snow-capped in any climate, in the tropics too.
-pub(super) const SNOWCAP_ABOVE: i64 = 1700;
-
-// Below this temperature even the grass is under a layer of snow.
-pub(super) const SNOWY_GRASS_TEMPERATURE: f32 = 0.25;
-
-// The lowest the snow line gets, so even the coldest lowlands are snow-covered.
-pub(super) const COLDEST_SNOW_LINE: i64 = 10;
 
 // Below this temperature the top of the sea freezes, thicker the colder it is.
 pub const FREEZE_TEMPERATURE: f32 = 0.12;
@@ -75,12 +60,6 @@ pub(super) fn freeze_cell(
     } else {
         block
     }
-}
-
-// Height above the sea where snow starts to settle, lower in the cold.
-pub(super) fn snow_line(temperature: f32) -> i64 {
-    (SNOW_LINE as f64 + (temperature as f64 - 0.5) * SNOW_LINE_PER_DEGREE)
-        .max(COLDEST_SNOW_LINE as f64) as i64
 }
 
 // The steepest ground snow settles on, `above_sea` blocks up: only gentle ground at the snow

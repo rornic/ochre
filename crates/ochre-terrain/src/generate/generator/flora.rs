@@ -82,7 +82,7 @@ fn tundra_heath(seed: u64, x: i64, z: i64) -> bool {
     for dz in -1..=1 {
         for dx in -1..=1 {
             let (gx, gz) = (cx + dx, cz + dz);
-            let h = hash(seed ^ SHRUB_PATCH_SALT ^ 0xCA4E_71, gx, gz);
+            let h = hash(seed ^ SHRUB_PATCH_SALT ^ 0x00CA_4E71, gx, gz);
             let px = gx * CELL + ((h >> 8) % CELL as u64) as i64;
             let pz = gz * CELL + ((h >> 24) % CELL as u64) as i64;
             if unit(h) >= 0.75 || !heath_drift(seed, px, pz) {

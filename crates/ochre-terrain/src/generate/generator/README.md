@@ -11,7 +11,7 @@ Re-exported through `mod.rs`:
 - `ChunkMeshes { opaque, cutout, water, spray, inner_leaves }` and `has_geometry` (`buffers.rs`); `INNER_LEAVES_REACH` (64 blocks) and `INNER_LEAVES_BAND` (16) (`buffers.rs`).
 - `surface_block` (the top block as generation lays it, for map tools) and `FREEZE_TEMPERATURE` (`terrain.rs`).
 - Crate-visible: `LIGHT_MARGIN` (8, `chunk.rs`), `MAX_SKIRT_CELLS` (40, `lod.rs`); `FACE_NORMAL_OFFSET` and `block_gradient`/`column_block` to the parent module.
-- Internal modules: `terrain.rs` (block choice: snow line, ice depth, soil/sand depth, `terrain_block`, `cut_cliff`, `underwater`), `flora.rs` (`flora_at`: grass, ferns, flowers, shrubs, tundra heath), `canopy.rs` (coarse-node canopy boxes, `Canopy`), `buffers.rs` (`MeshBuffers`, `GrassTint`, `MeshStyle`, `InnerLeaves`, `BEVEL` 0.2, `RAMP` 0.3, `CUBE`).
+- Internal modules: `terrain.rs` (block choice: snow line, ice depth, soil/sand depth, `terrain_block`, `cut_cliff`, `underwater`), `flora.rs` (`flora_at`: grass, ferns, flowers, shrubs, tundra heath), `canopy.rs` (coarse-node canopy boxes, `Canopy`), `buffers.rs` (`MeshBuffers`, `GrassTint` with the cold's ground `mosaic`, `cotton` grass and rock `weathered_at`, `MeshStyle`, `InnerLeaves`, `BEVEL` 0.2, `RAMP` 0.3, `CUBE`).
 
 ## Invariants
 - Output is deterministic per seed and map; `determinism.rs` (test-only, `#[cfg(test)]` in `mod.rs`) hashes a fixed chunk set from a synthetic and a generated map and must match on every machine.

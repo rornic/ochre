@@ -12,6 +12,7 @@ pub struct Plain {
     relief: &'static [ReliefKind],
     // the height over the sea below which snow thaws, and the gradient from which the ground is gravel, not grass
     thaw: Option<(i64, f64)>,
+    frost: f32,
 }
 
 impl Plain {
@@ -23,6 +24,7 @@ impl Plain {
             scale: TreeScale::default(),
             relief: &[],
             thaw: None,
+            frost: 1.0,
         }
     }
 
@@ -56,6 +58,12 @@ impl Plain {
         self
     }
 
+    /// Keeps `share` of the frost the cold would give the ground, 0 to 1.
+    pub fn with_frost(mut self, share: f32) -> Self {
+        self.frost = share;
+        self
+    }
+
     /// Lets `share` of the biome's broadleaf trees grow as emergent giants.
     pub fn with_giants(mut self, share: f64) -> Self {
         self.scale.giants = share;
@@ -78,6 +86,10 @@ impl Biome for Plain {
 
     fn tree_scale(&self) -> TreeScale {
         self.scale
+    }
+
+    fn frost(&self) -> f32 {
+        self.frost
     }
 
     fn relief(&self) -> &'static [ReliefKind] {

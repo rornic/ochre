@@ -21,6 +21,7 @@ import super::lod_patch::patch_tint;
 import super::point_lights::point_light_glow;
 import super::dither::dither_threshold;
 import super::curvature::{curved, eye, uncurved};
+import super::frost::{frost_at, frost_receives, frosted};
 // How bright the leaves seen through a solid tree box's holes are, to its surface's.
 const HOLE_SHADE: f32 = 0.55;
 // The same for far full-detail leaves, see `leaf_holes_filled`. Their holes are a texel or so
@@ -219,7 +220,8 @@ fn fragment(
     if painted {
         if block_rate < MEAN_BLOCK_RATE {
             color = material_sample(in.uv, layer, painted_footprint);
-            if wall_blend > 0.001 {
+            // a ramp (stored flat) keeps its own projection: it rises only 0.3, so the wall's `-y` barely moves across it and streaks
+            if wall_blend > 0.001 && normal.y <= 0.99 {
                 color = mix(color, material_sample(wall_uv, layer, wall_footprint), wall_blend);
             }
         } else {
@@ -285,6 +287,17 @@ fn fragment(
         let turn = wall_blend * select(1.0, RAMP_LIT_TURN, normal.y > 0.99);
         smooth_normal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(wall_side.x, 0.0, wall_side.y), turn));
     }
+    // cold ground that isn't snow yet is frosted, and plants rimed, see `frost.wesl`
+@if(!NO_FROST) {
+    if frost_receives(in.color.a, is_leaf(in.color.a)) {
+        var frost_sun = vec3<f32>(0.0, 1.0, 0.0);
+        if view_bindings::lights.n_directional_lights > 0u {
+            frost_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
+        }
+        let tip = select(-1.0, 1.0 - clamp(in.uv.y, 0.0, 1.0), is_flora(in.color.a));
+        color = vec4<f32>(frosted(color.rgb, frost_at(world_position, smooth_normal.y, sky, block_rate, tip, frost_sun, view_bindings::globals.time)), color.a);
+    }
+}
     let shaded = lit_normal(smooth_normal, world_position);
     let glow = point_light_glow(world_position, normal, in.position.xy);
     let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a), is_flora(in.color.a));

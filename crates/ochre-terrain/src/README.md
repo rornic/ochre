@@ -15,8 +15,9 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `flow.rs`: `FALLING` (8), `SPREAD` (7), `surface(level)`; crate-internal `step`, `flow_water`.
 - `material.rs`: `ChunkMaterial`, `WaterMaterial`, `SprayMaterial`, `TerrainMaterials`, `ShaderInputs`, `CloudLayer`, `TerrainAssets`, `block_atlas`, `material_array`, `MATERIAL_SIZE` (512), `water_level`, `push_shader_defs`.
 - `fade.rs`: `FadeMaterials`, `Fade`, `SolidWater`, `FULLY_VISIBLE`, `set_shown`, `fade_out_and_despawn`.
+- `frost.rs`: `FrostPlugin { on }`: reads the camera's temperature and biome frost factor four times a second, eases them, and writes them with the snow rule's constants into `Curvature.cold` (`ochre_base::cold::shader_values`) for `frost.wesl`.
 - `curvature.rs`: `Curve` (`is_flat_at`, `horizon_distance`, `edge_dip`), `WORLD_CURVE`, `Curvature`, `CurvaturePlugin`. `horizon.rs`: `MAX_RENDER_DISTANCE` (2048), `render_distance_at`, `update_horizon`.
-- `settings.rs`: `RendererSettings` (`lod_layout`, `fog_distance`, `material_period`), `DebugSettings { still_leaves, solid_leaves }`, `CloudResolution`.
+- `settings.rs`: `RendererSettings` (`lod_layout`, `fog_distance`, `material_period`, `frost`), `DebugSettings { still_leaves, solid_leaves, no_frost }`, `CloudResolution`.
 - `pack.rs`: `set_packed`, `pack`. `raycast.rs`: `raycast`, `RayHit`. `shadow_mesh.rs`: crate-private `split`.
 
 ## Invariants
@@ -28,6 +29,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `remesh::chunks_reading` must match the light box `generator::LIGHT_MARGIN` and the 26-neighbour read of meshing (`remesh.rs`).
 - Fades are staggered by `FADE_IN_SHARE` so a mesh and its replacement never both leave a pixel undrawn (`fade.rs:set_shown`).
 - `pack` must run as late as possible: after it float attributes can't be read, so `shadow_mesh::split` runs first on the opaque mesh (`pack.rs:pack`, `group.rs:pack_group`, `shadow_mesh.rs:split` panics otherwise).
+- The shared buffer at binding 8 is 16 floats: this frame's bend, last frame's, then the cold (`Curvature.cold`), in the order `Bends` has them in `curvature.wesl`. Water and spray build against it too, so growing it means checking all three materials draw.
 - `RendererSettings::material_period` must be a power of two up to 64 (asserted in `settings.rs`).
 - `render_distance_at` never exceeds the horizon or `MAX_RENDER_DISTANCE`, nor goes under the set distance (`horizon.rs`).
 - Per-frame work is time-budgeted: `GATHER_TIME_BUDGET` 3 ms, `MESH_APPLY_TIME_BUDGET` 4 ms (`chunk_loader.rs`); in-flight generation is capped by `max_in_flight`.

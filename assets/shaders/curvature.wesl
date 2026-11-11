@@ -8,10 +8,19 @@ struct Bend {
     per_square_block: f32,
 }
 
+// What the land is told about the cold, see `ochre_base::cold::shader_values`.
+struct Cold {
+    // the camera's sea-level temperature, how much frost its biome keeps, and 1 if frost is on
+    camera: vec4<f32>,
+    // blocks of height that cool the ground by one, the temperature of the ground at the snow line, and how far warmer than that frost reaches
+    rule: vec4<f32>,
+}
+
 struct Bends {
     now: Bend,
     // last frame's, for motion vectors
     last: Bend,
+    cold: Cold,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(8) var<storage, read> curvature: Bends;
@@ -40,4 +49,9 @@ fn uncurved(world_position: vec3<f32>) -> vec3<f32> {
 // Where the camera is, in every pass: the sun's shadow passes' view is the light's.
 fn eye() -> vec3<f32> {
     return curvature.now.eye;
+}
+
+// What the camera's climate does to the land, see `frost.wesl`.
+fn cold() -> Cold {
+    return curvature.cold;
 }

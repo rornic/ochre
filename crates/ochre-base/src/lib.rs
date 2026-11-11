@@ -3,6 +3,7 @@
 
 pub mod biome;
 pub mod block;
+pub mod cold;
 pub mod features;
 pub mod math;
 pub mod noise;

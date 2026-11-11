@@ -37,6 +37,8 @@ pub struct RendererSettings {
     pub material_period: u32,
     /// Anisotropic filtering taps on painted materials, 1 to 16.
     pub material_anisotropy: u16,
+    /// Frost on cold ground that has no snow yet, see `crate::frost`.
+    pub frost: bool,
 }
 
 /// Maximum cloud target width; smaller windows still march at half display resolution.
@@ -70,6 +72,8 @@ pub struct DebugSettings {
     /// Leaves are drawn in their mean colour without their holes, in shadows too, and hide
     /// the faces of the leaves behind them, as coarse LODs draw them everywhere.
     pub solid_leaves: bool,
+    /// The frost code is compiled out of the land's shader, to time what it costs.
+    pub no_frost: bool,
 }
 
 impl RendererSettings {
@@ -124,6 +128,7 @@ impl Default for RendererSettings {
             pack_meshes: true,
             material_period: 8,
             material_anisotropy: 8,
+            frost: true,
         }
     }
 }

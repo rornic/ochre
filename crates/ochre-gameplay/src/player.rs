@@ -60,8 +60,9 @@ use ochre_terrain::{
     world::World,
 };
 use ochre_world::{
+    ambience::Surroundings,
     sky::{atmosphere_camera, FOG_MAX_OPACITY},
-    tonemap::{dry_color_grading, scene_colour, TONEMAPPING},
+    tonemap::{cold_color_grading, dry_color_grading, scene_colour, TONEMAPPING},
 };
 
 /// The player's body, at its feet, with the camera at its eyes.
@@ -521,6 +522,46 @@ fn update_underwater_effects(
     }
 }
 
+// How far the cold country has pulled the camera's grade, 0 to 1, and the grade as it was before that, kept to put back exactly.
+#[derive(Resource, Default)]
+struct ColdGrade {
+    eased: f32,
+    clean: Option<ColorGrading>,
+}
+
+// Seconds for the cold grade to cover most of the way to the country the camera is in, for the cold is sensed in steps.
+const COLD_GRADE_EASE: f32 = 2.0;
+
+// Puts back the grade under the cold's, before `update_underwater_effects` snapshots or sets it, so it sees only its own.
+fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mut ColorGrading, With<Camera>>) {
+    if let (Some(clean), Ok(mut grading)) = (cold.clean.take(), camera.single_mut()) {
+        *grading = clean;
+    }
+}
+
+// Lays the cold's grade over whatever grade the camera has now, easing in and out of it by how warm the surroundings are.
+fn apply_cold_grade(
+    around: Option<Res<Surroundings>>,
+    time: Res<Time>,
+    mut cold: ResMut<ColdGrade>,
+    mut camera: Query<&mut ColorGrading, With<Camera>>,
+) {
+    let target = around.map_or(0.0, |around| 1.0 - around.warmth);
+    let step = 1.0 - (-time.delta_secs() / COLD_GRADE_EASE).exp();
+    cold.eased += (target - cold.eased) * step;
+    // an exact zero in the warm, rather than a vanishing remainder
+    if target == 0.0 && cold.eased < 1e-3 {
+        cold.eased = 0.0;
+    }
+    if cold.eased == 0.0 {
+        return;
+    }
+    if let Ok(mut grading) = camera.single_mut() {
+        cold.clean = Some(grading.clone());
+        *grading = cold_color_grading(&grading, cold.eased);
+    }
+}
+
 fn show_murk(murk: &Murk, materials: &mut Assets<MurkMaterial>, shown: bool) {
     if let Some(mut material) = materials.get_mut(&murk.0) {
         material.color.alpha = if shown { 1.0 } else { 0.0 };
@@ -532,6 +573,7 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<MurkMaterial>::default())
+            .init_resource::<ColdGrade>()
             .add_systems(
                 Update,
                 (
@@ -539,7 +581,9 @@ impl Plugin for PlayerPlugin {
                     grab_cursor,
                     player_look,
                     update_horizon,
+                    lift_cold_grade,
                     update_underwater_effects,
+                    apply_cold_grade,
                 )
                     .chain(),
             );
@@ -653,5 +697,88 @@ mod tests {
         assert!(reach(MAX_PITCH) < headroom);
         // the eye is inside the body, which fits a two-block gap exactly
         const { assert!(EYE_HEIGHT < BODY.max.y && BODY.max.y == 2.0) };
+    }
+
+    #[derive(Resource, Default)]
+    struct Wet(bool);
+
+    // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade put back once on leaving the water.
+    fn fake_underwater(wet: Res<Wet>, mut was: Local<bool>, mut camera: Query<&mut ColorGrading, With<Camera>>) {
+        let mut grading = camera.single_mut().unwrap();
+        if wet.0 {
+            grading.global.post_saturation = 0.85;
+        } else if *was {
+            *grading = dry_color_grading();
+        }
+        *was = wet.0;
+    }
+
+    fn grading_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ColdGrade>()
+            .init_resource::<Surroundings>()
+            .init_resource::<Wet>()
+            .init_resource::<Time>()
+            .add_systems(Update, (lift_cold_grade, fake_underwater, apply_cold_grade).chain());
+        app.world_mut().spawn((Camera::default(), dry_color_grading()));
+        app
+    }
+
+    fn frames(app: &mut App, count: usize) -> ColorGrading {
+        for _ in 0..count {
+            app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_millis(100));
+            app.update();
+        }
+        app.world_mut().query::<&ColorGrading>().single(app.world()).unwrap().clone()
+    }
+
+    #[test]
+    fn test_the_cold_grade_leaves_warm_country_exactly_as_it_was_and_returns_to_it() {
+        let mut app = grading_app();
+        assert_eq!(dry_color_grading(), frames(&mut app, 50));
+        app.world_mut().resource_mut::<Surroundings>().warmth = 0.0;
+        let mut last = dry_color_grading().global.post_saturation;
+        for _ in 0..300 {
+            let now = frames(&mut app, 1).global.post_saturation;
+            assert!(now <= last, "saturation rose from {last} to {now} on the way into the cold");
+            last = now;
+        }
+        let cold = cold_color_grading(&dry_color_grading(), 1.0);
+        assert!((last - cold.global.post_saturation).abs() < 1e-4, "{last}");
+        app.world_mut().resource_mut::<Surroundings>().warmth = 1.0;
+        assert_eq!(dry_color_grading(), frames(&mut app, 400));
+    }
+
+    #[test]
+    fn test_the_cold_grade_eases_in_and_does_not_jump_to_the_sensed_value() {
+        let mut app = grading_app();
+        app.world_mut().resource_mut::<Surroundings>().warmth = 0.0;
+        let first = frames(&mut app, 1).global.post_saturation;
+        let full = cold_color_grading(&dry_color_grading(), 1.0).global.post_saturation;
+        let dry = dry_color_grading().global.post_saturation;
+        assert!(first < dry && first > dry + (full - dry) * 0.2, "{first}");
+    }
+
+    #[test]
+    fn test_the_cold_grade_composes_with_the_underwater_one_and_does_not_drift() {
+        let mut app = grading_app();
+        app.world_mut().resource_mut::<Surroundings>().warmth = 0.0;
+        frames(&mut app, 400);
+        app.world_mut().resource_mut::<Wet>().0 = true;
+        let in_water = frames(&mut app, 300).global.post_saturation;
+        assert!((in_water - 0.85 * 0.94).abs() < 1e-4, "{in_water}");
+        assert_eq!(in_water, frames(&mut app, 600).global.post_saturation);
+        app.world_mut().resource_mut::<Wet>().0 = false;
+        let surfaced = frames(&mut app, 400);
+        let cold = cold_color_grading(&dry_color_grading(), 1.0);
+        assert!((surfaced.global.post_saturation - cold.global.post_saturation).abs() < 1e-5);
+        assert!((surfaced.global.temperature - cold.global.temperature).abs() < 1e-5);
+        // and wet in warm country, the underwater grade alone, then the dry one back
+        app.world_mut().resource_mut::<Surroundings>().warmth = 1.0;
+        frames(&mut app, 400);
+        app.world_mut().resource_mut::<Wet>().0 = true;
+        assert_eq!(0.85, frames(&mut app, 20).global.post_saturation);
+        app.world_mut().resource_mut::<Wet>().0 = false;
+        assert_eq!(dry_color_grading(), frames(&mut app, 20));
     }
 }

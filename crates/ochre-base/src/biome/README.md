@@ -4,7 +4,7 @@
 The biome table and the per-biome rules for ground blocks, tree density and size, springs, grass tint and relief features. `Biomes` holds every biome a world map can name, plus each one under the `Mountain` and `Volcanic` modifiers (`mod.rs:Biomes::with_modifiers`); a column stores only a one-byte `BiomeId` into it. It also owns the climate-to-colour functions for grass and leaves.
 
 ## Interface
-- `mod.rs:Biome` trait (`Send + Sync`): `name` required; defaulted `tree_density` (None), `block` (identity), `spring_block` (Gravel), `climate_shift` ((0,0)), `tree_scale` (`TreeScale::default`), `relief` (empty).
+- `mod.rs:Biome` trait (`Send + Sync`): `name` required; defaulted `frost` (1.0, how much of the cold's frost the biome keeps), `tree_density` (None), `block` (identity), `spring_block` (Gravel), `climate_shift` ((0,0)), `tree_scale` (`TreeScale::default`), `relief` (empty).
 - `mod.rs:Climate` (`temperature`, `humidity`, each 0..1, default 0.5/0.5), `mod.rs:TreeScale` (`height`, `spread`, `squash`, `giants`; default 1/1/1/0), `mod.rs:BiomeId` (`BiomeId::BASE` is the base terrain).
 - `mod.rs:Biomes`: `new(seed)`, `with(Vec<Box<dyn Biome>>)`, `id(name)`, `with_modifier(id, Modifier)`, `modifier(id)`, `name(id)`, `tree_density(id)`, `climate_shift(id)`, `tree_scale(id)`, `relief(id)`, `spring_block(id)`, `block(id, base, above_sea, gradient)`.
 - `mod.rs:grass_colour`, `mod.rs:leaf_colour`, `mod.rs:grass_tint`: linear-RGB grass colour from a `Climate` by bilinear blend of four sRGB corners (`GRASS_HOT_DRY`, `GRASS_HOT_WET`, `GRASS_COLD_DRY`, `GRASS_COLD_WET`); `grass_tint` divides by `GRASS_TEXTURE_MEAN`, `leaf_colour` is `grass_tint * LEAF_TEXTURE_MEAN`.

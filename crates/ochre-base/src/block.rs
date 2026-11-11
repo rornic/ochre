@@ -62,7 +62,6 @@ impl BlockType {
             _ if self.is_flora() => 0,
             BlockType::Leaves => 1,
             BlockType::Water => 2,
-            BlockType::Ice => 3,
             _ => crate::MAX_LIGHT,
         }
     }
@@ -331,7 +330,7 @@ impl Tile {
         self as u8 as f32
     }
 
-    // Greyscale tiles that vertex colours tint to the climate's grass. Heath keeps its own purple.
+    // Greyscale tiles that vertex colours tint to the climate's grass. Heath keeps its own colour.
     pub fn tinted(self) -> bool {
         matches!(
             self,
@@ -527,9 +526,8 @@ mod tests {
     }
 
     #[test]
-    fn test_ice_lets_light_through_but_is_solid() {
-        assert!(!BlockType::Ice.is_opaque());
-        assert!(BlockType::Ice.light_opacity() > BlockType::Water.light_opacity());
+    fn test_ice_is_opaque_and_solid() {
+        assert!(BlockType::Ice.is_opaque());
         assert_eq!(1.0, BlockType::Ice.occlusion_weight());
     }
 

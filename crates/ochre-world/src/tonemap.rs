@@ -30,6 +30,20 @@ pub fn dry_color_grading() -> ColorGrading {
 const WARMTH: f32 = 0.015;
 const SATURATION: f32 = 1.04;
 
+// What the cold country adds to a grade, fully cold: a white balance toward blue, and less colour, a little more in the shadows.
+const COLD_TEMPERATURE: f32 = -0.02;
+const COLD_SATURATION: f32 = 0.94;
+const COLD_SHADOW_SATURATION: f32 = 0.92;
+
+/// `grading` as the cold country shows it, `cold` from 0 (as it was, exactly) to 1: the same shift on the dry grade as on the underwater one.
+pub fn cold_color_grading(grading: &ColorGrading, cold: f32) -> ColorGrading {
+    let mut cooled = grading.clone();
+    cooled.global.temperature += COLD_TEMPERATURE * cold;
+    cooled.global.post_saturation *= 1.0 + (COLD_SATURATION - 1.0) * cold;
+    cooled.shadows.saturation *= 1.0 + (COLD_SHADOW_SATURATION - 1.0) * cold;
+    cooled
+}
+
 // rows: luma, then the two chroma channels
 const RGB_TO_YCBCR: Mat3 = Mat3::from_cols(
     Vec3::new(0.2126, -0.1146, 0.5),
@@ -86,7 +100,7 @@ pub fn scene_colour(display: Color) -> LinearRgba {
 mod tests {
     use bevy::color::{Color, ColorToComponents, LinearRgba};
 
-    use super::{displayed, scene_colour};
+    use super::{cold_color_grading, displayed, dry_color_grading, scene_colour, COLD_TEMPERATURE};
 
     fn assert_close(expected: LinearRgba, actual: LinearRgba) {
         for (e, a) in expected.to_f32_array().iter().zip(actual.to_f32_array()) {
@@ -114,6 +128,20 @@ mod tests {
     fn test_mid_grey_stays_about_mid_grey() {
         let grey = displayed(LinearRgba::rgb(0.18, 0.18, 0.18));
         assert!((0.16..0.25).contains(&grey.green), "{grey:?}");
+    }
+
+    #[test]
+    fn test_the_cold_grade_is_exactly_neutral_at_zero_and_a_subtle_cooling_at_one() {
+        let dry = dry_color_grading();
+        assert_eq!(dry, cold_color_grading(&dry, 0.0));
+        let cold = cold_color_grading(&dry, 1.0);
+        assert!(cold.global.temperature < dry.global.temperature && cold.global.post_saturation < dry.global.post_saturation);
+        assert!(cold.shadows.saturation < dry.shadows.saturation);
+        // dry's warmth is only cooled toward neutral, a white balance this small stays off the chromaticity diagram's edge
+        assert!(cold.global.temperature.abs() <= COLD_TEMPERATURE.abs());
+        assert!(cold.global.post_saturation > 0.9 * dry.global.post_saturation);
+        let half = cold_color_grading(&dry, 0.5);
+        assert!((half.global.temperature - (dry.global.temperature + cold.global.temperature) / 2.0).abs() < 1e-6);
     }
 
     #[test]
