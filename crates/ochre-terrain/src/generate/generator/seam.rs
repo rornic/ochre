@@ -308,7 +308,7 @@ pub(super) fn mesh_seams(
                                 grass_tint.at(position)
                             }
                         } else {
-                            Vec3::ONE
+                            grass_tint.weathered_at(owner, position)
                         };
                         let shade = match owner {
                             BlockType::Grass => source.forest_shade(position),

@@ -1,6 +1,6 @@
 use super::buffers::{
     tiled_uvs, ChunkMeshes, GrassTint, MeshBuffers, MeshStyle, BOX_TEXTURE_MAX_CELL, CUBE,
-    MAUVE_TINT, RUSSET_TINT, TEXTURED, TEXTURED_SOLID,
+    OXBLOOD_TINT, TEXTURED, TEXTURED_SOLID,
 };
 use super::greedy::{convex_sides, mesh_opaque_greedy, Shapes};
 use super::shading::{
@@ -497,8 +497,8 @@ fn push_spray(
     }
 }
 
-// How much of the way to the mauve tint the long grasses go, where it is coldest.
-const MAUVE_STRENGTH: f32 = 0.7;
+// How much of the way to the oxblood tint the long grasses go, where it is coldest.
+const OXBLOOD_STRENGTH: f32 = 0.7;
 
 // How far in from the block's corners flora's quads reach, so neighbouring plants don't touch.
 const FLORA_INSET: f32 = 0.05;
@@ -633,18 +633,20 @@ fn mesh_flora(
         let ground = coord.as_vec3() - Vec3::Y * 0.5;
         let tint = if tile.tinted() {
             let tint = grass_tint.cold_at(ground);
-            // the long grasses in the cold go mauve, to bridge between the heath, the short ones less so
-            let mauve = match block {
-                BlockType::TallGrass | BlockType::SeedGrass => MAUVE_STRENGTH,
-                BlockType::ShortGrass => MAUVE_STRENGTH * 0.4,
+            // the long grasses in the cold go oxblood, to bridge between the heath, the short ones less so
+            let oxblood = match block {
+                BlockType::TallGrass | BlockType::SeedGrass => OXBLOOD_STRENGTH,
+                BlockType::ShortGrass => OXBLOOD_STRENGTH * 0.4,
                 _ => 0.0,
-            } * grass_tint.mauve_at(ground);
-            // and in the reddish patches the ground has, so a tuft is the colour of the grass it stands in
-            let russet = match block {
-                BlockType::TallGrass | BlockType::SeedGrass | BlockType::ShortGrass => grass_tint.russet_at(ground),
-                _ => 0.0,
+            } * grass_tint.oxblood_at(ground);
+            let tint = tint.lerp(OXBLOOD_TINT, oxblood);
+            // and in the patches the ground has, so a tuft is the colour of the grass it stands in
+            let tint = match block {
+                BlockType::TallGrass | BlockType::ShortGrass => grass_tint.mosaic(tint, ground),
+                BlockType::SeedGrass => grass_tint.cotton(grass_tint.mosaic(tint, ground), ground),
+                _ => tint,
             };
-            tint.lerp(MAUVE_TINT, mauve).lerp(RUSSET_TINT, russet) * source.forest_shade(ground)
+            tint * source.forest_shade(ground)
         } else {
             Vec3::ONE
         };
@@ -758,7 +760,9 @@ fn mesh_grass_fringe(
                 u if u < 0.85 => Tile::TallGrass,
                 _ => Tile::SeedGrass,
             };
-            let tint = grass_tint.ground_at(top) * source.forest_shade(top);
+            let ground = grass_tint.ground_at(top);
+            let ground = if tile == Tile::SeedGrass { grass_tint.cotton(ground, top) } else { ground };
+            let tint = ground * source.forest_shade(top);
             push_tuft(
                 buffers,
                 &Tuft {

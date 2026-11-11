@@ -98,14 +98,17 @@ impl Curve {
 pub struct Curvature {
     pub buffer: Handle<ShaderBuffer>,
     last: [f32; 4],
+    /// What the shaders are told about the cold, see `ochre_base::cold::shader_values`: written after the two bends.
+    pub(crate) cold: [f32; 8],
 }
 
 impl FromWorld for Curvature {
     fn from_world(world: &mut World) -> Self {
-        let buffer = ShaderBuffer::new(vec![0.0f32; 8], RenderAssetUsages::default());
+        let buffer = ShaderBuffer::new(vec![0.0f32; 16], RenderAssetUsages::default());
         Self {
             buffer: world.resource_mut::<Assets<ShaderBuffer>>().add(buffer),
             last: [0.0; 4],
+            cold: [0.0; 8],
         }
     }
 }
@@ -127,6 +130,7 @@ fn update_curvature(
         buffer.clear();
         buffer.extend_from_slice(&now);
         buffer.extend_from_slice(&curvature.last);
+        buffer.extend_from_slice(&curvature.cold);
     }
     curvature.last = now;
 }

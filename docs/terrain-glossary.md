@@ -42,7 +42,7 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 | --- | --- | --- | --- |
 | Crevasse | glacier | A crack in glacier ice. | Slots 2 to 5 wide and 8 to 18 deep, in belts across gentle slopes, with a bridge of uncut ice every 15 to 30 blocks. |
 | Serac | glacier | A tower of ice left where crevasses cross. | Jagged pillars 6 to 18 high on steep ice. |
-| Pingo | tundra | A mound with a core of ice that froze and pushed the ground up. | Round mounds 6 to 14 high, 8 to 16 across. Rare. |
+| Pingo | tundra | A mound with a core of ice that froze and pushed the ground up. | Round mounds 5 to 14 high, 7 to 18 blocks in radius, in drifts with open ground between, on no grid. Rare. |
 | Patterned ground | tundra | Polygons of frost cracks in frozen soil. | A net of low ridges 12 to 20 across, one block high. |
 | Drumlin | taiga | A smooth streamlined hill left by an ice sheet, long axis along the ice flow. | Parallel swells 80 to 200 long, 4 to 8 high, along the world's ridge angle. |
 | Yardang | desert | A ridge carved out of soft rock by wind-blown sand. | Parallel ridges up to 5 high and troughs up to 2.5 deep, along the wind. |

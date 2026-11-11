@@ -234,7 +234,7 @@ impl LodBlocks {
                 };
                 let trees = trees_near(noise, &mut ground, min, min + span + cell);
                 if cell <= ROCK_MAX_CELL {
-                    for rock in rocks_near(noise, &mut ground, min, min + span + cell) {
+                    for rock in rocks_near(noise, &mut ground, min, min + span + cell, cell) {
                         rock.plant(
                             base,
                             cell,
@@ -420,7 +420,7 @@ impl LodBlocks {
                 );
             }
             if cell <= ROCK_MAX_CELL {
-                for rock in rocks_near(regions.terrain(), &mut heights, min, min + span + cell) {
+                for rock in rocks_near(regions.terrain(), &mut heights, min, min + span + cell, cell) {
                     rock.plant(
                         base,
                         cell,

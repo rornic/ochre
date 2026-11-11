@@ -60,7 +60,7 @@ pub(super) struct FaceCell {
     pub(super) corner: [bool; 4],
     // which corners the top is cut down at, between the strips of the two blocks beside it, see `corner_dips`
     pub(super) dip: [bool; 4],
-    // grass whose tint varies across the world, which its faces must not merge over, see `GrassTint::russet_at`
+    // grass or rock whose tint varies across the world, which its faces must not merge over, see `GrassTint::varied_at`
     pub(super) varied: bool,
 }
 
@@ -132,6 +132,7 @@ pub(super) fn convex_sides(
 pub(super) fn cuts(block: BlockType) -> bool {
     block != BlockType::Leaves
 }
+
 
 // Blocks that meet the ground in a cove, which grass does as well: nothing covers a crease.
 fn coves(block: BlockType) -> bool {
@@ -459,8 +460,7 @@ pub(super) fn face_span(
     }
     let neighbour = coord + normal;
     let neighbour_block = source.block(neighbour);
-    let covered = neighbour_block.is_opaque()
-        || (block == BlockType::Ice && neighbour_block == BlockType::Ice);
+    let covered = neighbour_block.is_opaque();
     // every face is asked about, and most are hidden, so those leave before any lookups
     if !source.has_surface_tops() || normal.y < 0 {
         return (!covered).then_some(None);
@@ -685,7 +685,7 @@ pub(super) fn mesh_opaque_greedy(
                     };
                     ground * cell.tint
                 } else {
-                    Vec3::ONE
+                    grass_tint.weathered_at(cell.block, position)
                 };
                 let shade = match cell.block {
                     BlockType::Leaves => source.canopy_shade(position),
@@ -957,9 +957,7 @@ pub(super) fn mesh_opaque_greedy(
                     // most blocks are buried, and face_span would turn each down after looking where we can
                     if inside_next && hidden_is_final {
                         let beyond = source.blocks[(at as i32 + toward * step_n) as usize];
-                        if beyond.is_opaque()
-                            || (block == BlockType::Ice && beyond == BlockType::Ice)
-                        {
+                        if beyond.is_opaque() {
                             continue;
                         }
                     }

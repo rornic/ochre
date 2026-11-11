@@ -5,6 +5,7 @@ pub mod chunk_loader;
 pub mod curvature;
 pub mod fade;
 pub mod flow;
+pub mod frost;
 pub mod generate;
 pub mod group;
 pub mod horizon;
@@ -32,6 +33,7 @@ use chunk_loader::{
 use curvature::CurvaturePlugin;
 use fade::{apply_fades, FadeMaterials};
 use flow::flow_water;
+use frost::FrostPlugin;
 use group::{build_groups, load_groups, show_inner_leaves};
 use lod::{
     load_lods, refresh_lod_visibility, retire_lods, spawn_lods, update_lod_selection, LodLoader,
@@ -97,6 +99,7 @@ impl Plugin for TerrainRenderPlugin {
             MaterialPlugin::<WaterMaterial>::default(),
             MaterialPlugin::<SprayMaterial>::default(),
             CurvaturePlugin,
+            FrostPlugin { on: self.renderer.frost },
         ));
         // the terrain's meshes share a few big buffers, see `RendererSettings::mesh_slab_mb`
         if let Some(render) = app.get_sub_app_mut(RenderApp) {

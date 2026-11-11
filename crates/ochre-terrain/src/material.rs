@@ -272,7 +272,12 @@ impl Material for ChunkMaterial {
         let leaves_layer = ShaderDefVal::UInt("LEAVES_LAYER".into(), Tile::LEAVES_LAYER as u32);
         let first_flora_layer =
             ShaderDefVal::UInt("FIRST_FLORA_LAYER".into(), Tile::FIRST_FLORA_LAYER as u32);
+        // frost skips what is already snow or ice, see `frost.wesl`
+        let snow_cell = ShaderDefVal::UInt("SNOW_CELL".into(), Tile::Snow.atlas_cell() as u32);
+        let ice_cell = ShaderDefVal::UInt("ICE_CELL".into(), Tile::Ice.atlas_cell() as u32);
         let mut defs = vec![
+            snow_cell,
+            ice_cell,
             leaves_layer,
             first_flora_layer,
             leaf_cell,
@@ -289,6 +294,9 @@ impl Material for ChunkMaterial {
         }
         if key.bind_group_data.debug.solid_leaves {
             defs.push("SOLID_LEAVES".into());
+        }
+        if key.bind_group_data.debug.no_frost {
+            defs.push("NO_FROST".into());
         }
         push_shader_defs(descriptor, &defs);
         specialize_shadow(descriptor, key.bind_group_data.non_cutout);

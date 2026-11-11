@@ -404,6 +404,41 @@ fn ragged_t(
     ((dx * dx + dz * dz).sqrt() + ragged).max(0.0) / radius
 }
 
+/// Flat-topped uplands on cold lowland, raised before the final water routing.
+pub(super) fn cold_uplands(map: &mut WorldMap) -> Vec<(usize, usize, f64, f64)> {
+    let dim = map.dim();
+    if dim <= 2 * EDGE { return Vec::new(); }
+    let warmth = super::climate::regional_warmth(map);
+    let slope = super::gameplay::slope_layer(map);
+    let sea = ochre_base::WATER_LEVEL as f32;
+    let eligible: Vec<_> = (EDGE..dim - EDGE)
+        .flat_map(|z| (EDGE..dim - EDGE).map(move |x| z * dim + x))
+        .filter(|&i| {
+            let above = map.height[i] - sea;
+            let temperature = warmth[i] - above * super::climate::LAPSE_PER_BLOCK;
+            (30.0..150.0).contains(&above) && slope[i] < 0.12 && (0.05..0.27).contains(&temperature)
+        })
+        .collect();
+    let mut out = Vec::new();
+    // Scale the count with world area, keeping rare landmarks in smaller worlds too.
+    let count = ((dim as f64 / 2048.0).powi(2) * 100.0).ceil() as usize;
+    for (sx, sz) in sites(map, eligible, count, 0xC01D_7101) {
+        let h = hash(map.seed ^ 0xC01D_7102, sx as i32, sz as i32);
+        let radius = 4.0 + 3.0 * unit(h, 1, 0);
+        let height = 55.0 + 40.0 * unit(h, 2, 0);
+        let reach = (radius * 1.2).ceil() as i64;
+        for z in (sz as i64 - reach).max(0)..=(sz as i64 + reach).min(dim as i64 - 1) {
+            for x in (sx as i64 - reach).max(0)..=(sx as i64 + reach).min(dim as i64 - 1) {
+                let t = ragged_t(map, 0xC01D_7103, (x, z), (sx, sz), radius);
+                let rise = 1.0 - smoothstep(0.45, 1.0, t);
+                map.height[z as usize * dim + x as usize] += (height * rise) as f32;
+            }
+        }
+        out.push((sx, sz, radius, height));
+    }
+    out
+}
+
 /// Raises isolated rounded rock domes on dry, warm sedimentary lowland: up to `count` of them, weighted by how dry and
 /// warm the config is. Returns the sites and their radius in cells and height in blocks.
 pub(super) fn inselbergs(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f64, f64)> {
@@ -581,6 +616,47 @@ mod tests {
                     && map.water_kind[i] == crate::worldmap::WaterCell::Lake as u8
             })
             .count()
+    }
+
+    #[test]
+    fn cold_uplands_have_broad_tops_and_steep_sides() {
+        let config = WorldConfig {
+            size: 400 * 32,
+            map_cell: 32,
+            climate: super::super::climate::ClimateConfig { warmth: 0.2, gradient: 0.0, continentality: 0.0, ..Default::default() },
+            ..Default::default()
+        };
+        let mut map = WorldMap::empty(7, config);
+        map.height.fill(100.0);
+        let dim = map.dim();
+        let found = cold_uplands(&mut map);
+        assert!(!found.is_empty());
+        let (x, z, radius, height) = found[0];
+        assert!((map.height[z * dim + x] - 100.0 - height as f32).abs() < 0.01);
+        assert!((map.height[z * dim + x + 1] - map.height[z * dim + x]).abs() < 1.0);
+        assert!(radius >= 4.0 && height >= 55.0);
+        assert!(map.height.iter().any(|&h| (h - 100.0).abs() < 0.01));
+    }
+
+    #[test]
+    fn cold_uplands_survive_water_routing_without_new_lakes_on_top() {
+        let mut sites = Vec::new();
+        let make_cold = |m: &mut WorldMap| {
+            m.config.climate.warmth = 0.2;
+            m.config.climate.gradient = 0.0;
+            m.config.climate.continentality = 0.0;
+        };
+        let base = through_hydrology(4, make_cold);
+        let raised = through_hydrology(4, |m| {
+            make_cold(m);
+            sites = cold_uplands(m);
+        });
+        assert!(!sites.is_empty());
+        for &(x, z, radius, height) in &sites {
+            let i = z * raised.dim() + x;
+            assert!((raised.height[i] - base.height[i]) as f64 >= 0.6 * height);
+            assert!(lake_cells_near(&raised, (x, z), radius * 0.45) <= lake_cells_near(&base, (x, z), radius * 0.45));
+        }
     }
 
     #[test]

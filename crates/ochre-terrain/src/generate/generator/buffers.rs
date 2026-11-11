@@ -7,7 +7,7 @@ use bevy::render::mesh::VertexAttributeValues;
 use ochre_base::biome::grass_tint;
 use ochre_base::math::smoothstep;
 use crate::generate::trees::hash;
-use ochre_base::block::TILE_COUNT;
+use ochre_base::block::{BlockType, TILE_COUNT};
 use ochre_base::terrain_source::TerrainSource;
 
 // Accumulates one mesh's worth of vertex/index/color data - one instance for the
@@ -32,7 +32,7 @@ pub(super) struct MeshBuffers {
 // partly as the wall. Each of its vertices carries how much, 0 to 1, in its mode (`uv_b.y`) as `BLEND_BASE` plus
 // `BLEND_SPAN` times it, in the band for which way the wall faces: x+, x-, z+ or z-, each `BLEND_BAND` wide, so the
 // largest mode stays under the 0.5 that marks coarse cells. See `world.wesl`.
-// How far up a ramp, as a share of its rise, the wall's projection starts to show.
+// How far up a ramp, as a share of its rise, the wall's light starts to show (its texture stays the ground's).
 const RAMP_BLEND_FROM: f32 = 0.6;
 
 const BLEND_BAND: f32 = 0.125;
@@ -507,11 +507,11 @@ pub const INNER_LEAVES_REACH: f32 = 64.0;
 
 pub const INNER_LEAVES_BAND: f32 = 16.0;
 
-// The temperatures between which the long grasses go from mauve to the grass's own colour: full below the first, and none above the second.
-const MAUVE_FULL_BELOW: f32 = 0.08;
-const MAUVE_NONE_ABOVE: f32 = 0.17;
-/// What the cold's long grasses are tinted toward, a dusty mauve about as bright as the tan grass round them.
-pub(super) const MAUVE_TINT: Vec3 = Vec3::new(0.40, 0.31, 0.44);
+// The temperatures between which the long grasses go from oxblood to the grass's own colour: full below the first, and none above the second.
+const OXBLOOD_FULL_BELOW: f32 = 0.08;
+const OXBLOOD_NONE_ABOVE: f32 = 0.17;
+/// What the cold's long grasses and heath are tinted toward, a deep reddish brown darker than the tan grass round them, so they read by value against the russet ground.
+pub(super) const OXBLOOD_TINT: Vec3 = Vec3::new(0.30, 0.11, 0.08);
 
 // Reddish patches in the cold country's grass, in the world's grid of `RUSSET_PATCH` blocks, where noise is over `RUSSET_FROM`
 // and fully red past `RUSSET_TO`, so about a third of the ground, and a rust-red tint a little darker than the tan.
@@ -520,21 +520,54 @@ const RUSSET_SALT: u64 = 0x2E55_E7ED;
 const RUSSET_FROM: f32 = 0.5;
 const RUSSET_TO: f32 = 0.78;
 const RUSSET_STRENGTH: f32 = 0.9;
-pub(super) const RUSSET_TINT: Vec3 = Vec3::new(0.58, 0.19, 0.12);
-// What the cold's grass is tinted toward, how far where it is coldest: a brown, redder and darker than the tan the cold dry palette gives.
-// The plain tint's red is only 1.05 to 1.24 times its green at the tundra's median, an olive, and its warmest quarter, up to 0.15, is
-// olive green, so the brown holds to 0.12 and is gone by 0.19, which leaves the warm half of a taiga its own colour.
+const RUSSET_TINT: Vec3 = Vec3::new(0.58, 0.19, 0.12);
+// What the cold's grass is tinted toward, a dull khaki redder than the plain tint's olive, full below 0.12 and gone by 0.19 so a taiga's warm half stays green.
 const BROWN_FULL_BELOW: f32 = 0.12;
 const BROWN_NONE_ABOVE: f32 = 0.19;
-const BROWN_TINT: Vec3 = Vec3::new(0.49, 0.28, 0.11);
+const BROWN_TINT: Vec3 = Vec3::new(0.46, 0.32, 0.17);
 const BROWN_STRENGTH: f32 = 0.92;
+
+// The cold ground's patches of straw, lichen and peat, over the khaki and under the russet: a field `MOSAIC_LARGE` blocks across for where, mixed with a `MOSAIC_SMALL` one.
+const MOSAIC_SMALL: f32 = 40.0;
+const MOSAIC_LARGE: f32 = 150.0;
+const MOSAIC_LARGE_SHARE: f32 = 0.55;
+struct Patch {
+    salt: u64,
+    from: f32,
+    to: f32,
+    strength: f32,
+    tint: Vec3,
+}
+const STRAW: Patch = Patch { salt: 0x57A4_0001, from: 0.56, to: 0.70, strength: 0.85, tint: Vec3::new(0.60, 0.52, 0.32) };
+const LICHEN: Patch = Patch { salt: 0x11C4_E200, from: 0.58, to: 0.72, strength: 0.85, tint: Vec3::new(0.36, 0.42, 0.30) };
+const PEAT: Patch = Patch { salt: 0x9EA7_0003, from: 0.60, to: 0.74, strength: 0.85, tint: Vec3::new(0.26, 0.20, 0.15) };
+
+// The tundra's seed grass goes cream in wet patches `COTTON_PATCH` blocks across, which peat adds to.
+const COTTON_PATCH: f32 = 18.0;
+const COTTON_SALT: u64 = 0xC077_0A55;
+const COTTON_FROM: f32 = 0.64;
+const COTTON_TO: f32 = 0.80;
+const COTTON_PEAT: f32 = 0.25;
+const COTTON_STRENGTH: f32 = 0.9;
+const COTTON_TINT: Vec3 = Vec3::new(1.0, 0.96, 0.82);
+
+// What the cold's rock is dimmed to, by rock: the white marble most, the dark basalt least.
+pub(super) fn rock_darkening(block: BlockType) -> Option<f32> {
+    match block {
+        BlockType::Marble => Some(0.62),
+        BlockType::Limestone => Some(0.72),
+        BlockType::Rock | BlockType::Granite | BlockType::Shale => Some(0.8),
+        BlockType::Basalt => Some(0.9),
+        _ => None,
+    }
+}
 
 // Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
 // sampled at the mesh's four corners and blended across it, rather than at every vertex.
 pub(super) struct GrassTint {
     // at the mesh's edges, so neighbouring meshes share their tints along each edge: (-x, -z), (+x, -z), (-x, +z), (+x, +z)
     pub(super) corners: [Vec3; 4],
-    // how cold it is at the same corners, 0 to 1, over which the long grasses go mauve, as the heath does, see `mauve_at`
+    // how cold it is at the same corners, 0 to 1, over which the long grasses go oxblood, as the heath does, see `oxblood_at`
     cold: [f32; 4],
     // and over a warmer ramp, how far grass on the ground goes brown, see `cold_at`
     brown: [f32; 4],
@@ -555,37 +588,80 @@ impl GrassTint {
         Self {
             corners: climates.map(grass_tint),
             // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
-            cold: climates.map(|c| 1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, c.temperature)),
+            cold: climates.map(|c| 1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, c.temperature)),
             brown: climates.map(|c| 1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, c.temperature)),
             origin: origin.floor().as_ivec3(),
             scale,
         }
     }
 
-    // Whether grass here is varied by `russet_at`, so its faces mustn't merge into quads that would smear the patches.
+    // Whether grass here is varied by `mosaic`, so its faces mustn't merge into quads that would smear the patches.
     pub(super) fn varied_at(&self, local: Vec3) -> bool {
-        self.scale <= 1.0 && self.mauve_at(local) > 0.01
+        self.scale <= 1.0 && self.oxblood_at(local) > 0.01
     }
 
-    // How far the grass at `local` has gone to `RUSSET_TINT`, 0 to 1: patches of reddish grass across the cold country, from smooth
-    // noise over the world `RUSSET_PATCH` blocks across, in the cold only, as the long grasses' mauve is.
-    pub(super) fn russet_at(&self, local: Vec3) -> f32 {
-        let cold = self.mauve_at(local);
-        // far terrain, drawn in cells wider than a block, keeps the plain tint: patches 40 blocks across are a few cells there, and a third
-        // of the far land going red read as a flat brown band along the horizon
-        if cold <= 0.01 || self.scale > 1.0 {
-            return 0.0;
-        }
-        let world = (self.origin.as_vec3() + local * self.scale) / RUSSET_PATCH;
+    // Smooth noise, 0 to 1, over the world in a grid of `size` blocks, the same wherever it's meshed.
+    fn noise_at(&self, salt: u64, size: f32, local: Vec3) -> f32 {
+        let world = (self.origin.as_vec3() + local * self.scale) / size;
         let (cell, at) = (world.floor(), world - world.floor());
         let corner = |dx: f32, dz: f32| {
-            (hash(RUSSET_SALT, (cell.x + dx) as i64, (cell.z + dz) as i64) >> 11) as f32 / (1u64 << 53) as f32
+            (hash(salt, (cell.x + dx) as i64, (cell.z + dz) as i64) >> 11) as f32 / (1u64 << 53) as f32
         };
         let (u, v) = (smoothstep(0.0, 1.0, at.x), smoothstep(0.0, 1.0, at.z));
         let top = corner(0.0, 0.0) + (corner(1.0, 0.0) - corner(0.0, 0.0)) * u;
         let bottom = corner(0.0, 1.0) + (corner(1.0, 1.0) - corner(0.0, 1.0)) * u;
-        let patch = top + (bottom - top) * v;
-        cold * RUSSET_STRENGTH * smoothstep(RUSSET_FROM, RUSSET_TO, patch)
+        top + (bottom - top) * v
+    }
+
+    // Noise at two scales, `large_share` of it from the larger.
+    fn mixed_noise_at(&self, salt: u64, (small, large): (f32, f32), large_share: f32, local: Vec3) -> f32 {
+        large_share * self.noise_at(salt, large, local) + (1.0 - large_share) * self.noise_at(salt ^ 0xA5A5, small, local)
+    }
+
+    // How far the grass at `local` has gone to `RUSSET_TINT`, 0 to 1: reddish patches `RUSSET_PATCH` blocks across, in the cold only.
+    pub(super) fn russet_at(&self, local: Vec3) -> f32 {
+        let cold = self.oxblood_at(local);
+        // far terrain keeps the plain tint, or a third of it going red reads as a flat brown band along the horizon
+        if cold <= 0.01 || self.scale > 1.0 {
+            return 0.0;
+        }
+        cold * RUSSET_STRENGTH * smoothstep(RUSSET_FROM, RUSSET_TO, self.noise_at(RUSSET_SALT, RUSSET_PATCH, local))
+    }
+
+    // How far the ground at `local` has gone to `patch`'s tint, 0 to 1, in the cold only and not on far terrain.
+    fn patch_at(&self, patch: &Patch, local: Vec3) -> f32 {
+        let cold = self.oxblood_at(local);
+        if cold <= 0.01 || self.scale > 1.0 {
+            return 0.0;
+        }
+        let field = self.mixed_noise_at(patch.salt, (MOSAIC_SMALL, MOSAIC_LARGE), MOSAIC_LARGE_SHARE, local);
+        cold * patch.strength * smoothstep(patch.from, patch.to, field)
+    }
+
+    // `tint` of grass at `local` taken through the cold ground's patches of straw, lichen, peat and russet.
+    pub(super) fn mosaic(&self, tint: Vec3, local: Vec3) -> Vec3 {
+        [&STRAW, &LICHEN, &PEAT]
+            .into_iter()
+            .fold(tint, |tint, patch| tint.lerp(patch.tint, self.patch_at(patch, local)))
+            .lerp(RUSSET_TINT, self.russet_at(local))
+    }
+
+    // `tint` of a seed grass at `local`, taken to cream in the tundra's wet patches.
+    pub(super) fn cotton(&self, tint: Vec3, local: Vec3) -> Vec3 {
+        let brown = self.brown_at(local);
+        if brown <= 0.01 || self.scale > 1.0 {
+            return tint;
+        }
+        let wet = self.noise_at(COTTON_SALT, COTTON_PATCH, local) + COTTON_PEAT * self.patch_at(&PEAT, local);
+        tint.lerp(COTTON_TINT, brown * COTTON_STRENGTH * smoothstep(COTTON_FROM, COTTON_TO, wet))
+    }
+
+    // What a rock at `local` is multiplied by to weather it in the cold: a plain dimming by rock, no stains, `Vec3::ONE` for anything else.
+    pub(super) fn weathered_at(&self, block: BlockType, local: Vec3) -> Vec3 {
+        match rock_darkening(block) {
+            Some(dark) => Vec3::ONE.lerp(Vec3::splat(dark), self.oxblood_at(local)),
+            None => Vec3::ONE,
+        }
     }
 
     // The tint of grass at `local` in the cold: the climate's, pulled to `BROWN_TINT` by how cold it is, so the tundra's grass is brown and
@@ -594,13 +670,13 @@ impl GrassTint {
         self.at(local).lerp(BROWN_TINT, self.brown_at(local) * BROWN_STRENGTH)
     }
 
-    // The tint of the grass on the ground at `local`: brown in the cold, with its reddish patches.
+    // The tint of the grass on the ground at `local`: khaki in the cold, with its patches.
     pub(super) fn ground_at(&self, local: Vec3) -> Vec3 {
-        self.cold_at(local).lerp(RUSSET_TINT, self.russet_at(local))
+        self.mosaic(self.cold_at(local), local)
     }
 
-    // How far the long grasses at `local` have gone from the grass's tint to `MAUVE_TINT`, 0 to 1.
-    pub(super) fn mauve_at(&self, local: Vec3) -> f32 {
+    // How far the long grasses at `local` have gone from the grass's tint to `OXBLOOD_TINT`, 0 to 1.
+    pub(super) fn oxblood_at(&self, local: Vec3) -> f32 {
         self.across(self.cold, local)
     }
 
@@ -721,6 +797,10 @@ pub(super) const CUBE: [[Vertex; 4]; 6] = [
 mod russet_tests {
     use super::*;
 
+    // The least red over green the khaki holds, in the tundra's cold half and at its warmest quarter, where the plain tint is mixed in.
+    const OVER_COLD: f32 = 1.3;
+    const OVER_WARMEST: f32 = 1.2;
+
     fn tint(cold: f32) -> GrassTint {
         GrassTint {
             corners: [Vec3::ONE; 4],
@@ -732,31 +812,26 @@ mod russet_tests {
     }
 
     // The tundra reads a temperature of 0.03 to 0.15 and a humidity up to about 0.13 on a seed measured, so this runs well past both: at
-    // every climate there, the grass on the ground is brown or red, never green, with or without a reddish patch, while grassland stays green.
+    // every climate there, the base grass is khaki, never green, while grassland stays green.
     #[test]
-    fn test_cold_grass_is_brown_or_red_and_never_green_where_warm_grass_stays_green() {
+    fn test_cold_grass_is_khaki_and_never_green_where_warm_grass_stays_green() {
         use ochre_base::biome::{grass_tint, Climate};
         let at = |temperature: f32, humidity: f32| GrassTint {
             corners: [grass_tint(Climate { temperature, humidity }); 4],
-            cold: [1.0 - smoothstep(MAUVE_FULL_BELOW, MAUVE_NONE_ABOVE, temperature); 4],
+            cold: [1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, temperature); 4],
             brown: [1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, temperature); 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         };
-        // below 0.12 grass is firmly brown or red whatever the humidity, and the warmest tundra, at up to 0.15, which reads a humidity of
-        // at most about 0.13, still has red a clear third over its green, where the plain tint had 1.05
         for (temperatures, humidities, over) in [
-            (&[0.03, 0.06, 0.08, 0.10, 0.12][..], &[0.0, 0.1, 0.2, 0.4, 0.6][..], 1.5),
-            (&[0.14, 0.15][..], &[0.0, 0.07, 0.13][..], 1.3),
+            (&[0.03, 0.06, 0.08, 0.10, 0.12][..], &[0.0, 0.1, 0.2, 0.4, 0.6][..], OVER_COLD),
+            (&[0.14, 0.15][..], &[0.0, 0.07, 0.13][..], OVER_WARMEST),
         ] {
             for &temperature in temperatures {
                 for &humidity in humidities {
-                    let tint = at(temperature, humidity);
-                    for x in 0..40 {
-                        let ground = tint.ground_at(Vec3::new(x as f32 * 5.0, 0.0, 0.0));
-                        assert!(ground.x > ground.y * over, "not brown at temperature {temperature}, humidity {humidity}: {ground}");
-                        assert!(ground.x > ground.z, "{ground}");
-                    }
+                    let khaki = at(temperature, humidity).cold_at(Vec3::ZERO);
+                    assert!(khaki.x > khaki.y * over, "not khaki at temperature {temperature}, humidity {humidity}: {khaki}");
+                    assert!(khaki.x > khaki.z, "{khaki}");
                 }
             }
         }
@@ -767,6 +842,97 @@ mod russet_tests {
         let grassland = warm.ground_at(Vec3::ZERO);
         assert!(grassland.y > grassland.x, "{grassland}");
         assert_eq!(grassland, warm.at(Vec3::ZERO));
+    }
+
+    #[test]
+    fn test_khaki_is_duller_than_the_orange_it_replaces() {
+        let saturation = |c: Vec3| (c.max_element() - c.min_element()) / c.max_element();
+        assert!(saturation(BROWN_TINT) < saturation(Vec3::new(0.49, 0.28, 0.11)) - 0.1, "{}", saturation(BROWN_TINT));
+    }
+
+    #[test]
+    fn test_mosaic_patches_are_in_the_cold_only_each_cover_a_part_and_vary_smoothly() {
+        let (cold, warm) = (tint(1.0), tint(0.0));
+        let at = |x: i32, z: i32| Vec3::new(x as f32, 0.0, z as f32);
+        for patch in [&STRAW, &LICHEN, &PEAT] {
+            let mut weights = Vec::new();
+            for x in (0..2400).step_by(8) {
+                for z in (0..2400).step_by(8) {
+                    assert_eq!(0.0, warm.patch_at(patch, at(x, z)));
+                    let weight = cold.patch_at(patch, at(x, z));
+                    assert!((0.0..=patch.strength).contains(&weight), "{weight}");
+                    weights.push(weight);
+                }
+            }
+            let share = |f: &dyn Fn(f32) -> bool| weights.iter().filter(|&&w| f(w)).count() as f32 / weights.len() as f32;
+            assert!((0.08..0.35).contains(&share(&|w| w > 0.4)), "{:#x}: {}", patch.salt, share(&|w| w > 0.4));
+            assert!(share(&|w| w == 0.0) > 0.4, "{:#x}: {}", patch.salt, share(&|w| w == 0.0));
+            for x in 0..300 {
+                let step = (cold.patch_at(patch, at(x + 1, 0)) - cold.patch_at(patch, at(x, 0))).abs();
+                assert!(step < 0.3, "{step} between neighbours at {x}");
+            }
+        }
+        // a warm country's ground is its plain tint, and far terrain keeps it in the cold
+        let coarse = GrassTint { scale: 4.0, ..tint(1.0) };
+        for x in 0..100 {
+            assert_eq!(Vec3::ONE, warm.mosaic(Vec3::ONE, at(x * 7, x * 3)));
+            assert_eq!(Vec3::ONE, coarse.mosaic(Vec3::ONE, at(x * 7, x * 3)));
+        }
+        // and each kind reads: straw is paler, peat darker and lichen greener than the khaki, and none is darker than the oxblood grasses
+        let luma = |c: Vec3| c.dot(Vec3::new(0.2126, 0.7152, 0.0722));
+        assert!(luma(STRAW.tint) > luma(BROWN_TINT) && luma(PEAT.tint) < luma(BROWN_TINT));
+        let greenness = |c: Vec3| c.y / c.x;
+        assert!(greenness(LICHEN.tint) > 1.0 && greenness(LICHEN.tint) > greenness(BROWN_TINT));
+        assert!(luma(PEAT.tint) > luma(OXBLOOD_TINT));
+    }
+
+    #[test]
+    fn test_cotton_grass_is_in_the_cold_only_in_wet_patches_and_cream() {
+        let (cold, warm) = (tint(1.0), tint(0.0));
+        let at = |x: i32, z: i32| Vec3::new(x as f32, 0.0, z as f32);
+        let grass = Vec3::new(0.4, 0.3, 0.2);
+        let mut cream = 0;
+        let mut total = 0;
+        for x in (0..1200).step_by(5) {
+            for z in (0..1200).step_by(5) {
+                assert_eq!(grass, warm.cotton(grass, at(x, z)));
+                let tinted = cold.cotton(grass, at(x, z));
+                let (low, high) = (grass.min(COTTON_TINT), grass.max(COTTON_TINT));
+                assert!(tinted.cmpge(low - 1e-5).all() && tinted.cmple(high + 1e-5).all(), "{tinted}");
+                cream += (tinted.x > 0.8) as u32;
+                total += 1;
+            }
+        }
+        let share = cream as f32 / total as f32;
+        assert!((0.03..0.25).contains(&share), "{share}");
+        // the tundra's edge, where it's not cold enough to be brown, and far terrain, have none
+        let edge = GrassTint { brown: [0.0; 4], ..tint(1.0) };
+        let coarse = GrassTint { scale: 4.0, ..tint(1.0) };
+        for x in 0..200 {
+            assert_eq!(grass, edge.cotton(grass, at(x, x)));
+            assert_eq!(grass, coarse.cotton(grass, at(x, x)));
+        }
+    }
+
+    #[test]
+    fn test_rock_is_dimmed_in_the_cold_only_by_a_plain_tint() {
+        let (cold, warm) = (tint(1.0), tint(0.0));
+        let at = |x: i32, z: i32| Vec3::new(x as f32, 3.0, z as f32);
+        for x in (0..400).step_by(7) {
+            for z in (0..400).step_by(7) {
+                assert_eq!(Vec3::ONE, warm.weathered_at(BlockType::Marble, at(x, z)));
+                for block in [BlockType::Grass, BlockType::Dirt, BlockType::CompactedMarble, BlockType::Sandstone] {
+                    assert_eq!(Vec3::ONE, cold.weathered_at(block, at(x, z)));
+                }
+                // one colour wherever it is: no stains
+                assert_eq!(Vec3::splat(0.62), cold.weathered_at(BlockType::Marble, at(x, z)));
+            }
+        }
+        // marble dims most, far terrain is dimmed the same, and half way into the cold is half way dimmed
+        assert!(rock_darkening(BlockType::Marble) < rock_darkening(BlockType::Rock));
+        let coarse = GrassTint { scale: 4.0, ..tint(1.0) };
+        assert_eq!(Vec3::splat(0.62), coarse.weathered_at(BlockType::Marble, at(10, 10)));
+        assert!((tint(0.5).weathered_at(BlockType::Marble, at(10, 10)).max_element() - 0.81).abs() < 1e-6);
     }
 
     #[test]

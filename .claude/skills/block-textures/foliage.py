@@ -240,11 +240,11 @@ def shrub(rng, cv):
         leaf(cv, cx + x * rx, cy + y * ry, rng.uniform(42, 68), rng.uniform(15, 24), out + rng.uniform(-0.7, 0.7), tone)
 
 
-HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (108, 96, 120), (74, 62, 66), (164, 134, 172)  # a greyish mauve, muted as a tundra's scrub is, not a bright violet
+HEATH_LEAF, HEATH_STEM, HEATH_FLOWER = (104, 56, 44), (69, 37, 29), (150, 81, 63)  # a deep reddish brown, muted as a tundra's scrub is
 
 
 def heath(rng, cv):
-    """Low mauve scrub: a dense flat dome of small greyish leaves, lighter on top, with muted lilac flowers dotted over its crown.
+    """Low reddish-brown scrub: a dense flat dome of small leaves, lighter on top, with muted rust flowers dotted over its crown.
     It keeps its own colour, not the climate's grass tint, and is a mat for a cluster to make a carpet of, not arms."""
     cx, cy, rx, ry = 256, 430, 238, 112
     for _ in range(3):  # a few woody stems under it
