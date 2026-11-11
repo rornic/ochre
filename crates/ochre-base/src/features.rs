@@ -56,21 +56,29 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
     (raw * detail).clamp(-MAX_OFFSET, MAX_OFFSET)
 }
 
-// Occasional broad, asymmetric glacial hills rising above the open tundra.
+// Occasional broad, asymmetric glacial hills rising above the open tundra, in provinces: some hold none and the rest are thick or thin, so
+// they cluster and leave wide gaps instead of standing in a lattice.
 fn tundra_hills(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let gentle = 1.0 - smoothstep(0.3, 0.6, ctx.gradient);
     if gentle <= 0.0 {
         return 0.0;
     }
-    const CELL: f64 = 240.0;
+    const CELL: f64 = 420.0;
+    const PROVINCE: f64 = 1600.0;
+    const CHANCE: f64 = 0.30;
+    // the most a province scales the chance, for the cheap reject before the hill's place is worked out
+    const MOST: f64 = 1.8;
     let (gx, gz) = ((x / CELL).floor() as i64, (z / CELL).floor() as i64);
     let mut best: f64 = 0.0;
     for cz in gz - 1..=gz + 1 {
         for cx in gx - 1..=gx + 1 {
             let h = cell_hash(seed ^ 0x741D_A111, cx, cz);
-            if unit_of(h, 1) >= 0.45 { continue; }
-            let px = (cx as f64 + 0.2 + 0.6 * unit_of(h, 2)) * CELL;
-            let pz = (cz as f64 + 0.2 + 0.6 * unit_of(h, 3)) * CELL;
+            if unit_of(h, 1) >= CHANCE * MOST { continue; }
+            let px = (cx as f64 + 0.1 + 0.8 * unit_of(h, 2)) * CELL;
+            let pz = (cz as f64 + 0.1 + 0.8 * unit_of(h, 3)) * CELL;
+            let province = cell_hash(seed ^ 0x9407_C0DE, (px / PROVINCE).floor() as i64, (pz / PROVINCE).floor() as i64);
+            let scale = if unit_of(province, 1) < 0.4 { 0.0 } else { 0.6 + 1.2 * unit_of(province, 2) };
+            if unit_of(h, 1) >= CHANCE * scale { continue; }
             let angle = unit_of(h, 4) * std::f64::consts::TAU;
             let (sin, cos) = (libm::sin(angle), libm::cos(angle));
             let (dx, dz) = (x - px, z - pz);
@@ -168,30 +176,50 @@ fn seracs(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * steep
 }
 
-// Round ice-cored mounds on flat ground, about one to 10,000 blocks squared: 6 to 14 high, 8 to 16 across a radius.
+// Round ice-cored mounds on flat ground, 5 to 14 high and 7 to 18 across a radius, in drifts with open tundra between. Two lattices of
+// different cell sizes, each turned to its own angle, are laid over each other, and a smooth field thickens and thins them, so the mounds
+// fall in no grid or bands.
 fn pingos(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let flat = 1.0 - smoothstep(0.08, 0.15, ctx.gradient);
     if flat <= 0.0 {
         return 0.0;
     }
-    const SIZE: f64 = 100.0;
-    let (gx, gz) = ((x / SIZE).floor() as i64, (z / SIZE).floor() as i64);
+    // each lattice's cell size, the cosine and sine of its angle, its chance of a mound in a cell, and its hash salt
+    const LATTICES: [(f64, f64, f64, f64, u32); 2] = [
+        (190.0, 0.900447, 0.434966, 0.65, 0x91A6),
+        (150.0, 0.813878, -0.581035, 0.65, 0x4C7D),
+    ];
+    // the drifts are this many blocks across, and the field scales the chance by up to this much
+    const DRIFT: f64 = 800.0;
+    const MOST: f64 = 1.8;
     let mut best: f64 = 0.0;
-    for cz in gz - 1..=gz + 1 {
-        for cx in gx - 1..=gx + 1 {
-            let h = cell_hash(seed ^ 0x91A6, cx, cz);
-            if unit_of(h, 1) >= 0.8 {
-                continue;
-            }
-            let (px, pz) = (
-                (cx as f64 + 0.2 + 0.6 * unit_of(h, 2)) * SIZE,
-                (cz as f64 + 0.2 + 0.6 * unit_of(h, 3)) * SIZE,
-            );
-            let radius = 8.0 + 8.0 * unit_of(h, 4);
-            let d = ((x - px).powi(2) + (z - pz).powi(2)).sqrt();
-            if d < radius {
-                let t = 1.0 - d / radius;
-                best = best.max((6.0 + 8.0 * unit_of(h, 5)) * t * t * (3.0 - 2.0 * t));
+    for (size, cos, sin, chance, salt) in LATTICES {
+        let (u, v) = (x * cos + z * sin, -x * sin + z * cos);
+        let (gx, gz) = ((u / size).floor() as i64, (v / size).floor() as i64);
+        for cz in gz - 1..=gz + 1 {
+            for cx in gx - 1..=gx + 1 {
+                let h = cell_hash(seed ^ salt, cx, cz);
+                // the cheap reject, before the mound's place is worked out
+                if unit_of(h, 1) >= chance * MOST {
+                    continue;
+                }
+                let (pu, pv) = (
+                    (cx as f64 + 0.1 + 0.8 * unit_of(h, 2)) * size,
+                    (cz as f64 + 0.1 + 0.8 * unit_of(h, 3)) * size,
+                );
+                // the field where the mound is in the world, so both lattices thicken in the same places
+                let (wx, wz) = (pu * cos - pv * sin, pu * sin + pv * cos);
+                let thick = smoothstep(-0.25, 0.4, perlin(seed ^ 0x51F0, wx / DRIFT, wz / DRIFT)) * MOST;
+                if unit_of(h, 1) >= chance * thick {
+                    continue;
+                }
+                let size_roll = unit_of(h, 4);
+                let radius = 7.0 + 11.0 * size_roll * size_roll;
+                let d = ((u - pu).powi(2) + (v - pv).powi(2)).sqrt();
+                if d < radius {
+                    let t = 1.0 - d / radius;
+                    best = best.max((5.0 + 9.0 * unit_of(h, 5)) * t * t * (3.0 - 2.0 * t));
+                }
             }
         }
     }
@@ -415,17 +443,32 @@ mod tests {
     }
 
     #[test]
-    fn tundra_hills_are_raised_and_spaced_apart() {
+    fn tundra_hills_are_raised_rare_and_come_in_provinces_with_gaps_between() {
         let ctx = ctx(0.05);
-        let (mut open, mut high) = (0, 0);
-        for (x, z) in grid() {
-            let height = offset(ReliefKind::TundraHills, 5, x, z, 1.0, &ctx);
-            assert!(height >= 0.0);
-            open += usize::from(height < 0.1);
-            high += usize::from(height > 5.0);
+        // a 5 km square, since the hills are hundreds of blocks apart
+        let (mut open, mut high, mut samples) = (0usize, 0usize, 0usize);
+        let mut empty_blocks = std::collections::HashSet::new();
+        let mut hill_blocks = std::collections::HashSet::new();
+        for i in 0..200 {
+            for j in 0..200 {
+                let (x, z) = (i as f64 * 25.0 - 2500.0, j as f64 * 25.0 - 2500.0);
+                let height = offset(ReliefKind::TundraHills, 5, x, z, 1.0, &ctx);
+                assert!(height >= 0.0);
+                samples += 1;
+                open += usize::from(height < 0.1);
+                high += usize::from(height > 5.0);
+                // 800-block squares, with or without any hill in them
+                let block = ((x / 800.0).floor() as i64, (z / 800.0).floor() as i64);
+                if height > 0.1 {
+                    hill_blocks.insert(block);
+                } else {
+                    empty_blocks.insert(block);
+                }
+            }
         }
-        assert!(open > 7000, "{open} open samples");
-        assert!(high > 50, "{high} raised samples");
+        assert!(open * 100 > samples * 95, "{open} of {samples} open");
+        assert!(high > 20, "{high} raised samples");
+        assert!(empty_blocks.iter().any(|b| !hill_blocks.contains(b)), "every 800 block square holds a hill");
     }
 
     #[test]
