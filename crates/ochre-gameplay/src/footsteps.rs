@@ -6,13 +6,17 @@ use bevy::{
     audio::{AudioPlayer, AudioSource, PlaybackSettings, Volume},
     ecs::{
         message::{Message, MessageReader},
+        query::With,
         resource::Resource,
-        system::{Commands, Local, Res},
+        system::{Commands, Local, Query, Res},
     },
     math::Vec3,
+    transform::components::Transform,
 };
 use ochre_base::block::BlockType;
 use ochre_terrain::world::World;
+
+use crate::player::Player;
 
 #[derive(Clone, Copy)]
 pub enum Surface {
@@ -60,6 +64,13 @@ impl Surface {
         }
     }
 
+    /// Whether `feet` are pushing through grass or other ground flora.
+    fn in_flora(world: &World, feet: Vec3) -> bool {
+        world
+            .get_block_at((feet + Vec3::Y * 0.1).round().as_i64vec3())
+            .is_flora()
+    }
+
     /// What the ground under `feet` sounds like, none when the feet are in water.
     pub fn under(world: &World, feet: Vec3) -> Option<Surface> {
         let at = |offset: f32| world.get_block_at((feet + Vec3::Y * offset).round().as_i64vec3());
@@ -85,9 +96,15 @@ const VOLUME: f32 = 0.15;
 pub const SPRINT_LOUDER: f32 = 1.25;
 const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
+// Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.
+const RUSTLES: usize = 3;
+const RUSTLE_VOLUME: f32 = 0.12;
 
 #[derive(Resource)]
-struct Footsteps([[Handle<AudioSource>; VARIANTS]; Surface::ALL.len()]);
+struct Footsteps {
+    steps: [[Handle<AudioSource>; VARIANTS]; Surface::ALL.len()],
+    rustles: [Handle<AudioSource>; RUSTLES],
+}
 
 pub struct FootstepPlugin;
 
@@ -100,24 +117,32 @@ impl Plugin for FootstepPlugin {
 }
 
 fn load_footsteps(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.insert_resource(Footsteps(Surface::ALL.map(|surface| {
-        std::array::from_fn(|i| {
-            assets.load(format!("sounds/footsteps/{}_{}.ogg", surface.name(), i + 1))
-        })
-    })));
+    commands.insert_resource(Footsteps {
+        steps: Surface::ALL.map(|surface| {
+            std::array::from_fn(|i| {
+                assets.load(format!("sounds/footsteps/{}_{}.ogg", surface.name(), i + 1))
+            })
+        }),
+        rustles: std::array::from_fn(|i| {
+            assets.load(format!("sounds/footsteps/foliage_{}.ogg", i + 1))
+        }),
+    });
 }
 
 fn play_footsteps(
     mut commands: Commands,
     mut steps: MessageReader<Footstep>,
     clips: Res<Footsteps>,
+    world: Res<World>,
+    player: Query<&Transform, With<Player>>,
     mut last: Local<usize>,
+    mut last_rustle: Local<usize>,
 ) {
     for step in steps.read() {
         // never the clip just played, which sounds like a stutter
         *last = (*last + 1 + rand::random_range(0..VARIANTS - 1)) % VARIANTS;
         commands.spawn((
-            AudioPlayer(clips.0[step.surface as usize][*last].clone()),
+            AudioPlayer(clips.steps[step.surface as usize][*last].clone()),
             PlaybackSettings {
                 volume: Volume::Linear(
                     VOLUME * step.loudness * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
@@ -126,6 +151,24 @@ fn play_footsteps(
                 ..PlaybackSettings::DESPAWN
             },
         ));
+        if player
+            .single()
+            .is_ok_and(|feet| Surface::in_flora(&world, feet.translation))
+        {
+            *last_rustle = (*last_rustle + 1 + rand::random_range(0..RUSTLES - 1)) % RUSTLES;
+            commands.spawn((
+                AudioPlayer(clips.rustles[*last_rustle].clone()),
+                PlaybackSettings {
+                    volume: Volume::Linear(
+                        RUSTLE_VOLUME
+                            * step.loudness
+                            * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
+                    ),
+                    speed: rand::random_range(PITCH_JITTER.0..PITCH_JITTER.1),
+                    ..PlaybackSettings::DESPAWN
+                },
+            ));
+        }
     }
 }
 
