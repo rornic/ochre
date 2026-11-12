@@ -14,7 +14,8 @@ use bevy::{
 
 use crate::curvature::Curvature;
 use crate::world::World;
-use ochre_base::cold;
+use bevy::math::Vec3;
+use ochre_base::{cold, WATER_LEVEL};
 
 // How often the camera's climate is read, and how long what the shaders see takes to ease to it, in seconds.
 const SENSE_SECONDS: f32 = 0.25;
@@ -32,8 +33,17 @@ impl Plugin for FrostPlugin {
     }
 }
 
+/// Whether frost is on, as `FrostPlugin` was given.
 #[derive(Resource)]
-struct FrostSwitch(bool);
+pub struct FrostSwitch(pub bool);
+
+/// How much of the ground at `feet` the cold frosts, 0 to 1: the shaders' cover before their patchiness, so 0.5 is about half covered.
+pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
+    let terrain = world.region_store.terrain();
+    let (x, z) = (feet.x.floor() as f64, feet.z.floor() as f64);
+    let thaw = terrain.biomes().frost(terrain.biome(x, z));
+    cold::frost_cold(terrain.temperature(x, z), feet.y - WATER_LEVEL as f32) * thaw
+}
 
 // What the shaders see: the camera's sea-level temperature and how much of the cold's frost its biome keeps, with where each is heading.
 #[derive(Default)]

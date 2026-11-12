@@ -15,7 +15,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `flow.rs`: `FALLING` (8), `SPREAD` (7), `surface(level)`; crate-internal `step`, `flow_water`.
 - `material.rs`: `ChunkMaterial`, `WaterMaterial`, `SprayMaterial`, `TerrainMaterials`, `ShaderInputs`, `CloudLayer`, `TerrainAssets`, `block_atlas`, `material_array`, `MATERIAL_SIZE` (512), `water_level`, `push_shader_defs`.
 - `fade.rs`: `FadeMaterials`, `Fade`, `SolidWater`, `FULLY_VISIBLE`, `set_shown`, `fade_out_and_despawn`.
-- `frost.rs`: `FrostPlugin { on }`: reads the camera's temperature and biome frost factor four times a second, eases them, and writes them with the snow rule's constants into `Curvature.cold` (`ochre_base::cold::shader_values`) for `frost.wesl`.
+- `frost.rs`: `FrostPlugin { on }`: reads the camera's temperature and biome frost factor four times a second, eases them, and writes them with the snow rule's constants into `Curvature.cold` (`ochre_base::cold::shader_values`) for `frost.wesl`. `FrostSwitch(pub bool)` holds whether frost is on, and `frost_cover(&World, feet) -> f32` is the same cold sum at a point without the shader's patchiness (footsteps ring like ice above `ICY_FROST`).
 - `curvature.rs`: `Curve` (`is_flat_at`, `horizon_distance`, `edge_dip`), `WORLD_CURVE`, `Curvature`, `CurvaturePlugin`. `horizon.rs`: `MAX_RENDER_DISTANCE` (2048), `render_distance_at`, `update_horizon`.
 - `settings.rs`: `RendererSettings` (`lod_layout`, `fog_distance`, `material_period`, `frost`), `DebugSettings { still_leaves, solid_leaves, no_frost }`, `CloudResolution`.
 - `pack.rs`: `set_packed`, `pack`. `raycast.rs`: `raycast`, `RayHit`. `shadow_mesh.rs`: crate-private `split`.
