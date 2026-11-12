@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use std::f32::consts::TAU;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use bevy::{
     asset::{Asset, Assets, Handle},
@@ -9,7 +9,7 @@ use bevy::{
     ecs::{
         bundle::Bundle,
         component::Component,
-        message::MessageReader,
+        message::{MessageReader, MessageWriter},
         query::{With, Without},
         resource::Resource,
         system::{Local, Query, Res, ResMut},
@@ -39,6 +39,7 @@ use bevy::{
 };
 
 use crate::collision::{move_and_step, Aabb};
+use crate::footsteps::{Footstep, FootstepPlugin, Surface, SPRINT_LOUDER};
 use bevy::{
     anti_alias::taa::TemporalAntiAliasing,
     app::{App, Plugin, Update},
@@ -80,6 +81,17 @@ pub struct Player {
     eye_lag: f32,
     // seconds before the next step up is allowed, so a flight of steps isn't taken at a sprint
     step_cooldown: f32,
+    // how fast it was falling on the frame it landed, else zero
+    landed: f32,
+    // what it pushed off on the frame it jumped, else none
+    jumped: Option<Surface>,
+    // how much of a jump's kick is left, from 1 at take-off, and the pitch it has added to the camera
+    kick: f32,
+    // the same for a landing, as a multiple of a walking step's thud
+    thud: f32,
+    nudge: f32,
+    // how fast the field of view is opening, in radians a second
+    fov_speed: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -127,10 +139,15 @@ const SWIM_UP_SPEED: f32 = 4.0;
 // Head bob walking and sprinting in blocks, blocks walked a pair of steps, and how fast it eases in and out a second.
 const BOB_WALK: f32 = 0.05;
 const BOB_SPRINT: f32 = 0.065;
-const BOB_STRIDE: f32 = 2.6;
+const BOB_STRIDE: f32 = 3.6;
 // Sprinting takes longer strides, so its bob is only a little quicker than walking's.
-const BOB_SPRINT_STRIDE: f32 = 3.4;
+const BOB_SPRINT_STRIDE: f32 = 4.6;
 const BOB_EASE: f32 = 6.0;
+// Vertical field of view in degrees, how much wider it opens sprinting, and the spring it follows with: stiffness, and twice its square root in damping, which settles without overshoot.
+const FOV: f32 = 90.0;
+const SPRINT_FOV: f32 = 8.0;
+const FOV_STIFFNESS: f32 = 36.0;
+const FOV_DAMPING: f32 = 12.0;
 // How fast, a share a second, the player's speed across turns toward what's wanted in the air.
 const AIR_CONTROL: f32 = 3.0;
 // How far up the body the water must reach for the player to be swimming.
@@ -145,6 +162,22 @@ const STEP_COOLDOWN: f32 = 0.1;
 const STEP_EASE: f32 = 10.0;
 // The longest frame moved in one step, so a hitch doesn't fling the player.
 const MAX_STEP: f32 = 0.1;
+// Gravity's multiple falling, and rising after Space is let go, so a jump arcs sharply and a tap hops.
+const FALL_GRAVITY: f32 = 1.4;
+const SHORT_HOP_GRAVITY: f32 = 2.5;
+// A jump's push-off, as a multiple of a step's loudness, the degrees it widens the view and tips it up, and how fast, a share a second, that fades.
+const TAKEOFF_LOUDNESS: f32 = 0.6;
+const JUMP_FOV: f32 = 1.0;
+const JUMP_PITCH: f32 = 0.5;
+const KICK_DECAY: f32 = 5.0;
+// How many degrees a landing narrows the view and tips it down, at a walking step's thud.
+const LAND_FOV: f32 = 1.0;
+const LAND_PITCH: f32 = 0.75;
+// Landing: the slowest fall that counts, how far the eyes drop for each block a second it was falling and at most, and how loud the thud is, as a multiple of a step, at the softest and hardest.
+const LAND_MIN_SPEED: f32 = 7.0;
+const LAND_DIP: f32 = 0.012;
+const LAND_DIP_MAX: f32 = 0.3;
+const LAND_LOUDNESS: (f32, f32) = (0.8, 2.0);
 
 type PlayerCamera<'a> = (&'a ChildOf, &'a mut Transform);
 
@@ -155,6 +188,8 @@ fn player_move(
     mut player_query: Query<(&mut Transform, &mut Player)>,
     mut camera_query: Query<(&ChildOf, &mut Transform), (With<Camera>, Without<Player>)>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut steps: MessageWriter<Footstep>,
+    mut projection: Query<&mut Projection, With<Camera>>,
 ) {
     let (parent, mut camera) = camera_query.single_mut().expect("camera does not exist");
     let (mut transform, mut player) = player_query
@@ -217,13 +252,60 @@ fn player_move(
     } else {
         BOB_STRIDE
     };
+    let before = player.bob_phase;
     player.bob_phase = (player.bob_phase + across_speed * dt * TAU / stride) % TAU;
+    if striding && footfall(before, player.bob_phase) {
+        if let Some(surface) = Surface::under(&world, transform.translation) {
+            let loudness = if sprinting { SPRINT_LOUDER } else { 1.0 };
+            steps.write(Footstep { surface, loudness });
+        }
+    }
+    let rushing = sprinting
+        && across != Vec3::ZERO
+        && (player.movement == Movement::Fly || across_speed > 0.1);
+    if let Ok(mut projection) = projection.single_mut() {
+        if let Projection::Perspective(perspective) = &mut *projection {
+            let wanted = (FOV + if rushing { SPRINT_FOV } else { 0.0 } + JUMP_FOV * player.kick
+                - LAND_FOV * player.thud)
+                .to_radians();
+            let pull = (wanted - perspective.fov) * FOV_STIFFNESS - player.fov_speed * FOV_DAMPING;
+            player.fov_speed += pull * dt;
+            perspective.fov += player.fov_speed * dt;
+        }
+    }
+    if let Some(surface) = player.jumped.take() {
+        steps.write(Footstep {
+            surface,
+            loudness: TAKEOFF_LOUDNESS,
+        });
+        player.kick = 1.0;
+    }
+    player.kick -= player.kick * (KICK_DECAY * dt).min(1.0);
+    player.thud -= player.thud * (KICK_DECAY * dt).min(1.0);
+    let landed = std::mem::take(&mut player.landed);
+    if landed > 0.0 {
+        let hardness = (landed / JUMP_SPEED).clamp(LAND_LOUDNESS.0, LAND_LOUDNESS.1);
+        player.thud = hardness;
+        player.eye_lag = (player.eye_lag + landed * LAND_DIP).min(player.eye_lag.max(LAND_DIP_MAX));
+        if let Some(surface) = Surface::under(&world, transform.translation) {
+            steps.write(Footstep {
+                surface,
+                loudness: hardness,
+            });
+        }
+    }
     player.eye_lag -= player.eye_lag * (STEP_EASE * dt).min(1.0);
     camera.translation = Vec3::new(
         player.bob * 0.5 * player.bob_phase.sin(),
         EYE_HEIGHT - player.eye_lag - player.bob * (1.0 - (2.0 * player.bob_phase).cos()) / 2.0,
         0.0,
     );
+}
+
+// Whether the bob's phase passed where the head is lowest, a quarter and three quarters of the way round.
+fn footfall(before: f32, after: f32) -> bool {
+    let side = |phase: f32| ((phase + FRAC_PI_2) / PI) as u32 % 2;
+    side(before) != side(after)
 }
 
 fn walk(
@@ -272,10 +354,15 @@ fn walk(
     } else {
         if jumping && player.grounded {
             player.velocity.y = JUMP_SPEED;
+            player.jumped = Surface::under(world, transform.translation);
         }
         // falling with the feet still in water is gentle, so the head stays up a while, but a jump out of shallows isn't
         let gravity = if wading && player.velocity.y <= 0.0 {
             WATER_GRAVITY
+        } else if player.velocity.y > 0.0 && !jumping {
+            GRAVITY * SHORT_HOP_GRAVITY
+        } else if player.velocity.y < 0.0 {
+            GRAVITY * FALL_GRAVITY
         } else {
             GRAVITY
         };
@@ -305,7 +392,12 @@ fn walk(
         player.step_cooldown = STEP_COOLDOWN;
     }
     transform.translation = position - BLOCK_CORNER;
+    let fall = -player.velocity.y;
+    let was_grounded = player.grounded;
     player.grounded = hit.y && player.velocity.y < 0.0;
+    if player.grounded && !was_grounded && !swimming && !wading && fall >= LAND_MIN_SPEED {
+        player.landed = fall;
+    }
     if hit.y {
         player.velocity.y = 0.0;
     }
@@ -348,7 +440,7 @@ pub fn grab_cursor(
 
 fn player_look(
     time: Res<Time>,
-    mut player_query: Query<&mut Transform, With<Player>>,
+    mut player_query: Query<(&mut Transform, &mut Player)>,
     mut camera_query: Query<PlayerCamera, (With<Camera>, Without<Player>)>,
     mut motion_evr: MessageReader<MouseMotion>,
     cursor: Query<&CursorOptions, With<PrimaryWindow>>,
@@ -358,17 +450,21 @@ fn player_look(
         return;
     }
     let (parent, mut camera) = camera_query.single_mut().expect("camera does not exist");
-    let mut player = player_query
+    let (mut body, mut player) = player_query
         .get_mut(parent.parent())
         .expect("player does not exist");
     let turn = LOOK_SENSITIVITY * time.delta_secs();
-    // the camera only ever turns about x, under the body's turn about y
-    let (mut pitch, _, _) = camera.rotation.to_euler(EulerRot::XYZ);
+    // the camera only ever turns about x, under the body's turn about y, and the jump's tip is taken off and put back on each frame
+    let (tipped, _, _) = camera.rotation.to_euler(EulerRot::XYZ);
+    let mut pitch = tipped - player.nudge;
     for ev in motion_evr.read() {
-        player.rotate_axis(Dir3::Y, -ev.delta.x * turn);
+        body.rotate_axis(Dir3::Y, -ev.delta.x * turn);
         pitch = (pitch - ev.delta.y * turn).clamp(-MAX_PITCH, MAX_PITCH);
     }
-    camera.rotation = Quat::from_rotation_x(pitch);
+    let tip = JUMP_PITCH * player.kick - LAND_PITCH * player.thud;
+    let shown = (pitch + tip.to_radians()).clamp(-MAX_PITCH, MAX_PITCH);
+    player.nudge = shown - pitch;
+    camera.rotation = Quat::from_rotation_x(shown);
 }
 
 pub struct DryDefaults {
@@ -572,7 +668,7 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<MurkMaterial>::default())
+        app.add_plugins((MaterialPlugin::<MurkMaterial>::default(), FootstepPlugin))
             .init_resource::<ColdGrade>()
             .add_systems(
                 Update,
@@ -619,7 +715,7 @@ pub fn spawn_player(
             atmosphere_camera(),
             Projection::Perspective(PerspectiveProjection {
                 // vertical, as Minecraft's field of view setting is
-                fov: 90f32.to_radians(),
+                fov: FOV.to_radians(),
                 near: NEAR,
                 far: fog_distance + WORLD_HEIGHT as f32,
                 ..default()
@@ -683,13 +779,28 @@ pub fn spawn_player(
 mod tests {
     use super::*;
 
+    #[test]
+    fn two_footfalls_a_stride_where_the_head_is_lowest() {
+        let count = (0..2000)
+            .filter(|i| {
+                footfall(
+                    *i as f32 * TAU / 2000.0,
+                    (*i + 1) as f32 * TAU / 2000.0 % TAU,
+                )
+            })
+            .count();
+        assert_eq!(count, 2);
+        assert!(footfall(FRAC_PI_2 - 0.01, FRAC_PI_2 + 0.01));
+        assert!(!footfall(0.1, 0.2));
+    }
+
     // In a two-block gap the camera is `BODY.max.y - EYE_HEIGHT` under the ceiling, and a view of `fov` degrees at `pitch` has its near
     // plane's top edge `NEAR * (sin(pitch) + cos(pitch) * tan(fov / 2))` above the eye: it must never reach it, however far up the
     // player looks, or the camera is inside the block above.
     #[test]
     fn test_the_near_plane_stays_out_of_the_ceiling_of_a_two_block_gap() {
         let headroom = BODY.max.y - EYE_HEIGHT;
-        let reach = |pitch: f32| NEAR * (pitch.sin() + pitch.cos() * (90f32.to_radians() / 2.0).tan());
+        let reach = |pitch: f32| NEAR * (pitch.sin() + pitch.cos() * ((FOV + SPRINT_FOV + JUMP_FOV).to_radians() / 2.0).tan());
         for degrees in 0..=89 {
             let up = reach((degrees as f32).to_radians());
             assert!(up < headroom, "at {degrees} degrees up the near plane reaches {up}, headroom {headroom}");
