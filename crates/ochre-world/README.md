@@ -7,7 +7,7 @@ Typical use, per the root `AGENTS.md`: add `SkyPlugin` and `AmbiencePlugin`, the
 
 ## Local Interface & Invariants
 - `src/lib.rs:load_world(region_distance: u32, config: WorldConfig) -> World`: picks the seed (`OCHRE_SEED` else random), applies `worldmap::character::world_config`, loads or generates and caches the map under `OCHRE_WORLD_DIR` (default `worlds`), and builds `World::with_terrain(seed, region_distance, Arc::new(WorldTerrain::new(Arc::new(map))))`.
-- `src/lib.rs` declares public modules `ambience`, `clouds`, `sky`, `sky_dome`, `tonemap`, `weather`, `worldmap`. Nothing is re-exported at the crate root.
+- `src/lib.rs` declares public modules `ambience`, `clouds`, `music`, `sky`, `sky_dome`, `tonemap`, `weather`, `worldmap`. Nothing is re-exported at the crate root.
 - Feature `test-support` (`Cargo.toml`) exposes `worldmap::test_terrain`, `forest_spot`, `tree_spot`, `try_tree_spot` to other crates' tests; `ochre-terrain` and `ochre-gameplay` enable it in their `Cargo.toml`. Only `ochre-base` types may cross back to terrain.
 
 ## Subdirectories & System Boundaries

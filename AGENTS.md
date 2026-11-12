@@ -31,7 +31,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 
 ## Assembling a game
 
-`examples/sandbox.rs` is the reference. Plugins: `TerrainPlugin` (loading, headless-safe), `TerrainRenderPlugin` (materials, curvature, mesh buffers, needs a GPU), `SkyPlugin` (clock, sun, moon, atmosphere, clouds, weather), `PlayerPlugin`, plus `AmbiencePlugin`, `CritterPlugin`, `BirdPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`. A Startup system then calls `ochre_world::load_world`, `spawn_player` and `insert_terrain_resources` (fed a `ShaderInputs`; the default is blank, which is what the headless `flight` and `lod_sim` use).
+`examples/sandbox.rs` is the reference. Plugins: `TerrainPlugin` (loading, headless-safe), `TerrainRenderPlugin` (materials, curvature, mesh buffers, needs a GPU), `SkyPlugin` (clock, sun, moon, atmosphere, clouds, weather), `PlayerPlugin`, plus `AmbiencePlugin`, `MusicPlugin` (needs `AmbiencePlugin`), `CritterPlugin`, `BirdPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`. A Startup system then calls `ochre_world::load_world`, `spawn_player` and `insert_terrain_resources` (fed a `ShaderInputs`; the default is blank, which is what the headless `flight` and `lod_sim` use).
 
 ## Where things are
 

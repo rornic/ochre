@@ -25,3 +25,15 @@ of bushes, with the rumble cut, the top softened and a short reverb spread over 
 sounds like a canopy overhead.
 
 Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade, mono and peak-levelled. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants.
+
+## Music
+
+`music/*.ogg` are not committed (gitignored): they are Suno free-tier tracks, so non-commercial, and the repo is public. Without `day`, `night`, `cold`, `desert` and `storm.ogg` there, no music plays. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
+
+| File | Suno title | Plays |
+|---|---|---|
+| `day.ogg` | Pastoral Bloom | temperate, by day |
+| `night.ogg` | Sparse Piano Pads | temperate, by night |
+| `cold.ogg` | Jättens Tystnad | tundra and cold |
+| `desert.ogg` | Heat-Haze Modulation | desert |
+| `storm.ogg` | Deep Sub-Bass | heavy rain |
