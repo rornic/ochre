@@ -11,9 +11,9 @@ use ochre_terrain::material::{block_atlas, material_array, ShaderInputs, Terrain
 use ochre_terrain::{
     insert_terrain_resources, task_pool_plugin, TerrainPlugin, TerrainRenderPlugin,
 };
-use ochre_world::ambience::AmbiencePlugin;
 use ochre_world::clouds::CloudLayer;
 use ochre_world::sky::SkyPlugin;
+use ochre_world::{ambience::AmbiencePlugin, music::MusicPlugin};
 
 #[derive(Resource)]
 struct SandboxSettings(Settings);
@@ -116,6 +116,7 @@ fn main() {
         FlythroughPlugin,
         DebugOverlayPlugin,
         AmbiencePlugin,
+        MusicPlugin,
         CritterPlugin,
         BirdPlugin,
     ))

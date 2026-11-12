@@ -17,6 +17,7 @@ Every recording here is CC0 1.0 (public domain), so none needs crediting, but th
 | `footsteps/ice_*.ogg` | [Footsteps on frozen lake](https://freesound.org/people/SoundsLikeYukon/sounds/732880/) | SoundsLikeYukon |
 | `footsteps/grass_*.ogg` | [Grassy Footstep 2](https://freesound.org/people/OwlStorm/sounds/151229/) | OwlStorm |
 | `footsteps/wood_*.ogg` | [wooden floor, old, creaking, footsteps, walking.WAV](https://freesound.org/people/VMan533/sounds/575898/) | VMan533 |
+| `footsteps/foliage_*.ogg` | cut from `leaves.ogg` (G.Lamont's bushes, above) | G.Lamont |
 
 Each loop is a 30 s window of its recording, crossfaded into a seamless loop and levelled.
 The crickets are high-passed at 2.5 kHz to take out the storm behind them, and the owl is
@@ -24,4 +25,16 @@ one hoot with the recording's background noise gated out. The leaves are a close
 of bushes, with the rumble cut, the top softened and a short reverb spread over it so it
 sounds like a canopy overhead.
 
-Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade, mono and peak-levelled. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants.
+Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade, mono and peak-levelled. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants. The foliage rustles are three 0.8 s windows of `leaves.ogg` with a fast fade in and a slow fade out, mono, peak-levelled to -6 dB, played over a step taken inside ground flora.
+
+## Music
+
+`music/*.ogg` are not committed (gitignored): they are Suno free-tier tracks, so non-commercial, and the repo is public. Without `day`, `night`, `cold`, `desert` and `storm.ogg` there, no music plays. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
+
+| File | Suno title | Plays |
+|---|---|---|
+| `day.ogg` | Pastoral Bloom | temperate, by day |
+| `night.ogg` | Sparse Piano Pads | temperate, by night |
+| `cold.ogg` | Jättens Tystnad | tundra and cold |
+| `desert.ogg` | Heat-Haze Modulation | desert |
+| `storm.ogg` | Deep Sub-Bass | heavy rain |
