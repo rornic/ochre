@@ -224,7 +224,7 @@ impl Loop {
             Loop::Waves => (-19.7, -24.0),
             Loop::Desert => (-24.5, -31.0),
             Loop::Underwater => (-18.4, -22.0),
-            Loop::Leaves => (-20.2, -31.0),
+            Loop::Leaves => (-20.2, -35.0),
         }
     }
 
