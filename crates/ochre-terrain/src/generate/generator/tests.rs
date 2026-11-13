@@ -4885,3 +4885,39 @@ fn far_trees_cost_fewer_vertices_than_the_planted_cubes_they_replace() {
     }
     println!("{}", shown.join("\n"));
 }
+
+#[test]
+fn every_lod_level_draws_the_trees_of_a_forest() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let mut heights = regions.sampler();
+    let centre = forest_at(5);
+    let trees = crate::generate::trees::trees_near(
+        regions.terrain(),
+        &mut heights,
+        centre - bevy::math::I64Vec2::splat(300),
+        centre + bevy::math::I64Vec2::splat(300),
+    );
+    let tree = trees.first().expect("no trees");
+    let chunk = tree.base.div_euclid(I64Vec3::splat(16));
+    let log = BlockType::Log.tile(ochre_base::block::Face::Side).atlas_cell();
+    for level in [1u8, 2, 3] {
+        let mut keys = std::collections::HashSet::new();
+        for x in -12..12 {
+            for z in -12..12 {
+                for y in -3..4 {
+                    keys.insert(LodKey::containing(ChunkCoordinate(chunk + I64Vec3::new(x, y, z)), level));
+                }
+            }
+        }
+        let (mut boxes, mut leaf, mut logs, mut total) = (0, 0, 0, 0);
+        for key in keys {
+            let Some(m) = super::lod::generate_lod_mesh(regions.clone(), key) else { continue };
+            boxes += LodBlocks::sample(&regions, key).boxes.len();
+            leaf += leaf_vertices(&m.opaque);
+            let Some(VertexAttributeValues::Float32x4(colors)) = m.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
+            logs += colors.iter().filter(|c| c[3] == log).count();
+            total += m.opaque.count_vertices();
+        }
+        assert!(boxes > 0 && leaf > 0 && logs > 0, "level {level}: {boxes} boxes, {leaf} leaf and {logs} log vertices of {total}");
+    }
+}

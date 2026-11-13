@@ -405,10 +405,24 @@ impl LodBlocks {
             }
         }
 
+        // each tree is drawn by the node its base is in, as the planted cells it stands in draw nothing
+        let boxes = if cell >= 2 {
+            trees
+                .iter()
+                .filter(|tree| {
+                    let at = (tree.base - base).div_euclid(I64Vec3::splat(cell));
+                    at.cmpge(I64Vec3::ZERO).all() && at.cmplt(I64Vec3::splat(size as i64)).all()
+                })
+                .flat_map(|tree| far_boxes(tree, base, cell))
+                .collect()
+        } else {
+            Vec::new()
+        };
         Self {
             ground_heights,
             water_tops,
             trees: TreeTints::new(&trees, base, cell),
+            boxes,
             ..Self::new(size, cells, tops, base.y, cell)
         }
     }
