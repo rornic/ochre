@@ -405,7 +405,9 @@ PR 1 fixes the three measurement views and records baselines. PR 2 begins with a
 Differences from the plan above, found while building it:
 
 *   **No `hides_faces()` on `BlockType`.** `mesh_blocks` wraps its source in `TreeFaces` (`source.rs`), which reads tree logs as air for the greedy pass, seams, bevels and AO, and keeps the log positions for `trees_mesh.rs`. It needs no change at the dozen `is_opaque()` sites in `greedy.rs`, and light still comes from the real voxels, so baked light is unchanged. A log is air in the greedy view, so the ground under it keeps its top face and no flare is needed to hide anything.
-*   **A thick trunk bows too.** All four columns of a 2×2 trunk are in the trunk column and take the same offset, with a radius of 0.56 so the prisms overlap. Only branch logs are plain prisms.
+*   **No 2×2 trunks.** They read as four trunks stuck together, so every trunk is one block thick in the voxels (`TRUNK_WIDTH`) and its drawn radius runs from 0.125 to 0.5 block with the tree's height (`Tree::trunk_radius`). This changes generated chunks, so `GENERATOR_VERSION` is 94 and the pinned chunk and map hashes are updated.
+*   **Branches join diagonally.** A branch log draws a prism toward each log in its 26 neighbours: into a trunk's centre line, and halfway to another branch log, whose own reach meets it there.
+*   **Log cells take the light of the air beside them** (`SkyLight::open`), or the ground, tufts and leaf faces touching a log are lit by its own cell, which holds none, and come out black. Grass tufts also now grow on the grass under a log, since the mesher reads the log as air.
 *   **A card is 4 vertices**, not 8: `push_double_sided_quad` is one set of vertices with both windings.
 *   **Prism ends** are capped only where they do not run into another log or into ground.
 *   **`bench` defaults to cubes.** `BENCH_TREE_SHAPES=1` turns the prisms on, so the default counts stay comparable with the baseline.

@@ -4671,3 +4671,42 @@ fn tree_shapes_off_draws_logs_as_cubes() {
     // a cube is six faces of four, the prism eight sides and two ends
     assert_ne!(cubes.opaque.count_vertices(), prism.opaque.count_vertices());
 }
+
+#[test]
+fn what_touches_a_tree_log_is_lit_by_the_air_beside_it_not_by_the_log() {
+    use crate::generate::trees::{Tree, TreeKind, TreeTints};
+    let tree = Tree::new(TreeKind::Broadleaf, I64Vec3::new(8, 4, 8), 10, 4.0, 0.7, 5);
+    let mut chunk = ground_with_logs(&[U16Vec3::new(8, 4, 8)]);
+    chunk.trees = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+    chunk.set_block_at(U16Vec3::new(9, 4, 8), BlockType::Leaves);
+    let meshes = tree_meshes(chunk, true);
+    let Some(VertexAttributeValues::Float32x2(lights)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_UV_1)
+    else {
+        panic!("no light");
+    };
+    // the corners of the leaf's face toward the log, at x 8.5 where the log's thin prism does not reach
+    let face: Vec<f32> = mesh_positions(&meshes.opaque)
+        .iter()
+        .zip(lights)
+        .filter(|(p, _)| p.x == 8.5 && (3.4..4.6).contains(&p.y) && (7.4..8.6).contains(&p.z))
+        .map(|(_, light)| light[0])
+        .collect();
+    assert!(!face.is_empty(), "no leaf face beside the log");
+    assert!(face.iter().all(|&light| light > 0.6), "leaf face lit {face:?}");
+}
+
+#[test]
+fn logs_that_touch_only_at_a_corner_are_joined_by_prisms_meeting_between_them() {
+    let meshes = tree_meshes(
+        ground_with_logs(&[U16Vec3::new(4, 4, 4), U16Vec3::new(5, 5, 4)]),
+        true,
+    );
+    let between = Vec3::new(4.5, 4.5, 4.0);
+    let meet = mesh_positions(&meshes.opaque)
+        .into_iter()
+        .filter(|p| p.distance(between) < 0.3)
+        .count();
+    // the ring each log's reach ends in, halfway to the other, is eight corners from each
+    assert!(meet >= 16, "{meet} corners where the two reaches meet");
+}

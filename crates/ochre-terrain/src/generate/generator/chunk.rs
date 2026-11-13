@@ -348,7 +348,14 @@ pub fn generate_chunk_mesh(
         .with_water(regions, (coord.0 * CHUNK_SIZE as i64).as_ivec3());
     let tint = GrassTint::new(noise, (coord.0 * CHUNK_SIZE as i64).as_vec3(), 1.0);
     // worked out only once there's a face to light: buried and empty chunks have none
-    let light = LazyCell::new(|| neighbourhood_light(&source, coord));
+    let light = LazyCell::new(|| {
+        let mut light = neighbourhood_light(&source, coord);
+        // a log drawn as a thin prism holds no light of its own, so what touches it takes the air's beside it
+        if tree_shapes && !chunk.trees.is_empty() {
+            light.open(&log_cells_around(&source));
+        }
+        light
+    });
     // leaves drawn solid hide the leaves behind them, see `DebugSettings::solid_leaves`
     mesh_blocks(
         &source,
@@ -367,6 +374,23 @@ pub fn generate_chunk_mesh(
         &tint,
         &light,
     )
+}
+
+// The logs in the chunk and the layer of blocks round it, which are the ones its faces and plants touch.
+fn log_cells_around(source: &impl BlockSource) -> Vec<IVec3> {
+    let size = CHUNK_SIZE as i32;
+    let mut logs = Vec::new();
+    for x in -1..=size {
+        for z in -1..=size {
+            for y in -1..=size {
+                let cell = IVec3::new(x, y, z);
+                if source.block(cell) == BlockType::Log {
+                    logs.push(cell);
+                }
+            }
+        }
+    }
+    logs
 }
 
 // Light falling into the top of a box whose highest block is at `top`, in boxes of `cell`

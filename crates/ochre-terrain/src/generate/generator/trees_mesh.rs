@@ -8,11 +8,12 @@ use ochre_base::block::{BlockType, Face, Tile};
 use std::f32::consts::TAU;
 use std::ops::Deref;
 
-// The drawn trunk's radius to its corners, and a thick trunk's, whose prisms overlap so a 2 by 2 reads as one.
-const TRUNK_RADIUS: f32 = 0.42;
-const THICK_RADIUS: f32 = 0.56;
-// How much wider than the trunk the lowest log is, where it meets the ground.
+// How much wider than the trunk the lowest log is, where it meets the ground, at most this wide.
 const FLARE: f32 = 1.25;
+const FOOT_MAX: f32 = 0.55;
+// A branch's radius against its tree's trunk, and a branch of no tree's.
+const BRANCH: f32 = 0.7;
+const LONE_BRANCH_RADIUS: f32 = 0.2;
 const SIDES: usize = 8;
 
 /// How far the trunk's centre line is from its voxel column at height `y`, in blocks: none at the foot, the lean at the top.
@@ -21,15 +22,14 @@ pub(super) fn trunk_offset(look: &TreeLook, y: f32) -> Vec2 {
     look.lean * up * up
 }
 
-// The two unit vectors across `axis`, a unit axis of the grid.
-fn across(axis: IVec3) -> [Vec3; 2] {
-    if axis.y != 0 {
-        [Vec3::X, Vec3::Z]
-    } else if axis.x != 0 {
-        [Vec3::Y, Vec3::Z]
-    } else {
-        [Vec3::X, Vec3::Y]
+// Two unit vectors across `axis`, which is a unit vector.
+fn across(axis: Vec3) -> [Vec3; 2] {
+    if axis.x == 0.0 && axis.z == 0.0 {
+        return [Vec3::X, Vec3::Z];
     }
+    let helper = if axis.y.abs() < 0.9 { Vec3::Y } else { Vec3::X };
+    let e1 = axis.cross(helper).normalize();
+    [e1, axis.cross(e1)]
 }
 
 // The corners sit so that four of the flat sides face the axes.
@@ -38,7 +38,7 @@ fn corner_angle(k: usize) -> f32 {
 }
 
 // A ring of `SIDES` corners round `centre`, in the plane across `axis`.
-fn ring(centre: Vec3, axis: IVec3, radius: f32) -> [Vec3; SIDES] {
+fn ring(centre: Vec3, axis: Vec3, radius: f32) -> [Vec3; SIDES] {
     let [e1, e2] = across(axis);
     std::array::from_fn(|k| {
         let (sin, cos) = libm::sincosf(corner_angle(k));
@@ -50,7 +50,7 @@ fn ring(centre: Vec3, axis: IVec3, radius: f32) -> [Vec3; SIDES] {
 struct Segment {
     from: [Vec3; SIDES],
     to: [Vec3; SIDES],
-    axis: IVec3,
+    axis: Vec3,
     radius: f32,
     // where round the bark its pattern starts, so trees differ
     phase: f32,
@@ -105,16 +105,14 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
         } = segment;
         let origin = self.grass_tint.origin.as_vec3();
         let [e1, e2] = across(*axis);
-        let long = axis.as_vec3();
+        let long = *axis;
         let side = 2.0 * radius * libm::sinf(TAU / (2.0 * SIDES as f32));
         // painted bark takes its texture in blocks: round by arc length, along from the world's own coordinates
         let down = |p: Vec3| {
-            if axis.y != 0 {
+            if axis.x == 0.0 && axis.z == 0.0 {
                 -(origin.y + p.y)
-            } else if axis.x != 0 {
-                origin.x + p.x
             } else {
-                origin.z + p.z
+                (origin + p).dot(*axis)
             }
         };
         let bark = BlockType::Log.tile(Face::Side);
@@ -140,12 +138,14 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
         }
         let end = BlockType::Log.tile(Face::Top);
         let flat = |p: Vec3| {
-            if axis.y != 0 {
-                [UNFOLDED + origin.x + p.x, origin.z + p.z]
-            } else if axis.x != 0 {
-                [UNFOLDED + origin.y + p.y, origin.z + p.z]
+            let at = origin + p;
+            let (x, y, z) = (axis.x.abs(), axis.y.abs(), axis.z.abs());
+            if y >= x && y >= z {
+                [UNFOLDED + at.x, at.z]
+            } else if x >= z {
+                [UNFOLDED + at.y, at.z]
             } else {
-                [UNFOLDED + origin.x + p.x, origin.y + p.y]
+                [UNFOLDED + at.x, at.y]
             }
         };
         for (corners, outward, capped) in [(to, long, caps[1]), (from, -long, caps[0])] {
@@ -195,24 +195,24 @@ pub(super) fn mesh_trees<S: BlockSource>(
     for &coord in &faces.logs {
         let lit = drawing.light_at(coord);
         let centre = coord.as_vec3();
-        let segment = match faces.tree_look(coord).filter(|look| look.in_trunk(coord)) {
-            Some(look) => {
-                let thick = look.width > 1.5;
-                let radius = if thick { THICK_RADIUS } else { TRUNK_RADIUS };
-                let grounded = !faces.is_log(coord - IVec3::Y);
-                let foot = if grounded && !thick {
-                    radius * FLARE
-                } else {
-                    radius
-                };
-                let at = |y: f32| {
-                    let off = trunk_offset(&look, y);
-                    Vec3::new(centre.x + off.x, y, centre.z + off.y)
-                };
-                Segment {
-                    from: ring(at(centre.y - 0.5), IVec3::Y, foot),
-                    to: ring(at(centre.y + 0.5), IVec3::Y, radius),
-                    axis: IVec3::Y,
+        let trunk = faces.tree_look(coord).filter(|look| look.in_trunk(coord));
+        if let Some(look) = trunk {
+            let radius = look.radius;
+            let grounded = !faces.is_log(coord - IVec3::Y);
+            let foot = if grounded {
+                (radius * FLARE).min(FOOT_MAX).max(radius)
+            } else {
+                radius
+            };
+            let at = |y: f32| {
+                let off = trunk_offset(&look, y);
+                Vec3::new(centre.x + off.x, y, centre.z + off.y)
+            };
+            drawing.segment(
+                &Segment {
+                    from: ring(at(centre.y - 0.5), Vec3::Y, foot),
+                    to: ring(at(centre.y + 0.5), Vec3::Y, radius),
+                    axis: Vec3::Y,
                     radius,
                     phase: ((origin.x + look.base.x) * 0.618 + (origin.z + look.base.z) * 0.382)
                         * 4.0,
@@ -220,32 +220,57 @@ pub(super) fn mesh_trees<S: BlockSource>(
                         grounded && !faces.block(coord - IVec3::Y).is_opaque(),
                         !faces.is_log(coord + IVec3::Y),
                     ],
-                }
-            }
-            None => {
-                let along = |axis: IVec3| {
-                    faces.is_log(coord + axis) as u8 + faces.is_log(coord - axis) as u8
-                };
-                let mut axis = IVec3::Y;
-                for candidate in [IVec3::X, IVec3::Z] {
-                    if along(candidate) > along(axis) {
-                        axis = candidate;
-                    }
-                }
-                let half = axis.as_vec3() * 0.5;
-                Segment {
-                    from: ring(centre - half, axis, TRUNK_RADIUS),
-                    to: ring(centre + half, axis, TRUNK_RADIUS),
-                    axis,
-                    radius: TRUNK_RADIUS,
+                },
+                lit,
+            );
+            continue;
+        }
+        // any other log reaches toward each log round it, diagonals too, so a branch that steps across the grid still joins up
+        let radius = faces
+            .tree_look(coord)
+            .map_or(LONE_BRANCH_RADIUS, |look| look.radius * BRANCH);
+        let joined: Vec<IVec3> = (-1..=1)
+            .flat_map(|x| (-1..=1).flat_map(move |y| (-1..=1).map(move |z| IVec3::new(x, y, z))))
+            .filter(|&offset| offset != IVec3::ZERO && faces.is_log(coord + offset))
+            .collect();
+        if joined.is_empty() {
+            // a log with none beside it is a stub the width of its cell
+            let half = Vec3::Y * 0.5;
+            drawing.segment(
+                &Segment {
+                    from: ring(centre - half, Vec3::Y, radius),
+                    to: ring(centre + half, Vec3::Y, radius),
+                    axis: Vec3::Y,
+                    radius,
                     phase: 0.0,
-                    // an end is capped unless it runs into another log or into ground
-                    caps: [-axis, axis]
-                        .map(|d| !faces.is_log(coord + d) && !faces.block(coord + d).is_opaque()),
+                    caps: [true, true],
+                },
+                lit,
+            );
+        }
+        for &offset in &joined {
+            let neighbour = coord + offset;
+            // into a trunk it reaches the trunk's centre line, to be out of sight in it, and otherwise halfway, where the next log's own reach meets it
+            let end = match faces.tree_look(neighbour).filter(|look| look.in_trunk(neighbour)) {
+                Some(look) => {
+                    let off = trunk_offset(&look, neighbour.y as f32);
+                    neighbour.as_vec3() + Vec3::new(off.x, 0.0, off.y)
                 }
-            }
-        };
-        drawing.segment(&segment, lit);
+                None => centre + offset.as_vec3() * 0.5,
+            };
+            let axis = (end - centre).normalize();
+            drawing.segment(
+                &Segment {
+                    from: ring(centre, axis, radius),
+                    to: ring(end, axis, radius),
+                    axis,
+                    radius,
+                    phase: 0.0,
+                    caps: [joined.len() == 1, false],
+                },
+                lit,
+            );
+        }
     }
 }
 

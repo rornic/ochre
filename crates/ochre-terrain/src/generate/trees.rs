@@ -87,8 +87,8 @@ const ALPINE_PINES_ABOVE: i64 = 120;
 const MAX_GRADIENT: f64 = 1.5;
 // Broadleaf crowns are a big round crown with smaller lobes hanging off it on branches.
 const LOBES: usize = 3;
-// Trunks this tall are two blocks thick.
-const THICK_TRUNK: i64 = 12;
+// Every trunk is one block thick in the voxels, however thick it is drawn, see `Tree::trunk_radius`.
+const TRUNK_WIDTH: i64 = 1;
 // Cells this wide or wider judge leaves by coverage: a quarter of a 3 x 3 x 3 spread of points
 // inside, or small crowns would fall between cell centres.
 const COVERAGE_CELL: i64 = 4;
@@ -158,8 +158,7 @@ impl Tree {
         squash: f64,
         seed: u64,
     ) -> Self {
-        let width = if trunk >= THICK_TRUNK { 2 } else { 1 };
-        let middle = (width - 1) as f64 / 2.0;
+        let middle = (TRUNK_WIDTH - 1) as f64 / 2.0;
         let crown = Blob {
             centre: DVec3::new(middle, (trunk - 1) as f64, middle),
             radius: spread,
@@ -241,11 +240,13 @@ impl Tree {
     }
 
     pub fn width(&self) -> i64 {
-        if self.trunk >= THICK_TRUNK {
-            2
-        } else {
-            1
-        }
+        TRUNK_WIDTH
+    }
+
+    /// How thick the trunk is drawn, as a radius in blocks: a quarter of a block across on the smallest tree, a whole block on the tallest.
+    pub fn trunk_radius(&self) -> f32 {
+        let size = ((self.trunk - 6) as f32 / 24.0).clamp(0.0, 1.0);
+        0.125 + 0.375 * size
     }
 
     // the middle of the trunk, as an offset from `base`
@@ -489,6 +490,8 @@ pub struct TreeLook {
     pub height: f32,
     /// How many cells across the trunk is.
     pub width: f32,
+    /// How thick the trunk is drawn, as a radius in cells.
+    pub radius: f32,
     /// How far the top of the trunk leans from its foot, in cells.
     pub lean: Vec2,
 }
@@ -529,6 +532,7 @@ impl TreeTints {
                         base: (t.base - origin).as_vec3() / cells,
                         height: t.trunk as f32 / cells,
                         width: t.width() as f32 / cells,
+                        radius: t.trunk_radius() / cells,
                         lean: t.lean() / cells,
                     }
                 })
@@ -547,6 +551,10 @@ impl TreeTints {
                     .total_cmp(&b.axis.distance_squared(p))
             })
             .copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// The tint of the leaf at `coord`, in cells.
@@ -1046,21 +1054,19 @@ mod tests {
     }
 
     #[test]
-    fn test_every_tree_leaves_a_crown_in_cells_four_and_eight_wide() {
+    fn test_every_tree_leaves_a_crown_in_cells_four_wide() {
         for t in extremes() {
-            // the thinnest pines are a spire a cell or two across at eight
-            for (size, least) in [(4, 2), (8, 1)] {
-                let leaves = cells(&t, size)
-                    .into_iter()
-                    .filter(|(_, b)| *b == BlockType::Leaves)
-                    .count();
-                assert!(
-                    leaves >= least,
-                    "{:?} {} trunk at {size}: {leaves} leaf cells",
-                    t.kind,
-                    t.trunk
-                );
-            }
+            // from eight blocks a cell LODs draw crown boxes, not planted cells, so only cells up to four hold a crown
+            let leaves = cells(&t, 4)
+                .into_iter()
+                .filter(|(_, b)| *b == BlockType::Leaves)
+                .count();
+            assert!(
+                leaves >= 2,
+                "{:?} {} trunk: {leaves} leaf cells at four",
+                t.kind,
+                t.trunk
+            );
         }
     }
 

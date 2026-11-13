@@ -176,7 +176,7 @@ fn test_chunks_from_a_fixed_map_and_seed_hash_the_same_on_every_machine() {
     }
     // pinned: a change here means every machine's chunks changed, and with them any edits stored
     // as deltas against generated terrain, so bump `worldmap::GENERATOR_VERSION` with it
-    assert_eq!(7_194_885_868_004_873_132, first, "chunk hash changed");
+    assert_eq!(9_418_526_048_176_771_211, first, "chunk hash changed");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn test_chunks_from_a_generated_map_hash_the_same_on_every_machine() {
     let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
     // pinned: see the note on the test above
     assert_eq!(
-        12_863_003_748_653_936_636,
+        16_951_810_478_525_066_905,
         hash_chunks(&regions, &chunks),
         "chunk hash changed"
     );
