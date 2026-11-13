@@ -87,6 +87,10 @@ const ALPINE_PINES_ABOVE: i64 = 120;
 const MAX_GRADIENT: f64 = 1.5;
 // Broadleaf crowns are a big round crown with smaller lobes hanging off it on branches.
 const LOBES: usize = 3;
+// A pine puts out this many boughs at the foot of each tier, which stand this many blocks apart up the trunk, each reaching this share of the crown's radius there.
+const PINE_BOUGHS: usize = 4;
+const PINE_WHORL: f64 = 3.0;
+const PINE_BOUGH_REACH: f64 = 0.7;
 // Every trunk is one block thick in the voxels, however thick it is drawn, see `Tree::trunk_radius`.
 const TRUNK_WIDTH: i64 = 1;
 // Cells this wide or wider judge leaves by coverage: a quarter of a 3 x 3 x 3 spread of points
@@ -433,16 +437,47 @@ impl Tree {
         }
     }
 
-    // Whether the point `offset` from the trunk's base is on a branch out to a lobe.
+    // Whether the point `offset` from the trunk's base is on a branch: out to a lobe on a broadleaf, a whorl of boughs at each tier on a pine.
     fn in_branch(&self, offset: DVec3) -> bool {
-        if self.kind != TreeKind::Broadleaf {
-            return false;
+        if self.kind == TreeKind::Pine {
+            return self.in_bough(offset);
         }
         let fork = self.axis() + DVec3::Y * (self.trunk as f64 * 0.6);
         self.lobes.iter().any(|lobe| {
             let along = lobe.centre - fork;
             let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
             (offset - (fork + along * t)).length_squared() <= 0.36
+        })
+    }
+
+    // Whether the point `offset` from the trunk's base is on one of the boughs a pine puts out, drooping, at the foot of each tier, which
+    // reach most of the way to the crown's edge there so the inside of the crown is not an empty trunk.
+    fn in_bough(&self, offset: DVec3) -> bool {
+        let (bottom, top) = ((self.trunk / 4) as f64, (self.trunk + 1) as f64);
+        let across = offset - self.axis();
+        if across.x * across.x + across.z * across.z > (self.spread + 1.6).powi(2) {
+            return false;
+        }
+        // the whorls whose boughs can be near this height, which droop by up to a third of their reach
+        let first = ((offset.y - 1.5 - bottom) / PINE_WHORL).ceil().max(0.0) as i64;
+        let last = ((offset.y + 0.6 - bottom) / PINE_WHORL).floor() as i64;
+        (first..=last).any(|k| {
+            let y = bottom + k as f64 * PINE_WHORL;
+            if y > top - 2.0 {
+                return false;
+            }
+            let t = (y - bottom) / (top - bottom);
+            let reach = (0.6 + self.spread * (1.0 - t)) * PINE_BOUGH_REACH;
+            let start = self.axis() + DVec3::Y * y;
+            (0..PINE_BOUGHS).any(|j| {
+                let turn = (j as f64 + (hash(self.seed, 700 + k, j as i64) % 1000) as f64 / 1000.0)
+                    * std::f64::consts::TAU
+                    / PINE_BOUGHS as f64;
+                let (sin, cos) = libm::sincos(turn);
+                let along = DVec3::new(cos * reach, -reach / 3.0, sin * reach);
+                let t = ((offset - start).dot(along) / along.length_squared()).clamp(0.0, 1.0);
+                (offset - (start + along * t)).length_squared() <= 0.36
+            })
         })
     }
 
@@ -887,12 +922,7 @@ mod tests {
                 .iter()
                 .filter(|(p, b)| *b == BlockType::Log && !in_trunk(*p))
                 .count();
-            assert_eq!(
-                t.kind == TreeKind::Broadleaf,
-                branches > 0,
-                "{:?} has {branches} branch logs",
-                t.kind
-            );
+            assert!(branches > 0, "{:?} has no branch logs", t.kind);
             let leaves = blocks
                 .iter()
                 .filter(|(_, b)| *b == BlockType::Leaves)

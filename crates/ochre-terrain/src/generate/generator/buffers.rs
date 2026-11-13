@@ -264,6 +264,33 @@ impl MeshBuffers {
         self.indices.extend([0, 2, 1, 1, 2, 3].map(|i| start + i));
     }
 
+    // A fan of triangles from the first position, the centre, to each of the rest, the rim in order, from both sides, with one
+    // light and normal for all, so its outline can be any shape with that many corners.
+    pub(super) fn push_double_sided_fan(
+        &mut self,
+        positions: &[[f32; 3]],
+        normal: [f32; 3],
+        uvs: &[[f32; 2]],
+        colors: &[[f32; 4]],
+        light: f32,
+    ) {
+        let start = self.vertices.len() as u32;
+        for ((&position, &uv), &color) in positions.iter().zip(uvs).zip(colors) {
+            self.vertices.push(Vertex {
+                position,
+                normal,
+                uv,
+            });
+            self.colors.push(color);
+            self.lights.push(light);
+        }
+        let rim = positions.len() as u32 - 1;
+        for i in 0..rim {
+            let (a, b) = (start + 1 + i, start + 1 + (i + 1) % rim);
+            self.indices.extend([start, a, b, start, b, a]);
+        }
+    }
+
     // Vertices at every block step round the border, so neighbours share exact edge points and leave no cracks.
     pub(super) fn push_fan_quad(&mut self, quad: FanQuad) {
         let (w, h) = quad.size;

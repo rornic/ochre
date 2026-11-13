@@ -421,6 +421,11 @@ Differences from the plan above, found while building it:
 *   **Forest `bench`**: 2,124,253 chunk vertices with cubes against 2,096,085 with prisms and cards, and 319.7 against 273.7 ms, so the 1.10x vertex gate holds with room. Shadow pass cost and frame time are not measured yet.
 *   **Leaves are untargetable and unbreakable** (`BlockType::is_targetable`), with `tree_shapes` off too.
 
+*   **Cards are fans, not squares.** A square card's corners stuck out. Each card is now six corners at uneven distances from its middle (7 vertices), so its outline has no square corners. A texture mask would have kept it at 4 vertices but needs a new card layer and the flora shader path; the fan can be swapped for that later.
+*   **Bigger cards, pine tilt and boughs.** Cards are 2.0 to 2.8 blocks (pines 1.4 to 2.0). A pine's cards face along its crown's cone (out from the trunk and 0.6 up) rather than away from the open side of their leaf, which left stepped angles between tiers. Pines gained four drooping boughs at the foot of each tier (`Tree::in_bough`), so there is wood inside the crown, which changed generated chunks (`GENERATOR_VERSION` 95, pins updated).
+*   **Pine card density 0.45.** Taiga was 20.7% over the 1.10x gate with every pine leaf carded. Six corners, then density, brought it to +9.9% (see `docs/terrain-perf.md`), which leaves almost no margin.
+*   **Branches are 40% of the trunk's radius** (minimum 0.08), as the boughs read as knobs at 70%.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

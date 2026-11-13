@@ -4731,8 +4731,8 @@ fn a_surface_leaf_draws_a_card_and_a_leaf_with_no_open_side_draws_nothing() {
         }
     }
     let cards = leaf_vertices(&tree_meshes(chunk, true).opaque);
-    // 26 leaves touch the air and each is one card of four corners; the middle one touches none
-    assert_eq!(26 * 4, cards);
+    // 26 leaves touch the air and each is one card of a middle and eight rim points; the middle one touches none
+    assert_eq!(26 * 7, cards);
 }
 
 #[test]
