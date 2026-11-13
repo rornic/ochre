@@ -429,6 +429,8 @@ Differences from the plan above, found while building it:
 *   **Pine boughs are drawn from the tree, not from their voxels.** A chain of voxel logs joined across their faces and corners made a web, so each bough is one straight prism from its trunk log to its tip (`TreeLook::boughs_from`, which shares `bough_reach` with the generator), and the logs that fill in a pine's boughs are not drawn. They are still solid. A bough is drawn by the chunk that holds its trunk log, so a long bough can pass its group's bounds.
 *   **Pine cards back to full density**, 2.0 to 3.0 blocks, as the boughs cost far fewer vertices than the chains: taiga is +1.7% over the cubes.
 
+*   **The first bough stands one block higher** (`PINE_FIRST_WHORL`), so it starts inside the leaves, and **a pine's tip narrows over its last two blocks** (3×3, then a plus, then one block) instead of staying a 3×3 column to the top, which read as square. Both change generated chunks: `GENERATOR_VERSION` 96, pins updated.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

@@ -4753,8 +4753,8 @@ fn a_pines_boughs_are_straight_prisms_from_its_trunk_to_their_tips() {
         chunk.set_block_at(U16Vec3::new(c.x as u16, c.y as u16, c.z as u16), b);
     });
     chunk.trees = TreeTints::new([&tree], I64Vec3::ZERO, 1);
-    // the first whorl starts a quarter of the way up the trunk
-    let voxel = IVec3::new(8, 4 + 16 / 4, 8);
+    // the first whorl starts a block above the crown's foot, a quarter of the way up the trunk
+    let voxel = IVec3::new(8, 4 + 16 / 4 + 1, 8);
     let look = chunk.trees.look_at(voxel).unwrap();
     let boughs = look.boughs_from(voxel);
     assert_eq!(4, boughs.len());

@@ -90,6 +90,8 @@ const LOBES: usize = 3;
 // A pine puts out this many boughs at the foot of each tier, which stand this many blocks apart up the trunk, each reaching this share of the crown's radius there.
 const PINE_BOUGHS: usize = 4;
 const PINE_WHORL: f64 = 3.0;
+// The first whorl stands this far above the crown's foot, so its boughs start inside the leaves.
+const PINE_FIRST_WHORL: f64 = 1.0;
 const PINE_BOUGH_REACH: f64 = 0.7;
 // Every trunk is one block thick in the voxels, however thick it is drawn, see `Tree::trunk_radius`.
 const TRUNK_WIDTH: i64 = 1;
@@ -430,6 +432,8 @@ impl Tree {
                 let tier = 1.0 - 0.3 * ((offset.y.round() as i64).rem_euclid(3) as f64 / 2.0);
                 // never too narrow to wrap the trunk, which runs up to the tip
                 let wrap = self.width() as f64 / 2.0 + 1.0;
+                // narrowing over the last two blocks to a single one at the tip, which the trunk's top stays hidden under
+                let wrap = wrap - (offset.y - (top - 2.0)).clamp(0.0, 2.0) * 0.5;
                 let radius = ((0.6 + self.spread * (1.0 - t)) * tier - nibble() * 0.5).max(wrap);
                 let across = offset - self.axis();
                 across.x * across.x + across.z * across.z <= radius * radius
@@ -458,7 +462,7 @@ impl Tree {
             return false;
         }
         // the whorls whose boughs can be near this height, which droop by up to a third of their reach
-        let bottom = (self.trunk / 4) as f64;
+        let bottom = (self.trunk / 4) as f64 + PINE_FIRST_WHORL;
         let first = ((offset.y - 1.5 - bottom) / PINE_WHORL).ceil().max(0.0) as i64;
         let last = ((offset.y + 0.6 - bottom) / PINE_WHORL).floor() as i64;
         (first..=last).any(|k| {
@@ -535,7 +539,7 @@ impl TreeLook {
             return Vec::new();
         }
         let trunk = self.height as i64;
-        let up = coord.y as i64 - self.base.y as i64 - trunk / 4;
+        let up = coord.y as i64 - self.base.y as i64 - trunk / 4 - PINE_FIRST_WHORL as i64;
         if up < 0 || up % PINE_WHORL as i64 != 0 {
             return Vec::new();
         }
@@ -784,14 +788,14 @@ pub(crate) fn scaled_tree(
 
 /// How high up a pine's trunk, in blocks, the `k`th whorl of boughs starts, or none above the crown.
 pub(crate) fn whorl_height(trunk: i64, k: i64) -> Option<f64> {
-    let y = (trunk / 4) as f64 + k as f64 * PINE_WHORL;
+    let y = (trunk / 4) as f64 + PINE_FIRST_WHORL + k as f64 * PINE_WHORL;
     (k >= 0 && y <= (trunk + 1) as f64 - 2.0).then_some(y)
 }
 
 /// The `j`th bough of the `k`th whorl of a pine: how far it reaches from the trunk's axis, down a third of its length.
 pub(crate) fn bough_reach(seed: u64, trunk: i64, spread: f64, k: i64, j: usize) -> DVec3 {
     let (bottom, top) = ((trunk / 4) as f64, (trunk + 1) as f64);
-    let y = bottom + k as f64 * PINE_WHORL;
+    let y = bottom + PINE_FIRST_WHORL + k as f64 * PINE_WHORL;
     let t = (y - bottom) / (top - bottom);
     let reach = (0.6 + spread * (1.0 - t)) * PINE_BOUGH_REACH;
     let turn = (j as f64 + (hash(seed, 700 + k, j as i64) % 1000) as f64 / 1000.0)
