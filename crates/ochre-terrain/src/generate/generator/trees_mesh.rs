@@ -19,14 +19,12 @@ const LONE_BRANCH_RADIUS: f32 = 0.12;
 const SIDES: usize = 8;
 // A card's width across, in blocks, on a broadleaf and on a pine, whose tiers are narrow.
 const CARD_SIZE: (f32, f32) = (2.0, 2.8);
-const PINE_CARD_SIZE: (f32, f32) = (1.4, 2.0);
+const PINE_CARD_SIZE: (f32, f32) = (2.0, 3.0);
 // How far a card stands out from its voxel's middle toward the open air, how much it tips up, how far its facing strays, and the share of surface leaves that get one.
 const CARD_OUT: f32 = 0.25;
 const CARD_UP: f32 = 0.35;
 const CARD_STRAY: f32 = 0.4;
 const CARD_DENSITY: f32 = 1.0;
-// A pine's tiers are mostly surface, so thinner, to stay under the vertex gate: its cards are bigger to cover the gaps.
-const PINE_CARD_DENSITY: f32 = 0.45;
 // A card's outline is this many corners at an irregular distance, in half widths, from its middle, so it has no square corners to stick out.
 const RIM: usize = 6;
 const RIM_REACH: (f32, f32) = (0.95, 1.3);
@@ -34,7 +32,7 @@ const RIM_REACH: (f32, f32) = (0.95, 1.3);
 const PINE_UP: f32 = 0.6;
 /// The farthest a card's corner can be from its voxel's middle, in blocks: its widest card's longest reach and how far out it stands.
 #[cfg(test)]
-pub(super) const CARD_REACH: f32 = CARD_SIZE.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
+pub(super) const CARD_REACH: f32 = PINE_CARD_SIZE.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
 
 /// How far the trunk's centre line is from its voxel column at height `y`, in blocks: none at the foot, the lean at the top.
 pub(super) fn trunk_offset(look: &TreeLook, y: f32) -> Vec2 {
@@ -243,7 +241,7 @@ pub(super) struct Card {
 /// sides), or none if this leaf gets no card. A pine's leaf takes `pine`, its offset from the trunk, and its card faces
 /// along the crown's cone.
 pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, pine: Option<Vec3>) -> Option<Card> {
-    if hash01(world, 90) >= if pine.is_some() { PINE_CARD_DENSITY } else { CARD_DENSITY } {
+    if hash01(world, 90) >= CARD_DENSITY {
         return None;
     }
     let outward = match pine {
@@ -326,6 +324,27 @@ pub(super) fn mesh_trees<S: BlockSource>(
                 },
                 lit,
             );
+            // a pine's boughs start in its trunk, each a straight prism out to its tip, however the voxels step
+            let thin = (look.radius * BRANCH).max(BRANCH_MIN);
+            for along in look.boughs_from(coord) {
+                let start = at(centre.y);
+                let axis = along.normalize();
+                drawing.segment(
+                    &Segment {
+                        from: ring(start, axis, thin),
+                        to: ring(start + along, axis, thin * 0.5),
+                        axis,
+                        radius: thin,
+                        phase: 0.0,
+                        caps: [false, true],
+                    },
+                    lit,
+                );
+            }
+            continue;
+        }
+        // a pine's boughs are drawn from its trunk, not from the logs that fill in their line
+        if faces.tree_look(coord).is_some_and(|look| look.pine) {
             continue;
         }
         // any other log reaches toward each log round it, diagonals too, so a branch that steps across the grid still joins up

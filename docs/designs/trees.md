@@ -426,6 +426,9 @@ Differences from the plan above, found while building it:
 *   **Pine card density 0.45.** Taiga was 20.7% over the 1.10x gate with every pine leaf carded. Six corners, then density, brought it to +9.9% (see `docs/terrain-perf.md`), which leaves almost no margin.
 *   **Branches are 40% of the trunk's radius** (minimum 0.08), as the boughs read as knobs at 70%.
 
+*   **Pine boughs are drawn from the tree, not from their voxels.** A chain of voxel logs joined across their faces and corners made a web, so each bough is one straight prism from its trunk log to its tip (`TreeLook::boughs_from`, which shares `bough_reach` with the generator), and the logs that fill in a pine's boughs are not drawn. They are still solid. A bough is drawn by the chunk that holds its trunk log, so a long bough can pass its group's bounds.
+*   **Pine cards back to full density**, 2.0 to 3.0 blocks, as the boughs cost far fewer vertices than the chains: taiga is +1.7% over the cubes.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

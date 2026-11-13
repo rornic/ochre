@@ -4743,3 +4743,30 @@ fn leaves_are_drawn_as_cubes_with_tree_shapes_off() {
     // one cube of six faces, none of them cards
     assert_eq!(24, leaf_vertices(&cubes.opaque) + cubes.inner_leaves.map_or(0, |m| m.count_vertices()));
 }
+
+#[test]
+fn a_pines_boughs_are_straight_prisms_from_its_trunk_to_their_tips() {
+    use crate::generate::trees::{Tree, TreeKind, TreeTints};
+    let tree = Tree::new(TreeKind::Pine, I64Vec3::new(8, 4, 8), 16, 4.5, 0.7, 3);
+    let mut chunk = ground_with_logs(&[]);
+    tree.plant(I64Vec3::ZERO, 1, (IVec3::ZERO, IVec3::splat(15)), |c, b| {
+        chunk.set_block_at(U16Vec3::new(c.x as u16, c.y as u16, c.z as u16), b);
+    });
+    chunk.trees = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+    // the first whorl starts a quarter of the way up the trunk
+    let voxel = IVec3::new(8, 4 + 16 / 4, 8);
+    let look = chunk.trees.look_at(voxel).unwrap();
+    let boughs = look.boughs_from(voxel);
+    assert_eq!(4, boughs.len());
+    let meshes = tree_meshes(chunk, true);
+    let at = mesh_positions(&meshes.opaque);
+    let off = super::trees_mesh::trunk_offset(&look, voxel.y as f32);
+    let start = Vec3::new(8.0 + off.x, voxel.y as f32, 8.0 + off.y);
+    for along in boughs {
+        let tip = start + along;
+        assert!(
+            at.iter().any(|p| p.distance(tip) < 0.2),
+            "no bough ends at {tip}"
+        );
+    }
+}

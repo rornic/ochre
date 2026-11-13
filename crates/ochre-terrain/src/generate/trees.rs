@@ -453,28 +453,21 @@ impl Tree {
     // Whether the point `offset` from the trunk's base is on one of the boughs a pine puts out, drooping, at the foot of each tier, which
     // reach most of the way to the crown's edge there so the inside of the crown is not an empty trunk.
     fn in_bough(&self, offset: DVec3) -> bool {
-        let (bottom, top) = ((self.trunk / 4) as f64, (self.trunk + 1) as f64);
         let across = offset - self.axis();
         if across.x * across.x + across.z * across.z > (self.spread + 1.6).powi(2) {
             return false;
         }
         // the whorls whose boughs can be near this height, which droop by up to a third of their reach
+        let bottom = (self.trunk / 4) as f64;
         let first = ((offset.y - 1.5 - bottom) / PINE_WHORL).ceil().max(0.0) as i64;
         let last = ((offset.y + 0.6 - bottom) / PINE_WHORL).floor() as i64;
         (first..=last).any(|k| {
-            let y = bottom + k as f64 * PINE_WHORL;
-            if y > top - 2.0 {
+            let Some(y) = whorl_height(self.trunk, k) else {
                 return false;
-            }
-            let t = (y - bottom) / (top - bottom);
-            let reach = (0.6 + self.spread * (1.0 - t)) * PINE_BOUGH_REACH;
+            };
             let start = self.axis() + DVec3::Y * y;
             (0..PINE_BOUGHS).any(|j| {
-                let turn = (j as f64 + (hash(self.seed, 700 + k, j as i64) % 1000) as f64 / 1000.0)
-                    * std::f64::consts::TAU
-                    / PINE_BOUGHS as f64;
-                let (sin, cos) = libm::sincos(turn);
-                let along = DVec3::new(cos * reach, -reach / 3.0, sin * reach);
+                let along = bough_reach(self.seed, self.trunk, self.spread, k, j);
                 let t = ((offset - start).dot(along) / along.length_squared()).clamp(0.0, 1.0);
                 (offset - (start + along * t)).length_squared() <= 0.36
             })
@@ -529,11 +522,32 @@ pub struct TreeLook {
     pub radius: f32,
     /// Whether it is a pine, whose crown is narrow tiers.
     pub pine: bool,
+    seed: u64,
+    spread: f32,
     /// How far the top of the trunk leans from its foot, in cells.
     pub lean: Vec2,
 }
 
 impl TreeLook {
+    /// The reach from the trunk's axis of each bough that starts at the trunk's log at `coord`, in blocks: a pine's whorl is at some of its heights.
+    pub fn boughs_from(&self, coord: IVec3) -> Vec<Vec3> {
+        if !self.pine {
+            return Vec::new();
+        }
+        let trunk = self.height as i64;
+        let up = coord.y as i64 - self.base.y as i64 - trunk / 4;
+        if up < 0 || up % PINE_WHORL as i64 != 0 {
+            return Vec::new();
+        }
+        let k = up / PINE_WHORL as i64;
+        if whorl_height(trunk, k).is_none() {
+            return Vec::new();
+        }
+        (0..PINE_BOUGHS)
+            .map(|j| bough_reach(self.seed, trunk, self.spread as f64, k, j).as_vec3())
+            .collect()
+    }
+
     /// Whether the log at `coord` is in the trunk's own column, not a branch.
     pub fn in_trunk(&self, coord: IVec3) -> bool {
         let at = coord.as_vec3() - self.base;
@@ -571,6 +585,8 @@ impl TreeTints {
                         width: t.width() as f32 / cells,
                         radius: t.trunk_radius() / cells,
                         pine: t.kind == TreeKind::Pine,
+                        seed: t.seed,
+                        spread: t.spread as f32,
                         lean: t.lean() / cells,
                     }
                 })
@@ -764,6 +780,25 @@ pub(crate) fn scaled_tree(
     };
     let trunk = ((trunk as f64 * scale.height * height_scale).round() as i64).clamp(6, tallest);
     (kind, trunk, spread, squash)
+}
+
+/// How high up a pine's trunk, in blocks, the `k`th whorl of boughs starts, or none above the crown.
+pub(crate) fn whorl_height(trunk: i64, k: i64) -> Option<f64> {
+    let y = (trunk / 4) as f64 + k as f64 * PINE_WHORL;
+    (k >= 0 && y <= (trunk + 1) as f64 - 2.0).then_some(y)
+}
+
+/// The `j`th bough of the `k`th whorl of a pine: how far it reaches from the trunk's axis, down a third of its length.
+pub(crate) fn bough_reach(seed: u64, trunk: i64, spread: f64, k: i64, j: usize) -> DVec3 {
+    let (bottom, top) = ((trunk / 4) as f64, (trunk + 1) as f64);
+    let y = bottom + k as f64 * PINE_WHORL;
+    let t = (y - bottom) / (top - bottom);
+    let reach = (0.6 + spread * (1.0 - t)) * PINE_BOUGH_REACH;
+    let turn = (j as f64 + (hash(seed, 700 + k, j as i64) % 1000) as f64 / 1000.0)
+        * std::f64::consts::TAU
+        / PINE_BOUGHS as f64;
+    let (sin, cos) = libm::sincos(turn);
+    DVec3::new(cos * reach, -reach / 3.0, sin * reach)
 }
 
 // splitmix64 over a seed and two coordinates
