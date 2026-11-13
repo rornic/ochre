@@ -4770,3 +4770,31 @@ fn a_pines_boughs_are_straight_prisms_from_its_trunk_to_their_tips() {
         );
     }
 }
+
+#[test]
+fn leaves_with_more_leaves_over_them_are_drawn_darker() {
+    let mut chunk = ground_with_logs(&[]);
+    for y in 5..11 {
+        for (x, z) in [(6, 6), (7, 6), (6, 7), (7, 7)] {
+            chunk.set_block_at(U16Vec3::new(x, y, z), BlockType::Leaves);
+        }
+    }
+    let meshes = tree_meshes(chunk, true);
+    let leaves = BlockType::Leaves.tile(ochre_base::block::Face::Side).atlas_cell();
+    let Some(VertexAttributeValues::Float32x4(colors)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR)
+    else {
+        panic!("no colours");
+    };
+    let mean = |wanted: &dyn Fn(f32) -> bool| {
+        let shades: Vec<f32> = mesh_positions(&meshes.opaque)
+            .iter()
+            .zip(colors)
+            .filter(|(p, c)| c[3] == leaves && wanted(p.y))
+            .map(|(_, c)| c[0] + c[1] + c[2])
+            .collect();
+        shades.iter().sum::<f32>() / shades.len() as f32
+    };
+    let (low, high) = (mean(&|y| y < 6.5), mean(&|y| y > 8.5));
+    assert!(low < high * 0.9, "low {low}, high {high}");
+}

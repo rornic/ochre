@@ -530,9 +530,41 @@ pub struct TreeLook {
     spread: f32,
     /// How far the top of the trunk leans from its foot, in cells.
     pub lean: Vec2,
+    // a broadleaf's crown and lobes, in cells from the origin, none on a pine
+    crown: [CrownBall; 1 + LOBES],
+}
+
+/// A ball of leaves squashed vertically, as `TreeLook` has it.
+#[derive(Debug, Clone, Copy, Default)]
+struct CrownBall {
+    centre: Vec3,
+    radius: f32,
+    squash: f32,
 }
 
 impl TreeLook {
+    /// Which way the crown's surface faces at `at`, in cells, as a ball's would: out from the middle of the ball it is nearest the edge of.
+    /// Zero for a pine, and at a ball's very middle.
+    pub fn crown_normal(&self, at: Vec3) -> Vec3 {
+        let nearest = self
+            .crown
+            .iter()
+            .filter(|ball| ball.radius > 0.0)
+            .min_by(|a, b| {
+                let edge = |ball: &CrownBall| {
+                    let d = at - ball.centre;
+                    (Vec3::new(d.x, d.y / ball.squash, d.z).length() / ball.radius - 1.0).abs()
+                };
+                edge(a).total_cmp(&edge(b))
+            });
+        let Some(ball) = nearest else {
+            return Vec3::ZERO;
+        };
+        let d = at - ball.centre;
+        // the gradient of the squashed ball's equation
+        Vec3::new(d.x, d.y / (ball.squash * ball.squash), d.z).normalize_or_zero()
+    }
+
     /// The reach from the trunk's axis of each bough that starts at the trunk's log at `coord`, in blocks: a pine's whorl is at some of its heights.
     pub fn boughs_from(&self, coord: IVec3) -> Vec<Vec3> {
         if !self.pine {
@@ -592,6 +624,19 @@ impl TreeTints {
                         seed: t.seed,
                         spread: t.spread as f32,
                         lean: t.lean() / cells,
+                        crown: if t.kind == TreeKind::Pine {
+                            [CrownBall::default(); 1 + LOBES]
+                        } else {
+                            let base = (t.base - origin).as_vec3();
+                            std::array::from_fn(|i| {
+                                let ball = if i == 0 { &t.crown } else { &t.lobes[i - 1] };
+                                CrownBall {
+                                    centre: (base + ball.centre.as_vec3()) / cells,
+                                    radius: ball.radius as f32 / cells,
+                                    squash: ball.squash as f32,
+                                }
+                            })
+                        },
                     }
                 })
                 .collect(),

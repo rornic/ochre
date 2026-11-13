@@ -30,6 +30,15 @@ const RIM: usize = 6;
 const RIM_REACH: (f32, f32) = (0.95, 1.3);
 // A pine's cards face along the cone of its crown, out from the trunk and this much up, and not away from whichever side of their leaf is open.
 const PINE_UP: f32 = 0.6;
+// At a pine's tip, where there is no cone to face along, a card stands up facing a hashed way round, this much up, so it does not cap the tip flat.
+const PINE_TIP_UP: f32 = 0.4;
+// A broadleaf's cards take this share of their facing from the crown's ball, and the rest from their open sides, with this much up.
+const CROWN_FACING: f32 = 0.7;
+const CROWN_UP: f32 = 0.15;
+// A card is darker the more leaves are over it in its column, by this much a leaf, as far as this many above, and at least this bright.
+const DEPTH_REACH: i32 = 6;
+const DEPTH_DARKEN: f32 = 0.07;
+const DEPTH_MIN: f32 = 0.6;
 /// The farthest a card's corner can be from its voxel's middle, in blocks: its widest card's longest reach and how far out it stands.
 #[cfg(test)]
 pub(super) const CARD_REACH: f32 = PINE_CARD_SIZE.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
@@ -237,16 +246,39 @@ pub(super) struct Card {
     pub(super) shading: Vec3,
 }
 
+/// What a leaf's card faces by: along a pine's cone, from its offset from the trunk, or a broadleaf's crown, by the way the crown faces there.
+#[derive(Clone, Copy)]
+pub(super) enum Crown {
+    Pine(Vec3),
+    Broadleaf(Vec3),
+}
+
+/// How bright a card is with `above` leaves over it in its column.
+pub(super) fn depth_shade(above: usize) -> f32 {
+    (1.0 - DEPTH_DARKEN * above as f32).max(DEPTH_MIN)
+}
+
 /// The card for the leaf whose middle is `middle`, at `world` in the world, open to the air along `open` (the sum of its open
-/// sides), or none if this leaf gets no card. A pine's leaf takes `pine`, its offset from the trunk, and its card faces
-/// along the crown's cone.
-pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, pine: Option<Vec3>) -> Option<Card> {
+/// sides), or none if this leaf gets no card.
+pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown) -> Option<Card> {
     if hash01(world, 90) >= CARD_DENSITY {
         return None;
     }
-    let outward = match pine {
-        Some(from_trunk) => (from_trunk.with_y(0.0).normalize_or_zero() + Vec3::Y * PINE_UP).normalize(),
-        None => (open.normalize_or_zero() + Vec3::Y * CARD_UP).normalize(),
+    let outward = match crown {
+        Crown::Pine(from_trunk) => {
+            let across = from_trunk.with_y(0.0);
+            if across.length() < 0.5 {
+                let (sin, cos) = libm::sincosf(hash01(world, 96) * TAU);
+                (Vec3::new(cos, 0.0, sin) + Vec3::Y * PINE_TIP_UP).normalize()
+            } else {
+                (across.normalize() + Vec3::Y * PINE_UP).normalize()
+            }
+        }
+        Crown::Broadleaf(ball) if ball != Vec3::ZERO => (ball * CROWN_FACING
+            + open.normalize_or_zero() * (1.0 - CROWN_FACING)
+            + Vec3::Y * CROWN_UP)
+            .normalize(),
+        Crown::Broadleaf(_) => (open.normalize_or_zero() + Vec3::Y * CARD_UP).normalize(),
     };
     let stray = Vec3::new(
         hash01(world, 91) - 0.5,
@@ -256,7 +288,7 @@ pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, pine: Option<Vec3>) -
         * CARD_STRAY;
     let facing = (outward + stray).normalize();
     let size = between(
-        if pine.is_some() { PINE_CARD_SIZE } else { CARD_SIZE },
+        if matches!(crown, Crown::Pine(_)) { PINE_CARD_SIZE } else { CARD_SIZE },
         hash01(world, 94),
     );
     let [e1, _] = across(facing);
@@ -409,17 +441,29 @@ pub(super) fn mesh_trees<S: BlockSource>(
         if open == Vec3::ZERO {
             continue;
         }
-        // a pine leaf's offset from its trunk, whose cone its card faces along
-        let pine = faces
-            .tree_look(coord)
-            .filter(|look| look.pine)
-            .map(|look| coord.as_vec3() - look.base);
+        // a pine's card faces along its crown's cone, from its offset from the trunk, and a broadleaf's as its crown's ball does there
+        let at = coord.as_vec3();
+        let crown = match faces.tree_look(coord) {
+            Some(look) if look.pine => Crown::Pine(at - look.base),
+            Some(look) => Crown::Broadleaf(look.crown_normal(at)),
+            None => Crown::Broadleaf(Vec3::ZERO),
+        };
         let world = coord + grass_tint.origin;
-        let Some(card) = card(world, coord.as_vec3(), open, pine) else {
+        let Some(card) = card(world, at, open, crown) else {
             continue;
         };
         let lit = drawing.light_at(coord);
-        drawing.card(&card, faces.leaf_tint(coord), |p| faces.canopy_shade(p), lit);
+        // darker the more leaves are over it, so the lower and inner crown is in the shade of the upper
+        let above = (1..=DEPTH_REACH)
+            .filter(|&up| faces.is_leaf(coord + IVec3::Y * up))
+            .count();
+        let depth = depth_shade(above);
+        drawing.card(
+            &card,
+            faces.leaf_tint(coord),
+            |p| faces.canopy_shade(p) * depth,
+            lit,
+        );
     }
 }
 
@@ -476,8 +520,12 @@ mod tests {
                 .filter(|(k, _)| (i >> k) & 1 == 1)
                 .map(|(_, d)| d.as_vec3())
                 .sum();
-            for pine in [None, Some(Vec3::new(2.0, 5.0, -1.0))] {
-                if let Some(card) = card(world, Vec3::ZERO, open, pine) {
+            for crown in [
+                Crown::Broadleaf(Vec3::ZERO),
+                Crown::Broadleaf(Vec3::new(0.6, 0.8, 0.0)),
+                Crown::Pine(Vec3::new(2.0, 5.0, -1.0)),
+            ] {
+                if let Some(card) = card(world, Vec3::ZERO, open, crown) {
                     for corner in card.outline {
                         farthest = farthest.max(corner.length());
                     }
@@ -487,5 +535,32 @@ mod tests {
         assert!(farthest <= CARD_REACH + 1e-4, "{farthest}");
         // a corner is at most this far past the face of the voxel it hangs on, and the group's edge is half a block further in
         const { assert!(CARD_REACH - 0.5 <= crate::group::GROUP_OVERHANG) };
+    }
+
+    #[test]
+    fn a_pines_tip_is_not_capped_by_a_flat_card() {
+        for i in 0..400 {
+            let world = IVec3::new(i * 11, 60, i * 5 - 700);
+            // on the trunk's axis at the very top, where a cone has no side to face
+            let card = card(world, Vec3::ZERO, Vec3::Y, Crown::Pine(Vec3::new(0.0, 16.0, 0.0))).unwrap();
+            let facing = card.right.cross(card.up).normalize();
+            assert!(facing.y.abs() < 0.9, "card faces {facing}");
+            assert!(card.shading.y < 0.5, "shaded as facing {}", card.shading);
+        }
+    }
+
+    #[test]
+    fn a_broadleafs_cards_face_out_of_the_crown_and_the_lower_ones_are_darker() {
+        let tree = Tree::new(TreeKind::Broadleaf, I64Vec3::new(8, 4, 8), 10, 4.0, 0.7, 5);
+        let look = TreeTints::new([&tree], I64Vec3::ZERO, 1)
+            .look_at(IVec3::new(8, 4, 8))
+            .unwrap();
+        // the crown's middle is a block under the trunk's top: above it faces up, and to the side faces out
+        let top = Vec3::new(8.0, 4.0 + 9.0 + 3.0, 8.0);
+        assert!(look.crown_normal(top).y > 0.9);
+        let side = look.crown_normal(Vec3::new(8.0 + 4.0, 4.0 + 9.0, 8.0));
+        assert!(side.x > 0.9 && side.y.abs() < 0.2, "{side}");
+        assert!(depth_shade(0) == 1.0 && depth_shade(3) < depth_shade(1));
+        assert!(depth_shade(50) >= DEPTH_MIN);
     }
 }

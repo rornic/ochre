@@ -431,6 +431,9 @@ Differences from the plan above, found while building it:
 
 *   **The first bough stands one block higher** (`PINE_FIRST_WHORL`), so it starts inside the leaves, and **a pine's tip narrows over its last two blocks** (3×3, then a plus, then one block) instead of staying a 3×3 column to the top, which read as square. Both change generated chunks: `GENERATOR_VERSION` 96, pins updated.
 
+*   **Leaf lighting (A and B of the lighting options).** Leaves read flat because shaded leaves are lit to at least 55% of lit ones (`LEAF_SHADOW_FLOOR`) with a 35% wrap, each card's normal was local so a crown had only a few, and near crowns had none of the top-to-bottom darkening LOD crowns have (`canopy_shade`). A broadleaf card now takes 70% of its facing from its crown's ball (`TreeLook::crown_normal`, which carries the crown and lobes), so the sun has a ball to shade, and a card is 7% darker for each leaf over it in its column, to six. The shader's leaf floor and wrap are not changed yet.
+*   **A pine's tip is not capped flat**: on the trunk's axis a card faces a hashed way round, 0.4 up, so it stands.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

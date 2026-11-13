@@ -529,6 +529,10 @@ impl<S: BlockSource> TreeFaces<'_, S> {
         self.source.block(coord) == BlockType::Log
     }
 
+    pub(super) fn is_leaf(&self, coord: IVec3) -> bool {
+        self.source.block(coord) == BlockType::Leaves
+    }
+
     /// Whether a leaf beside `coord` could be seen from it: air or a plant there.
     pub(super) fn is_open(&self, coord: IVec3) -> bool {
         let block = self.source.block(coord);
