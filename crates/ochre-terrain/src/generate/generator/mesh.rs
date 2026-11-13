@@ -7,9 +7,9 @@ use super::shading::{
     corner_signs, vertex_shore_distance, vertex_shore_factor, vertex_water_depth, water_corner,
     WaterCorner, FACE_NORMAL_OFFSET, WATER_BANK_MARGIN, WATER_BED_MARGIN, WATER_DROP,
 };
-use super::source::{grid_index, BlockSource, BoxFaces, GridView, TreeFaces};
+use super::source::{grid_index, BlockSource, BoxFaces, BoxShape, GridView, TreeFaces};
 use super::terrain::is_solid;
-use super::trees_mesh::mesh_trees;
+use super::trees_mesh::{far_shape, mesh_trees};
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
@@ -350,6 +350,10 @@ pub(super) fn mesh_blocks(
         } else {
             Vec3::ONE
         };
+        if tree_box.shape != BoxShape::Cuboid {
+            far_shape(&mut opaque, tree_box, tint, cell_size as f32, BOX_LIGHT);
+            continue;
+        }
         let faces = match tree_box.faces {
             BoxFaces::All => &CUBE[..],
             BoxFaces::Sides => &CUBE[..4],

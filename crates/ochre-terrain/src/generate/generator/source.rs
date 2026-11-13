@@ -7,7 +7,7 @@ use crate::flow::surface;
 use crate::generate::region_store::RegionStore;
 use crate::generate::trees::TreeLook;
 use bevy::math::IVec3;
-use bevy::math::Vec3;
+use bevy::math::{Vec2, Vec3};
 use bevy::platform::collections::HashMap;
 use ochre_base::block::BlockType;
 use ochre_base::terrain_source::SpringPart;
@@ -127,6 +127,19 @@ pub(super) struct TreeBox {
     pub(super) faces: BoxFaces,
     // how much of its width the top is drawn in by, 0 for a box, so a crown isn't a cube
     pub(super) taper: f32,
+    pub(super) shape: BoxShape,
+}
+
+/// What a tree box is drawn as.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) enum BoxShape {
+    Cuboid,
+    // a trunk, bowed by `lean` at its top (in mesh units) and `radius` thick (in mesh units)
+    Trunk { lean: Vec2, radius: f32 },
+    // a broadleaf's crown, a ball filling its box
+    Ball,
+    // a pine's layer, a cone narrowing by the box's taper
+    Cone,
 }
 
 // Which of a tree box's faces can be seen.

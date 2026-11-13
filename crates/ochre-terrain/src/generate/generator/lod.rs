@@ -5,7 +5,7 @@ use super::canopy::{
 };
 use super::chunk::{sky_above, trees_may_reach};
 use super::mesh::mesh_blocks;
-use super::source::{water_depth, BlockSource, BoxFaces, TreeBox};
+use super::source::{water_depth, BlockSource, BoxFaces, BoxShape, TreeBox};
 use super::terrain::{
     block_gradient, column_block, face_slope, freeze_cell, ground_top, is_solid, rocked,
     under_grass, underwater,
@@ -280,6 +280,10 @@ impl LodBlocks {
                                 tint: Vec3::ONE,
                                 faces: BoxFaces::Sides,
                                 taper: 0.0,
+                                shape: BoxShape::Trunk {
+                                    lean: tree.lean() / cell as f32,
+                                    radius: tree.trunk_radius() / cell as f32,
+                                },
                             });
                         }
                         if cell >= BOX_CROWN_CELL {
@@ -293,6 +297,10 @@ impl LodBlocks {
                                     taper: match tree.kind {
                                         TreeKind::Broadleaf => CROWN_TAPER,
                                         TreeKind::Pine => PINE_TAPER,
+                                    },
+                                    shape: match tree.kind {
+                                        TreeKind::Broadleaf => BoxShape::Ball,
+                                        TreeKind::Pine => BoxShape::Cone,
                                     },
                                 });
                             }

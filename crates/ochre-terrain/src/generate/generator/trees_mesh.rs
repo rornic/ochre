@@ -1,7 +1,7 @@
 use super::buffers::{GrassTint, MeshBuffers, UNFOLDED};
 use super::mesh::{between, hash01};
 use super::shading::face_light;
-use super::source::{BlockSource, TreeFaces};
+use super::source::{BlockSource, BoxShape, TreeBox, TreeFaces};
 use crate::generate::light::SkyLight;
 use crate::generate::trees::TreeLook;
 use bevy::math::{IVec3, Vec2, Vec3};
@@ -310,6 +310,116 @@ pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: 
         outline,
         shading: outward,
     })
+}
+
+// How many sides a far tree's shapes have, seen from too far for more to count.
+const FAR_SIDES: usize = 8;
+// A far crown's ball reaches this much past its box, so it fills about as much as the box did.
+const FAR_BALL: f32 = 1.2;
+
+#[derive(Clone, Copy)]
+// One ring of a far shape: its middle, its radii across x and z, and which way its surface faces there, `out` sideways and `up`.
+struct FarRing {
+    centre: Vec3,
+    radius: Vec2,
+    out: f32,
+    up: f32,
+}
+
+/// Draws `tree_box`, which is not a cuboid, as the shape it stands for: a trunk as a bowed prism, a pine's layer as a cone, a
+/// broadleaf's crown as a ball, with smooth normals so the crown shades as a mass. `cell` is the mesh's blocks to a cell.
+pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec3, cell: f32, light: f32) {
+    let (min, max) = (tree_box.min, tree_box.max);
+    let (centre, half) = ((min + max) / 2.0, (max - min) / 2.0);
+    let (rings, top, bottom): (Vec<FarRing>, Option<Vec3>, Option<Vec3>) = match tree_box.shape {
+        BoxShape::Cuboid => return,
+        BoxShape::Trunk { lean, radius } => (
+            [0.0f32, 0.5, 1.0]
+                .map(|t| {
+                    let off = lean * t * t;
+                    FarRing {
+                        centre: Vec3::new(centre.x + off.x, min.y + (max.y - min.y) * t, centre.z + off.y),
+                        radius: Vec2::splat(radius * (1.2 - 0.4 * t)),
+                        out: 1.0,
+                        up: 0.0,
+                    }
+                })
+                .to_vec(),
+            Some(Vec3::new(centre.x + lean.x, max.y, centre.z + lean.y)),
+            None,
+        ),
+        BoxShape::Ball => (
+            [-45.0f32, 0.0, 45.0]
+                .map(|degrees| {
+                    let (sin, cos) = libm::sincosf(degrees.to_radians());
+                    FarRing {
+                        centre: Vec3::new(centre.x, centre.y + half.y * FAR_BALL * sin, centre.z),
+                        radius: Vec2::new(half.x, half.z) * (FAR_BALL * cos),
+                        out: cos,
+                        up: sin,
+                    }
+                })
+                .to_vec(),
+            Some(Vec3::new(centre.x, centre.y + half.y * FAR_BALL, centre.z)),
+            Some(Vec3::new(centre.x, centre.y - half.y * FAR_BALL, centre.z)),
+        ),
+        BoxShape::Cone => {
+            let foot = Vec2::new(half.x, half.z) * 1.1;
+            let tip = foot * (1.0 - tree_box.taper);
+            // the side leans in by the narrowing over the height
+            let slope = (foot.x - tip.x) / (max.y - min.y).max(1e-3);
+            (
+                vec![
+                    FarRing { centre: Vec3::new(centre.x, min.y, centre.z), radius: foot, out: 1.0, up: slope },
+                    FarRing { centre: Vec3::new(centre.x, max.y, centre.z), radius: tip, out: 1.0, up: slope },
+                ],
+                Some(Vec3::new(centre.x, max.y, centre.z)),
+                Some(Vec3::new(centre.x, min.y, centre.z)),
+            )
+        }
+    };
+    let side = tree_box.block.tile(Face::Side).atlas_cell();
+    let end = tree_box.block.tile(Face::Top).atlas_cell();
+    let colour = |cell: f32| tint.extend(cell).to_array();
+    let blocks = |units: f32| units * cell;
+    let mut vertices = Vec::new();
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    for ring in &rings {
+        // painted textures take blocks: round by arc length, and up from the shape's foot
+        let round = blocks(TAU * 0.5 * (ring.radius.x + ring.radius.y));
+        for k in 0..=FAR_SIDES {
+            let (sin, cos) = libm::sincosf(k as f32 / FAR_SIDES as f32 * TAU);
+            let at = ring.centre + Vec3::new(cos * ring.radius.x, 0.0, sin * ring.radius.y);
+            let normal = Vec3::new(cos * ring.out, ring.up, sin * ring.out).normalize_or_zero();
+            vertices.push((
+                at,
+                normal,
+                [k as f32 / FAR_SIDES as f32 * round, blocks(at.y - min.y)],
+                colour(side),
+            ));
+        }
+    }
+    let across = FAR_SIDES as u32 + 1;
+    for i in 0..rings.len() as u32 - 1 {
+        for k in 0..FAR_SIDES as u32 {
+            let (a, c) = (i * across + k, (i + 1) * across + k);
+            triangles.push([a, c, a + 1]);
+            triangles.push([a + 1, c, c + 1]);
+        }
+    }
+    // a cap is a fan from a pole to the ring beside it
+    for (pole, ring, up) in [
+        (top, rings.len() as u32 - 1, 1.0),
+        (bottom, 0, -1.0),
+    ] {
+        let Some(pole) = pole else { continue };
+        let hub = vertices.len() as u32;
+        vertices.push((pole, Vec3::Y * up, [0.0, blocks(pole.y - min.y)], colour(end)));
+        for k in 0..FAR_SIDES as u32 {
+            triangles.push([hub, ring * across + k, ring * across + k + 1]);
+        }
+    }
+    buffers.push_double_sided_mesh(&vertices, light, &triangles);
 }
 
 /// Draws the logs of `faces` as eight-sided prisms: a tree's trunk bowed along its lean, any other log

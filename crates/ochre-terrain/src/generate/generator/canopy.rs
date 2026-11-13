@@ -1,5 +1,5 @@
 use super::lod::LodBlocks;
-use super::source::{BoxFaces, TreeBox};
+use super::source::{BoxFaces, BoxShape, TreeBox};
 use crate::generate::trees::Tree;
 use crate::generate::trees::TREE_REACH;
 use bevy::math::I64Vec3;
@@ -201,6 +201,7 @@ impl Canopy {
                     tint: tint / count,
                     faces: BoxFaces::All,
                     taper: 0.0,
+                    shape: BoxShape::Cuboid,
                 });
             }
         }

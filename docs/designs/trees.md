@@ -441,6 +441,13 @@ Differences from the plan above, found while building it:
 *   **Card scale** per tree, 0.9 to 1.1, from its seed (`TreeLook::card_scale`).
 *   Taiga is +1.2% and the forest meadow +5.3% against cubes built from the same voxels.
 
+### PR 4 (`feat: low-poly far trees`)
+
+Smaller than the plan above, which had a separate tree-driven LOD mesher (`lod_trees.rs`):
+
+*   **The boxes become shapes.** The LOD already holds each lone tree's boxes (trunk, and crown layers from 8-block cells) with an owner rule. `TreeBox` gains a `BoxShape`: `Trunk { lean, radius }` (a bowed prism at the tree's radius and lean, three rings so the bow shows), `Ball` (a broadleaf's crown layer, 1.2 times its box) and `Cone` (a pine's layer narrowing by its taper), drawn by `far_shape` with smooth normals. Vertices per box are 28, 29 and 20 against 16 and 24 for cuboids. Forest meadow LOD vertices +1.7%, default view +0.2%.
+*   **Not done**: the planted-cell levels (2 and 4 blocks a cell), which still draw cubes because the canopy shade is read from the planted leaf cells, and the forest canopy boxes. A tree-driven mesher for those is the work left. LOD trees have no `tree_shapes` switch: `generate_lod_mesh` does not take one.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

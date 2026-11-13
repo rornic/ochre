@@ -264,6 +264,31 @@ impl MeshBuffers {
         self.indices.extend([0, 2, 1, 1, 2, 3].map(|i| start + i));
     }
 
+    // Triangles over `vertices`, each a position, normal, uv and colour, drawn from both sides with one light, for a shape too small to
+    // be seen closely, whose normals are smooth.
+    pub(super) fn push_double_sided_mesh(
+        &mut self,
+        vertices: &[(Vec3, Vec3, [f32; 2], [f32; 4])],
+        light: f32,
+        triangles: &[[u32; 3]],
+    ) {
+        let start = self.vertices.len() as u32;
+        for &(position, normal, uv, color) in vertices {
+            // the cube's faces along z store their normals reversed
+            self.vertices.push(Vertex {
+                position: position.to_array(),
+                normal: [normal.x, normal.y, -normal.z],
+                uv,
+            });
+            self.colors.push(color);
+            self.lights.push(light);
+        }
+        for &[a, b, c] in triangles {
+            self.indices
+                .extend([a, b, c, a, c, b].map(|i| start + i));
+        }
+    }
+
     // A fan of triangles from the first position, the centre, to each of the rest, the rim in order, from both sides, with one
     // light and normal for all, so its outline can be any shape with that many corners.
     pub(super) fn push_double_sided_fan(

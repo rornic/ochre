@@ -1738,7 +1738,7 @@ fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
                 .filter(|&&c| c == BlockType::Log)
                 .count()
         );
-        // meshed, the box is a few quads standing out of the ground's
+        // meshed, the box is a prism standing out of the ground's
         let lone = LodBlocks {
             boxes: vec![*trunk],
             ..LodBlocks::new(
@@ -1761,8 +1761,8 @@ fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
         let mesh =
             super::mesh::mesh_blocks(&lone, key.cell_size(), style(false, false), &tint, &light)
                 .opaque;
-        // its foot is in the ground and its top in the crown, so only its sides show
-        assert_eq!(4 * 4, mesh.count_vertices());
+        // its foot is in the ground, so it is a prism of three rings of nine corners (the first repeated for the texture's seam) and a cap's hub
+        assert_eq!(3 * 9 + 1, mesh.count_vertices());
     }
 }
 
@@ -4797,4 +4797,51 @@ fn leaves_with_more_leaves_over_them_are_drawn_darker() {
     };
     let (low, high) = (mean(&|y| y < 6.5), mean(&|y| y > 8.5));
     assert!(low < high * 0.9, "low {low}, high {high}");
+}
+
+#[test]
+fn a_far_crown_is_a_ball_or_a_cone_within_a_little_of_its_box() {
+    use super::source::{BoxFaces, BoxShape, TreeBox};
+    let regions = RegionStore::new(ochre_world::worldmap::test_terrain(1));
+    let key = LodKey { level: 3, coord: I64Vec3::ZERO };
+    let (min, max) = (Vec3::new(-2.0, 0.0, -2.0), Vec3::new(2.0, 3.0, 2.0));
+    for (shape, taper) in [(BoxShape::Ball, 0.5), (BoxShape::Cone, 0.8)] {
+        let lone = LodBlocks {
+            boxes: vec![TreeBox {
+                min,
+                max,
+                block: BlockType::Leaves,
+                tint: Vec3::ONE,
+                faces: BoxFaces::All,
+                taper,
+                shape,
+            }],
+            ..LodBlocks::new(
+                16,
+                vec![BlockType::Air; 18 * 18 * 18],
+                vec![0; 18 * 18],
+                0,
+                key.cell_size(),
+            )
+        };
+        let tint = super::buffers::GrassTint::new(regions.terrain(), Vec3::ZERO, 1.0);
+        let light = std::cell::LazyCell::new(|| {
+            crate::generate::light::SkyLight::new(
+                IVec3::splat(-1),
+                IVec3::splat(18),
+                crate::generate::light::MAX_LIGHT,
+                vec![0; 18 * 18 * 18],
+            )
+        });
+        let mesh =
+            super::mesh::mesh_blocks(&lone, key.cell_size(), style(false, false), &tint, &light)
+                .opaque;
+        assert!(mesh.count_vertices() > 0 && mesh.count_vertices() < 60);
+        for p in mesh_positions(&mesh) {
+            assert!(
+                p.x.abs() <= 2.0 * 1.25 && p.z.abs() <= 2.0 * 1.25 && p.y >= -0.7 && p.y <= 3.7,
+                "{shape:?} reaches {p}"
+            );
+        }
+    }
 }
