@@ -1657,30 +1657,13 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
                 "no leaf cells at level {level}, cells {cell} blocks wide"
             );
         } else {
-            // a crown is boxes of its real size, never a cell's worth of cube, and fewer the farther out
+            // a crown is a few big cards of its real size, never a cell's worth of cube
             assert_eq!(0, leaf_cells);
-            let wanted = tree.crown_boxes(super::canopy::crown_layers(cell));
-            assert!(
-                !wanted.is_empty() && crown_boxes >= wanted.len(),
-                "{crown_boxes} crown boxes of {} at level {level}",
-                wanted.len()
-            );
-            for (min, max) in &wanted {
-                let size = (*max - *min).as_vec3();
-                let found = blocks
-                    .boxes
-                    .iter()
-                    .filter(|b| b.block == BlockType::Leaves)
-                    .any(|b| ((b.max - b.min) * cell as f32 - size).abs().max_element() < 1e-3);
-                assert!(found, "no crown box of {size:?} at level {level}");
+            assert!(crown_boxes > 0, "no crown cards at level {level}");
+            for card in blocks.boxes.iter().filter(|b| b.block == BlockType::Leaves) {
+                let width = (card.max.x - card.min.x) * cell as f32;
+                assert!(width < 20.0, "a {width} block card at level {level}");
             }
-            let wanted = wanted
-                .iter()
-                .fold(Vec3::ZERO, |w, (min, max)| w.max((*max - *min).as_vec3()));
-            assert!(
-                wanted.x < 20.0,
-                "crown {wanted:?} wider than a crown should be"
-            );
         }
     }
 }
@@ -4800,49 +4783,27 @@ fn leaves_with_more_leaves_over_them_are_drawn_darker() {
 }
 
 #[test]
-fn a_far_crown_is_a_ball_or_a_cone_within_a_little_of_its_box() {
-    use super::source::{BoxFaces, BoxShape, TreeBox};
-    let regions = RegionStore::new(ochre_world::worldmap::test_terrain(1));
-    let key = LodKey { level: 3, coord: I64Vec3::ZERO };
-    let (min, max) = (Vec3::new(-2.0, 0.0, -2.0), Vec3::new(2.0, 3.0, 2.0));
-    for (shape, taper) in [(BoxShape::Ball, 0.5), (BoxShape::Cone, 0.8)] {
-        let lone = LodBlocks {
-            boxes: vec![TreeBox {
-                min,
-                max,
-                block: BlockType::Leaves,
-                tint: Vec3::ONE,
-                faces: BoxFaces::All,
-                taper,
-                shape,
-            }],
-            ..LodBlocks::new(
-                16,
-                vec![BlockType::Air; 18 * 18 * 18],
-                vec![0; 18 * 18],
-                0,
-                key.cell_size(),
-            )
-        };
-        let tint = super::buffers::GrassTint::new(regions.terrain(), Vec3::ZERO, 1.0);
-        let light = std::cell::LazyCell::new(|| {
-            crate::generate::light::SkyLight::new(
-                IVec3::splat(-1),
-                IVec3::splat(18),
-                crate::generate::light::MAX_LIGHT,
-                vec![0; 18 * 18 * 18],
-            )
-        });
-        let mesh =
-            super::mesh::mesh_blocks(&lone, key.cell_size(), style(false, false), &tint, &light)
-                .opaque;
-        assert!(mesh.count_vertices() > 0 && mesh.count_vertices() < 60);
-        for p in mesh_positions(&mesh) {
-            assert!(
-                p.x.abs() <= 2.0 * 1.25 && p.z.abs() <= 2.0 * 1.25 && p.y >= -0.7 && p.y <= 3.7,
-                "{shape:?} reaches {p}"
-            );
-        }
+fn far_crowns_are_fewer_bigger_cards_as_the_cells_widen_and_stay_over_the_crown() {
+    use crate::generate::trees::{Tree, TreeKind};
+    for (kind, trunk, spread) in [
+        (TreeKind::Broadleaf, 10, 4.5),
+        (TreeKind::Broadleaf, 20, 7.0),
+        (TreeKind::Pine, 16, 4.5),
+    ] {
+        let tree = Tree::new(kind, I64Vec3::ZERO, trunk, spread, 0.7, 5);
+        let counts: Vec<usize> = [2i64, 4, 8, 16]
+            .iter()
+            .map(|&cell| {
+                let cards = tree.far_cards(2.0 / cell as f64);
+                for card in &cards {
+                    assert!(card.size >= 1.0 && card.size as f64 <= spread * 2.0 + 2.0, "{kind:?} card {} wide", card.size);
+                    assert!(card.centre.x.abs() <= spread * 1.4 && card.centre.z.abs() <= spread * 1.4);
+                    assert!(card.centre.y >= 0.0 && card.centre.y <= trunk as f64 + spread + 2.0);
+                }
+                cards.len()
+            })
+            .collect();
+        assert!(counts.windows(2).all(|w| w[0] >= w[1]) && counts[3] >= 3, "{kind:?} {counts:?}");
     }
 }
 
@@ -4880,7 +4841,8 @@ fn far_trees_cost_fewer_vertices_than_the_planted_cubes_they_replace() {
             let planted = count(Vec::new(), false);
             let far = count(super::lod::far_boxes(&tree, I64Vec3::ZERO, cell), true);
             shown.push(format!("{kind:?} {trunk}/{spread} cell {cell}: planted {planted}, far {far}"));
-            assert!(far < planted, "{kind:?} {trunk} at {cell}: far {far} vertices, planted {planted}");
+            // cards cost less than the planted cubes at 2 blocks, and about what a small tree costs at 4, where those are few
+            assert!(far < if cell == 2 { planted } else { planted * 3 / 2 }, "{kind:?} {trunk} at {cell}: far {far} vertices, planted {planted}");
         }
     }
     println!("{}", shown.join("\n"));

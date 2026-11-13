@@ -136,10 +136,6 @@ pub(super) enum BoxShape {
     Cuboid,
     // a trunk, bowed by `lean` at its top (in mesh units) and `radius` thick (in mesh units)
     Trunk { lean: Vec2, radius: f32 },
-    // a broadleaf's crown, a ball filling its box
-    Ball,
-    // a pine's layer, a cone narrowing by the box's taper
-    Cone,
     // one of the few big cards a far crown is, as wide as the box, facing `facing`
     Card { facing: Vec3 },
 }

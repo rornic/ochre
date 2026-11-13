@@ -223,20 +223,20 @@ impl Tree {
     }
 
     /// A far tree's crown as a few big cards over its surface, for levels of detail whose cells are too wide for the voxels: where each is,
-    /// in blocks from the trunk's base, which way it faces and how wide it is. A broadleaf's are spread over its ball and each lobe's, a
-    /// pine's in rings up its cone.
-    pub fn far_cards(&self) -> Vec<FarCard> {
+    /// in blocks from the trunk's base, which way it faces and how wide it is. A broadleaf's are spread over its ball and, from `detail`
+    /// 0.75, each lobe's, a pine's in rings up its cone. `detail` is 1 for 2-block cells and falls as they widen, so fewer, bigger cards.
+    pub fn far_cards(&self, detail: f64) -> Vec<FarCard> {
         let mut cards = Vec::new();
         if self.kind == TreeKind::Pine {
             let (bottom, top) = ((self.trunk / 4) as f64, (self.trunk + 1) as f64);
             let height = top - bottom;
-            let rings = (height / PINE_WHORL).ceil().max(1.0) as usize;
+            let rings = ((height / PINE_WHORL * detail.max(0.34)).ceil() as usize).max(2);
             let band = height / rings as f64;
             for j in 0..rings {
                 let y = bottom + (j as f64 + 0.5) * band;
                 let radius = (0.6 + self.spread * (1.0 - (y - bottom) / height)).max(0.8);
-                let count = ((radius * 1.6).round() as usize).max(2);
-                let size = ((std::f64::consts::TAU * radius * band / count as f64).sqrt() * 1.15).max(2.0);
+                let count = ((radius * 1.6 * detail.max(0.4)).round() as usize).max(3);
+                let size = ((std::f64::consts::TAU * radius * band / count as f64).sqrt() * 1.15).min(radius * 1.8).max(1.5);
                 for i in 0..count {
                     let (sin, cos) = libm::sincos((i as f64 + 0.5 * j as f64) / count as f64 * std::f64::consts::TAU);
                     cards.push(FarCard {
@@ -248,10 +248,11 @@ impl Tree {
             }
             return cards;
         }
-        for blob in std::iter::once(&self.crown).chain(self.lobes.iter().filter(|lobe| lobe.radius > 0.0)) {
-            let count = ((3.0 + 0.8 * blob.radius).round() as usize).max(3);
+        let lobes = self.lobes.iter().filter(|lobe| lobe.radius > 0.0 && detail >= 0.75);
+        for blob in std::iter::once(&self.crown).chain(lobes) {
+            let count = (((3.0 + 0.8 * blob.radius) * detail).round() as usize).max(5);
             let area = 4.0 * std::f64::consts::PI * blob.radius * blob.radius * (1.0 + blob.squash) / 2.0;
-            let size = (area / count as f64).sqrt() * 1.1;
+            let size = ((area / count as f64).sqrt() * 1.1).min(blob.radius * 1.5);
             for i in 0..count {
                 // a ball's points spread evenly by the golden angle, but not its underside, which is seen from below only
                 let y = 1.0 - 2.0 * (i as f64 + 0.5) / count as f64;

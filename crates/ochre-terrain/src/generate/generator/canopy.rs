@@ -7,16 +7,6 @@ use bevy::math::UVec2;
 use bevy::math::Vec3;
 use ochre_base::block::BlockType;
 
-// How many stacked boxes a crown is drawn as in cells `cell` blocks wide, too wide to hold it:
-// fewer the farther out, where there are more of them and each is smaller.
-pub(super) fn crown_layers(cell: i64) -> i64 {
-    match cell {
-        ..=4 => 3,
-        8 => 2,
-        _ => 1,
-    }
-}
-
 // From cells this wide, trees are drawn together as the canopy they make, a few boxes a node,
 // instead of each one as boxes of its own: there are so many in view this far out that their
 // boxes would cost far more than the land under them, and each is only a few pixels across.

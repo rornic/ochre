@@ -1,6 +1,6 @@
 use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle, TEXTURE_MAX_CELL_SIZE};
 use super::canopy::{
-    crown_layers, Canopy, BOX_CROWN_CELL, CANOPY_CELL, CANOPY_SHADE, CANOPY_SHADE_SPAN,
+    Canopy, BOX_CROWN_CELL, CANOPY_CELL, CANOPY_SHADE, CANOPY_SHADE_SPAN,
     FOREST_COVER, FOREST_DARKEN, TREE_MAX_CELL, TRUNK_MAX_CELL,
 };
 use super::chunk::{sky_above, trees_may_reach};
@@ -20,7 +20,6 @@ use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::Tree;
 use crate::generate::trees::TreeGround;
-use crate::generate::trees::TreeKind;
 use crate::generate::trees::TreeTints;
 use crate::lod::LodKey;
 use bevy::math::I64Vec2;
@@ -40,8 +39,6 @@ pub(crate) const SKIRT_CELLS: i32 = 3;
 pub(crate) const MAX_SKIRT_CELLS: i32 = 40;
 
 // How far the tops of crown boxes are drawn in: a ball's, and a pine's nearer a cone's.
-const CROWN_TAPER: f32 = 0.5;
-const PINE_TAPER: f32 = 0.8;
 
 pub(super) struct LodBlocks {
     pub(super) size: i32,
@@ -709,9 +706,9 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<Chunk
     meshes.has_geometry().then_some(meshes)
 }
 
-// What a lone tree is drawn as in a node whose lowest block is `base` and whose cells are `cell` blocks wide: a prism for its trunk, and for
-// its crown a ball or cone from 4-block cells (their voxels cost more than 57 vertices a tree) and a few big cards below that, where the
-// voxels cost hundreds. From 8 blocks the crown is a ball or cone a layer at a time.
+// What a lone tree is drawn as in a node whose lowest block is `base` and whose cells are `cell` blocks wide: a prism for its trunk (to
+// 8-block cells, past which it is under a pixel) and a few big cards for its crown, fewer and bigger as the cells widen, like the near
+// crown's but not a smooth ball, which looks out of place beside them.
 pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
     let mesh_at = |block: Vec3| (block - base.as_vec3()) / cell as f32 - 0.5;
     let mut boxes = Vec::new();
@@ -734,39 +731,18 @@ pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
             },
         });
     }
-    if cell >= 4 {
-        let layers = if cell < BOX_CROWN_CELL { 1 } else { crown_layers(cell) };
-        for (min, max) in tree.crown_boxes(layers) {
-            boxes.push(TreeBox {
-                min: mesh_at(min.as_vec3()),
-                max: mesh_at(max.as_vec3()),
-                block: BlockType::Leaves,
-                tint: tree.tint(),
-                faces: BoxFaces::All,
-                taper: match tree.kind {
-                    TreeKind::Broadleaf => CROWN_TAPER,
-                    TreeKind::Pine => PINE_TAPER,
-                },
-                shape: match tree.kind {
-                    TreeKind::Broadleaf => BoxShape::Ball,
-                    TreeKind::Pine => BoxShape::Cone,
-                },
-            });
-        }
-    } else {
-        for card in tree.far_cards() {
-            let at = tree.base.as_dvec3() + card.centre;
-            let half = Vec3::splat(card.size / 2.0);
-            boxes.push(TreeBox {
-                min: mesh_at(at.as_vec3() - half),
-                max: mesh_at(at.as_vec3() + half),
-                block: BlockType::Leaves,
-                tint: tree.tint(),
-                faces: BoxFaces::All,
-                taper: 0.0,
-                shape: BoxShape::Card { facing: card.facing },
-            });
-        }
+    for card in tree.far_cards(2.0 / cell as f64) {
+        let at = tree.base.as_dvec3() + card.centre;
+        let half = Vec3::splat(card.size / 2.0);
+        boxes.push(TreeBox {
+            min: mesh_at(at.as_vec3() - half),
+            max: mesh_at(at.as_vec3() + half),
+            block: BlockType::Leaves,
+            tint: tree.tint(),
+            faces: BoxFaces::All,
+            taper: 0.0,
+            shape: BoxShape::Card { facing: card.facing },
+        });
     }
     boxes
 }
