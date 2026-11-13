@@ -215,13 +215,13 @@ impl Loop {
         }
     }
 
-    // Each file's measured loudness and the loudness it plays at in full, in LUFS: the sea and
-    // birds up front, crickets and the desert behind, the ground wind quieter still.
+    // Each file's measured loudness and the loudness it plays at in full, in LUFS: the birds
+    // up front, the sea behind them, crickets and the desert behind that, the ground wind quieter still.
     fn loudness(self) -> (f32, f32) {
         match self {
             Loop::Forest => (-19.2, -24.0),
             Loop::Crickets => (-14.0, -29.0),
-            Loop::Waves => (-19.7, -24.0),
+            Loop::Waves => (-19.7, -30.0),
             Loop::Desert => (-24.5, -31.0),
             Loop::Underwater => (-18.4, -22.0),
             Loop::Leaves => (-20.2, -35.0),
