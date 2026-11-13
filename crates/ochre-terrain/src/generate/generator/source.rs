@@ -140,6 +140,8 @@ pub(super) enum BoxShape {
     Ball,
     // a pine's layer, a cone narrowing by the box's taper
     Cone,
+    // one of the few big cards a far crown is, as wide as the box, facing `facing`
+    Card { facing: Vec3 },
 }
 
 // Which of a tree box's faces can be seen.

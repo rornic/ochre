@@ -4845,3 +4845,43 @@ fn a_far_crown_is_a_ball_or_a_cone_within_a_little_of_its_box() {
         }
     }
 }
+
+#[test]
+fn far_trees_cost_fewer_vertices_than_the_planted_cubes_they_replace() {
+    use crate::generate::trees::{Tree, TreeKind};
+    let regions = RegionStore::new(ochre_world::worldmap::test_terrain(1));
+    let mut shown = Vec::new();
+    for (kind, trunk, spread) in [
+        (TreeKind::Broadleaf, 10, 4.5),
+        (TreeKind::Pine, 16, 4.5),
+        (TreeKind::Broadleaf, 20, 7.0),
+        (TreeKind::Pine, 24, 6.0),
+    ] {
+        for cell in [2i64, 4] {
+            let size = 16i32;
+            let tree = Tree::new(kind, I64Vec3::new(8 * cell, 0, 8 * cell), trunk, spread, 0.7, 5);
+            let mut cells = vec![BlockType::Air; 18 * 18 * 18];
+            tree.plant(I64Vec3::ZERO, cell, (IVec3::splat(-1), IVec3::splat(size)), |coord, block| {
+                cells[LodBlocks::index(size, coord)] = block;
+            });
+            let tint = super::buffers::GrassTint::new(regions.terrain(), Vec3::ZERO, 1.0);
+            let light = std::cell::LazyCell::new(|| {
+                crate::generate::light::SkyLight::new(IVec3::splat(-1), IVec3::splat(18), crate::generate::light::MAX_LIGHT, vec![0; 18 * 18 * 18])
+            });
+            let count = |boxes: Vec<super::source::TreeBox>, shapes: bool| {
+                let lone = LodBlocks {
+                    boxes,
+                    ..LodBlocks::new(size, cells.clone(), vec![0; 18 * 18], 0, cell)
+                };
+                let style = MeshStyle { tree_shapes: shapes, ..style(false, false) };
+                let m = super::mesh::mesh_blocks(&lone, cell, style, &tint, &light);
+                m.opaque.count_vertices() + m.inner_leaves.map_or(0, |m| m.count_vertices())
+            };
+            let planted = count(Vec::new(), false);
+            let far = count(super::lod::far_boxes(&tree, I64Vec3::ZERO, cell), true);
+            shown.push(format!("{kind:?} {trunk}/{spread} cell {cell}: planted {planted}, far {far}"));
+            assert!(far < planted, "{kind:?} {trunk} at {cell}: far {far} vertices, planted {planted}");
+        }
+    }
+    println!("{}", shown.join("\n"));
+}

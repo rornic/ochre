@@ -246,6 +246,24 @@ pub(super) struct Card {
     pub(super) shading: Vec3,
 }
 
+/// The directions across a card facing `facing`, turned by `spin` of a full turn.
+fn card_frame(facing: Vec3, spin: f32) -> (Vec3, Vec3) {
+    let [e1, _] = across(facing);
+    let (sin, cos) = libm::sincosf(spin * TAU);
+    let right = e1 * cos + facing.cross(e1) * sin;
+    (right, facing.cross(right))
+}
+
+/// A card's outline: `RIM` corners round `centre` at uneven distances, so it has no square corners.
+fn card_outline(world: IVec3, centre: Vec3, right: Vec3, up: Vec3, half: f32) -> [Vec3; RIM] {
+    std::array::from_fn(|k| {
+        let angle = (k as f32 + hash01(world, 100 + k as u32) * 0.6) * TAU / RIM as f32;
+        let (sin, cos) = libm::sincosf(angle);
+        let reach = half * between(RIM_REACH, hash01(world, 120 + k as u32));
+        centre + (right * cos + up * sin) * reach
+    })
+}
+
 /// What a leaf's card faces by: along a pine's cone, from its offset from the trunk, or a broadleaf's crown, by the way the crown faces there.
 #[derive(Clone, Copy)]
 pub(super) enum Crown {
@@ -292,17 +310,9 @@ pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: 
             if matches!(crown, Crown::Pine(_)) { PINE_CARD_SIZE } else { CARD_SIZE },
             hash01(world, 94),
         );
-    let [e1, _] = across(facing);
-    let (sin, cos) = libm::sincosf(hash01(world, 95) * TAU);
-    let right = e1 * cos + facing.cross(e1) * sin;
-    let up = facing.cross(right);
+    let (right, up) = card_frame(facing, hash01(world, 95));
     let (half, centre) = (size * 0.5, middle + outward * CARD_OUT);
-    let outline = std::array::from_fn(|k| {
-        let angle = (k as f32 + hash01(world, 100 + k as u32) * 0.6) * TAU / RIM as f32;
-        let (sin, cos) = libm::sincosf(angle);
-        let reach = half * between(RIM_REACH, hash01(world, 120 + k as u32));
-        centre + (right * cos + up * sin) * reach
-    });
+    let outline = card_outline(world, centre, right, up, half);
     Some(Card {
         centre,
         right,
@@ -331,8 +341,25 @@ struct FarRing {
 pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec3, cell: f32, light: f32) {
     let (min, max) = (tree_box.min, tree_box.max);
     let (centre, half) = ((min + max) / 2.0, (max - min) / 2.0);
+    if let BoxShape::Card { facing } = tree_box.shape {
+        // one of a far crown's few cards, in a fan like a near one, hashed by where it is
+        let world = (centre * 16.0).as_ivec3();
+        let (right, up) = card_frame(facing, hash01(world, 95));
+        let outline = card_outline(world, centre, right, up, half.x);
+        let colour = tint.extend(tree_box.block.tile(Face::Side).atlas_cell()).to_array();
+        let mut vertices = vec![(centre, facing, [0.0, 0.0], colour)];
+        for corner in outline {
+            let from = corner - centre;
+            vertices.push((corner, facing, [from.dot(right) * cell, from.dot(up) * cell], colour));
+        }
+        let triangles: Vec<[u32; 3]> = (0..RIM as u32)
+            .map(|k| [0, 1 + k, 1 + (k + 1) % RIM as u32])
+            .collect();
+        buffers.push_double_sided_mesh(&vertices, light, &triangles);
+        return;
+    }
     let (rings, top, bottom): (Vec<FarRing>, Option<Vec3>, Option<Vec3>) = match tree_box.shape {
-        BoxShape::Cuboid => return,
+        BoxShape::Cuboid | BoxShape::Card { .. } => return,
         BoxShape::Trunk { lean, radius } => (
             [0.0f32, 0.5, 1.0]
                 .map(|t| {

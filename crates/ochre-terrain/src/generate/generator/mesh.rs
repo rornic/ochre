@@ -35,7 +35,7 @@ pub(super) fn mesh_blocks(
 ) -> ChunkMeshes {
     let MeshStyle { textured, .. } = style;
     // tree logs are drawn by `mesh_trees`, so the rest of the mesher sees air where they are
-    let faces = TreeFaces::new(real_source, style.tree_shapes && cell_size == 1);
+    let faces = TreeFaces::new(real_source, style.tree_shapes);
     let source = &faces;
     let mut opaque = MeshBuffers {
         untextured: !textured,
