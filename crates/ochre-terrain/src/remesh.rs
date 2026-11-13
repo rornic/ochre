@@ -83,7 +83,6 @@ pub(crate) fn mesh_group(
     key: LodKey,
     chunks: Vec<(ChunkCoordinate, ChunkInputs)>,
     regions: &RegionStore,
-    solid_leaves: bool,
 ) -> RemeshedGroup {
     let origin = key.min_chunk();
     let mut parts = Vec::new();
@@ -91,7 +90,7 @@ pub(crate) fn mesh_group(
     for (coord, inputs) in chunks {
         let meshes = inputs
             .map(|(data, adjacent)| {
-                generate_chunk_mesh(data, adjacent, coord, regions, solid_leaves)
+                generate_chunk_mesh(data, adjacent, coord, regions)
             })
             .filter(ChunkMeshes::has_geometry);
         drawn.push((coord, meshes.is_some()));
@@ -185,11 +184,10 @@ pub(crate) fn remesh_edits(
         };
         loader.remesh.remove(&key);
         let regions = world.region_store.clone();
-        let solid_leaves = loader.solid_leaves;
         // one meshing it already from before this change is dropped, and with it its task
         let remesh = RemeshGroup {
             task: task_pool.spawn(async move {
-                let mut remeshed = mesh_group(key, chunks, &regions, solid_leaves);
+                let mut remeshed = mesh_group(key, chunks, &regions);
                 remeshed.meshes = pack_group(remeshed.meshes);
                 remeshed
             }),
@@ -272,7 +270,7 @@ mod tests {
     use super::{apply_remeshes, chunks_reading, groups_reading, mesh_group, remesh_edits};
     use crate::chunk::{ChunkCoordinate, ChunkData, CHUNK_SIZE};
     use crate::chunk_loader::{Chunk, ChunkLoader};
-    use crate::generate::generator::{generate_chunk_mesh, ChunkMeshes, LIGHT_MARGIN};
+    use crate::generate::generator::{generate_chunk_mesh_with, ChunkMeshes, LIGHT_MARGIN};
     use crate::group::{BuiltGroup, ChunkGroup, GroupedChunk};
     use crate::lod::{LodKey, LodLayout};
     use crate::world::World;
@@ -303,13 +301,12 @@ mod tests {
     }
 
     fn mesh_of(world: &World, chunk: ChunkCoordinate) -> ChunkMeshes {
-        generate_chunk_mesh(
+        generate_chunk_mesh_with(
             world.get_chunk_data(chunk).unwrap(),
             world.adjacent_chunk_data(chunk),
             chunk,
             &world.region_store,
-            false,
-        )
+            false)
     }
 
     fn attribute(mesh: &Mesh, attribute: bevy::render::mesh::MeshVertexAttribute) -> Vec<f32> {
@@ -451,7 +448,7 @@ mod tests {
         };
         let regions = world.region_store.clone();
         let vertices = |world: &World| {
-            mesh_group(key, inputs(world), &regions, false)
+            mesh_group(key, inputs(world), &regions)
                 .meshes
                 .opaque
                 .count_vertices()
@@ -463,7 +460,7 @@ mod tests {
         );
         // the floor's top is split around the hole, and the hole has walls
         assert!(vertices(&world) > whole);
-        let remeshed = mesh_group(key, inputs(&world), &regions, false);
+        let remeshed = mesh_group(key, inputs(&world), &regions);
         assert_eq!(
             vec![true, true, true, true],
             remeshed
@@ -496,7 +493,6 @@ mod tests {
         let mut loader = ChunkLoader::new(
             LodLayout::new(32, 128, 2),
             ochre_base::WorldBounds::default(),
-            false,
             Handle::default(),
             Handle::default(),
             Handle::default(),
@@ -589,7 +585,6 @@ mod tests {
             .insert_resource(ChunkLoader::new(
                 LodLayout::new(32, 128, 2),
                 ochre_base::WorldBounds::default(),
-                false,
                 Handle::default(),
                 Handle::default(),
                 Handle::default(),

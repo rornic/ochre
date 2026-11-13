@@ -263,7 +263,7 @@ impl Material for ChunkMaterial {
             "FIRST_BIG_FLORA_CELL".into(),
             Tile::Shrub.atlas_cell() as u32,
         );
-        // leaves' holes fill in past where the faces between leaves are drawn, see `InnerLeaves`
+        // leaves' holes fill in with the shade of the leaves behind them past this reach
         let inner_leaves_reach =
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
         let inner_leaves_band =

@@ -69,8 +69,7 @@ impl CloudResolution {
 pub struct DebugSettings {
     /// Leaves stay still instead of swaying in the wind.
     pub still_leaves: bool,
-    /// Leaves are drawn in their mean colour without their holes, in shadows too, and hide
-    /// the faces of the leaves behind them, as coarse LODs draw them everywhere.
+    /// Leaves are drawn in their mean colour without their holes, in shadows too, as coarse LODs draw them everywhere.
     pub solid_leaves: bool,
     /// The frost code is compiled out of the land's shader, to time what it costs.
     pub no_frost: bool,

@@ -1,21 +1,11 @@
 use super::lod::LodBlocks;
-use super::source::{BoxFaces, TreeBox};
+use super::source::{BoxFaces, BoxShape, TreeBox};
 use crate::generate::trees::Tree;
 use crate::generate::trees::TREE_REACH;
 use bevy::math::I64Vec3;
 use bevy::math::UVec2;
 use bevy::math::Vec3;
 use ochre_base::block::BlockType;
-
-// How many stacked boxes a crown is drawn as in cells `cell` blocks wide, too wide to hold it:
-// fewer the farther out, where there are more of them and each is smaller.
-pub(super) fn crown_layers(cell: i64) -> i64 {
-    match cell {
-        ..=4 => 3,
-        8 => 2,
-        _ => 1,
-    }
-}
 
 // From cells this wide, trees are drawn together as the canopy they make, a few boxes a node,
 // instead of each one as boxes of its own: there are so many in view this far out that their
@@ -201,6 +191,7 @@ impl Canopy {
                     tint: tint / count,
                     faces: BoxFaces::All,
                     taper: 0.0,
+                    shape: BoxShape::Cuboid,
                 });
             }
         }

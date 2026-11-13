@@ -133,6 +133,10 @@ fn show_outline(
         return;
     };
     match looked_at.0 {
+        // a cube round a log that is drawn as a bowed prism would look wrong
+        Some((_, BlockType::Log)) => {
+            visibility.set_if_neq(Visibility::Hidden);
+        }
         Some((hit, _)) => {
             // blocks are drawn centred on their coordinates
             transform.translation = hit.block.as_vec3();

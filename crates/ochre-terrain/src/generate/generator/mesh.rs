@@ -7,8 +7,9 @@ use super::shading::{
     corner_signs, vertex_shore_distance, vertex_shore_factor, vertex_water_depth, water_corner,
     WaterCorner, FACE_NORMAL_OFFSET, WATER_BANK_MARGIN, WATER_BED_MARGIN, WATER_DROP,
 };
-use super::source::{grid_index, BlockSource, BoxFaces, GridView};
+use super::source::{grid_index, BlockSource, BoxFaces, BoxShape, GridView, TreeFaces};
 use super::terrain::is_solid;
+use super::trees_mesh::{far_shape, mesh_trees};
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
@@ -26,20 +27,22 @@ use std::ops::Deref;
 
 // `cell_size` is how many blocks wide each cell of `source` is.
 pub(super) fn mesh_blocks(
-    source: &impl BlockSource,
+    real_source: &impl BlockSource,
     cell_size: i64,
     style: MeshStyle,
     grass_tint: &GrassTint,
     light: &impl Deref<Target = SkyLight>,
 ) -> ChunkMeshes {
     let MeshStyle { textured, .. } = style;
+    // tree logs are drawn by `mesh_trees`, so the rest of the mesher sees air where they are
+    let faces = TreeFaces::new(real_source, style.tree_shapes);
+    let source = &faces;
     let mut opaque = MeshBuffers {
         untextured: !textured,
         ..Default::default()
     };
     let mut water = MeshBuffers::default();
     let mut spray = MeshBuffers::default();
-    let mut inner_leaves = MeshBuffers::default();
 
     // water's surface sits below a full block's height, see `WATER_TOP`
     // how far the sides of a sloped top block reach down into the block under, to meet a lower surface
@@ -306,7 +309,6 @@ pub(super) fn mesh_blocks(
         },
         &CUBE,
         &mut opaque,
-        &mut inner_leaves,
         style,
         if textured { cell_size as f32 } else { 1.0 },
         grass_tint,
@@ -319,6 +321,9 @@ pub(super) fn mesh_blocks(
     // flora only grows at full detail, so coarser cells have none to look for
     if cell_size == 1 {
         mesh_flora(&non_air, &mut opaque, grass_tint, source, light);
+        if style.tree_shapes {
+            mesh_trees(&faces, &mut opaque, grass_tint, light);
+        }
         // with the bevels, which they cover the edges of
         if style.bevel {
             mesh_grass_fringe(&non_air, &mut opaque, grass_tint, source, light);
@@ -343,6 +348,10 @@ pub(super) fn mesh_blocks(
         } else {
             Vec3::ONE
         };
+        if tree_box.shape != BoxShape::Cuboid {
+            far_shape(&mut opaque, tree_box, tint, cell_size as f32, BOX_LIGHT);
+            continue;
+        }
         let faces = match tree_box.faces {
             BoxFaces::All => &CUBE[..],
             BoxFaces::Sides => &CUBE[..4],
@@ -382,7 +391,6 @@ pub(super) fn mesh_blocks(
         cutout: None,
         water: water_mesh,
         spray: (!spray.vertices.is_empty()).then(|| spray.build_mesh()),
-        inner_leaves: (!inner_leaves.vertices.is_empty()).then(|| inner_leaves.build_mesh()),
     }
 }
 
@@ -547,7 +555,7 @@ fn patchiness(world: IVec3) -> f32 {
 
 // Between 0 and 1 for the block at `coord`, the same every time it's meshed, so what grows where
 // doesn't change when the chunk is meshed again.
-fn hash01(coord: IVec3, salt: u32) -> f32 {
+pub(super) fn hash01(coord: IVec3, salt: u32) -> f32 {
     let h = (coord.x as u32)
         .wrapping_mul(0x9E37_79B1)
         .wrapping_add((coord.z as u32).wrapping_mul(0x85EB_CA77))
@@ -557,7 +565,7 @@ fn hash01(coord: IVec3, salt: u32) -> f32 {
     (h ^ (h >> 13)) as f32 / u32::MAX as f32
 }
 
-fn between(range: (f32, f32), unit: f32) -> f32 {
+pub(super) fn between(range: (f32, f32), unit: f32) -> f32 {
     range.0 + (range.1 - range.0) * unit
 }
 

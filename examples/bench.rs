@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use bevy::math::I64Vec3;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_terrain::chunk::{ChunkCoordinate, ChunkData, CHUNK_SIZE};
-use ochre_terrain::generate::generator::{generate_chunk, generate_chunk_mesh, generate_lod_mesh};
+use ochre_terrain::generate::generator::{generate_chunk, generate_chunk_mesh_with, generate_lod_mesh};
 use ochre_terrain::generate::region_store::RegionStore;
 use ochre_terrain::lod::LodKey;
 use ochre_world::worldmap::{WorldConfig, WorldTerrain};
@@ -108,6 +108,8 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
         .copied()
         .filter(|c| c.neighbors_26().iter().all(|n| data.contains_key(n)))
         .collect();
+    // BENCH_CUBES=1 draws trees as cubes, the baseline the shapes were measured against
+    let tree_shapes = std::env::var("BENCH_CUBES").is_err();
     let mut best = Duration::MAX;
     let mut vertices = 0;
     for _ in 0..3 {
@@ -119,7 +121,8 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
                 .iter()
                 .map(|n| data.get(n).cloned())
                 .collect();
-            let meshes = generate_chunk_mesh(data[&c].clone(), neighbours, c, regions, false);
+            let meshes =
+                generate_chunk_mesh_with(data[&c].clone(), neighbours, c, regions, tree_shapes);
             vertices += meshes.opaque.count_vertices();
         }
         best = best.min(start.elapsed());

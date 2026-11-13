@@ -99,6 +99,26 @@ impl SkyLight {
         }
     }
 
+    /// Gives each of `cells`, which hold something drawn without hiding what is beside it, the light of the brightest cell next to it.
+    pub fn open(&mut self, cells: &[IVec3]) {
+        let lifted: Vec<u8> = cells
+            .iter()
+            .map(|&cell| {
+                FACE_NORMAL_OFFSET
+                    .iter()
+                    .map(|&offset| self.level(cell + offset))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect();
+        for (&cell, level) in cells.iter().zip(lifted) {
+            let local = cell - self.min;
+            if local.cmpge(IVec3::ZERO).all() && local.cmplt(self.size).all() {
+                self.levels[Self::index(self.size, local)] = level;
+            }
+        }
+    }
+
     /// The light at `coord`, or full light outside the box.
     pub fn level(&self, coord: IVec3) -> u8 {
         let local = coord - self.min;

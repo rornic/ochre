@@ -27,6 +27,13 @@ const MOST: f32 = 0.82;
 const GLITTER_CELLS: f32 = 4.0;
 const GLITTER_COLOUR: vec3<f32> = vec3<f32>(5.0, 5.5, 6.3);
 const GLITTER_SHARP: f32 = 10.0;
+// A sparkle's swell and fade, in radians a second, and how much of it shows with the sun nowhere near its facet.
+const TWINKLE_RATE: vec2<f32> = vec2<f32>(0.4, 1.2);
+const TWINKLE_BASE: f32 = 0.3;
+// The sheen: how tight the sun's lobe on the plates is, how far a plate leans off flat, how strongly it shines, and its tint.
+const SHEEN_SHARP: f32 = 18.0;
+const SHEEN_TILT: f32 = 0.18;
+const SHEEN_COLOUR: vec3<f32> = vec3<f32>(0.9, 1.0, 1.15);
 
 struct Frost {
     // how much of the surface is frost, 0 to 1
@@ -38,9 +45,11 @@ struct Frost {
     // the dark seams between plates, 0 to 1
     seam: f32,
     glitter: f32,
+    // the sun's and the sky's reflection off the plates, 0 to 1
+    sheen: f32,
 }
 
-const UNFROSTED: Frost = Frost(0.0, 0.0, 0.0, 0.0, 0.0);
+const UNFROSTED: Frost = Frost(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
 struct Plate {
     // the distance to the nearest point and to the seam with the next, in plates
@@ -128,7 +137,17 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
         thin = 0.1;
     }
     let seam = (1.0 - smoothstep(0.0, 0.3, cell.seam)) * fine;
-    // sparkles: tiny round facets, each with a random tilt, that flash as the sun, the facet and the eye line up; none past a few blocks
+    // sheen: each plate leans a little its own way, so the sun's lobe breaks across plates, and the sky shows at grazing angles; plants have none
+    let seen = normalize(eye() - real);
+    var sheen = 0.0;
+    if !plant {
+        let lean = vec2<f32>(hash2(cell.centre + vec2<f32>(5.0, 83.0)), hash2(cell.centre + vec2<f32>(97.0, 11.0))) - 0.5;
+        let plane = normalize(vec3<f32>(lean.x * SHEEN_TILT * 2.0 * inside, 1.0, lean.y * SHEEN_TILT * 2.0 * inside));
+        let lobe = pow(max(dot(plane, normalize(to_sun + seen)), 0.0), SHEEN_SHARP) * smoothstep(0.0, 0.3, to_sun.y);
+        let sky_glance = pow(1.0 - max(dot(plane, seen), 0.0), 4.0) * 0.35;
+        sheen = (lobe + sky_glance) * amount * mix(1.0, 0.5, thin);
+    }
+    // sparkles: tiny round facets, each with a random tilt, that swell and fade on their own clock and flare when the sun catches them; none past a few blocks
     var glitter = 0.0;
     let near = 1.0 - smoothstep(0.05, 0.14, block_rate);
     if near > 0.0 && amount > 0.25 {
@@ -142,13 +161,14 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
         let spot = 1.0 - smoothstep(0.0, size, distance(scaled - corner, jitter));
         if spot > 0.0 && hash3(id) > 0.3 {
             let facet = normalize(vec3<f32>(hash3(id + vec3<i32>(31, 0, 0)) * 1.6 - 0.8, 1.0, hash3(id + vec3<i32>(0, 0, 37)) * 1.6 - 0.8));
-            let seen = normalize(eye() - real);
             let flash = pow(max(dot(facet, normalize(to_sun + seen)), 0.0), GLITTER_SHARP);
-            let twinkle = 0.7 + 0.3 * sin(time * 2.6 + hash3(id) * 40.0);
-            glitter = spot * flash * twinkle * near * amount * (0.35 + 0.65 * smoothstep(0.0, 0.4, to_sun.y));
+            // a cubed sine is dark most of the time and swells and fades smoothly, each facet at its own rate and phase
+            let wave = 0.5 + 0.5 * sin(time * mix(TWINKLE_RATE.x, TWINKLE_RATE.y, hash3(id + vec3<i32>(43, 47, 53))) + hash3(id) * 40.0);
+            let twinkle = wave * wave * wave;
+            glitter = spot * (TWINKLE_BASE + flash) * twinkle * near * amount * (0.35 + 0.65 * smoothstep(0.0, 0.4, to_sun.y));
         }
     }
-    return Frost(amount, thin, rim, seam, glitter);
+    return Frost(amount, thin, rim, seam, glitter, sheen);
 }
 
 // `albedo` under frost: toward a cool off-white that keeps most of the ground's own light and dark and shows through where it's thin,
@@ -163,5 +183,5 @@ fn frosted(albedo: vec3<f32>, frost: Frost) -> vec3<f32> {
     let covered = frost.amount * MOST * mix(1.0, 0.62, frost.thin);
     var out = mix(albedo, skin, covered);
     out = mix(out, skin * RIM_LIFT, frost.rim * 0.3);
-    return out + GLITTER_COLOUR * frost.glitter;
+    return out + SHEEN_COLOUR * frost.sheen * 0.35 + GLITTER_COLOUR * frost.glitter;
 }

@@ -86,9 +86,18 @@ const ALPINE_PINES_ABOVE: i64 = 120;
 // Ground steeper than this (see `terrain_block`) is too steep to take root on.
 const MAX_GRADIENT: f64 = 1.5;
 // Broadleaf crowns are a big round crown with smaller lobes hanging off it on branches.
-const LOBES: usize = 3;
-// Trunks this tall are two blocks thick.
-const THICK_TRUNK: i64 = 12;
+const LOBES: usize = 5;
+// A broadleaf has this many lobes at the least, up to `LOBES`, and its crown stands off the trunk by up to this share of its spread.
+const LOBES_LEAST: u64 = 3;
+const CROWN_LEAN: f64 = 0.2;
+// A pine puts out this many boughs at the foot of each tier, which stand this many blocks apart up the trunk, each reaching this share of the crown's radius there.
+const PINE_BOUGHS: usize = 4;
+const PINE_WHORL: f64 = 3.0;
+// The first whorl stands this far above the crown's foot, so its boughs start inside the leaves.
+const PINE_FIRST_WHORL: f64 = 1.0;
+const PINE_BOUGH_REACH: f64 = 0.7;
+// Every trunk is one block thick in the voxels, however thick it is drawn, see `Tree::trunk_radius`.
+const TRUNK_WIDTH: i64 = 1;
 // Cells this wide or wider judge leaves by coverage: a quarter of a 3 x 3 x 3 spread of points
 // inside, or small crowns would fall between cell centres.
 const COVERAGE_CELL: i64 = 4;
@@ -122,9 +131,11 @@ pub struct Tree {
     spread: f64,
     // roughens the edge of the leaves
     seed: u64,
-    // the broadleaf crown, and smaller lobes around it each held up by a branch
+    // the broadleaf crown, and smaller lobes around it each held up by a branch, the unused ones with no radius
     crown: Blob,
     lobes: [Blob; LOBES],
+    // 0..1, how cold and dry the tree's ground is, which leans its trunk further
+    exposure: f64,
 }
 
 // A ball of leaves, squashed by `squash` vertically.
@@ -158,17 +169,31 @@ impl Tree {
         squash: f64,
         seed: u64,
     ) -> Self {
-        let width = if trunk >= THICK_TRUNK { 2 } else { 1 };
-        let middle = (width - 1) as f64 / 2.0;
+        let middle = (TRUNK_WIDTH - 1) as f64 / 2.0;
+        // a broadleaf's crown stands a little off its trunk, any way, and has three to five lobes
+        let (sin, cos) = libm::sincos((hash(seed, 61, 3) % 1000) as f64 / 1000.0 * std::f64::consts::TAU);
+        let off = if kind == TreeKind::Broadleaf {
+            spread * CROWN_LEAN * ((hash(seed, 67, 5) % 1000) as f64 / 1000.0)
+        } else {
+            0.0
+        };
         let crown = Blob {
-            centre: DVec3::new(middle, (trunk - 1) as f64, middle),
+            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64, middle + sin * off),
             radius: spread,
             squash,
         };
+        let count = LOBES_LEAST + hash(seed, 53, 7) % (LOBES as u64 - LOBES_LEAST + 1);
         let lobes = std::array::from_fn(|i| {
+            if i as u64 >= count {
+                return Blob {
+                    centre: crown.centre,
+                    radius: 0.0,
+                    squash,
+                };
+            }
             let h = hash(seed, i as i64, 17);
             let angle = (i as f64 + (h % 1000) as f64 / 1000.0 * 0.6) * std::f64::consts::TAU
-                / LOBES as f64;
+                / count as f64;
             let out = spread * 0.75;
             let drop = spread * (0.25 + ((h >> 10) % 100) as f64 / 400.0);
             Blob {
@@ -187,7 +212,69 @@ impl Tree {
             seed,
             crown,
             lobes,
+            exposure: 0.5,
         }
+    }
+
+    /// This tree with how cold and dry its ground is, 0..1, which leans its trunk further.
+    pub(crate) fn with_exposure(mut self, exposure: f64) -> Self {
+        self.exposure = exposure.clamp(0.0, 1.0);
+        self
+    }
+
+    /// A far tree's crown as a few big cards over its surface, for levels of detail whose cells are too wide for the voxels: where each is,
+    /// in blocks from the trunk's base, which way it faces and how wide it is. A broadleaf's are spread over its ball and, from `detail`
+    /// 0.75, each lobe's, a pine's in rings up its cone. `detail` is 1 for 2-block cells and falls as they widen, so fewer, bigger cards.
+    pub fn far_cards(&self, detail: f64) -> Vec<FarCard> {
+        let mut cards = Vec::new();
+        if self.kind == TreeKind::Pine {
+            let (bottom, top) = ((self.trunk / 4) as f64, (self.trunk + 1) as f64);
+            let height = top - bottom;
+            let rings = ((height / PINE_WHORL * detail.max(0.34)).ceil() as usize).max(2);
+            let band = height / rings as f64;
+            for j in 0..rings {
+                let y = bottom + (j as f64 + 0.5) * band;
+                let radius = (0.6 + self.spread * (1.0 - (y - bottom) / height)).max(0.8);
+                let count = ((radius * 1.6 * detail.max(0.4)).round() as usize).max(3);
+                let size = ((std::f64::consts::TAU * radius * band / count as f64).sqrt() * 1.15).min(radius * 1.8).max(1.5);
+                for i in 0..count {
+                    let (sin, cos) = libm::sincos((i as f64 + 0.5 * j as f64) / count as f64 * std::f64::consts::TAU);
+                    cards.push(FarCard {
+                        centre: self.axis() + DVec3::new(cos * radius * 0.8, y, sin * radius * 0.8),
+                        facing: Vec3::new(cos as f32, 0.6, sin as f32).normalize(),
+                        size: size as f32,
+                    });
+                }
+            }
+            return cards;
+        }
+        let lobes = self.lobes.iter().filter(|lobe| lobe.radius > 0.0 && detail >= 0.75);
+        for blob in std::iter::once(&self.crown).chain(lobes) {
+            let count = (((3.0 + 0.8 * blob.radius) * detail).round() as usize).max(5);
+            let area = 4.0 * std::f64::consts::PI * blob.radius * blob.radius * (1.0 + blob.squash) / 2.0;
+            let size = ((area / count as f64).sqrt() * 1.1).min(blob.radius * 1.5);
+            for i in 0..count {
+                // a ball's points spread evenly by the golden angle, but not its underside, which is seen from below only
+                let y = 1.0 - 2.0 * (i as f64 + 0.5) / count as f64;
+                if y < -0.55 {
+                    continue;
+                }
+                let across = (1.0 - y * y).sqrt();
+                let (sin, cos) = libm::sincos(i as f64 * 2.399_963);
+                let on = DVec3::new(cos * across, y, sin * across);
+                cards.push(FarCard {
+                    centre: blob.centre + DVec3::new(on.x, on.y * blob.squash, on.z) * blob.radius * 0.85,
+                    facing: Vec3::new(on.x as f32, (on.y / blob.squash) as f32, on.z as f32).normalize(),
+                    size: size as f32,
+                });
+            }
+        }
+        cards
+    }
+
+    /// How big this tree's leaf cards are against others', 0.9 to 1.1.
+    pub fn card_scale(&self) -> f32 {
+        0.9 + 0.2 * ((hash(self.seed, 71, 13) % 1000) as f32 / 1000.0)
     }
 
     /// The tree's own tint over the grass's, the same at every level of detail.
@@ -196,6 +283,15 @@ impl Tree {
         let unit = |shift: u32| ((h >> shift) & 0xffff) as f32 / 65535.0 * 2.0 - 1.0;
         let warm = Vec3::new(1.0, 0.35, -1.0) * TINT_WARMTH * unit(16);
         (1.0 + TINT_BRIGHTNESS * unit(0)) * (Vec3::ONE + warm)
+    }
+
+    /// How far the top of the trunk leans from its foot, in blocks: a direction and an amount from the seed.
+    pub fn lean(&self) -> Vec2 {
+        let h = hash(self.seed, 41, 67);
+        let unit = |shift: u32| ((h >> shift) & 0xffff) as f32 / 65535.0;
+        let (sin, cos) = libm::sincosf(unit(0) * std::f32::consts::TAU);
+        let amount = (0.3 + 0.5 * unit(16)) * (0.8 + 0.6 * self.exposure as f32);
+        Vec2::new(cos, sin) * (MAX_LEAN * amount).min(MAX_LEAN)
     }
 
     /// Whether the crown is over the point `x`, `z` across the world, in blocks, seen from above.
@@ -233,11 +329,13 @@ impl Tree {
     }
 
     pub fn width(&self) -> i64 {
-        if self.trunk >= THICK_TRUNK {
-            2
-        } else {
-            1
-        }
+        TRUNK_WIDTH
+    }
+
+    /// How thick the trunk is drawn, as a radius in blocks: a quarter of a block across on the smallest tree, a whole block on the tallest.
+    pub fn trunk_radius(&self) -> f32 {
+        let size = ((self.trunk - 6) as f32 / 24.0).clamp(0.0, 1.0);
+        0.125 + 0.375 * size
     }
 
     // the middle of the trunk, as an offset from `base`
@@ -417,6 +515,8 @@ impl Tree {
                 let tier = 1.0 - 0.3 * ((offset.y.round() as i64).rem_euclid(3) as f64 / 2.0);
                 // never too narrow to wrap the trunk, which runs up to the tip
                 let wrap = self.width() as f64 / 2.0 + 1.0;
+                // narrowing over the last two blocks to a single one at the tip, which the trunk's top stays hidden under
+                let wrap = wrap - (offset.y - (top - 2.0)).clamp(0.0, 2.0) * 0.5;
                 let radius = ((0.6 + self.spread * (1.0 - t)) * tier - nibble() * 0.5).max(wrap);
                 let across = offset - self.axis();
                 across.x * across.x + across.z * across.z <= radius * radius
@@ -424,16 +524,40 @@ impl Tree {
         }
     }
 
-    // Whether the point `offset` from the trunk's base is on a branch out to a lobe.
+    // Whether the point `offset` from the trunk's base is on a branch: out to a lobe on a broadleaf, a whorl of boughs at each tier on a pine.
     fn in_branch(&self, offset: DVec3) -> bool {
-        if self.kind != TreeKind::Broadleaf {
-            return false;
+        if self.kind == TreeKind::Pine {
+            return self.in_bough(offset);
         }
         let fork = self.axis() + DVec3::Y * (self.trunk as f64 * 0.6);
-        self.lobes.iter().any(|lobe| {
+        self.lobes.iter().filter(|lobe| lobe.radius > 0.0).any(|lobe| {
             let along = lobe.centre - fork;
             let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
             (offset - (fork + along * t)).length_squared() <= 0.36
+        })
+    }
+
+    // Whether the point `offset` from the trunk's base is on one of the boughs a pine puts out, drooping, at the foot of each tier, which
+    // reach most of the way to the crown's edge there so the inside of the crown is not an empty trunk.
+    fn in_bough(&self, offset: DVec3) -> bool {
+        let across = offset - self.axis();
+        if across.x * across.x + across.z * across.z > (self.spread + 1.6).powi(2) {
+            return false;
+        }
+        // the whorls whose boughs can be near this height, which droop by up to a third of their reach
+        let bottom = (self.trunk / 4) as f64 + PINE_FIRST_WHORL;
+        let first = ((offset.y - 1.5 - bottom) / PINE_WHORL).ceil().max(0.0) as i64;
+        let last = ((offset.y + 0.6 - bottom) / PINE_WHORL).floor() as i64;
+        (first..=last).any(|k| {
+            let Some(y) = whorl_height(self.trunk, k) else {
+                return false;
+            };
+            let start = self.axis() + DVec3::Y * y;
+            (0..PINE_BOUGHS).any(|j| {
+                let along = bough_reach(self.seed, self.trunk, self.spread, k, j);
+                let t = ((offset - start).dot(along) / along.length_squared()).clamp(0.0, 1.0);
+                (offset - (start + along * t)).length_squared() <= 0.36
+            })
         })
     }
 
@@ -467,42 +591,176 @@ impl Tree {
     }
 }
 
-/// Which tree's tint each leaf takes, for leaves placed block by block, where which tree put
+/// How far a trunk's top may lean from its foot, in blocks, which the drawn trunk keeps within.
+pub const MAX_LEAN: f32 = 0.5;
+
+/// What the mesher knows of the tree a voxel belongs to, found by which trunk is nearest across.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeLook {
+    axis: Vec2,
+    pub tint: Vec3,
+    /// The trunk's lowest block, in cells from the origin.
+    pub base: Vec3,
+    /// Logs up the trunk, in cells.
+    pub height: f32,
+    /// How many cells across the trunk is.
+    pub width: f32,
+    /// How thick the trunk is drawn, as a radius in cells.
+    pub radius: f32,
+    /// Whether it is a pine, whose crown is narrow tiers.
+    pub pine: bool,
+    seed: u64,
+    spread: f32,
+    /// How far the top of the trunk leans from its foot, in cells.
+    pub lean: Vec2,
+    /// How big its leaf cards are against others'.
+    pub card_scale: f32,
+    // a broadleaf's crown and lobes, in cells from the origin, none on a pine
+    crown: [CrownBall; 1 + LOBES],
+}
+
+/// One of the few big cards a far tree's crown is drawn as, see `Tree::far_cards`.
+#[derive(Debug, Clone, Copy)]
+pub struct FarCard {
+    pub centre: DVec3,
+    pub facing: Vec3,
+    pub size: f32,
+}
+
+/// A ball of leaves squashed vertically, as `TreeLook` has it.
+#[derive(Debug, Clone, Copy, Default)]
+struct CrownBall {
+    centre: Vec3,
+    radius: f32,
+    squash: f32,
+}
+
+impl TreeLook {
+    /// Which way the crown's surface faces at `at`, in cells, as a ball's would: out from the middle of the ball it is nearest the edge of.
+    /// Zero for a pine, and at a ball's very middle.
+    pub fn crown_normal(&self, at: Vec3) -> Vec3 {
+        let nearest = self
+            .crown
+            .iter()
+            .filter(|ball| ball.radius > 0.0)
+            .min_by(|a, b| {
+                let edge = |ball: &CrownBall| {
+                    let d = at - ball.centre;
+                    (Vec3::new(d.x, d.y / ball.squash, d.z).length() / ball.radius - 1.0).abs()
+                };
+                edge(a).total_cmp(&edge(b))
+            });
+        let Some(ball) = nearest else {
+            return Vec3::ZERO;
+        };
+        let d = at - ball.centre;
+        // the gradient of the squashed ball's equation
+        Vec3::new(d.x, d.y / (ball.squash * ball.squash), d.z).normalize_or_zero()
+    }
+
+    /// The reach from the trunk's axis of each bough that starts at the trunk's log at `coord`, in blocks: a pine's whorl is at some of its heights.
+    pub fn boughs_from(&self, coord: IVec3) -> Vec<Vec3> {
+        if !self.pine {
+            return Vec::new();
+        }
+        let trunk = self.height as i64;
+        let up = coord.y as i64 - self.base.y as i64 - trunk / 4 - PINE_FIRST_WHORL as i64;
+        if up < 0 || up % PINE_WHORL as i64 != 0 {
+            return Vec::new();
+        }
+        let k = up / PINE_WHORL as i64;
+        if whorl_height(trunk, k).is_none() {
+            return Vec::new();
+        }
+        (0..PINE_BOUGHS)
+            .map(|j| bough_reach(self.seed, trunk, self.spread as f64, k, j).as_vec3())
+            .collect()
+    }
+
+    /// Whether the log at `coord` is in the trunk's own column, not a branch.
+    pub fn in_trunk(&self, coord: IVec3) -> bool {
+        let at = coord.as_vec3() - self.base;
+        at.x > -0.5
+            && at.z > -0.5
+            && at.y > -0.5
+            && at.x < self.width - 0.5
+            && at.z < self.width - 0.5
+            && at.y < self.height - 0.5
+    }
+}
+
+/// Which tree each block belongs to, for blocks placed one at a time, where which tree put
 /// them is lost: the one whose trunk is nearest across, which is the one they belong to
 /// but where crowns meet.
 #[derive(Default, Debug, Clone)]
-pub struct TreeTints(Vec<(Vec2, Vec3)>);
+pub struct TreeTints(Vec<TreeLook>);
 
 impl TreeTints {
     /// Every tree in `trees`, placed by its trunk's axis less `origin`, in cells `cell` blocks
     /// wide whose centres are whole numbers.
     pub fn new<'a>(trees: impl IntoIterator<Item = &'a Tree>, origin: I64Vec3, cell: i64) -> Self {
+        let cells = cell as f32;
         Self(
             trees
                 .into_iter()
                 .map(|t| {
                     let axis = (t.base - origin).as_dvec3() + t.axis();
-                    (
-                        Vec2::new(axis.x as f32, axis.z as f32) / cell as f32
-                            - (cell - 1) as f32 / (2.0 * cell as f32),
-                        t.tint(),
-                    )
+                    TreeLook {
+                        axis: Vec2::new(axis.x as f32, axis.z as f32) / cells
+                            - (cell - 1) as f32 / (2.0 * cells),
+                        tint: t.tint(),
+                        base: (t.base - origin).as_vec3() / cells,
+                        height: t.trunk as f32 / cells,
+                        width: t.width() as f32 / cells,
+                        radius: t.trunk_radius() / cells,
+                        pine: t.kind == TreeKind::Pine,
+                        seed: t.seed,
+                        spread: t.spread as f32,
+                        lean: t.lean() / cells,
+                        card_scale: t.card_scale(),
+                        crown: if t.kind == TreeKind::Pine {
+                            [CrownBall::default(); 1 + LOBES]
+                        } else {
+                            let base = (t.base - origin).as_vec3();
+                            std::array::from_fn(|i| {
+                                let ball = if i == 0 { &t.crown } else { &t.lobes[i - 1] };
+                                CrownBall {
+                                    centre: (base + ball.centre.as_vec3()) / cells,
+                                    radius: ball.radius as f32 / cells,
+                                    squash: ball.squash as f32,
+                                }
+                            })
+                        },
+                    }
                 })
                 .collect(),
         )
     }
 
-    /// The tint of the leaf at `coord`, in cells.
-    pub fn at(&self, coord: IVec3) -> Vec3 {
+    /// The tree the block at `coord`, in cells, belongs to.
+    pub fn look_at(&self, coord: IVec3) -> Option<TreeLook> {
         let p = Vec2::new(coord.x as f32, coord.z as f32);
         self.0
             .iter()
-            .min_by(|a, b| a.0.distance_squared(p).total_cmp(&b.0.distance_squared(p)))
-            .map_or(Vec3::ONE, |&(_, tint)| tint)
+            .min_by(|a, b| {
+                a.axis
+                    .distance_squared(p)
+                    .total_cmp(&b.axis.distance_squared(p))
+            })
+            .copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The tint of the leaf at `coord`, in cells.
+    pub fn at(&self, coord: IVec3) -> Vec3 {
+        self.look_at(coord).map_or(Vec3::ONE, |look| look.tint)
     }
 
     pub fn heap_size(&self) -> usize {
-        self.0.capacity() * size_of::<(Vec2, Vec3)>()
+        self.0.capacity() * size_of::<TreeLook>()
     }
 }
 
@@ -609,7 +867,8 @@ fn tree_in_cell(
     // 0..1, how big this one grew
     let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     // how warm it is up where the tree stands, which falls with height
-    let warmth = noise.climate(x as f64, z as f64).temperature;
+    let climate = noise.climate(x as f64, z as f64);
+    let warmth = climate.temperature;
     let mountain = noise.biomes().modifier(biome) != Modifier::None;
     let kind_here = tree_kind(
         noise.biomes().name(biome),
@@ -629,6 +888,10 @@ fn tree_in_cell(
         spread,
         squash,
         seed,
+    )
+    .with_exposure(
+        0.5 * (1.0 - f64::from(warmth)).clamp(0.0, 1.0)
+            + 0.5 * (1.0 - f64::from(climate.humidity)).clamp(0.0, 1.0),
     ))
 }
 
@@ -665,6 +928,25 @@ pub(crate) fn scaled_tree(
     };
     let trunk = ((trunk as f64 * scale.height * height_scale).round() as i64).clamp(6, tallest);
     (kind, trunk, spread, squash)
+}
+
+/// How high up a pine's trunk, in blocks, the `k`th whorl of boughs starts, or none above the crown.
+pub(crate) fn whorl_height(trunk: i64, k: i64) -> Option<f64> {
+    let y = (trunk / 4) as f64 + PINE_FIRST_WHORL + k as f64 * PINE_WHORL;
+    (k >= 0 && y <= (trunk + 1) as f64 - 2.0).then_some(y)
+}
+
+/// The `j`th bough of the `k`th whorl of a pine: how far it reaches from the trunk's axis, down a third of its length.
+pub(crate) fn bough_reach(seed: u64, trunk: i64, spread: f64, k: i64, j: usize) -> DVec3 {
+    let (bottom, top) = ((trunk / 4) as f64, (trunk + 1) as f64);
+    let y = bottom + PINE_FIRST_WHORL + k as f64 * PINE_WHORL;
+    let t = (y - bottom) / (top - bottom);
+    let reach = (0.6 + spread * (1.0 - t)) * PINE_BOUGH_REACH;
+    let turn = (j as f64 + (hash(seed, 700 + k, j as i64) % 1000) as f64 / 1000.0)
+        * std::f64::consts::TAU
+        / PINE_BOUGHS as f64;
+    let (sin, cos) = libm::sincos(turn);
+    DVec3::new(cos * reach, -reach / 3.0, sin * reach)
 }
 
 // splitmix64 over a seed and two coordinates
@@ -823,12 +1105,7 @@ mod tests {
                 .iter()
                 .filter(|(p, b)| *b == BlockType::Log && !in_trunk(*p))
                 .count();
-            assert_eq!(
-                t.kind == TreeKind::Broadleaf,
-                branches > 0,
-                "{:?} has {branches} branch logs",
-                t.kind
-            );
+            assert!(branches > 0, "{:?} has no branch logs", t.kind);
             let leaves = blocks
                 .iter()
                 .filter(|(_, b)| *b == BlockType::Leaves)
@@ -993,21 +1270,19 @@ mod tests {
     }
 
     #[test]
-    fn test_every_tree_leaves_a_crown_in_cells_four_and_eight_wide() {
+    fn test_every_tree_leaves_a_crown_in_cells_four_wide() {
         for t in extremes() {
-            // the thinnest pines are a spire a cell or two across at eight
-            for (size, least) in [(4, 2), (8, 1)] {
-                let leaves = cells(&t, size)
-                    .into_iter()
-                    .filter(|(_, b)| *b == BlockType::Leaves)
-                    .count();
-                assert!(
-                    leaves >= least,
-                    "{:?} {} trunk at {size}: {leaves} leaf cells",
-                    t.kind,
-                    t.trunk
-                );
-            }
+            // from eight blocks a cell LODs draw crown boxes, not planted cells, so only cells up to four hold a crown
+            let leaves = cells(&t, 4)
+                .into_iter()
+                .filter(|(_, b)| *b == BlockType::Leaves)
+                .count();
+            assert!(
+                leaves >= 2,
+                "{:?} {} trunk: {leaves} leaf cells at four",
+                t.kind,
+                t.trunk
+            );
         }
     }
 
@@ -1044,6 +1319,94 @@ mod tests {
                 reach as f64 <= t.spread * 1.35 + size as f64,
                 "reach {reach} at {size}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod look_tests {
+    use super::*;
+
+    fn thick_tree(seed: u64) -> Tree {
+        Tree::new(
+            TreeKind::Broadleaf,
+            I64Vec3::new(20, 5, 20),
+            14,
+            4.0,
+            0.7,
+            seed,
+        )
+    }
+
+    #[test]
+    fn a_trunks_lean_is_within_the_cap_and_not_always_none() {
+        let leans: Vec<f32> = (0..200)
+            .map(|seed| thick_tree(seed).lean().length())
+            .collect();
+        assert!(leans.iter().all(|&lean| lean <= MAX_LEAN + 1e-4));
+        assert!(leans.iter().any(|&lean| lean > 0.1));
+    }
+
+    #[test]
+    fn colder_drier_ground_leans_a_trunk_further_and_a_broadleaf_has_three_to_five_lobes() {
+        let mut counts = std::collections::HashSet::new();
+        for seed in 0..200 {
+            let tree = thick_tree(seed);
+            let lobes = tree.lobes.iter().filter(|lobe| lobe.radius > 0.0).count();
+            assert!((3..=5).contains(&lobes), "{lobes} lobes");
+            counts.insert(lobes);
+            let (cold, mild) = (tree.with_exposure(1.0).lean(), tree.with_exposure(0.0).lean());
+            assert!(cold.length() >= mild.length() - 1e-6 && cold.length() <= MAX_LEAN + 1e-4);
+        }
+        assert_eq!(3, counts.len());
+    }
+
+    #[test]
+    fn a_crown_stands_off_its_trunk_but_still_covers_the_top_of_it() {
+        for seed in 0..100 {
+            let tree = thick_tree(seed);
+            let top = tree.base + I64Vec3::Y * tree.trunk;
+            assert_eq!(Some(BlockType::Leaves), tree.block_in_cell(top, 1), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn only_the_logs_of_the_trunk_column_are_in_the_trunk() {
+        for (trunk, seed) in [(14, 3), (8, 9)] {
+            let tree = Tree::new(
+                TreeKind::Broadleaf,
+                I64Vec3::new(20, 5, 20),
+                trunk,
+                4.0,
+                0.7,
+                seed,
+            );
+            let tints = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+            let mut in_trunk = 0;
+            let mut branches = 0;
+            tree.plant(
+                I64Vec3::ZERO,
+                1,
+                (IVec3::ZERO, IVec3::splat(48)),
+                |coord, block| {
+                    if block != BlockType::Log {
+                        return;
+                    }
+                    let look = tints.look_at(coord).unwrap();
+                    let width = tree.width() as i32;
+                    let column = (20..20 + width).contains(&coord.x)
+                        && (20..20 + width).contains(&coord.z)
+                        && (5..5 + trunk as i32).contains(&coord.y);
+                    assert_eq!(column, look.in_trunk(coord), "{coord}");
+                    if column {
+                        in_trunk += 1;
+                    } else {
+                        branches += 1;
+                    }
+                },
+            );
+            assert_eq!(trunk as i32 * (tree.width() as i32).pow(2), in_trunk);
+            let _ = branches;
         }
     }
 }

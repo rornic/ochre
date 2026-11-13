@@ -8,8 +8,8 @@ use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
 
 use ochre_base::block::{BlockType, Tile};
 
-use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle, RAMP};
-use super::chunk::{generate_chunk, generate_chunk_mesh};
+use super::buffers::{ChunkMeshes, GrassTint, MeshStyle, RAMP};
+use super::chunk::{generate_chunk, generate_chunk_mesh_with};
 use super::lod::LodBlocks;
 use super::shading::{
     spread_water_levels, vertex_ao, vertex_water_depth, water_corner, AO_STRENGTH,
@@ -30,8 +30,8 @@ fn style(ambient_occlusion: bool, textured: bool) -> MeshStyle {
     MeshStyle {
         ambient_occlusion,
         textured,
-        inner_leaves: InnerLeaves::Hidden,
         bevel: false,
+        tree_shapes: false,
     }
 }
 
@@ -678,13 +678,12 @@ fn test_lod_steps_are_lit_by_the_air_above_the_lower_ground() {
 fn mesh_chunk_bevelled(chunk: ChunkData) -> ChunkMeshes {
     // well above the sea, under open sky
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
-    generate_chunk_mesh(
+    generate_chunk_mesh_with(
         Arc::new(chunk),
         vec![None; 26],
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        false,
-    )
+        false)
 }
 
 // The chunk meshed as the game does, without bevels, which cut quads back and split them along edges:
@@ -1291,32 +1290,6 @@ fn leaf_cube_chunk() -> ChunkData {
 }
 
 #[test]
-fn test_full_detail_leaves_mesh_the_leaves_behind_them_apart() {
-    // blocks 4 and 5 meet at 4.5, where the faces between them show through the holes
-    let meshes = mesh_chunk(leaf_cube_chunk());
-    let inner = meshes.inner_leaves.expect("faces between leaves");
-    assert!(vertices_in_plane(&inner, 4.5) > 0);
-    // and only those: the shell is drawn with the rest of the chunk
-    assert_eq!(
-        0,
-        vertices_in_plane(&inner, 3.5) + vertices_in_plane(&inner, 5.5)
-    );
-    assert_eq!(0, vertices_in_plane(&meshes.opaque, 4.5));
-    assert!(
-        vertices_in_plane(&meshes.opaque, 3.5) > 0 && vertices_in_plane(&meshes.opaque, 5.5) > 0
-    );
-}
-
-#[test]
-fn test_leaves_alone_have_no_inner_faces() {
-    let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Leaves);
-    chunk.set_block_at(U16Vec3::new(5, 4, 4), BlockType::Rock);
-    let meshes = mesh_chunk(chunk);
-    assert!(meshes.inner_leaves.is_none());
-}
-
-#[test]
 fn test_leaves_on_the_chunks_edge_keep_their_faces_with_the_rest() {
     // past the edge the leaves may be drawn by a LOD node, with none just there
     let mut chunk = ChunkData::default();
@@ -1325,28 +1298,24 @@ fn test_leaves_on_the_chunks_edge_keep_their_faces_with_the_rest() {
     east.set_block_at(U16Vec3::new(0, 4, 4), BlockType::Leaves);
     let mut neighbours = vec![None; 26];
     neighbours[neighbor_26_index(1, 0, 0)] = Some(Arc::new(east));
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         Arc::new(chunk),
         neighbours,
         ChunkCoordinate(I64Vec3::new(0, 40, 0)),
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        false,
-    );
-    assert!(meshes.inner_leaves.is_none());
+        false);
     assert!(vertices_in_plane(&meshes.opaque, 15.5) > 0);
 }
 
 #[test]
 fn test_full_detail_solid_leaves_hide_the_leaves_behind_them() {
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
-    let mesh = generate_chunk_mesh(
+    let mesh = generate_chunk_mesh_with(
         Arc::new(leaf_cube_chunk()),
         vec![None; 26],
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        true,
-    );
-    assert!(mesh.inner_leaves.is_none());
+        false);
     let mesh = mesh.opaque;
     assert_eq!(0, vertices_in_plane(&mesh, 4.5));
     assert!(vertices_in_plane(&mesh, 3.5) > 0 && vertices_in_plane(&mesh, 5.5) > 0);
@@ -1524,13 +1493,12 @@ fn test_buried_chunk_has_no_geometry() {
         stone.set_block_at(U16Vec3::new(x, y, z), BlockType::Rock);
     }
     let stone = Arc::new(stone);
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         stone.clone(),
         vec![Some(stone); 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
-        false,
-    );
+        false);
     assert!(!meshes.has_geometry());
 }
 
@@ -1652,30 +1620,13 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
                 "no leaf cells at level {level}, cells {cell} blocks wide"
             );
         } else {
-            // a crown is boxes of its real size, never a cell's worth of cube, and fewer the farther out
+            // a crown is a few big cards of its real size, never a cell's worth of cube
             assert_eq!(0, leaf_cells);
-            let wanted = tree.crown_boxes(super::canopy::crown_layers(cell));
-            assert!(
-                !wanted.is_empty() && crown_boxes >= wanted.len(),
-                "{crown_boxes} crown boxes of {} at level {level}",
-                wanted.len()
-            );
-            for (min, max) in &wanted {
-                let size = (*max - *min).as_vec3();
-                let found = blocks
-                    .boxes
-                    .iter()
-                    .filter(|b| b.block == BlockType::Leaves)
-                    .any(|b| ((b.max - b.min) * cell as f32 - size).abs().max_element() < 1e-3);
-                assert!(found, "no crown box of {size:?} at level {level}");
+            assert!(crown_boxes > 0, "no crown cards at level {level}");
+            for card in blocks.boxes.iter().filter(|b| b.block == BlockType::Leaves) {
+                let width = (card.max.x - card.min.x) * cell as f32;
+                assert!(width < 20.0, "a {width} block card at level {level}");
             }
-            let wanted = wanted
-                .iter()
-                .fold(Vec3::ZERO, |w, (min, max)| w.max((*max - *min).as_vec3()));
-            assert!(
-                wanted.x < 20.0,
-                "crown {wanted:?} wider than a crown should be"
-            );
         }
     }
 }
@@ -1733,7 +1684,7 @@ fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
                 .filter(|&&c| c == BlockType::Log)
                 .count()
         );
-        // meshed, the box is a few quads standing out of the ground's
+        // meshed, the box is a prism standing out of the ground's
         let lone = LodBlocks {
             boxes: vec![*trunk],
             ..LodBlocks::new(
@@ -1756,8 +1707,8 @@ fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
         let mesh =
             super::mesh::mesh_blocks(&lone, key.cell_size(), style(false, false), &tint, &light)
                 .opaque;
-        // its foot is in the ground and its top in the crown, so only its sides show
-        assert_eq!(4 * 4, mesh.count_vertices());
+        // its foot is in the ground, so it is a prism of three rings of nine corners (the first repeated for the texture's seam) and a cap's hub
+        assert_eq!(3 * 9 + 1, mesh.count_vertices());
     }
 }
 
@@ -3096,13 +3047,12 @@ fn test_flowing_water_stands_over_its_floor_and_falls_away_from_its_source() {
     for x in channel.clone() {
         chunk.set_flow_at(U16Vec3::new(x, floor + 1, 8), Some(9 - x as u8));
     }
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         Arc::new(chunk),
         vec![None; 26],
         ChunkCoordinate(I64Vec3::new(0, 30, 0)),
         &test_regions(),
-        false,
-    );
+        false);
     let water = meshes.water.expect("the channel's water is drawn");
     let Some(VertexAttributeValues::Float32x3(positions)) =
         water.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -3170,13 +3120,12 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
     let chunk = world
         .get_chunk_data(ChunkCoordinate(I64Vec3::ZERO))
         .unwrap();
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         chunk,
         vec![None; 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
-        false,
-    );
+        false);
     let water = meshes.water.expect("the water is drawn");
     let Some(VertexAttributeValues::Float32x3(positions)) =
         water.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -3289,13 +3238,12 @@ fn test_a_steep_rivers_water_is_drawn_over_its_bed() {
     }
     let mut checked = 0;
     for coord in around(2) {
-        let meshes = generate_chunk_mesh(
+        let meshes = generate_chunk_mesh_with(
             world.get_chunk_data(coord).unwrap(),
             world.adjacent_chunk_data(coord),
             coord,
             &regions,
-            false,
-        );
+            false);
         let Some(water) = meshes.water else {
             continue;
         };
@@ -3778,7 +3726,7 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     let regions = test_regions();
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
     let mesh = |chunk: ChunkData| {
-        generate_chunk_mesh(Arc::new(chunk), vec![None; 26], coord, &regions, false).opaque
+        generate_chunk_mesh_with(Arc::new(chunk), vec![None; 26], coord, &regions, false).opaque
     };
     let mut grids = Vec::new();
     for n in 0..3usize.pow(9) {
@@ -4025,7 +3973,7 @@ fn test_chunk_seams_leave_no_hole() {
             }
             let coord = ChunkCoordinate(I64Vec3::new(cx as i64, 40 + cy as i64, cz as i64));
             let mesh =
-                generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+                generate_chunk_mesh_with(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
             let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
                 (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
             else {
@@ -4075,7 +4023,7 @@ fn seam_mesh(blocks: &[(u16, u16, u16)], block: BlockType) -> Mesh {
         adjacent[neighbor_26_index(0, 0, if n == 0 { 1 } else { -1 })] =
             Some(chunks[1 - n].clone());
         let coord = ChunkCoordinate(I64Vec3::new(0, 40, n as i64));
-        let mesh = generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+        let mesh = generate_chunk_mesh_with(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
         let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
         else {
@@ -4561,4 +4509,332 @@ fn test_a_trench_a_block_wide_has_a_level_floor() {
     }
     assert!(floor >= 4, "only {floor} floor vertices found");
     assert_eq!(Vec::<String>::new(), open_edges(&mesh));
+}
+
+fn tree_meshes(chunk: ChunkData, tree_shapes: bool) -> ChunkMeshes {
+    generate_chunk_mesh_with(
+        Arc::new(chunk),
+        vec![None; 26],
+        ChunkCoordinate(I64Vec3::ZERO),
+        &RegionStore::new(ochre_world::worldmap::test_terrain(1)),
+        tree_shapes)
+}
+
+// Grass 4 blocks up over a 12 by 12 square, with a step of grass up beside where the logs go, and `logs` on it.
+fn ground_with_logs(logs: &[U16Vec3]) -> ChunkData {
+    let mut chunk = ChunkData::default();
+    for x in 0..12 {
+        for z in 0..12 {
+            chunk.set_block_at(U16Vec3::new(x, 3, z), BlockType::Grass);
+        }
+    }
+    chunk.set_block_at(U16Vec3::new(7, 4, 8), BlockType::Grass);
+    for &log in logs {
+        chunk.set_block_at(log, BlockType::Log);
+    }
+    chunk
+}
+
+fn mesh_positions(mesh: &Mesh) -> Vec<Vec3> {
+    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        .and_then(VertexAttributeValues::as_float3)
+        .unwrap()
+        .iter()
+        .map(|&p| Vec3::from(p))
+        .collect()
+}
+
+// The area of the mesh's triangles lying flat at height `y`, which is the ground's top faces there.
+fn flat_area_at(mesh: &Mesh, y: f32) -> f32 {
+    let at = mesh_positions(mesh);
+    let indices: Vec<usize> = match mesh.indices().unwrap() {
+        Indices::U16(i) => i.iter().map(|&i| i as usize).collect(),
+        Indices::U32(i) => i.iter().map(|&i| i as usize).collect(),
+    };
+    indices
+        .chunks(3)
+        .map(|t| [at[t[0]], at[t[1]], at[t[2]]])
+        .filter(|t| t.iter().all(|p| p.y == y))
+        .map(|[a, b, c]| 0.5 * (b - a).cross(c - a).length())
+        .sum()
+}
+
+#[test]
+fn a_tree_log_hides_no_face_of_the_ground_under_or_beside_it() {
+    let logs = [U16Vec3::new(8, 4, 8), U16Vec3::new(8, 5, 8)];
+    let drawn = tree_meshes(ground_with_logs(&logs), true);
+    // the same ground with no logs at all, which hides nothing
+    let bare = tree_meshes(ground_with_logs(&[]), false);
+    let (drawn, bare) = (
+        flat_area_at(&drawn.opaque, 3.5),
+        flat_area_at(&bare.opaque, 3.5),
+    );
+    assert!(bare > 100.0, "no ground in the mesh: {bare}");
+    assert!(
+        (drawn - bare).abs() < 1e-3,
+        "ground tops {drawn}, bare {bare}"
+    );
+}
+
+#[test]
+fn trunk_prisms_are_lit_by_the_air_beside_them() {
+    let logs = [U16Vec3::new(8, 4, 8), U16Vec3::new(8, 5, 8)];
+    let meshes = tree_meshes(ground_with_logs(&logs), true);
+    let Some(VertexAttributeValues::Float32x2(lights)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_UV_1)
+    else {
+        panic!("no light");
+    };
+    let at = mesh_positions(&meshes.opaque);
+    let ring: Vec<f32> = at
+        .iter()
+        .zip(lights)
+        .filter(|(p, _)| {
+            (p.x - 8.0).abs() < 0.7 && (p.z - 8.0).abs() < 0.7 && p.y > 4.4 && p.y < 4.6
+        })
+        .map(|(_, light)| light[0])
+        .collect();
+    assert!(
+        !ring.is_empty(),
+        "no prism vertices at the joint of the two logs"
+    );
+    assert!(ring.iter().all(|&light| light > 0.6), "trunk lit {ring:?}");
+}
+
+#[test]
+fn tree_shapes_off_draws_logs_as_cubes() {
+    let logs = [U16Vec3::new(8, 4, 8)];
+    let cubes = tree_meshes(ground_with_logs(&logs), false);
+    let prism = tree_meshes(ground_with_logs(&logs), true);
+    // a cube is six faces of four, the prism eight sides and two ends
+    assert_ne!(cubes.opaque.count_vertices(), prism.opaque.count_vertices());
+}
+
+#[test]
+fn what_touches_a_tree_log_is_lit_by_the_air_beside_it_not_by_the_log() {
+    use crate::generate::trees::{Tree, TreeKind, TreeTints};
+    let tree = Tree::new(TreeKind::Broadleaf, I64Vec3::new(8, 4, 8), 10, 4.0, 0.7, 5);
+    let mut chunk = ground_with_logs(&[U16Vec3::new(8, 4, 8)]);
+    chunk.trees = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+    chunk.set_block_at(U16Vec3::new(9, 4, 8), BlockType::Leaves);
+    let meshes = tree_meshes(chunk, true);
+    let Some(VertexAttributeValues::Float32x2(lights)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_UV_1)
+    else {
+        panic!("no light");
+    };
+    // the corners of the leaf's face toward the log, at x 8.5 where the log's thin prism does not reach
+    let face: Vec<f32> = mesh_positions(&meshes.opaque)
+        .iter()
+        .zip(lights)
+        .filter(|(p, _)| p.x == 8.5 && (3.4..4.6).contains(&p.y) && (7.4..8.6).contains(&p.z))
+        .map(|(_, light)| light[0])
+        .collect();
+    assert!(!face.is_empty(), "no leaf face beside the log");
+    assert!(face.iter().all(|&light| light > 0.6), "leaf face lit {face:?}");
+}
+
+#[test]
+fn logs_that_touch_only_at_a_corner_are_joined_by_prisms_meeting_between_them() {
+    let meshes = tree_meshes(
+        ground_with_logs(&[U16Vec3::new(4, 4, 4), U16Vec3::new(5, 5, 4)]),
+        true,
+    );
+    let between = Vec3::new(4.5, 4.5, 4.0);
+    let meet = mesh_positions(&meshes.opaque)
+        .into_iter()
+        .filter(|p| p.distance(between) < 0.3)
+        .count();
+    // the ring each log's reach ends in, halfway to the other, is eight corners from each
+    assert!(meet >= 16, "{meet} corners where the two reaches meet");
+}
+
+fn leaf_vertices(mesh: &Mesh) -> usize {
+    let leaves = BlockType::Leaves.tile(ochre_base::block::Face::Side).atlas_cell();
+    let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+    else {
+        panic!("no colours");
+    };
+    colors.iter().filter(|c| c[3] == leaves).count()
+}
+
+#[test]
+fn a_surface_leaf_draws_a_card_and_a_leaf_with_no_open_side_draws_nothing() {
+    let mut chunk = ground_with_logs(&[]);
+    for x in 5..8 {
+        for y in 5..8 {
+            for z in 5..8 {
+                chunk.set_block_at(U16Vec3::new(x, y, z), BlockType::Leaves);
+            }
+        }
+    }
+    let cards = leaf_vertices(&tree_meshes(chunk, true).opaque);
+    // 26 leaves touch the air and each is one card of a middle and eight rim points; the middle one touches none
+    assert_eq!(26 * 7, cards);
+}
+
+#[test]
+fn leaves_are_drawn_as_cubes_with_tree_shapes_off() {
+    let mut chunk = ground_with_logs(&[]);
+    chunk.set_block_at(U16Vec3::new(6, 6, 6), BlockType::Leaves);
+    let cubes = tree_meshes(chunk, false);
+    // one cube of six faces, none of them cards
+    assert_eq!(24, leaf_vertices(&cubes.opaque));
+}
+
+#[test]
+fn a_pines_boughs_are_straight_prisms_from_its_trunk_to_their_tips() {
+    use crate::generate::trees::{Tree, TreeKind, TreeTints};
+    let tree = Tree::new(TreeKind::Pine, I64Vec3::new(8, 4, 8), 16, 4.5, 0.7, 3);
+    let mut chunk = ground_with_logs(&[]);
+    tree.plant(I64Vec3::ZERO, 1, (IVec3::ZERO, IVec3::splat(15)), |c, b| {
+        chunk.set_block_at(U16Vec3::new(c.x as u16, c.y as u16, c.z as u16), b);
+    });
+    chunk.trees = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+    // the first whorl starts a block above the crown's foot, a quarter of the way up the trunk
+    let voxel = IVec3::new(8, 4 + 16 / 4 + 1, 8);
+    let look = chunk.trees.look_at(voxel).unwrap();
+    let boughs = look.boughs_from(voxel);
+    assert_eq!(4, boughs.len());
+    let meshes = tree_meshes(chunk, true);
+    let at = mesh_positions(&meshes.opaque);
+    let off = super::trees_mesh::trunk_offset(&look, voxel.y as f32);
+    let start = Vec3::new(8.0 + off.x, voxel.y as f32, 8.0 + off.y);
+    for along in boughs {
+        let tip = start + along;
+        assert!(
+            at.iter().any(|p| p.distance(tip) < 0.2),
+            "no bough ends at {tip}"
+        );
+    }
+}
+
+#[test]
+fn leaves_with_more_leaves_over_them_are_drawn_darker() {
+    let mut chunk = ground_with_logs(&[]);
+    for y in 5..11 {
+        for (x, z) in [(6, 6), (7, 6), (6, 7), (7, 7)] {
+            chunk.set_block_at(U16Vec3::new(x, y, z), BlockType::Leaves);
+        }
+    }
+    let meshes = tree_meshes(chunk, true);
+    let leaves = BlockType::Leaves.tile(ochre_base::block::Face::Side).atlas_cell();
+    let Some(VertexAttributeValues::Float32x4(colors)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR)
+    else {
+        panic!("no colours");
+    };
+    let mean = |wanted: &dyn Fn(f32) -> bool| {
+        let shades: Vec<f32> = mesh_positions(&meshes.opaque)
+            .iter()
+            .zip(colors)
+            .filter(|(p, c)| c[3] == leaves && wanted(p.y))
+            .map(|(_, c)| c[0] + c[1] + c[2])
+            .collect();
+        shades.iter().sum::<f32>() / shades.len() as f32
+    };
+    let (low, high) = (mean(&|y| y < 6.5), mean(&|y| y > 8.5));
+    assert!(low < high * 0.9, "low {low}, high {high}");
+}
+
+#[test]
+fn far_crowns_are_fewer_bigger_cards_as_the_cells_widen_and_stay_over_the_crown() {
+    use crate::generate::trees::{Tree, TreeKind};
+    for (kind, trunk, spread) in [
+        (TreeKind::Broadleaf, 10, 4.5),
+        (TreeKind::Broadleaf, 20, 7.0),
+        (TreeKind::Pine, 16, 4.5),
+    ] {
+        let tree = Tree::new(kind, I64Vec3::ZERO, trunk, spread, 0.7, 5);
+        let counts: Vec<usize> = [2i64, 4, 8, 16]
+            .iter()
+            .map(|&cell| {
+                let cards = tree.far_cards(2.0 / cell as f64);
+                for card in &cards {
+                    assert!(card.size >= 1.0 && card.size as f64 <= spread * 2.0 + 2.0, "{kind:?} card {} wide", card.size);
+                    assert!(card.centre.x.abs() <= spread * 1.4 && card.centre.z.abs() <= spread * 1.4);
+                    assert!(card.centre.y >= 0.0 && card.centre.y <= trunk as f64 + spread + 2.0);
+                }
+                cards.len()
+            })
+            .collect();
+        assert!(counts.windows(2).all(|w| w[0] >= w[1]) && counts[3] >= 3, "{kind:?} {counts:?}");
+    }
+}
+
+#[test]
+fn far_trees_cost_fewer_vertices_than_the_planted_cubes_they_replace() {
+    use crate::generate::trees::{Tree, TreeKind};
+    let regions = RegionStore::new(ochre_world::worldmap::test_terrain(1));
+    let mut shown = Vec::new();
+    for (kind, trunk, spread) in [
+        (TreeKind::Broadleaf, 10, 4.5),
+        (TreeKind::Pine, 16, 4.5),
+        (TreeKind::Broadleaf, 20, 7.0),
+        (TreeKind::Pine, 24, 6.0),
+    ] {
+        for cell in [2i64, 4] {
+            let size = 16i32;
+            let tree = Tree::new(kind, I64Vec3::new(8 * cell, 0, 8 * cell), trunk, spread, 0.7, 5);
+            let mut cells = vec![BlockType::Air; 18 * 18 * 18];
+            tree.plant(I64Vec3::ZERO, cell, (IVec3::splat(-1), IVec3::splat(size)), |coord, block| {
+                cells[LodBlocks::index(size, coord)] = block;
+            });
+            let tint = super::buffers::GrassTint::new(regions.terrain(), Vec3::ZERO, 1.0);
+            let light = std::cell::LazyCell::new(|| {
+                crate::generate::light::SkyLight::new(IVec3::splat(-1), IVec3::splat(18), crate::generate::light::MAX_LIGHT, vec![0; 18 * 18 * 18])
+            });
+            let count = |boxes: Vec<super::source::TreeBox>, shapes: bool| {
+                let lone = LodBlocks {
+                    boxes,
+                    ..LodBlocks::new(size, cells.clone(), vec![0; 18 * 18], 0, cell)
+                };
+                let style = MeshStyle { tree_shapes: shapes, ..style(false, false) };
+                let m = super::mesh::mesh_blocks(&lone, cell, style, &tint, &light);
+                m.opaque.count_vertices()
+            };
+            let planted = count(Vec::new(), false);
+            let far = count(super::lod::far_boxes(&tree, I64Vec3::ZERO, cell), true);
+            shown.push(format!("{kind:?} {trunk}/{spread} cell {cell}: planted {planted}, far {far}"));
+            // cards cost less than the planted cubes at 2 blocks, and about what a small tree costs at 4, where those are few
+            assert!(far < if cell == 2 { planted } else { planted * 3 / 2 }, "{kind:?} {trunk} at {cell}: far {far} vertices, planted {planted}");
+        }
+    }
+    println!("{}", shown.join("\n"));
+}
+
+#[test]
+fn every_lod_level_draws_the_trees_of_a_forest() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let mut heights = regions.sampler();
+    let centre = forest_at(5);
+    let trees = crate::generate::trees::trees_near(
+        regions.terrain(),
+        &mut heights,
+        centre - bevy::math::I64Vec2::splat(300),
+        centre + bevy::math::I64Vec2::splat(300),
+    );
+    let tree = trees.first().expect("no trees");
+    let chunk = tree.base.div_euclid(I64Vec3::splat(16));
+    let log = BlockType::Log.tile(ochre_base::block::Face::Side).atlas_cell();
+    for level in [1u8, 2, 3] {
+        let mut keys = std::collections::HashSet::new();
+        for x in -12..12 {
+            for z in -12..12 {
+                for y in -3..4 {
+                    keys.insert(LodKey::containing(ChunkCoordinate(chunk + I64Vec3::new(x, y, z)), level));
+                }
+            }
+        }
+        let (mut boxes, mut leaf, mut logs, mut total) = (0, 0, 0, 0);
+        for key in keys {
+            let Some(m) = super::lod::generate_lod_mesh(regions.clone(), key) else { continue };
+            boxes += LodBlocks::sample(&regions, key).boxes.len();
+            leaf += leaf_vertices(&m.opaque);
+            let Some(VertexAttributeValues::Float32x4(colors)) = m.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
+            logs += colors.iter().filter(|c| c[3] == log).count();
+            total += m.opaque.count_vertices();
+        }
+        assert!(boxes > 0 && leaf > 0 && logs > 0, "level {level}: {boxes} boxes, {leaf} leaf and {logs} log vertices of {total}");
+    }
 }

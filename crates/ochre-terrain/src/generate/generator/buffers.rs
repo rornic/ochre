@@ -264,6 +264,58 @@ impl MeshBuffers {
         self.indices.extend([0, 2, 1, 1, 2, 3].map(|i| start + i));
     }
 
+    // Triangles over `vertices`, each a position, normal, uv and colour, drawn from both sides with one light, for a shape too small to
+    // be seen closely, whose normals are smooth.
+    pub(super) fn push_double_sided_mesh(
+        &mut self,
+        vertices: &[(Vec3, Vec3, [f32; 2], [f32; 4])],
+        light: f32,
+        triangles: &[[u32; 3]],
+    ) {
+        let start = self.vertices.len() as u32;
+        for &(position, normal, uv, color) in vertices {
+            // the cube's faces along z store their normals reversed
+            self.vertices.push(Vertex {
+                position: position.to_array(),
+                normal: [normal.x, normal.y, -normal.z],
+                uv,
+            });
+            self.colors.push(color);
+            self.lights.push(light);
+        }
+        for &[a, b, c] in triangles {
+            self.indices
+                .extend([a, b, c, a, c, b].map(|i| start + i));
+        }
+    }
+
+    // A fan of triangles from the first position, the centre, to each of the rest, the rim in order, from both sides, with one
+    // light and normal for all, so its outline can be any shape with that many corners.
+    pub(super) fn push_double_sided_fan(
+        &mut self,
+        positions: &[[f32; 3]],
+        normal: [f32; 3],
+        uvs: &[[f32; 2]],
+        colors: &[[f32; 4]],
+        light: f32,
+    ) {
+        let start = self.vertices.len() as u32;
+        for ((&position, &uv), &color) in positions.iter().zip(uvs).zip(colors) {
+            self.vertices.push(Vertex {
+                position,
+                normal,
+                uv,
+            });
+            self.colors.push(color);
+            self.lights.push(light);
+        }
+        let rim = positions.len() as u32 - 1;
+        for i in 0..rim {
+            let (a, b) = (start + 1 + i, start + 1 + (i + 1) % rim);
+            self.indices.extend([start, a, b, start, b, a]);
+        }
+    }
+
     // Vertices at every block step round the border, so neighbours share exact edge points and leave no cracks.
     pub(super) fn push_fan_quad(&mut self, quad: FanQuad) {
         let (w, h) = quad.size;
@@ -461,20 +513,10 @@ pub(super) struct FanQuad<'a> {
 pub(super) struct MeshStyle {
     pub(super) ambient_occlusion: bool,
     pub(super) textured: bool,
-    pub(super) inner_leaves: InnerLeaves,
     // whether faces are cut back along convex edges and chamfered, see `bevelled_position`
     pub(super) bevel: bool,
-}
-
-// The faces between two leaves, which only show through the leaves' holes. In a forest of big
-// crowns they're most of its faces.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum InnerLeaves {
-    // left out: leaves drawn solid hide them, as do leaves past `INNER_LEAVES_REACH`, whose
-    // holes are filled
-    Hidden,
-    // meshed apart, into `ChunkMeshes::inner_leaves`, drawn only near the camera
-    Apart,
+    // trees drawn as low-poly shapes, see `trees_mesh`
+    pub(super) tree_shapes: bool,
 }
 
 pub struct ChunkMeshes {
@@ -484,8 +526,6 @@ pub struct ChunkMeshes {
     pub water: Option<Mesh>,
     /// Fresh water's spray, see `SprayMaterial`.
     pub spray: Option<Mesh>,
-    /// The faces between leaves, drawn only within `INNER_LEAVES_REACH` of the camera.
-    pub inner_leaves: Option<Mesh>,
 }
 
 impl ChunkMeshes {
@@ -494,15 +534,11 @@ impl ChunkMeshes {
         self.opaque.count_vertices() > 0
             || self.cutout.is_some()
             || self.water.is_some()
-            || self.inner_leaves.is_some()
             || self.spray.is_some()
     }
 }
 
-/// Within this many blocks of the camera leaves show the leaves behind them through their holes.
-/// Farther out their holes fill in with those leaves' shade, dithered in over
-/// `INNER_LEAVES_BAND` blocks, and the faces between leaves aren't drawn: a leaf's hole is about
-/// a pixel by then, and a dense forest's crowns hold several times the faces on their outsides.
+/// Past this many blocks of the camera leaves' holes fill in with the shade of the leaves behind them, dithered in over `INNER_LEAVES_BAND` blocks.
 pub const INNER_LEAVES_REACH: f32 = 64.0;
 
 pub const INNER_LEAVES_BAND: f32 = 16.0;

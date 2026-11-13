@@ -104,7 +104,7 @@ pub fn pack(mut mesh: Mesh) -> Mesh {
 mod tests {
     use super::*;
     use crate::chunk::{ChunkCoordinate, ChunkData};
-    use crate::generate::generator::{generate_chunk, generate_chunk_mesh};
+    use crate::generate::generator::{generate_chunk, generate_chunk_mesh_with};
     use crate::generate::region_store::RegionStore;
     use crate::group::merge_chunk_meshes;
     use bevy::math::{I64Vec3, Vec3};
@@ -163,7 +163,7 @@ mod tests {
                             .map(|n| data.get(n).cloned())
                             .collect();
                         let meshes =
-                            generate_chunk_mesh(data[&c].clone(), neighbours, c, &regions, false);
+                            generate_chunk_mesh_with(data[&c].clone(), neighbours, c, &regions, false);
                         parts.push((Vec3::new(dx as f32, dy as f32, dz as f32) * 16.0, meshes));
                     }
                 }

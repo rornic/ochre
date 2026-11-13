@@ -76,9 +76,9 @@ impl BlockType {
         self.light_opacity() == crate::MAX_LIGHT
     }
 
-    // Whether the player can point at it: looking through air and water to what's past them.
+    // Whether the player can point at it: looking through air, water and leaves, which are drawn as cards, to what's past them.
     pub fn is_targetable(&self) -> bool {
-        !matches!(self, BlockType::Air | BlockType::Water)
+        !matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves)
     }
 
     // Whether the player can break it. Compacted rock only gives way to explosives.
@@ -562,13 +562,13 @@ mod tests {
     }
 
     #[test]
-    fn test_compacted_stone_air_and_water_cannot_be_broken() {
+    fn test_compacted_stone_air_water_and_leaves_cannot_be_broken() {
         assert!(BlockType::Rock.is_breakable());
         assert!(BlockType::Poppy.is_breakable());
         assert!(!BlockType::CompactedRock.is_breakable());
         // it can still be pointed at, to see what it is
         assert!(BlockType::CompactedRock.is_targetable());
-        for passed_through in [BlockType::Air, BlockType::Water] {
+        for passed_through in [BlockType::Air, BlockType::Water, BlockType::Leaves] {
             assert!(!passed_through.is_targetable() && !passed_through.is_breakable());
         }
     }
