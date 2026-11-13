@@ -34,7 +34,7 @@ use curvature::CurvaturePlugin;
 use fade::{apply_fades, FadeMaterials};
 use flow::flow_water;
 use frost::FrostPlugin;
-use group::{build_groups, load_groups, show_inner_leaves};
+use group::{build_groups, load_groups};
 use lod::{
     load_lods, refresh_lod_visibility, retire_lods, spawn_lods, update_lod_selection, LodLoader,
 };
@@ -78,8 +78,6 @@ impl Plugin for TerrainPlugin {
                     .after(load_groups)
                     .before(unload_chunks),
                 unload_chunks,
-                // sees the inner leaves `apply_remeshes` spawns hidden this frame, or they flash
-                show_inner_leaves.after(apply_remeshes),
             ),
         );
     }
@@ -156,12 +154,9 @@ pub fn insert_terrain_resources(
         materials.water.clone(),
         materials.solid_water,
     ));
-    commands.insert_resource(settings::TreeShapes(renderer.tree_shapes));
     commands.insert_resource(ChunkLoader::new(
         layout,
         world_bounds,
-        debug.solid_leaves,
-        renderer.tree_shapes,
         materials.chunk,
         materials.water,
         materials.spray,

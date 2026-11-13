@@ -16,8 +16,8 @@ fn is_leaf(vertex_alpha: f32) -> bool {
 }
 
 // How much of the way leaves at `world_position` are to having their holes filled with the shade
-// of the leaves behind them, 0..1: past `INNER_LEAVES_REACH` blocks of the camera at `eye` those
-// leaves aren't drawn, see `InnerLeaves`, and the holes fill in over the band before it.
+// of the leaves behind them, 0..1: past `INNER_LEAVES_REACH` blocks of the camera at `eye`, over
+// the band before it.
 fn leaf_holes_filled(world_position: vec3<f32>, eye: vec3<f32>) -> f32 {
     let reach = f32(constants::INNER_LEAVES_REACH);
     let band = f32(constants::INNER_LEAVES_BAND);

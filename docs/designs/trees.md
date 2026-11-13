@@ -451,6 +451,12 @@ Smaller than the plan above, which had a separate tree-driven LOD mesher (`lod_t
 *   **Far crowns are cards at every level, not balls and cones.** Smooth balls and cones looked out of place beside the near cards. `Tree::far_cards(detail)` gives a few big cards, fewer and bigger as cells widen (`detail` is 2 over the cell width): lobes only from 2-block cells, a broadleaf's ball at least 5 cards, a pine's cone in rings of at least 3. The cost is no more than the balls': level 3 of the forest meadow is 10% smaller. `BoxShape::Ball` and `Cone`, `crown_layers` and the taper constants are gone.
 *   **The first LOD level had no trees** for a while: it meshes through `sample_regions`, which made no boxes. Fixed, with a test that levels 1 to 3 of a forest all draw trees.
 
+### PR 5 (`refactor: remove the cube tree path`)
+
+*   **The `tree_shapes` switch is gone**: `RendererSettings.tree_shapes`, the `settings.toml` line, the `TreeShapes` resource and the loader and `mesh_group` parameters. `show_outline` always hides the outline over a `Log`. `generate_chunk_mesh_with(.., tree_shapes)` stays for tests and for `bench`, where `BENCH_CUBES=1` builds the cube baseline (it replaces `BENCH_TREE_SHAPES`, and shapes are now the default).
+*   **The inner-leaves path is removed**: `InnerLeaves`, `ChunkMeshes::inner_leaves`, `InnerLeafFaces`, `show_inner_leaves` and the faces-between-leaves tests. Faces between leaves are never drawn. Kept: `DebugSettings.solid_leaves` (its shader def, for timing), `INNER_LEAVES_REACH` and `INNER_LEAVES_BAND` (the hole fill the cards use), and `MeshStyle.tree_shapes` as a test knob.
+*   Vertex counts are unchanged: forest meadow 2,269,044 chunk and 334,868 LOD vertices (2,155,849 with `BENCH_CUBES=1`).
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

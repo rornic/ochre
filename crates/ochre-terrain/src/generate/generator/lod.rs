@@ -1,4 +1,4 @@
-use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle, TEXTURE_MAX_CELL_SIZE};
+use super::buffers::{ChunkMeshes, GrassTint, MeshStyle, TEXTURE_MAX_CELL_SIZE};
 use super::canopy::{
     Canopy, BOX_CROWN_CELL, CANOPY_CELL, CANOPY_SHADE, CANOPY_SHADE_SPAN,
     FOREST_COVER, FOREST_DARKEN, TREE_MAX_CELL, TRUNK_MAX_CELL,
@@ -695,7 +695,6 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<Chunk
         MeshStyle {
             ambient_occlusion: true,
             textured,
-            inner_leaves: InnerLeaves::Hidden,
             bevel: false,
             // lone trees are drawn from their boxes, and the cells they are planted in only shade the ground
             tree_shapes: true,

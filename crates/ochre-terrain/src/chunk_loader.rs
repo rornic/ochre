@@ -64,10 +64,6 @@ pub struct ChunkLoader {
     pub(super) water_material: Handle<WaterMaterial>,
     pub(super) spray_material: Handle<SprayMaterial>,
     max_in_flight_generating: usize,
-    // see `DebugSettings::solid_leaves`
-    pub(super) solid_leaves: bool,
-    // see `RendererSettings::tree_shapes`
-    pub(super) tree_shapes: bool,
     // the entity drawing each group of chunks, see `group::ChunkGroup`
     pub(super) groups: HashMap<LodKey, Entity>,
     // meshed chunks' meshes, until the rest of their group is ready to merge with them
@@ -101,8 +97,6 @@ impl ChunkLoader {
     pub fn new(
         layout: LodLayout,
         world_bounds: ochre_base::WorldBounds,
-        solid_leaves: bool,
-        tree_shapes: bool,
         material: Handle<ChunkMaterial>,
         water_material: Handle<WaterMaterial>,
         spray_material: Handle<SprayMaterial>,
@@ -118,8 +112,6 @@ impl ChunkLoader {
             water_material,
             spray_material,
             max_in_flight_generating: max_in_flight(render_distance),
-            solid_leaves,
-            tree_shapes,
             groups: HashMap::new(),
             held: HashMap::new(),
             waiting: HashSet::new(),
@@ -270,17 +262,8 @@ pub(crate) fn load_chunks(
                     if let Some(data) = world.get_chunk_data(coord) {
                         let adjacent = world.adjacent_chunk_data(coord);
                         let regions = world.region_store.clone();
-                        let solid_leaves = chunk_loader.solid_leaves;
-                        let tree_shapes = chunk_loader.tree_shapes;
                         meshing.task = Some(task_pool.spawn(async move {
-                            generate_chunk_mesh(
-                                data,
-                                adjacent,
-                                coord,
-                                &regions,
-                                solid_leaves,
-                                tree_shapes,
-                            )
+                            generate_chunk_mesh(data, adjacent, coord, &regions)
                         }));
                     }
                 }

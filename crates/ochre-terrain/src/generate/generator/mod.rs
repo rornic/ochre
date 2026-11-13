@@ -17,7 +17,9 @@ mod trees_mesh;
 
 pub use buffers::{ChunkMeshes, INNER_LEAVES_BAND, INNER_LEAVES_REACH};
 pub(crate) use chunk::LIGHT_MARGIN;
-pub use chunk::{generate_chunk, generate_chunk_mesh, generate_chunk_with, ChunkPasses};
+pub use chunk::{
+    generate_chunk, generate_chunk_mesh, generate_chunk_mesh_with, generate_chunk_with, ChunkPasses,
+};
 pub use lod::generate_lod_mesh;
 pub(crate) use lod::MAX_SKIRT_CELLS;
 pub(super) use shading::FACE_NORMAL_OFFSET;

@@ -8,8 +8,8 @@ use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
 
 use ochre_base::block::{BlockType, Tile};
 
-use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle, RAMP};
-use super::chunk::{generate_chunk, generate_chunk_mesh};
+use super::buffers::{ChunkMeshes, GrassTint, MeshStyle, RAMP};
+use super::chunk::{generate_chunk, generate_chunk_mesh_with};
 use super::lod::LodBlocks;
 use super::shading::{
     spread_water_levels, vertex_ao, vertex_water_depth, water_corner, AO_STRENGTH,
@@ -30,7 +30,6 @@ fn style(ambient_occlusion: bool, textured: bool) -> MeshStyle {
     MeshStyle {
         ambient_occlusion,
         textured,
-        inner_leaves: InnerLeaves::Hidden,
         bevel: false,
         tree_shapes: false,
     }
@@ -679,14 +678,12 @@ fn test_lod_steps_are_lit_by_the_air_above_the_lower_ground() {
 fn mesh_chunk_bevelled(chunk: ChunkData) -> ChunkMeshes {
     // well above the sea, under open sky
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
-    generate_chunk_mesh(
+    generate_chunk_mesh_with(
         Arc::new(chunk),
         vec![None; 26],
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        false,
-        false,
-    )
+        false)
 }
 
 // The chunk meshed as the game does, without bevels, which cut quads back and split them along edges:
@@ -1293,32 +1290,6 @@ fn leaf_cube_chunk() -> ChunkData {
 }
 
 #[test]
-fn test_full_detail_leaves_mesh_the_leaves_behind_them_apart() {
-    // blocks 4 and 5 meet at 4.5, where the faces between them show through the holes
-    let meshes = mesh_chunk(leaf_cube_chunk());
-    let inner = meshes.inner_leaves.expect("faces between leaves");
-    assert!(vertices_in_plane(&inner, 4.5) > 0);
-    // and only those: the shell is drawn with the rest of the chunk
-    assert_eq!(
-        0,
-        vertices_in_plane(&inner, 3.5) + vertices_in_plane(&inner, 5.5)
-    );
-    assert_eq!(0, vertices_in_plane(&meshes.opaque, 4.5));
-    assert!(
-        vertices_in_plane(&meshes.opaque, 3.5) > 0 && vertices_in_plane(&meshes.opaque, 5.5) > 0
-    );
-}
-
-#[test]
-fn test_leaves_alone_have_no_inner_faces() {
-    let mut chunk = ChunkData::default();
-    chunk.set_block_at(U16Vec3::new(4, 4, 4), BlockType::Leaves);
-    chunk.set_block_at(U16Vec3::new(5, 4, 4), BlockType::Rock);
-    let meshes = mesh_chunk(chunk);
-    assert!(meshes.inner_leaves.is_none());
-}
-
-#[test]
 fn test_leaves_on_the_chunks_edge_keep_their_faces_with_the_rest() {
     // past the edge the leaves may be drawn by a LOD node, with none just there
     let mut chunk = ChunkData::default();
@@ -1327,30 +1298,24 @@ fn test_leaves_on_the_chunks_edge_keep_their_faces_with_the_rest() {
     east.set_block_at(U16Vec3::new(0, 4, 4), BlockType::Leaves);
     let mut neighbours = vec![None; 26];
     neighbours[neighbor_26_index(1, 0, 0)] = Some(Arc::new(east));
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         Arc::new(chunk),
         neighbours,
         ChunkCoordinate(I64Vec3::new(0, 40, 0)),
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        false,
-        false,
-    );
-    assert!(meshes.inner_leaves.is_none());
+        false);
     assert!(vertices_in_plane(&meshes.opaque, 15.5) > 0);
 }
 
 #[test]
 fn test_full_detail_solid_leaves_hide_the_leaves_behind_them() {
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
-    let mesh = generate_chunk_mesh(
+    let mesh = generate_chunk_mesh_with(
         Arc::new(leaf_cube_chunk()),
         vec![None; 26],
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
-        true,
-        false,
-    );
-    assert!(mesh.inner_leaves.is_none());
+        false);
     let mesh = mesh.opaque;
     assert_eq!(0, vertices_in_plane(&mesh, 4.5));
     assert!(vertices_in_plane(&mesh, 3.5) > 0 && vertices_in_plane(&mesh, 5.5) > 0);
@@ -1528,14 +1493,12 @@ fn test_buried_chunk_has_no_geometry() {
         stone.set_block_at(U16Vec3::new(x, y, z), BlockType::Rock);
     }
     let stone = Arc::new(stone);
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         stone.clone(),
         vec![Some(stone); 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
-        false,
-        false,
-    );
+        false);
     assert!(!meshes.has_geometry());
 }
 
@@ -3084,14 +3047,12 @@ fn test_flowing_water_stands_over_its_floor_and_falls_away_from_its_source() {
     for x in channel.clone() {
         chunk.set_flow_at(U16Vec3::new(x, floor + 1, 8), Some(9 - x as u8));
     }
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         Arc::new(chunk),
         vec![None; 26],
         ChunkCoordinate(I64Vec3::new(0, 30, 0)),
         &test_regions(),
-        false,
-        false,
-    );
+        false);
     let water = meshes.water.expect("the channel's water is drawn");
     let Some(VertexAttributeValues::Float32x3(positions)) =
         water.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -3159,14 +3120,12 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
     let chunk = world
         .get_chunk_data(ChunkCoordinate(I64Vec3::ZERO))
         .unwrap();
-    let meshes = generate_chunk_mesh(
+    let meshes = generate_chunk_mesh_with(
         chunk,
         vec![None; 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
-        false,
-        false,
-    );
+        false);
     let water = meshes.water.expect("the water is drawn");
     let Some(VertexAttributeValues::Float32x3(positions)) =
         water.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -3279,14 +3238,12 @@ fn test_a_steep_rivers_water_is_drawn_over_its_bed() {
     }
     let mut checked = 0;
     for coord in around(2) {
-        let meshes = generate_chunk_mesh(
+        let meshes = generate_chunk_mesh_with(
             world.get_chunk_data(coord).unwrap(),
             world.adjacent_chunk_data(coord),
             coord,
             &regions,
-            false,
-            false,
-        );
+            false);
         let Some(water) = meshes.water else {
             continue;
         };
@@ -3769,7 +3726,7 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     let regions = test_regions();
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
     let mesh = |chunk: ChunkData| {
-        generate_chunk_mesh(Arc::new(chunk), vec![None; 26], coord, &regions, false, false).opaque
+        generate_chunk_mesh_with(Arc::new(chunk), vec![None; 26], coord, &regions, false).opaque
     };
     let mut grids = Vec::new();
     for n in 0..3usize.pow(9) {
@@ -4016,7 +3973,7 @@ fn test_chunk_seams_leave_no_hole() {
             }
             let coord = ChunkCoordinate(I64Vec3::new(cx as i64, 40 + cy as i64, cz as i64));
             let mesh =
-                generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false, false).opaque;
+                generate_chunk_mesh_with(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
             let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
                 (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
             else {
@@ -4066,7 +4023,7 @@ fn seam_mesh(blocks: &[(u16, u16, u16)], block: BlockType) -> Mesh {
         adjacent[neighbor_26_index(0, 0, if n == 0 { 1 } else { -1 })] =
             Some(chunks[1 - n].clone());
         let coord = ChunkCoordinate(I64Vec3::new(0, 40, n as i64));
-        let mesh = generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false, false).opaque;
+        let mesh = generate_chunk_mesh_with(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
         let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
         else {
@@ -4555,14 +4512,12 @@ fn test_a_trench_a_block_wide_has_a_level_floor() {
 }
 
 fn tree_meshes(chunk: ChunkData, tree_shapes: bool) -> ChunkMeshes {
-    generate_chunk_mesh(
+    generate_chunk_mesh_with(
         Arc::new(chunk),
         vec![None; 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &RegionStore::new(ochre_world::worldmap::test_terrain(1)),
-        false,
-        tree_shapes,
-    )
+        tree_shapes)
 }
 
 // Grass 4 blocks up over a 12 by 12 square, with a step of grass up beside where the logs go, and `logs` on it.
@@ -4724,7 +4679,7 @@ fn leaves_are_drawn_as_cubes_with_tree_shapes_off() {
     chunk.set_block_at(U16Vec3::new(6, 6, 6), BlockType::Leaves);
     let cubes = tree_meshes(chunk, false);
     // one cube of six faces, none of them cards
-    assert_eq!(24, leaf_vertices(&cubes.opaque) + cubes.inner_leaves.map_or(0, |m| m.count_vertices()));
+    assert_eq!(24, leaf_vertices(&cubes.opaque));
 }
 
 #[test]
@@ -4836,7 +4791,7 @@ fn far_trees_cost_fewer_vertices_than_the_planted_cubes_they_replace() {
                 };
                 let style = MeshStyle { tree_shapes: shapes, ..style(false, false) };
                 let m = super::mesh::mesh_blocks(&lone, cell, style, &tint, &light);
-                m.opaque.count_vertices() + m.inner_leaves.map_or(0, |m| m.count_vertices())
+                m.opaque.count_vertices()
             };
             let planted = count(Vec::new(), false);
             let far = count(super::lod::far_boxes(&tree, I64Vec3::ZERO, cell), true);

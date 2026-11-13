@@ -1,6 +1,6 @@
 use super::buffers::Vertex;
 use super::buffers::{
-    bevelled_ij, blend_corners, lift_at, unfolded_uv, FanQuad, GrassTint, InnerLeaves, MeshBuffers,
+    bevelled_ij, blend_corners, lift_at, unfolded_uv, FanQuad, GrassTint, MeshBuffers,
     MeshStyle, BEVEL, RAMP,
 };
 
@@ -52,8 +52,6 @@ pub(super) struct FaceCell {
     pub(super) light: [f32; 4],
     // where the face starts and ends up the mesh, if not the whole cell, see `face_span`
     pub(super) span: Option<[f32; 2]>,
-    // a face between leaves, see `InnerLeaves`
-    pub(super) inner: bool,
     // what each of its sides, -ta, +ta, -tb, +tb, is, see `Edge`
     pub(super) bevel: [Edge; 4],
     // which corners, (-ta, -tb), (+ta, -tb), (-ta, +tb), (+ta, +tb), the floor rises at, see `corner_lifts`
@@ -101,7 +99,6 @@ impl FaceCell {
             && self.ao == other.ao
             && self.light == other.light
             && self.span == other.span
-            && self.inner == other.inner
             && self.bevel == other.bevel
             // a raised corner is on one cell's own, not stretched across a run
             // a raised corner is shared with the cell along, so they merge only where it's the same at both
@@ -446,8 +443,7 @@ pub(super) fn wall_edges(source: &impl BlockSource, coord: IVec3, normal: IVec3)
 
 // Whether a face of `block` at `coord` shows, and if so how much of it up the mesh's y axis,
 // with LOD surface cells topped out at the ground's real height (see `LodBlocks::surface_top`):
-// `Some(None)` for the whole face. Faces show through leaves' holes, other leaves' too, see
-// `InnerLeaves`.
+// `Some(None)` for the whole face.
 pub(super) fn face_span(
     source: &impl BlockSource,
     coord: IVec3,
@@ -494,13 +490,12 @@ thread_local! {
 
 // Merges runs of identically shaded opaque faces into single quads, one face direction slice at a
 // time, where the shading doesn't change along the run, see `FaceCell::merges_along`.
-// Faces between leaves go to `inner`, or nowhere, see `InnerLeaves`.
+// Faces between leaves aren't drawn: the leaf cards and holes filled in show through them.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn mesh_opaque_greedy(
     source: &GridView<impl BlockSource>,
     faces: &[[Vertex; 4]; 6],
     buffers: &mut MeshBuffers,
-    inner: &mut MeshBuffers,
     style: MeshStyle,
     // how many times the texture repeats across a cell
     uv_tiles: f32,
@@ -511,7 +506,6 @@ pub(super) fn mesh_opaque_greedy(
     let MeshStyle {
         ambient_occlusion,
         textured,
-        inner_leaves,
         bevel,
         ..
     } = style;
@@ -592,7 +586,7 @@ pub(super) fn mesh_opaque_greedy(
             let between_leaves = inside
                 && block == BlockType::Leaves
                 && source.block(coord + normal) == BlockType::Leaves;
-            if between_leaves && inner_leaves == InnerLeaves::Hidden {
+            if between_leaves {
                 return None;
             }
             let span = face_span(source, coord, normal, block)?;
@@ -621,7 +615,6 @@ pub(super) fn mesh_opaque_greedy(
             Some(FaceCell {
                 span,
                 varied: block == BlockType::Grass && grass_tint.varied_at(coord.as_vec3()),
-                inner: between_leaves,
                 corner: match (bevelled, normal.y) {
                     (true, 1) => shapes.shape(source, coord).raised,
                     (true, 0) => {
@@ -1014,12 +1007,7 @@ pub(super) fn mesh_opaque_greedy(
                     }
 
                     let at = normal_unit * slice + ta * a0 as i32 + tb * b0 as i32;
-                    let target = if cell.inner {
-                        &mut *inner
-                    } else {
-                        &mut *buffers
-                    };
-                    emit(&cell, (w, h), at, target);
+                    emit(&cell, (w, h), at, buffers);
                 }
             }
         }

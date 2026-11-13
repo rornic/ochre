@@ -1,4 +1,4 @@
-use super::buffers::{ChunkMeshes, GrassTint, InnerLeaves, MeshStyle};
+use super::buffers::{ChunkMeshes, GrassTint, MeshStyle};
 use super::flora::flora_at;
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
@@ -340,7 +340,16 @@ pub fn generate_chunk_mesh(
     adjacent_chunks: Vec<Option<Arc<ChunkData>>>,
     coord: ChunkCoordinate,
     regions: &RegionStore,
-    solid_leaves: bool,
+) -> ChunkMeshes {
+    generate_chunk_mesh_with(chunk, adjacent_chunks, coord, regions, true)
+}
+
+/// As `generate_chunk_mesh`, with `tree_shapes` off to draw trees as cubes, which tests and the `bench` example compare against.
+pub fn generate_chunk_mesh_with(
+    chunk: Arc<ChunkData>,
+    adjacent_chunks: Vec<Option<Arc<ChunkData>>>,
+    coord: ChunkCoordinate,
+    regions: &RegionStore,
     tree_shapes: bool,
 ) -> ChunkMeshes {
     let noise = regions.terrain();
@@ -356,18 +365,12 @@ pub fn generate_chunk_mesh(
         }
         light
     });
-    // leaves drawn solid hide the leaves behind them, see `DebugSettings::solid_leaves`
     mesh_blocks(
         &source,
         1,
         MeshStyle {
             ambient_occlusion: true,
             textured: true,
-            inner_leaves: if solid_leaves {
-                InnerLeaves::Hidden
-            } else {
-                InnerLeaves::Apart
-            },
             bevel: bevel_on(),
             tree_shapes,
         },

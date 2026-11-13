@@ -8,7 +8,6 @@ use crate::player::{cursor_grabbed, grab_cursor};
 use ochre_base::block::BlockType;
 use ochre_terrain::{
     raycast::{raycast, RayHit},
-    settings::TreeShapes,
     world::World,
 };
 
@@ -128,16 +127,14 @@ fn spawn_outline(
 
 fn show_outline(
     looked_at: Res<LookedAt>,
-    tree_shapes: Option<Res<TreeShapes>>,
     mut outline: Query<(&mut Transform, &mut Visibility), With<BlockOutline>>,
 ) {
     let Ok((mut transform, mut visibility)) = outline.single_mut() else {
         return;
     };
-    // a cube round a log that is drawn as a bowed prism would look wrong
-    let drawn_round = tree_shapes.is_some_and(|shapes| shapes.0);
     match looked_at.0 {
-        Some((_, BlockType::Log)) if drawn_round => {
+        // a cube round a log that is drawn as a bowed prism would look wrong
+        Some((_, BlockType::Log)) => {
             visibility.set_if_neq(Visibility::Hidden);
         }
         Some((hit, _)) => {

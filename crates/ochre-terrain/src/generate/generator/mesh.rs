@@ -43,7 +43,6 @@ pub(super) fn mesh_blocks(
     };
     let mut water = MeshBuffers::default();
     let mut spray = MeshBuffers::default();
-    let mut inner_leaves = MeshBuffers::default();
 
     // water's surface sits below a full block's height, see `WATER_TOP`
     // how far the sides of a sloped top block reach down into the block under, to meet a lower surface
@@ -310,7 +309,6 @@ pub(super) fn mesh_blocks(
         },
         &CUBE,
         &mut opaque,
-        &mut inner_leaves,
         style,
         if textured { cell_size as f32 } else { 1.0 },
         grass_tint,
@@ -393,7 +391,6 @@ pub(super) fn mesh_blocks(
         cutout: None,
         water: water_mesh,
         spray: (!spray.vertices.is_empty()).then(|| spray.build_mesh()),
-        inner_leaves: (!inner_leaves.vertices.is_empty()).then(|| inner_leaves.build_mesh()),
     }
 }
 
