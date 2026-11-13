@@ -62,9 +62,15 @@ pub(crate) struct InnerLeafFaces;
 #[derive(Component)]
 pub(crate) struct SolidTerrain;
 
+/// How far past its chunks a group's meshes can reach, in blocks: a shrub's planes (1.8 from their block's middle) and a tree's leaf cards (`trees_mesh::CARD_REACH`).
+pub(crate) const GROUP_OVERHANG: f32 = 2.0;
+
 pub(crate) fn group_aabb() -> Aabb {
     let width = (2 * CHUNK_SIZE) as f32;
-    Aabb::from_min_max(Vec3::ZERO, Vec3::splat(width))
+    Aabb::from_min_max(
+        Vec3::splat(-GROUP_OVERHANG),
+        Vec3::splat(width + GROUP_OVERHANG),
+    )
 }
 
 /// Starts merging the meshes of each group whose chunks have all settled, one way or the other.

@@ -554,7 +554,7 @@ fn patchiness(world: IVec3) -> f32 {
 
 // Between 0 and 1 for the block at `coord`, the same every time it's meshed, so what grows where
 // doesn't change when the chunk is meshed again.
-fn hash01(coord: IVec3, salt: u32) -> f32 {
+pub(super) fn hash01(coord: IVec3, salt: u32) -> f32 {
     let h = (coord.x as u32)
         .wrapping_mul(0x9E37_79B1)
         .wrapping_add((coord.z as u32).wrapping_mul(0x85EB_CA77))
@@ -564,7 +564,7 @@ fn hash01(coord: IVec3, salt: u32) -> f32 {
     (h ^ (h >> 13)) as f32 / u32::MAX as f32
 }
 
-fn between(range: (f32, f32), unit: f32) -> f32 {
+pub(super) fn between(range: (f32, f32), unit: f32) -> f32 {
     range.0 + (range.1 - range.0) * unit
 }
 

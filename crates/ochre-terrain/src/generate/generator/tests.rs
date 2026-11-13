@@ -4710,3 +4710,36 @@ fn logs_that_touch_only_at_a_corner_are_joined_by_prisms_meeting_between_them() 
     // the ring each log's reach ends in, halfway to the other, is eight corners from each
     assert!(meet >= 16, "{meet} corners where the two reaches meet");
 }
+
+fn leaf_vertices(mesh: &Mesh) -> usize {
+    let leaves = BlockType::Leaves.tile(ochre_base::block::Face::Side).atlas_cell();
+    let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+    else {
+        panic!("no colours");
+    };
+    colors.iter().filter(|c| c[3] == leaves).count()
+}
+
+#[test]
+fn a_surface_leaf_draws_a_card_and_a_leaf_with_no_open_side_draws_nothing() {
+    let mut chunk = ground_with_logs(&[]);
+    for x in 5..8 {
+        for y in 5..8 {
+            for z in 5..8 {
+                chunk.set_block_at(U16Vec3::new(x, y, z), BlockType::Leaves);
+            }
+        }
+    }
+    let cards = leaf_vertices(&tree_meshes(chunk, true).opaque);
+    // 26 leaves touch the air and each is one card of four corners; the middle one touches none
+    assert_eq!(26 * 4, cards);
+}
+
+#[test]
+fn leaves_are_drawn_as_cubes_with_tree_shapes_off() {
+    let mut chunk = ground_with_logs(&[]);
+    chunk.set_block_at(U16Vec3::new(6, 6, 6), BlockType::Leaves);
+    let cubes = tree_meshes(chunk, false);
+    // one cube of six faces, none of them cards
+    assert_eq!(24, leaf_vertices(&cubes.opaque) + cubes.inner_leaves.map_or(0, |m| m.count_vertices()));
+}

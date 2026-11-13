@@ -492,6 +492,8 @@ pub struct TreeLook {
     pub width: f32,
     /// How thick the trunk is drawn, as a radius in cells.
     pub radius: f32,
+    /// Whether it is a pine, whose crown is narrow tiers.
+    pub pine: bool,
     /// How far the top of the trunk leans from its foot, in cells.
     pub lean: Vec2,
 }
@@ -533,6 +535,7 @@ impl TreeTints {
                         height: t.trunk as f32 / cells,
                         width: t.width() as f32 / cells,
                         radius: t.trunk_radius() / cells,
+                        pine: t.kind == TreeKind::Pine,
                         lean: t.lean() / cells,
                     }
                 })

@@ -932,3 +932,7 @@ A floor cell with walls on opposite sides no longer ramps, so a one block wide t
 ## Tree trunks (2026-11-13, `feat/painterly-trees`)
 
 PR 1 of `docs/designs/trees.md`: tree logs drawn as prisms behind `tree_shapes`. `bench` on seed 1, default view, shows chunk vertices 1,440,365 and LOD 289,742 with `tree_shapes` off (as before, so the off path draws the same), and 1,450,911 chunk vertices with `BENCH_TREE_SHAPES=1` (+0.7%, LOD unchanged), mesh time 172.8 and 173.6 ms. That view holds few trees, so it says little of a forest. The three measurement views (taiga with pines, temperate broadleaf, jungle) are not chosen yet: seed 1's default view has none and a search of seed 1 found no tree density above 0.5. Shadow pass and frame time are not measured, since leaves are still cubes and PR 2's spike measures them.
+
+## Leaf cards (2026-11-13, `feat/painterly-trees`)
+
+PR 2 of `docs/designs/trees.md`: each surface leaf draws one double-sided card (density 1) and the leaves inside a crown draw nothing. `bench` on the forest meadow, `bench 2070026479` with `BENCH_AT=10832,-3952` (chunk vertices, mesh time best of 3): cubes 2,124,253 and 319.7 ms; trunks and cards 2,096,085 (-1.3%) and 273.7 ms. LOD is unchanged at 347,916. The gate is 1.10x, so density 1 passes with room and no thinning is needed. Not measured: shadow pass cost and frame time, which need the sandbox with `OCHRE_STATS` and a GPU (cards add alpha-cut overdraw and shadow casters), and a jungle view, the worst case.

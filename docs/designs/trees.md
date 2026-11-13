@@ -413,6 +413,14 @@ Differences from the plan above, found while building it:
 *   **`bench` defaults to cubes.** `BENCH_TREE_SHAPES=1` turns the prisms on, so the default counts stay comparable with the baseline.
 *   **Not yet done in PR 1:** the three measurement views, and a look at the result in the game (stills at 4, 30 and 100 blocks).
 
+### PR 2 (`feat: painted foliage cards for tree crowns`)
+
+*   **`TreeFaces` reads leaves as air too**, so the greedy pass draws no leaf cubes and, with `InnerLeaves` unused, no faces between leaves. The inner-leaves code stays until PR 5.
+*   **Cards in `opaque`**, one per surface leaf (a leaf with a face open to air or a plant), with starting values: 1.6 to 2.2 blocks (pines 1.0 to 1.5), standing 0.25 out, tipped 0.35 up, facing straying by 0.4, density 1. `card()` is a pure function, tested for its reach (at most 1.82 blocks from its leaf's middle).
+*   **Group bounds** are widened by `GROUP_OVERHANG` (2.0), the larger of a shrub's reach (1.8) and a card's.
+*   **Forest `bench`**: 2,124,253 chunk vertices with cubes against 2,096,085 with prisms and cards, and 319.7 against 273.7 ms, so the 1.10x vertex gate holds with room. Shadow pass cost and frame time are not measured yet.
+*   **Leaves are untargetable and unbreakable** (`BlockType::is_targetable`), with `tree_shapes` off too.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

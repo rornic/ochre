@@ -489,31 +489,36 @@ impl<S: BlockSource> BlockSource for GridView<'_, S> {
     }
 }
 
-/// `source` with tree logs read as air, so the mesher neither draws them as cubes nor lets them hide
-/// the faces of the ground round them, while `logs` keeps where they are for `trees_mesh`.
+/// `source` with tree logs and leaves read as air, so the mesher neither draws them as cubes nor lets them hide
+/// the faces of the ground round them, while `logs` and `leaves` keep where they are for `trees_mesh`.
 pub(super) struct TreeFaces<'a, S: BlockSource> {
     source: &'a S,
     hide: bool,
     pub(super) logs: Vec<IVec3>,
+    pub(super) leaves: Vec<IVec3>,
     rest: Vec<(IVec3, BlockType)>,
 }
 
 impl<'a, S: BlockSource> TreeFaces<'a, S> {
     pub(super) fn new(source: &'a S, hide: bool) -> Self {
         let mut logs = Vec::new();
+        let mut leaves = Vec::new();
         let mut rest = source.non_air();
         if hide {
             rest.retain(|&(coord, block)| {
-                if block == BlockType::Log {
-                    logs.push(coord);
+                match block {
+                    BlockType::Log => logs.push(coord),
+                    BlockType::Leaves => leaves.push(coord),
+                    _ => {}
                 }
-                block != BlockType::Log
+                !matches!(block, BlockType::Log | BlockType::Leaves)
             });
         }
         Self {
             source,
             hide,
             logs,
+            leaves,
             rest,
         }
     }
@@ -523,19 +528,25 @@ impl<S: BlockSource> TreeFaces<'_, S> {
     pub(super) fn is_log(&self, coord: IVec3) -> bool {
         self.source.block(coord) == BlockType::Log
     }
+
+    /// Whether a leaf beside `coord` could be seen from it: air or a plant there.
+    pub(super) fn is_open(&self, coord: IVec3) -> bool {
+        let block = self.source.block(coord);
+        block == BlockType::Air || block.is_flora()
+    }
 }
 
 impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
     fn block(&self, coord: IVec3) -> BlockType {
         match self.source.block(coord) {
-            BlockType::Log if self.hide => BlockType::Air,
+            BlockType::Log | BlockType::Leaves if self.hide => BlockType::Air,
             block => block,
         }
     }
 
     fn terrain(&self, coord: IVec3) -> BlockType {
         match self.source.terrain(coord) {
-            BlockType::Log if self.hide => BlockType::Air,
+            BlockType::Log | BlockType::Leaves if self.hide => BlockType::Air,
             block => block,
         }
     }
