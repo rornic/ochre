@@ -5,6 +5,7 @@ const WATER_CALM_REACH: i32 = 5;
 use crate::chunk::{neighbor_26_index, ChunkData, CELLS, CHUNK_SIZE};
 use crate::flow::surface;
 use crate::generate::region_store::RegionStore;
+use crate::generate::trees::TreeLook;
 use bevy::math::IVec3;
 use bevy::math::Vec3;
 use bevy::platform::collections::HashMap;
@@ -89,6 +90,11 @@ pub(super) trait BlockSource {
     /// The tint of the tree whose leaves are at `coord`, see `Tree::tint`.
     fn leaf_tint(&self, _coord: IVec3) -> Vec3 {
         Vec3::ONE
+    }
+
+    /// The tree whose trunk is nearest `coord`, see `TreeLook`.
+    fn tree_look(&self, _coord: IVec3) -> Option<TreeLook> {
+        None
     }
 
     /// Trunks and crowns too small for the cells they stand in, drawn as boxes of their own.
@@ -382,6 +388,10 @@ impl BlockSource for ChunkNeighbourhood<'_> {
         self.chunk.trees.at(coord)
     }
 
+    fn tree_look(&self, coord: IVec3) -> Option<TreeLook> {
+        self.chunk.trees.look_at(coord)
+    }
+
     fn non_air(&self) -> Vec<(IVec3, BlockType)> {
         self.chunk
             .iter_non_air()
@@ -464,6 +474,130 @@ impl<S: BlockSource> BlockSource for GridView<'_, S> {
 
     fn leaf_tint(&self, coord: IVec3) -> Vec3 {
         self.source.leaf_tint(coord)
+    }
+
+    fn tree_look(&self, coord: IVec3) -> Option<TreeLook> {
+        self.source.tree_look(coord)
+    }
+
+    fn tree_boxes(&self) -> &[TreeBox] {
+        self.source.tree_boxes()
+    }
+
+    fn has_skirts(&self) -> bool {
+        self.source.has_skirts()
+    }
+}
+
+/// `source` with tree logs read as air, so the mesher neither draws them as cubes nor lets them hide
+/// the faces of the ground round them, while `logs` keeps where they are for `trees_mesh`.
+pub(super) struct TreeFaces<'a, S: BlockSource> {
+    source: &'a S,
+    hide: bool,
+    pub(super) logs: Vec<IVec3>,
+    rest: Vec<(IVec3, BlockType)>,
+}
+
+impl<'a, S: BlockSource> TreeFaces<'a, S> {
+    pub(super) fn new(source: &'a S, hide: bool) -> Self {
+        let mut logs = Vec::new();
+        let mut rest = source.non_air();
+        if hide {
+            rest.retain(|&(coord, block)| {
+                if block == BlockType::Log {
+                    logs.push(coord);
+                }
+                block != BlockType::Log
+            });
+        }
+        Self {
+            source,
+            hide,
+            logs,
+            rest,
+        }
+    }
+}
+
+impl<S: BlockSource> TreeFaces<'_, S> {
+    pub(super) fn is_log(&self, coord: IVec3) -> bool {
+        self.source.block(coord) == BlockType::Log
+    }
+}
+
+impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
+    fn block(&self, coord: IVec3) -> BlockType {
+        match self.source.block(coord) {
+            BlockType::Log if self.hide => BlockType::Air,
+            block => block,
+        }
+    }
+
+    fn terrain(&self, coord: IVec3) -> BlockType {
+        match self.source.terrain(coord) {
+            BlockType::Log if self.hide => BlockType::Air,
+            block => block,
+        }
+    }
+
+    fn non_air(&self) -> Vec<(IVec3, BlockType)> {
+        self.rest.clone()
+    }
+
+    fn surface_top(&self, coord: IVec3) -> Option<f32> {
+        self.source.surface_top(coord)
+    }
+
+    fn water_surface_top(&self, coord: IVec3) -> Option<f32> {
+        self.source.water_surface_top(coord)
+    }
+
+    fn water_level(&self, x: i32, z: i32) -> Option<f32> {
+        self.source.water_level(x, z)
+    }
+
+    fn water_block_level(&self, x: i32, z: i32) -> Option<f32> {
+        self.source.water_block_level(x, z)
+    }
+
+    fn water_hush(&self, x: i32, z: i32) -> bool {
+        self.source.water_hush(x, z)
+    }
+
+    fn water_calm(&self, x: i32, z: i32) -> f32 {
+        self.source.water_calm(x, z)
+    }
+
+    fn water_sheet(&self, x: i32, z: i32) -> bool {
+        self.source.water_sheet(x, z)
+    }
+
+    fn flowing(&self, x: i32, z: i32) -> bool {
+        self.source.flowing(x, z)
+    }
+
+    fn spring_pool(&self, x: i32, z: i32) -> bool {
+        self.source.spring_pool(x, z)
+    }
+
+    fn has_surface_tops(&self) -> bool {
+        self.source.has_surface_tops()
+    }
+
+    fn canopy_shade(&self, position: Vec3) -> f32 {
+        self.source.canopy_shade(position)
+    }
+
+    fn forest_shade(&self, position: Vec3) -> f32 {
+        self.source.forest_shade(position)
+    }
+
+    fn leaf_tint(&self, coord: IVec3) -> Vec3 {
+        self.source.leaf_tint(coord)
+    }
+
+    fn tree_look(&self, coord: IVec3) -> Option<TreeLook> {
+        self.source.tree_look(coord)
     }
 
     fn tree_boxes(&self) -> &[TreeBox] {

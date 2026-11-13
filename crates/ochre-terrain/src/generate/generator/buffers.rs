@@ -464,6 +464,8 @@ pub(super) struct MeshStyle {
     pub(super) inner_leaves: InnerLeaves,
     // whether faces are cut back along convex edges and chamfered, see `bevelled_position`
     pub(super) bevel: bool,
+    // trees drawn as low-poly shapes, see `trees_mesh`
+    pub(super) tree_shapes: bool,
 }
 
 // The faces between two leaves, which only show through the leaves' holes. In a forest of big

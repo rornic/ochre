@@ -6,7 +6,7 @@ Turns a `TerrainSource` (reached through `RegionStore`) into blocks and meshes. 
 ## Interface
 Re-exported through `mod.rs`:
 - `generate_chunk(regions, coord) -> ChunkData`, `generate_chunk_with(.., ChunkPasses)` (`ChunkPasses { cliffs, trees, flora }`, `ChunkPasses::ALL`) (`chunk.rs`): the passes are switchable so tools can tell which one made a block.
-- `generate_chunk_mesh(chunk, adjacent, coord, regions, solid_leaves) -> ChunkMeshes` (`chunk.rs`).
+- `generate_chunk_mesh(chunk, adjacent, coord, regions, solid_leaves, tree_shapes) -> ChunkMeshes` (`chunk.rs`). With `tree_shapes`, `mesh_blocks` wraps its source in `source.rs:TreeFaces`, which reads tree logs as air (so the greedy pass, seams and bevels neither draw them nor let them hide the ground round them), and `trees_mesh.rs:mesh_trees` draws each log as an eight-sided prism: a tree's trunk bowed along `TreeLook::lean`, any other log straight along its neighbours. Prisms are lit from the open air beside them (a log's own cell holds no light) and carry unfolded uv.
 - `generate_lod_mesh(regions, key) -> Option<ChunkMeshes>` (`lod.rs`): `None` when nothing is drawn.
 - `ChunkMeshes { opaque, cutout, water, spray, inner_leaves }` and `has_geometry` (`buffers.rs`); `INNER_LEAVES_REACH` (64 blocks) and `INNER_LEAVES_BAND` (16) (`buffers.rs`).
 - `surface_block` (the top block as generation lays it, for map tools) and `FREEZE_TEMPERATURE` (`terrain.rs`).

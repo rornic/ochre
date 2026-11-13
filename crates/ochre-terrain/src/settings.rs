@@ -3,6 +3,10 @@ use serde::Deserialize;
 use crate::chunk::CHUNK_SIZE;
 use crate::lod::LodLayout;
 
+/// Whether trees are drawn as low-poly shapes, as `RendererSettings::tree_shapes` was given.
+#[derive(bevy::prelude::Resource)]
+pub struct TreeShapes(pub bool);
+
 #[derive(Deserialize, Clone, Copy)]
 #[serde(default)]
 pub struct RendererSettings {
@@ -39,6 +43,8 @@ pub struct RendererSettings {
     pub material_anisotropy: u16,
     /// Frost on cold ground that has no snow yet, see `crate::frost`.
     pub frost: bool,
+    /// Trees drawn as low-poly shapes, not cubes, see `crate::generate`'s `trees_mesh`.
+    pub tree_shapes: bool,
 }
 
 /// Maximum cloud target width; smaller windows still march at half display resolution.
@@ -129,6 +135,7 @@ impl Default for RendererSettings {
             material_period: 8,
             material_anisotropy: 8,
             frost: true,
+            tree_shapes: true,
         }
     }
 }

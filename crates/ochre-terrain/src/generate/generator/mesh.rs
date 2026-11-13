@@ -7,8 +7,9 @@ use super::shading::{
     corner_signs, vertex_shore_distance, vertex_shore_factor, vertex_water_depth, water_corner,
     WaterCorner, FACE_NORMAL_OFFSET, WATER_BANK_MARGIN, WATER_BED_MARGIN, WATER_DROP,
 };
-use super::source::{grid_index, BlockSource, BoxFaces, GridView};
+use super::source::{grid_index, BlockSource, BoxFaces, GridView, TreeFaces};
 use super::terrain::is_solid;
+use super::trees_mesh::mesh_trees;
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
@@ -26,13 +27,16 @@ use std::ops::Deref;
 
 // `cell_size` is how many blocks wide each cell of `source` is.
 pub(super) fn mesh_blocks(
-    source: &impl BlockSource,
+    real_source: &impl BlockSource,
     cell_size: i64,
     style: MeshStyle,
     grass_tint: &GrassTint,
     light: &impl Deref<Target = SkyLight>,
 ) -> ChunkMeshes {
     let MeshStyle { textured, .. } = style;
+    // tree logs are drawn by `mesh_trees`, so the rest of the mesher sees air where they are
+    let faces = TreeFaces::new(real_source, style.tree_shapes && cell_size == 1);
+    let source = &faces;
     let mut opaque = MeshBuffers {
         untextured: !textured,
         ..Default::default()
@@ -319,6 +323,9 @@ pub(super) fn mesh_blocks(
     // flora only grows at full detail, so coarser cells have none to look for
     if cell_size == 1 {
         mesh_flora(&non_air, &mut opaque, grass_tint, source, light);
+        if style.tree_shapes {
+            mesh_trees(&faces, &mut opaque, grass_tint, light);
+        }
         // with the bevels, which they cover the edges of
         if style.bevel {
             mesh_grass_fringe(&non_air, &mut opaque, grass_tint, source, light);

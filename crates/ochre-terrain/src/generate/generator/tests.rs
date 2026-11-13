@@ -32,6 +32,7 @@ fn style(ambient_occlusion: bool, textured: bool) -> MeshStyle {
         textured,
         inner_leaves: InnerLeaves::Hidden,
         bevel: false,
+        tree_shapes: false,
     }
 }
 
@@ -684,6 +685,7 @@ fn mesh_chunk_bevelled(chunk: ChunkData) -> ChunkMeshes {
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
         false,
+        false,
     )
 }
 
@@ -1331,6 +1333,7 @@ fn test_leaves_on_the_chunks_edge_keep_their_faces_with_the_rest() {
         ChunkCoordinate(I64Vec3::new(0, 40, 0)),
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
         false,
+        false,
     );
     assert!(meshes.inner_leaves.is_none());
     assert!(vertices_in_plane(&meshes.opaque, 15.5) > 0);
@@ -1345,6 +1348,7 @@ fn test_full_detail_solid_leaves_hide_the_leaves_behind_them() {
         coord,
         &RegionStore::new(ochre_world::worldmap::test_terrain(3)),
         true,
+        false,
     );
     assert!(mesh.inner_leaves.is_none());
     let mesh = mesh.opaque;
@@ -1529,6 +1533,7 @@ fn test_buried_chunk_has_no_geometry() {
         vec![Some(stone); 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
+        false,
         false,
     );
     assert!(!meshes.has_geometry());
@@ -3102,6 +3107,7 @@ fn test_flowing_water_stands_over_its_floor_and_falls_away_from_its_source() {
         ChunkCoordinate(I64Vec3::new(0, 30, 0)),
         &test_regions(),
         false,
+        false,
     );
     let water = meshes.water.expect("the channel's water is drawn");
     let Some(VertexAttributeValues::Float32x3(positions)) =
@@ -3175,6 +3181,7 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
         vec![None; 26],
         ChunkCoordinate(I64Vec3::ZERO),
         &test_regions(),
+        false,
         false,
     );
     let water = meshes.water.expect("the water is drawn");
@@ -3294,6 +3301,7 @@ fn test_a_steep_rivers_water_is_drawn_over_its_bed() {
             world.adjacent_chunk_data(coord),
             coord,
             &regions,
+            false,
             false,
         );
         let Some(water) = meshes.water else {
@@ -3778,7 +3786,7 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     let regions = test_regions();
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
     let mesh = |chunk: ChunkData| {
-        generate_chunk_mesh(Arc::new(chunk), vec![None; 26], coord, &regions, false).opaque
+        generate_chunk_mesh(Arc::new(chunk), vec![None; 26], coord, &regions, false, false).opaque
     };
     let mut grids = Vec::new();
     for n in 0..3usize.pow(9) {
@@ -4025,7 +4033,7 @@ fn test_chunk_seams_leave_no_hole() {
             }
             let coord = ChunkCoordinate(I64Vec3::new(cx as i64, 40 + cy as i64, cz as i64));
             let mesh =
-                generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+                generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false, false).opaque;
             let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
                 (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
             else {
@@ -4075,7 +4083,7 @@ fn seam_mesh(blocks: &[(u16, u16, u16)], block: BlockType) -> Mesh {
         adjacent[neighbor_26_index(0, 0, if n == 0 { 1 } else { -1 })] =
             Some(chunks[1 - n].clone());
         let coord = ChunkCoordinate(I64Vec3::new(0, 40, n as i64));
-        let mesh = generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false).opaque;
+        let mesh = generate_chunk_mesh(chunks[n].clone(), adjacent, coord, &regions, false, false).opaque;
         let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
         else {
@@ -4561,4 +4569,105 @@ fn test_a_trench_a_block_wide_has_a_level_floor() {
     }
     assert!(floor >= 4, "only {floor} floor vertices found");
     assert_eq!(Vec::<String>::new(), open_edges(&mesh));
+}
+
+fn tree_meshes(chunk: ChunkData, tree_shapes: bool) -> ChunkMeshes {
+    generate_chunk_mesh(
+        Arc::new(chunk),
+        vec![None; 26],
+        ChunkCoordinate(I64Vec3::ZERO),
+        &RegionStore::new(ochre_world::worldmap::test_terrain(1)),
+        false,
+        tree_shapes,
+    )
+}
+
+// Grass 4 blocks up over a 12 by 12 square, with a step of grass up beside where the logs go, and `logs` on it.
+fn ground_with_logs(logs: &[U16Vec3]) -> ChunkData {
+    let mut chunk = ChunkData::default();
+    for x in 0..12 {
+        for z in 0..12 {
+            chunk.set_block_at(U16Vec3::new(x, 3, z), BlockType::Grass);
+        }
+    }
+    chunk.set_block_at(U16Vec3::new(7, 4, 8), BlockType::Grass);
+    for &log in logs {
+        chunk.set_block_at(log, BlockType::Log);
+    }
+    chunk
+}
+
+fn mesh_positions(mesh: &Mesh) -> Vec<Vec3> {
+    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        .and_then(VertexAttributeValues::as_float3)
+        .unwrap()
+        .iter()
+        .map(|&p| Vec3::from(p))
+        .collect()
+}
+
+// The area of the mesh's triangles lying flat at height `y`, which is the ground's top faces there.
+fn flat_area_at(mesh: &Mesh, y: f32) -> f32 {
+    let at = mesh_positions(mesh);
+    let indices: Vec<usize> = match mesh.indices().unwrap() {
+        Indices::U16(i) => i.iter().map(|&i| i as usize).collect(),
+        Indices::U32(i) => i.iter().map(|&i| i as usize).collect(),
+    };
+    indices
+        .chunks(3)
+        .map(|t| [at[t[0]], at[t[1]], at[t[2]]])
+        .filter(|t| t.iter().all(|p| p.y == y))
+        .map(|[a, b, c]| 0.5 * (b - a).cross(c - a).length())
+        .sum()
+}
+
+#[test]
+fn a_tree_log_hides_no_face_of_the_ground_under_or_beside_it() {
+    let logs = [U16Vec3::new(8, 4, 8), U16Vec3::new(8, 5, 8)];
+    let drawn = tree_meshes(ground_with_logs(&logs), true);
+    // the same ground with no logs at all, which hides nothing
+    let bare = tree_meshes(ground_with_logs(&[]), false);
+    let (drawn, bare) = (
+        flat_area_at(&drawn.opaque, 3.5),
+        flat_area_at(&bare.opaque, 3.5),
+    );
+    assert!(bare > 100.0, "no ground in the mesh: {bare}");
+    assert!(
+        (drawn - bare).abs() < 1e-3,
+        "ground tops {drawn}, bare {bare}"
+    );
+}
+
+#[test]
+fn trunk_prisms_are_lit_by_the_air_beside_them() {
+    let logs = [U16Vec3::new(8, 4, 8), U16Vec3::new(8, 5, 8)];
+    let meshes = tree_meshes(ground_with_logs(&logs), true);
+    let Some(VertexAttributeValues::Float32x2(lights)) =
+        meshes.opaque.attribute(Mesh::ATTRIBUTE_UV_1)
+    else {
+        panic!("no light");
+    };
+    let at = mesh_positions(&meshes.opaque);
+    let ring: Vec<f32> = at
+        .iter()
+        .zip(lights)
+        .filter(|(p, _)| {
+            (p.x - 8.0).abs() < 0.7 && (p.z - 8.0).abs() < 0.7 && p.y > 4.4 && p.y < 4.6
+        })
+        .map(|(_, light)| light[0])
+        .collect();
+    assert!(
+        !ring.is_empty(),
+        "no prism vertices at the joint of the two logs"
+    );
+    assert!(ring.iter().all(|&light| light > 0.6), "trunk lit {ring:?}");
+}
+
+#[test]
+fn tree_shapes_off_draws_logs_as_cubes() {
+    let logs = [U16Vec3::new(8, 4, 8)];
+    let cubes = tree_meshes(ground_with_logs(&logs), false);
+    let prism = tree_meshes(ground_with_logs(&logs), true);
+    // a cube is six faces of four, the prism eight sides and two ends
+    assert_ne!(cubes.opaque.count_vertices(), prism.opaque.count_vertices());
 }

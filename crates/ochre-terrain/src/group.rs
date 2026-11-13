@@ -385,6 +385,7 @@ mod tests {
             ChunkCoordinate(I64Vec3::ZERO),
             &RegionStore::new(ochre_world::worldmap::test_terrain(1)),
             false,
+            false,
         )
     }
 
@@ -447,6 +448,7 @@ mod tests {
             vec![None; 26],
             ChunkCoordinate(I64Vec3::ZERO),
             &RegionStore::new(ochre_world::worldmap::test_terrain(1)),
+            false,
             false,
         );
         let inner = meshes.inner_leaves.as_ref().unwrap().count_vertices();

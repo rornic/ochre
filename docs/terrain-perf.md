@@ -928,3 +928,7 @@ A floor cell with walls on opposite sides no longer ramps, so a one block wide t
 ## Frost skin (2026-11-11)
 
 `frost.wesl` runs per fragment on ground in cold country, with no change to vertices, so `bench` chunk vertices are unchanged (1,440,365, LOD 289,742). Timed in the sandbox with `OCHRE_STATS` on seed 4 at (12148, 109, -16955), looking 16 degrees down over tundra where frost covers most of the screen (the worst case), 12 one-second samples each, RTX 2060, 1280x720: frost on 87.6 fps (11.4 ms), `no_frost` 92.3 fps (10.8 ms), so about 0.6 ms, 5%. In warm country the shader leaves after one comparison of the camera's frost strength. Not yet timed: the fps gate in `docs/materials.md`, and a glacier or temperate mountain route.
+
+## Tree trunks (2026-11-13, `feat/painterly-trees`)
+
+PR 1 of `docs/designs/trees.md`: tree logs drawn as prisms behind `tree_shapes`. `bench` on seed 1, default view, shows chunk vertices 1,440,365 and LOD 289,742 with `tree_shapes` off (as before, so the off path draws the same), and 1,450,911 chunk vertices with `BENCH_TREE_SHAPES=1` (+0.7%, LOD unchanged), mesh time 172.8 and 173.6 ms. That view holds few trees, so it says little of a forest. The three measurement views (taiga with pines, temperate broadleaf, jungle) are not chosen yet: seed 1's default view has none and a search of seed 1 found no tree density above 0.5. Shadow pass and frame time are not measured, since leaves are still cubes and PR 2's spike measures them.

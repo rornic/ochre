@@ -156,10 +156,12 @@ pub fn insert_terrain_resources(
         materials.water.clone(),
         materials.solid_water,
     ));
+    commands.insert_resource(settings::TreeShapes(renderer.tree_shapes));
     commands.insert_resource(ChunkLoader::new(
         layout,
         world_bounds,
         debug.solid_leaves,
+        renderer.tree_shapes,
         materials.chunk,
         materials.water,
         materials.spray,

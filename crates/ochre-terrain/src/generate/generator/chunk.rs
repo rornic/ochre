@@ -341,6 +341,7 @@ pub fn generate_chunk_mesh(
     coord: ChunkCoordinate,
     regions: &RegionStore,
     solid_leaves: bool,
+    tree_shapes: bool,
 ) -> ChunkMeshes {
     let noise = regions.terrain();
     let source = ChunkNeighbourhood::new(&chunk, &adjacent_chunks)
@@ -361,6 +362,7 @@ pub fn generate_chunk_mesh(
                 InnerLeaves::Apart
             },
             bevel: bevel_on(),
+            tree_shapes,
         },
         &tint,
         &light,

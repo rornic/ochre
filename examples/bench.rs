@@ -108,6 +108,8 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
         .copied()
         .filter(|c| c.neighbors_26().iter().all(|n| data.contains_key(n)))
         .collect();
+    // off by default, so the counts stay comparable with the cube baseline
+    let tree_shapes = std::env::var("BENCH_TREE_SHAPES").is_ok_and(|v| v == "1");
     let mut best = Duration::MAX;
     let mut vertices = 0;
     for _ in 0..3 {
@@ -119,7 +121,8 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
                 .iter()
                 .map(|n| data.get(n).cloned())
                 .collect();
-            let meshes = generate_chunk_mesh(data[&c].clone(), neighbours, c, regions, false);
+            let meshes =
+                generate_chunk_mesh(data[&c].clone(), neighbours, c, regions, false, tree_shapes);
             vertices += meshes.opaque.count_vertices();
         }
         best = best.min(start.elapsed());

@@ -198,6 +198,14 @@ impl Tree {
         (1.0 + TINT_BRIGHTNESS * unit(0)) * (Vec3::ONE + warm)
     }
 
+    /// How far the top of the trunk leans from its foot, in blocks: a direction and an amount from the seed.
+    pub fn lean(&self) -> Vec2 {
+        let h = hash(self.seed, 41, 67);
+        let unit = |shift: u32| ((h >> shift) & 0xffff) as f32 / 65535.0;
+        let (sin, cos) = libm::sincosf(unit(0) * std::f32::consts::TAU);
+        Vec2::new(cos, sin) * MAX_LEAN * (0.4 + 0.6 * unit(16))
+    }
+
     /// Whether the crown is over the point `x`, `z` across the world, in blocks, seen from above.
     pub fn shades(&self, x: f64, z: f64) -> bool {
         // from the trunk's base, as `in_leaves` takes it, where a block's index is its middle
@@ -467,42 +475,87 @@ impl Tree {
     }
 }
 
-/// Which tree's tint each leaf takes, for leaves placed block by block, where which tree put
+/// How far a trunk's top may lean from its foot, in blocks, which the drawn trunk keeps within.
+pub const MAX_LEAN: f32 = 0.5;
+
+/// What the mesher knows of the tree a voxel belongs to, found by which trunk is nearest across.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeLook {
+    axis: Vec2,
+    pub tint: Vec3,
+    /// The trunk's lowest block, in cells from the origin.
+    pub base: Vec3,
+    /// Logs up the trunk, in cells.
+    pub height: f32,
+    /// How many cells across the trunk is.
+    pub width: f32,
+    /// How far the top of the trunk leans from its foot, in cells.
+    pub lean: Vec2,
+}
+
+impl TreeLook {
+    /// Whether the log at `coord` is in the trunk's own column, not a branch.
+    pub fn in_trunk(&self, coord: IVec3) -> bool {
+        let at = coord.as_vec3() - self.base;
+        at.x > -0.5
+            && at.z > -0.5
+            && at.y > -0.5
+            && at.x < self.width - 0.5
+            && at.z < self.width - 0.5
+            && at.y < self.height - 0.5
+    }
+}
+
+/// Which tree each block belongs to, for blocks placed one at a time, where which tree put
 /// them is lost: the one whose trunk is nearest across, which is the one they belong to
 /// but where crowns meet.
 #[derive(Default, Debug, Clone)]
-pub struct TreeTints(Vec<(Vec2, Vec3)>);
+pub struct TreeTints(Vec<TreeLook>);
 
 impl TreeTints {
     /// Every tree in `trees`, placed by its trunk's axis less `origin`, in cells `cell` blocks
     /// wide whose centres are whole numbers.
     pub fn new<'a>(trees: impl IntoIterator<Item = &'a Tree>, origin: I64Vec3, cell: i64) -> Self {
+        let cells = cell as f32;
         Self(
             trees
                 .into_iter()
                 .map(|t| {
                     let axis = (t.base - origin).as_dvec3() + t.axis();
-                    (
-                        Vec2::new(axis.x as f32, axis.z as f32) / cell as f32
-                            - (cell - 1) as f32 / (2.0 * cell as f32),
-                        t.tint(),
-                    )
+                    TreeLook {
+                        axis: Vec2::new(axis.x as f32, axis.z as f32) / cells
+                            - (cell - 1) as f32 / (2.0 * cells),
+                        tint: t.tint(),
+                        base: (t.base - origin).as_vec3() / cells,
+                        height: t.trunk as f32 / cells,
+                        width: t.width() as f32 / cells,
+                        lean: t.lean() / cells,
+                    }
                 })
                 .collect(),
         )
     }
 
-    /// The tint of the leaf at `coord`, in cells.
-    pub fn at(&self, coord: IVec3) -> Vec3 {
+    /// The tree the block at `coord`, in cells, belongs to.
+    pub fn look_at(&self, coord: IVec3) -> Option<TreeLook> {
         let p = Vec2::new(coord.x as f32, coord.z as f32);
         self.0
             .iter()
-            .min_by(|a, b| a.0.distance_squared(p).total_cmp(&b.0.distance_squared(p)))
-            .map_or(Vec3::ONE, |&(_, tint)| tint)
+            .min_by(|a, b| {
+                a.axis
+                    .distance_squared(p)
+                    .total_cmp(&b.axis.distance_squared(p))
+            })
+            .copied()
+    }
+
+    /// The tint of the leaf at `coord`, in cells.
+    pub fn at(&self, coord: IVec3) -> Vec3 {
+        self.look_at(coord).map_or(Vec3::ONE, |look| look.tint)
     }
 
     pub fn heap_size(&self) -> usize {
-        self.0.capacity() * size_of::<(Vec2, Vec3)>()
+        self.0.capacity() * size_of::<TreeLook>()
     }
 }
 
@@ -1044,6 +1097,71 @@ mod tests {
                 reach as f64 <= t.spread * 1.35 + size as f64,
                 "reach {reach} at {size}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod look_tests {
+    use super::*;
+
+    fn thick_tree(seed: u64) -> Tree {
+        Tree::new(
+            TreeKind::Broadleaf,
+            I64Vec3::new(20, 5, 20),
+            14,
+            4.0,
+            0.7,
+            seed,
+        )
+    }
+
+    #[test]
+    fn a_trunks_lean_is_within_the_cap_and_not_always_none() {
+        let leans: Vec<f32> = (0..200)
+            .map(|seed| thick_tree(seed).lean().length())
+            .collect();
+        assert!(leans.iter().all(|&lean| lean <= MAX_LEAN + 1e-4));
+        assert!(leans.iter().any(|&lean| lean > 0.1));
+    }
+
+    #[test]
+    fn only_the_logs_of_the_trunk_column_are_in_the_trunk() {
+        for (trunk, seed) in [(14, 3), (8, 9)] {
+            let tree = Tree::new(
+                TreeKind::Broadleaf,
+                I64Vec3::new(20, 5, 20),
+                trunk,
+                4.0,
+                0.7,
+                seed,
+            );
+            let tints = TreeTints::new([&tree], I64Vec3::ZERO, 1);
+            let mut in_trunk = 0;
+            let mut branches = 0;
+            tree.plant(
+                I64Vec3::ZERO,
+                1,
+                (IVec3::ZERO, IVec3::splat(48)),
+                |coord, block| {
+                    if block != BlockType::Log {
+                        return;
+                    }
+                    let look = tints.look_at(coord).unwrap();
+                    let width = tree.width() as i32;
+                    let column = (20..20 + width).contains(&coord.x)
+                        && (20..20 + width).contains(&coord.z)
+                        && (5..5 + trunk as i32).contains(&coord.y);
+                    assert_eq!(column, look.in_trunk(coord), "{coord}");
+                    if column {
+                        in_trunk += 1;
+                    } else {
+                        branches += 1;
+                    }
+                },
+            );
+            assert_eq!(trunk as i32 * (tree.width() as i32).pow(2), in_trunk);
+            let _ = branches;
         }
     }
 }

@@ -163,7 +163,7 @@ mod tests {
                             .map(|n| data.get(n).cloned())
                             .collect();
                         let meshes =
-                            generate_chunk_mesh(data[&c].clone(), neighbours, c, &regions, false);
+                            generate_chunk_mesh(data[&c].clone(), neighbours, c, &regions, false, false);
                         parts.push((Vec3::new(dx as f32, dy as f32, dz as f32) * 16.0, meshes));
                     }
                 }

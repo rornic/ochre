@@ -513,6 +513,7 @@ pub(super) fn mesh_opaque_greedy(
         textured,
         inner_leaves,
         bevel,
+        ..
     } = style;
     let size = CHUNK_SIZE as i32;
     let n = size as usize;

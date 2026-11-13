@@ -84,6 +84,7 @@ pub(crate) fn mesh_group(
     chunks: Vec<(ChunkCoordinate, ChunkInputs)>,
     regions: &RegionStore,
     solid_leaves: bool,
+    tree_shapes: bool,
 ) -> RemeshedGroup {
     let origin = key.min_chunk();
     let mut parts = Vec::new();
@@ -91,7 +92,7 @@ pub(crate) fn mesh_group(
     for (coord, inputs) in chunks {
         let meshes = inputs
             .map(|(data, adjacent)| {
-                generate_chunk_mesh(data, adjacent, coord, regions, solid_leaves)
+                generate_chunk_mesh(data, adjacent, coord, regions, solid_leaves, tree_shapes)
             })
             .filter(ChunkMeshes::has_geometry);
         drawn.push((coord, meshes.is_some()));
@@ -186,10 +187,11 @@ pub(crate) fn remesh_edits(
         loader.remesh.remove(&key);
         let regions = world.region_store.clone();
         let solid_leaves = loader.solid_leaves;
+        let tree_shapes = loader.tree_shapes;
         // one meshing it already from before this change is dropped, and with it its task
         let remesh = RemeshGroup {
             task: task_pool.spawn(async move {
-                let mut remeshed = mesh_group(key, chunks, &regions, solid_leaves);
+                let mut remeshed = mesh_group(key, chunks, &regions, solid_leaves, tree_shapes);
                 remeshed.meshes = pack_group(remeshed.meshes);
                 remeshed
             }),
@@ -308,6 +310,7 @@ mod tests {
             world.adjacent_chunk_data(chunk),
             chunk,
             &world.region_store,
+            false,
             false,
         )
     }
@@ -451,7 +454,7 @@ mod tests {
         };
         let regions = world.region_store.clone();
         let vertices = |world: &World| {
-            mesh_group(key, inputs(world), &regions, false)
+            mesh_group(key, inputs(world), &regions, false, false)
                 .meshes
                 .opaque
                 .count_vertices()
@@ -463,7 +466,7 @@ mod tests {
         );
         // the floor's top is split around the hole, and the hole has walls
         assert!(vertices(&world) > whole);
-        let remeshed = mesh_group(key, inputs(&world), &regions, false);
+        let remeshed = mesh_group(key, inputs(&world), &regions, false, false);
         assert_eq!(
             vec![true, true, true, true],
             remeshed
@@ -496,6 +499,7 @@ mod tests {
         let mut loader = ChunkLoader::new(
             LodLayout::new(32, 128, 2),
             ochre_base::WorldBounds::default(),
+            false,
             false,
             Handle::default(),
             Handle::default(),
@@ -589,6 +593,7 @@ mod tests {
             .insert_resource(ChunkLoader::new(
                 LodLayout::new(32, 128, 2),
                 ochre_base::WorldBounds::default(),
+                false,
                 false,
                 Handle::default(),
                 Handle::default(),
