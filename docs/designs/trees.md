@@ -434,6 +434,13 @@ Differences from the plan above, found while building it:
 *   **Leaf lighting (A and B of the lighting options).** Leaves read flat because shaded leaves are lit to at least 55% of lit ones (`LEAF_SHADOW_FLOOR`) with a 35% wrap, each card's normal was local so a crown had only a few, and near crowns had none of the top-to-bottom darkening LOD crowns have (`canopy_shade`). A broadleaf card now takes 70% of its facing from its crown's ball (`TreeLook::crown_normal`, which carries the crown and lobes), so the sun has a ball to shade, and a card is 7% darker for each leaf over it in its column, to six. The shader's leaf floor and wrap are not changed yet.
 *   **A pine's tip is not capped flat**: on the trunk's axis a card faces a hashed way round, 0.4 up, so it stands.
 
+### PR 3 (`feat: tree shape variety from seed and climate`)
+
+*   **Lobes and crown lean.** `LOBES` is 5 and a broadleaf uses 3 to 5 of them (the rest have no radius), and its crown stands off its trunk by up to 0.2 of its spread, any way, so crowns differ. This changes generated chunks: `GENERATOR_VERSION` 97, pins updated.
+*   **Lean by climate.** `tree_in_cell` gives a tree an exposure, half how cold and half how dry its ground is, and the lean amount runs from 0.8 to 1.4 times its seed's, held to `MAX_LEAN`. No new `TerrainSource` method: `Climate` already carries temperature and humidity.
+*   **Card scale** per tree, 0.9 to 1.1, from its seed (`TreeLook::card_scale`).
+*   Taiga is +1.2% and the forest meadow +5.3% against cubes built from the same voxels.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*

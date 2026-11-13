@@ -86,7 +86,10 @@ const ALPINE_PINES_ABOVE: i64 = 120;
 // Ground steeper than this (see `terrain_block`) is too steep to take root on.
 const MAX_GRADIENT: f64 = 1.5;
 // Broadleaf crowns are a big round crown with smaller lobes hanging off it on branches.
-const LOBES: usize = 3;
+const LOBES: usize = 5;
+// A broadleaf has this many lobes at the least, up to `LOBES`, and its crown stands off the trunk by up to this share of its spread.
+const LOBES_LEAST: u64 = 3;
+const CROWN_LEAN: f64 = 0.2;
 // A pine puts out this many boughs at the foot of each tier, which stand this many blocks apart up the trunk, each reaching this share of the crown's radius there.
 const PINE_BOUGHS: usize = 4;
 const PINE_WHORL: f64 = 3.0;
@@ -128,9 +131,11 @@ pub struct Tree {
     spread: f64,
     // roughens the edge of the leaves
     seed: u64,
-    // the broadleaf crown, and smaller lobes around it each held up by a branch
+    // the broadleaf crown, and smaller lobes around it each held up by a branch, the unused ones with no radius
     crown: Blob,
     lobes: [Blob; LOBES],
+    // 0..1, how cold and dry the tree's ground is, which leans its trunk further
+    exposure: f64,
 }
 
 // A ball of leaves, squashed by `squash` vertically.
@@ -165,15 +170,30 @@ impl Tree {
         seed: u64,
     ) -> Self {
         let middle = (TRUNK_WIDTH - 1) as f64 / 2.0;
+        // a broadleaf's crown stands a little off its trunk, any way, and has three to five lobes
+        let (sin, cos) = libm::sincos((hash(seed, 61, 3) % 1000) as f64 / 1000.0 * std::f64::consts::TAU);
+        let off = if kind == TreeKind::Broadleaf {
+            spread * CROWN_LEAN * ((hash(seed, 67, 5) % 1000) as f64 / 1000.0)
+        } else {
+            0.0
+        };
         let crown = Blob {
-            centre: DVec3::new(middle, (trunk - 1) as f64, middle),
+            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64, middle + sin * off),
             radius: spread,
             squash,
         };
+        let count = LOBES_LEAST + hash(seed, 53, 7) % (LOBES as u64 - LOBES_LEAST + 1);
         let lobes = std::array::from_fn(|i| {
+            if i as u64 >= count {
+                return Blob {
+                    centre: crown.centre,
+                    radius: 0.0,
+                    squash,
+                };
+            }
             let h = hash(seed, i as i64, 17);
             let angle = (i as f64 + (h % 1000) as f64 / 1000.0 * 0.6) * std::f64::consts::TAU
-                / LOBES as f64;
+                / count as f64;
             let out = spread * 0.75;
             let drop = spread * (0.25 + ((h >> 10) % 100) as f64 / 400.0);
             Blob {
@@ -192,7 +212,19 @@ impl Tree {
             seed,
             crown,
             lobes,
+            exposure: 0.5,
         }
+    }
+
+    /// This tree with how cold and dry its ground is, 0..1, which leans its trunk further.
+    pub(crate) fn with_exposure(mut self, exposure: f64) -> Self {
+        self.exposure = exposure.clamp(0.0, 1.0);
+        self
+    }
+
+    /// How big this tree's leaf cards are against others', 0.9 to 1.1.
+    pub fn card_scale(&self) -> f32 {
+        0.9 + 0.2 * ((hash(self.seed, 71, 13) % 1000) as f32 / 1000.0)
     }
 
     /// The tree's own tint over the grass's, the same at every level of detail.
@@ -208,7 +240,8 @@ impl Tree {
         let h = hash(self.seed, 41, 67);
         let unit = |shift: u32| ((h >> shift) & 0xffff) as f32 / 65535.0;
         let (sin, cos) = libm::sincosf(unit(0) * std::f32::consts::TAU);
-        Vec2::new(cos, sin) * MAX_LEAN * (0.4 + 0.6 * unit(16))
+        let amount = (0.3 + 0.5 * unit(16)) * (0.8 + 0.6 * self.exposure as f32);
+        Vec2::new(cos, sin) * (MAX_LEAN * amount).min(MAX_LEAN)
     }
 
     /// Whether the crown is over the point `x`, `z` across the world, in blocks, seen from above.
@@ -447,7 +480,7 @@ impl Tree {
             return self.in_bough(offset);
         }
         let fork = self.axis() + DVec3::Y * (self.trunk as f64 * 0.6);
-        self.lobes.iter().any(|lobe| {
+        self.lobes.iter().filter(|lobe| lobe.radius > 0.0).any(|lobe| {
             let along = lobe.centre - fork;
             let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
             (offset - (fork + along * t)).length_squared() <= 0.36
@@ -530,6 +563,8 @@ pub struct TreeLook {
     spread: f32,
     /// How far the top of the trunk leans from its foot, in cells.
     pub lean: Vec2,
+    /// How big its leaf cards are against others'.
+    pub card_scale: f32,
     // a broadleaf's crown and lobes, in cells from the origin, none on a pine
     crown: [CrownBall; 1 + LOBES],
 }
@@ -624,6 +659,7 @@ impl TreeTints {
                         seed: t.seed,
                         spread: t.spread as f32,
                         lean: t.lean() / cells,
+                        card_scale: t.card_scale(),
                         crown: if t.kind == TreeKind::Pine {
                             [CrownBall::default(); 1 + LOBES]
                         } else {
@@ -773,7 +809,8 @@ fn tree_in_cell(
     // 0..1, how big this one grew
     let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     // how warm it is up where the tree stands, which falls with height
-    let warmth = noise.climate(x as f64, z as f64).temperature;
+    let climate = noise.climate(x as f64, z as f64);
+    let warmth = climate.temperature;
     let mountain = noise.biomes().modifier(biome) != Modifier::None;
     let kind_here = tree_kind(
         noise.biomes().name(biome),
@@ -793,6 +830,10 @@ fn tree_in_cell(
         spread,
         squash,
         seed,
+    )
+    .with_exposure(
+        0.5 * (1.0 - f64::from(warmth)).clamp(0.0, 1.0)
+            + 0.5 * (1.0 - f64::from(climate.humidity)).clamp(0.0, 1.0),
     ))
 }
 
@@ -1246,6 +1287,29 @@ mod look_tests {
             .collect();
         assert!(leans.iter().all(|&lean| lean <= MAX_LEAN + 1e-4));
         assert!(leans.iter().any(|&lean| lean > 0.1));
+    }
+
+    #[test]
+    fn colder_drier_ground_leans_a_trunk_further_and_a_broadleaf_has_three_to_five_lobes() {
+        let mut counts = std::collections::HashSet::new();
+        for seed in 0..200 {
+            let tree = thick_tree(seed);
+            let lobes = tree.lobes.iter().filter(|lobe| lobe.radius > 0.0).count();
+            assert!((3..=5).contains(&lobes), "{lobes} lobes");
+            counts.insert(lobes);
+            let (cold, mild) = (tree.with_exposure(1.0).lean(), tree.with_exposure(0.0).lean());
+            assert!(cold.length() >= mild.length() - 1e-6 && cold.length() <= MAX_LEAN + 1e-4);
+        }
+        assert_eq!(3, counts.len());
+    }
+
+    #[test]
+    fn a_crown_stands_off_its_trunk_but_still_covers_the_top_of_it() {
+        for seed in 0..100 {
+            let tree = thick_tree(seed);
+            let top = tree.base + I64Vec3::Y * tree.trunk;
+            assert_eq!(Some(BlockType::Leaves), tree.block_in_cell(top, 1), "seed {seed}");
+        }
     }
 
     #[test]

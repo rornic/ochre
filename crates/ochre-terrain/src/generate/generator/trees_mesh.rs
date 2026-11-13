@@ -41,7 +41,7 @@ const DEPTH_DARKEN: f32 = 0.07;
 const DEPTH_MIN: f32 = 0.6;
 /// The farthest a card's corner can be from its voxel's middle, in blocks: its widest card's longest reach and how far out it stands.
 #[cfg(test)]
-pub(super) const CARD_REACH: f32 = PINE_CARD_SIZE.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
+pub(super) const CARD_REACH: f32 = PINE_CARD_SIZE.1 * 1.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
 
 /// How far the trunk's centre line is from its voxel column at height `y`, in blocks: none at the foot, the lean at the top.
 pub(super) fn trunk_offset(look: &TreeLook, y: f32) -> Vec2 {
@@ -260,7 +260,7 @@ pub(super) fn depth_shade(above: usize) -> f32 {
 
 /// The card for the leaf whose middle is `middle`, at `world` in the world, open to the air along `open` (the sum of its open
 /// sides), or none if this leaf gets no card.
-pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown) -> Option<Card> {
+pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: f32) -> Option<Card> {
     if hash01(world, 90) >= CARD_DENSITY {
         return None;
     }
@@ -287,10 +287,11 @@ pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown) -> Opti
     ) * 2.0
         * CARD_STRAY;
     let facing = (outward + stray).normalize();
-    let size = between(
-        if matches!(crown, Crown::Pine(_)) { PINE_CARD_SIZE } else { CARD_SIZE },
-        hash01(world, 94),
-    );
+    let size = scale
+        * between(
+            if matches!(crown, Crown::Pine(_)) { PINE_CARD_SIZE } else { CARD_SIZE },
+            hash01(world, 94),
+        );
     let [e1, _] = across(facing);
     let (sin, cos) = libm::sincosf(hash01(world, 95) * TAU);
     let right = e1 * cos + facing.cross(e1) * sin;
@@ -449,7 +450,8 @@ pub(super) fn mesh_trees<S: BlockSource>(
             None => Crown::Broadleaf(Vec3::ZERO),
         };
         let world = coord + grass_tint.origin;
-        let Some(card) = card(world, at, open, crown) else {
+        let scale = faces.tree_look(coord).map_or(1.0, |look| look.card_scale);
+        let Some(card) = card(world, at, open, crown, scale) else {
             continue;
         };
         let lit = drawing.light_at(coord);
@@ -525,7 +527,7 @@ mod tests {
                 Crown::Broadleaf(Vec3::new(0.6, 0.8, 0.0)),
                 Crown::Pine(Vec3::new(2.0, 5.0, -1.0)),
             ] {
-                if let Some(card) = card(world, Vec3::ZERO, open, crown) {
+                if let Some(card) = card(world, Vec3::ZERO, open, crown, 1.1) {
                     for corner in card.outline {
                         farthest = farthest.max(corner.length());
                     }
@@ -542,7 +544,7 @@ mod tests {
         for i in 0..400 {
             let world = IVec3::new(i * 11, 60, i * 5 - 700);
             // on the trunk's axis at the very top, where a cone has no side to face
-            let card = card(world, Vec3::ZERO, Vec3::Y, Crown::Pine(Vec3::new(0.0, 16.0, 0.0))).unwrap();
+            let card = card(world, Vec3::ZERO, Vec3::Y, Crown::Pine(Vec3::new(0.0, 16.0, 0.0)), 1.0).unwrap();
             let facing = card.right.cross(card.up).normalize();
             assert!(facing.y.abs() < 0.9, "card faces {facing}");
             assert!(card.shading.y < 0.5, "shaded as facing {}", card.shading);
