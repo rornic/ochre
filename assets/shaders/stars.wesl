@@ -1,4 +1,4 @@
-// The night sky's stars, Milky Way and moon, for `night_sky.wesl` and the water that reflects
+// The night sky's stars, Milky Way, moon and aurora, for `night_sky.wesl` and the water that reflects
 // them. Stars are placed by hashing a grid of cells, and turn with the sun round the same axis
 // it circles.
 
@@ -6,6 +6,7 @@ import bevy_pbr::render::mesh_view_bindings as view_bindings;
 import super::sky::{MOON_LIGHT, SUN_LIGHT, night_factor, night_glow};
 import super::cloud_cover::disc_showing;
 import super::lighting::moon_phase;
+import super::aurora::aurora;
 
 // The sun's path is the circle through these, which are square to each other, and the pole it
 // turns about. Matches `path_basis` in `sky.rs`.
@@ -20,8 +21,9 @@ const NIGHT_DRIFT: f32 = 0.25;
 const MOON_RADIUS: f32 = 0.035;
 const MOON_SCENE: f32 = 2.2;
 const MOON_HALO: vec3<f32> = vec3<f32>(0.5, 0.65, 1.0);
-// How blurred the stars are as reflected in water, in radians.
+// How blurred the stars are as reflected in water, in radians, and how much of the aurora's light the water gives back.
 const REFLECTED_BLUR: f32 = 0.012;
+const REFLECTED_AURORA: f32 = 0.4;
 
 // The star layers: cells round the sky, the share with a star, how far its glow reaches in
 // cells, and its brightest, in scene colour.
@@ -157,7 +159,7 @@ fn moon_halo(direction: vec3<f32>) -> vec3<f32> {
 }
 
 // Everything the night adds to the sky towards `direction`, premultiplied, for `footprint`
-// radians a pixel: its glow, stars, Milky Way and the moon. Only the brightest stars for `rich` false.
+// radians a pixel: its glow, stars, Milky Way, aurora and the moon. Only the brightest stars for `rich` false.
 fn celestial(direction: vec3<f32>, footprint: f32, rich: bool) -> vec4<f32> {
     let night = night_factor();
     var light = night_glow(direction);
@@ -178,7 +180,7 @@ fn celestial(direction: vec3<f32>, footprint: f32, rich: bool) -> vec4<f32> {
         }
         // stars dim and vanish into the haze near the horizon
         let rise = smoothstep(0.0, 0.12, direction.y);
-        light += night * (milky + field * rise + moon_halo(direction));
+        light += night * (milky + field * rise + moon_halo(direction) + aurora(direction));
     }
     let moon = moon_disc(direction, footprint);
     return vec4<f32>(light * (1.0 - moon.a) + moon.rgb, moon.a);
@@ -191,7 +193,7 @@ fn reflected_celestial(direction: vec3<f32>) -> vec4<f32> {
     var light = vec3<f32>(0.0);
     if night > 0.0 {
         let rise = smoothstep(0.0, 0.12, direction.y);
-        light = night * (star_layer(star_frame(direction), 0, 1.0, REFLECTED_BLUR) * rise + moon_halo(direction));
+        light = night * (star_layer(star_frame(direction), 0, 1.0, REFLECTED_BLUR) * rise + moon_halo(direction) + aurora(direction) * REFLECTED_AURORA);
     }
     let moon = moon_disc(direction, REFLECTED_BLUR);
     return vec4<f32>(light * (1.0 - moon.a) + moon.rgb, moon.a);

@@ -2,7 +2,7 @@
 
 import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 import super::cloud_march::{FADE, FAR, HAZE, LAND_TOP, OVERHEAD_REACH, cloud_entry, disc_sky, march_clouds, march_ray};
-import super::curvature::curvature;
+import super::curvature::{cold, curvature};
 
 struct CloudView {
     right: vec4<f32>,
@@ -75,12 +75,23 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     return mix(textureSampleLevel(cloud_history, cloud_history_sampler, last.xy, 0.0), marched, blend);
 }
 
+// How cold the ground under the camera is for the aurora, 0..1: none with frost off, half at the snow line's temperature, full a frost band below it.
+fn aurora_chill() -> f32 {
+    let about = cold();
+    let ground = about.camera.x - (about.camera.w - f32(constants::WATER_LEVEL)) / about.rule.x;
+    return (1.0 - smoothstep(about.rule.y - about.rule.z, about.rule.y + about.rule.z, ground)) * step(0.5, about.camera.z);
+}
+
 // The clouds water reflects, laid out as `sky_disc` and `overhead` read them, seen from no higher than water lies so a camera above them still sees their undersides.
 @fragment
 fn reflection(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let eye = cloud_view.eye.xyz;
     // the first two texels lie outside the disc, so hold the clouds from the eye itself toward the sun and moon, see `disc_showing`
     let texel = vec2<i32>(in.position.xy);
+    // the third holds the cold for the aurora, which the sky's pipelines have no buffer to read it from
+    if texel.y == 0 && texel.x == 2 {
+        return vec4<f32>(0.0, 0.0, 0.0, aurora_chill());
+    }
     if texel.y == 0 && texel.x < 2 {
         let toward = select(cloud_view.sun.xyz, cloud_view.moon.xyz, texel.x == 1);
         return march_clouds(eye, toward, curvature.now.per_square_block, FAR, DISC_STEPS, 3, 0.5, cloud_view.sun.xyz, cloud_view.eye.w);
