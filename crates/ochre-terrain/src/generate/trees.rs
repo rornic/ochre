@@ -181,8 +181,10 @@ impl Tree {
         } else {
             0.0
         };
+        // an umbrella's plate stands a block over the trunk's top, so its branches show under it
+        let lift = if kind == TreeKind::Umbrella { 1.0 } else { 0.0 };
         let crown = Blob {
-            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64, middle + sin * off),
+            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64 + lift, middle + sin * off),
             radius: spread,
             squash,
         };
@@ -539,9 +541,16 @@ impl Tree {
         if self.kind == TreeKind::Pine {
             return self.in_bough(offset);
         }
-        let fork = self.axis() + DVec3::Y * (self.trunk as f64 * 0.6);
+        // an umbrella's branches leave the trunk's top flat, a broadleaf's from 60% of the way up, rising to its lobes
+        let umbrella = self.kind == TreeKind::Umbrella;
+        let fork_y = if umbrella {
+            self.crown.centre.y - self.crown.radius * self.crown.squash - 0.5
+        } else {
+            self.trunk as f64 * 0.6
+        };
+        let fork = self.axis() + DVec3::Y * fork_y;
         self.lobes.iter().filter(|lobe| lobe.radius > 0.0).any(|lobe| {
-            let along = lobe.centre - fork;
+            let along = if umbrella { (lobe.centre - fork).with_y(0.0) } else { lobe.centre - fork };
             let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
             (offset - (fork + along * t)).length_squared() <= 0.36
         })
