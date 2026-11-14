@@ -33,8 +33,8 @@ const LIGHT: f32 = 2.5;
 // moon), at noon, and at its thickest. The shader takes this many shadow lookups for every pixel of the view whatever the ray's length,
 // and the pass was over a third of the GPU's frame at 64.
 const STEPS_CLEAR: u32 = 1;
-const STEPS_NOON: u32 = 12;
-const STEPS_LOW_SUN: u32 = 32;
+const STEPS_NOON: u32 = 8;
+const STEPS_LOW_SUN: u32 = 16;
 
 /// The box of air round the camera, see `volume`.
 #[derive(Component)]
