@@ -5,9 +5,11 @@
 
 // A disc's light passes the clouds as their transmittance to this power: the sun's and moon's discs are thousands of times brighter than the sky a cloud thins, so would glare out of any but the thickest.
 const DISC_HIDING: f32 = 4.0;
+// The moon's disc is only a few times brighter than the night sky round it, so thin cloud lets it through, as it does in life.
+const MOON_HIDING: f32 = 1.5;
 
 // How much of the sun's disc, or the moon's, shows past the clouds, 0..1, from the march toward each in the map's first two texels, see `reflection` in `cloud_target.wesl`.
 fn disc_showing(moon: bool) -> f32 {
     let cover = textureLoad(cloud_reflection, vec2<i32>(select(0, 1, moon), 0), 0).a;
-    return pow(1.0 - cover, DISC_HIDING);
+    return pow(1.0 - cover, select(DISC_HIDING, MOON_HIDING, moon));
 }
