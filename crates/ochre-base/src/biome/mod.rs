@@ -163,13 +163,11 @@ impl Biomes {
             Box::new(
                 Plain::new("savanna", 0.03)
                     .shifted(0.05, -0.15)
-                    .scaled(0.8, 1.2, 0.5)
                     .with_relief(&[ReliefKind::Kopjes]),
             ),
             Box::new(
                 Plain::new("jungle", 0.6)
                     .shifted(0.0, 0.15)
-                    .scaled(1.3, 1.0, 1.0)
                     .with_giants(0.1),
             ),
             Box::new(Swamp),
