@@ -79,6 +79,9 @@ pub trait Biome: Send + Sync {
     }
 }
 
+/// What trees keep of their density in a clearing, unless the biome says otherwise (`TreeScale::clearings`).
+pub const CLEARING_KEEPS: f64 = 0.4;
+
 /// Multipliers on a tree's trunk height, crown spread and crown squash (1 is the usual).
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TreeScale {
@@ -87,6 +90,8 @@ pub struct TreeScale {
     pub squash: f64,
     /// The share of broadleaf trees, 0..1, that grow as emergent giants, standing well over the rest.
     pub giants: f64,
+    /// The share of its density a tree keeps in a clearing, 0..1: 1 leaves no clearings.
+    pub clearings: f64,
 }
 
 impl Default for TreeScale {
@@ -96,6 +101,7 @@ impl Default for TreeScale {
             spread: 1.0,
             squash: 1.0,
             giants: 0.0,
+            clearings: CLEARING_KEEPS,
         }
     }
 }
@@ -163,14 +169,13 @@ impl Biomes {
             Box::new(
                 Plain::new("savanna", 0.03)
                     .shifted(0.05, -0.15)
-                    .scaled(0.8, 1.2, 0.5)
                     .with_relief(&[ReliefKind::Kopjes]),
             ),
             Box::new(
-                Plain::new("jungle", 0.6)
+                Plain::new("jungle", 1.0)
                     .shifted(0.0, 0.15)
-                    .scaled(1.3, 1.0, 1.0)
-                    .with_giants(0.1),
+                    .with_giants(0.1)
+                    .with_clearings(0.9),
             ),
             Box::new(Swamp),
         ])
@@ -346,6 +351,9 @@ mod tests {
         assert!(biomes.tree_density(forest) > biomes.tree_density(BiomeId::BASE) * 10.0);
         assert_eq!(0.0, biomes.tree_density(biomes.id("desert").unwrap()));
         assert!(biomes.id("atlantis").is_none());
+        // a jungle has almost no clearings and a forest the usual
+        assert!(biomes.tree_scale(biomes.id("jungle").unwrap()).clearings >= 0.9);
+        assert_eq!(CLEARING_KEEPS, biomes.tree_scale(forest).clearings);
     }
 
     #[test]

@@ -56,7 +56,7 @@ Trees must also stay cheap. The shadow pass already costs about 2.9 ms in the ju
 *   Wind as an input to tree shape, which would need a new `TerrainSource` method across the crate boundary, and live wind animation as geometry. Lean comes from the tree's hash, and PR 3 adds a bias from the temperature and humidity `tree_in_cell` already has.
 *   Redrawing the forest canopy mass past `CANOPY_CELL`. Lone far trees are in scope (PR 4).
 *   Special shapes for branches and for trunks wider than one block, which are plain prisms for now. A wobble in the trunk and a taper beyond the flare are also left out.
-*   New shapes for jungle, jungle giants and savanna. They take the new Broadleaf look now and are reshaped later.
+*   New shapes for jungle, jungle giants and savanna. They took the Broadleaf look in PRs 1 to 5 and are reshaped in PR 6.
 *   Block placement, inventory, seasons and growth.
 
 ## Open Questions
@@ -456,6 +456,12 @@ Smaller than the plan above, which had a separate tree-driven LOD mesher (`lod_t
 *   **The `tree_shapes` switch is gone**: `RendererSettings.tree_shapes`, the `settings.toml` line, the `TreeShapes` resource and the loader and `mesh_group` parameters. `show_outline` always hides the outline over a `Log`. `generate_chunk_mesh_with(.., tree_shapes)` stays for tests and for `bench`, where `BENCH_CUBES=1` builds the cube baseline (it replaces `BENCH_TREE_SHAPES`, and shapes are now the default).
 *   **The inner-leaves path is removed**: `InnerLeaves`, `ChunkMeshes::inner_leaves`, `InnerLeafFaces`, `show_inner_leaves` and the faces-between-leaves tests. Faces between leaves are never drawn. Kept: `DebugSettings.solid_leaves` (its shader def, for timing), `INNER_LEAVES_REACH` and `INNER_LEAVES_BAND` (the hole fill the cards use), and `MeshStyle.tree_shapes` as a test knob.
 *   Vertex counts are unchanged: forest meadow 2,269,044 chunk and 334,868 LOD vertices (2,155,849 with `BENCH_CUBES=1`).
+
+### PR 6 (`feat: umbrella and slender trees for the savanna and jungle`)
+
+*   **Two new kinds, not three.** `TreeKind::Umbrella` is a flat plate of leaves (squash 0.3, lobes at the crown's height) a block over the top of a bare trunk of 12 to 18 blocks, whose branches run flat from the trunk's top under it: savanna acacias, and jungle giants at emergent scale. `Slender` is the jungle canopy: a 3.5 to 5 block crown (squash 0.85) on 16 to 24 blocks of trunk. Everything else (membership, bounds, far cards, shade) is the Broadleaf code over the same blobs, so only `Tree::new` and `scaled_tree` know the difference. The savanna's and jungle's `TreeScale` heights, spreads and squashes are gone, since the shapes carry their own; jungle keeps `giants` 0.1.
+*   **Giants** are a `Slender` roll that `scaled_tree` turns into an `Umbrella` with the slender trunk times 2.3 and the umbrella's spread times 1.35 (to 9.6 blocks).
+*   **Not done:** buttressed trunks, which need a trunk wider than one block (still a non-goal), and a look in the game. `GENERATOR_VERSION` 98.
 
 --------------------------------------------------------------------------------
 

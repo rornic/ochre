@@ -118,6 +118,10 @@ pub enum TreeKind {
     Broadleaf,
     // tiers of leaves narrowing up a tall trunk
     Pine,
+    // a flat plate of leaves on a tall bare trunk that forks toward it: the savanna's acacia, and the jungle's emergent giant
+    Umbrella,
+    // a narrow crown on a tall, straight trunk: the jungle's canopy
+    Slender,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -172,17 +176,26 @@ impl Tree {
         let middle = (TRUNK_WIDTH - 1) as f64 / 2.0;
         // a broadleaf's crown stands a little off its trunk, any way, and has three to five lobes
         let (sin, cos) = libm::sincos((hash(seed, 61, 3) % 1000) as f64 / 1000.0 * std::f64::consts::TAU);
-        let off = if kind == TreeKind::Broadleaf {
+        let off = if kind != TreeKind::Pine {
             spread * CROWN_LEAN * ((hash(seed, 67, 5) % 1000) as f64 / 1000.0)
         } else {
             0.0
         };
+        // an umbrella's plate stands a block over the trunk's top, so its branches show under it
+        let lift = if kind == TreeKind::Umbrella { 1.0 } else { 0.0 };
         let crown = Blob {
-            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64, middle + sin * off),
+            centre: DVec3::new(middle + cos * off, (trunk - 1) as f64 + lift, middle + sin * off),
             radius: spread,
             squash,
         };
         let count = LOBES_LEAST + hash(seed, 53, 7) % (LOBES as u64 - LOBES_LEAST + 1);
+        // how far out, how far down, how big and how flat the lobes are, against the crown's spread and squash
+        let (out_by, drop_least, drop_range, lobe_size, lobe_squash) = match kind {
+            TreeKind::Umbrella => (0.8, 0.0, 0.15, 0.55, squash),
+            TreeKind::Slender => (0.6, 0.1, 0.2, 0.55, squash),
+            // lobes flatten with the crown
+            _ => (0.75, 0.25, 0.25, 0.6, 0.75 * (squash / 0.7)),
+        };
         let lobes = std::array::from_fn(|i| {
             if i as u64 >= count {
                 return Blob {
@@ -194,14 +207,13 @@ impl Tree {
             let h = hash(seed, i as i64, 17);
             let angle = (i as f64 + (h % 1000) as f64 / 1000.0 * 0.6) * std::f64::consts::TAU
                 / count as f64;
-            let out = spread * 0.75;
-            let drop = spread * (0.25 + ((h >> 10) % 100) as f64 / 400.0);
+            let out = spread * out_by;
+            let drop = spread * (drop_least + ((h >> 10) % 100) as f64 / 100.0 * drop_range);
             Blob {
                 centre: crown.centre
                     + DVec3::new(libm::cos(angle) * out, -drop, libm::sin(angle) * out),
-                radius: spread * 0.6,
-                // lobes flatten with the crown
-                squash: 0.75 * (squash / 0.7),
+                radius: spread * lobe_size,
+                squash: lobe_squash,
             }
         });
         Self {
@@ -306,19 +318,19 @@ impl Tree {
             (offset - blob.centre.with_y(0.0)).length_squared() <= blob.radius * blob.radius
         };
         match self.kind {
-            TreeKind::Broadleaf => under(&self.crown) || self.lobes.iter().any(under),
             // the lowest tier is the widest
             TreeKind::Pine => {
                 (offset - self.axis()).length_squared() <= (0.6 + self.spread).powi(2)
             }
+            _ => under(&self.crown) || self.lobes.iter().any(under),
         }
     }
 
     /// The top of the crown, in blocks.
     pub fn crown_top(&self) -> f64 {
         let top = match self.kind {
-            TreeKind::Broadleaf => self.crown.centre.y + self.crown.radius * self.crown.squash,
             TreeKind::Pine => (self.trunk + 1) as f64,
+            _ => self.crown.centre.y + self.crown.radius * self.crown.squash,
         };
         self.base.y as f64 + top + 1.0
     }
@@ -467,15 +479,6 @@ impl Tree {
     // Whole-block offsets from the trunk's base that every point `in_leaves` lies within.
     fn leaf_bounds(&self) -> (I64Vec3, I64Vec3) {
         let (low, high) = match self.kind {
-            TreeKind::Broadleaf => std::iter::once(&self.crown)
-                .chain(&self.lobes)
-                .map(|blob| {
-                    let reach = DVec3::new(blob.radius, blob.radius * blob.squash, blob.radius);
-                    (blob.centre - reach, blob.centre + reach)
-                })
-                .fold((DVec3::MAX, DVec3::MIN), |(low, high), (min, max)| {
-                    (low.min(min), high.max(max))
-                }),
             TreeKind::Pine => {
                 let wrap = self.width() as f64 / 2.0 + 1.0;
                 let reach = (0.6 + self.spread).max(wrap);
@@ -485,6 +488,15 @@ impl Tree {
                     DVec3::new(axis.x + reach, (self.trunk + 1) as f64, axis.z + reach),
                 )
             }
+            _ => std::iter::once(&self.crown)
+                .chain(&self.lobes)
+                .map(|blob| {
+                    let reach = DVec3::new(blob.radius, blob.radius * blob.squash, blob.radius);
+                    (blob.centre - reach, blob.centre + reach)
+                })
+                .fold((DVec3::MAX, DVec3::MIN), |(low, high), (min, max)| {
+                    (low.min(min), high.max(max))
+                }),
         };
         (low.floor().as_i64vec3(), high.ceil().as_i64vec3())
     }
@@ -501,10 +513,6 @@ impl Tree {
             }
         };
         match self.kind {
-            TreeKind::Broadleaf => {
-                self.crown.contains(offset, nibble)
-                    || self.lobes.iter().any(|lobe| lobe.contains(offset, nibble))
-            }
             TreeKind::Pine => {
                 let (bottom, top) = ((self.trunk / 4) as f64, (self.trunk + 1) as f64);
                 if !(bottom..=top).contains(&offset.y) {
@@ -521,6 +529,10 @@ impl Tree {
                 let across = offset - self.axis();
                 across.x * across.x + across.z * across.z <= radius * radius
             }
+            _ => {
+                self.crown.contains(offset, nibble)
+                    || self.lobes.iter().any(|lobe| lobe.contains(offset, nibble))
+            }
         }
     }
 
@@ -529,11 +541,28 @@ impl Tree {
         if self.kind == TreeKind::Pine {
             return self.in_bough(offset);
         }
-        let fork = self.axis() + DVec3::Y * (self.trunk as f64 * 0.6);
+        // an umbrella's branches leave the trunk's top flat and turn up for their last block, into the plate; a broadleaf's rise
+        // from 60% of the way up to its lobes
+        let umbrella = self.kind == TreeKind::Umbrella;
+        let fork_y = if umbrella {
+            self.crown.centre.y - self.crown.radius * self.crown.squash - 0.5
+        } else {
+            self.trunk as f64 * 0.6
+        };
+        let fork = self.axis() + DVec3::Y * fork_y;
+        // within a branch's radius, 0.6, of the segment `from`..`to`
+        let near = |from: DVec3, to: DVec3| {
+            let along = to - from;
+            let t = ((offset - from).dot(along) / along.length_squared()).clamp(0.0, 1.0);
+            (offset - (from + along * t)).length_squared() <= 0.36
+        };
         self.lobes.iter().filter(|lobe| lobe.radius > 0.0).any(|lobe| {
-            let along = lobe.centre - fork;
-            let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
-            (offset - (fork + along * t)).length_squared() <= 0.36
+            if !umbrella {
+                return near(fork, lobe.centre);
+            }
+            let end = lobe.centre.with_y(fork_y + 1.0);
+            let knee = end - (end - fork).with_y(0.0).normalize() - DVec3::Y;
+            near(fork, knee) || near(knee, end)
         })
     }
 
@@ -785,7 +814,11 @@ pub(crate) fn tree_kind(
     if alpine || (!hot && (cold || warmth < PINE_TEMPERATURE)) {
         TreeKind::Pine
     } else {
-        TreeKind::Broadleaf
+        match biome {
+            Some("savanna") => TreeKind::Umbrella,
+            Some("jungle") => TreeKind::Slender,
+            _ => TreeKind::Broadleaf,
+        }
     }
 }
 
@@ -877,7 +910,7 @@ fn tree_in_cell(
         warmth,
     );
     // an emergent giant stands over the canopy: a few of the biome's broadleaf trees
-    let giant = kind_here == TreeKind::Broadleaf
+    let giant = kind_here == TreeKind::Slender
         && ((seed >> 20) % 1000) as f64 / 1000.0 < noise.biomes().tree_scale(biome).giants;
     let (kind, trunk, spread, squash) =
         scaled_tree(kind_here, growth, noise.biomes().tree_scale(biome), giant);
@@ -897,37 +930,46 @@ fn tree_in_cell(
 
 // The kind, trunk height, crown spread and crown squash of a tree that grew `growth` (0..1) of the way to its
 // largest, in a biome that scales trees by `scale`: held to `TREE_HEIGHT` and `TREE_REACH`, which the chunk and
-// LOD code size their boxes by.
+// LOD code size their boxes by. A giant is a jungle's slender tree grown into an umbrella standing over the canopy.
 pub(crate) fn scaled_tree(
     kind: TreeKind,
     growth: f64,
     scale: TreeScale,
     giant: bool,
 ) -> (TreeKind, i64, f64, f64) {
-    // the widest crown a kind may have: its lobes reach 1.35 times it from the trunk
-    let widest = match kind {
-        TreeKind::Pine => 6.0,
-        TreeKind::Broadleaf if giant => (TREE_REACH - 1) as f64 / 1.35,
+    let giant = giant && kind == TreeKind::Slender;
+    let shape = if giant { TreeKind::Umbrella } else { kind };
+    // the widest crown a shape may have: an umbrella's lobes reach 1.35 times it from the trunk
+    let widest = match shape {
+        TreeKind::Pine | TreeKind::Slender => 6.0,
         TreeKind::Broadleaf => 7.0,
+        TreeKind::Umbrella if giant => (TREE_REACH - 1) as f64 / 1.35,
+        TreeKind::Umbrella => 9.0,
     };
-    let (trunk, spread, squash) = match kind {
-        TreeKind::Pine => (16 + (growth * 9.0) as i64, 4.5 + growth * 1.5, 0.7),
-        TreeKind::Broadleaf => (10 + (growth * 6.0) as i64, 5.0 + growth * 2.0, 0.7),
-    };
-    let (height_scale, spread_scale) = if giant && kind == TreeKind::Broadleaf {
-        (GIANT_HEIGHT, GIANT_SPREAD)
-    } else {
-        (1.0, 1.0)
-    };
-    let spread = (spread * scale.spread * spread_scale).clamp(3.0, widest);
+    let (mut trunk, mut spread, squash) = grown(shape, growth);
+    if giant {
+        trunk = (grown(kind, growth).0 as f64 * GIANT_HEIGHT) as i64;
+        spread *= GIANT_SPREAD;
+    }
+    let spread = (spread * scale.spread).clamp(3.0, widest);
     let squash = squash * scale.squash;
-    let tallest = match kind {
+    let tallest = match shape {
         TreeKind::Pine => TREE_HEIGHT - 2,
         // the crown's top stands `spread * squash` over the trunk's
-        TreeKind::Broadleaf => TREE_HEIGHT - 2 - (spread * squash).ceil() as i64,
+        _ => TREE_HEIGHT - 2 - (spread * squash).ceil() as i64,
     };
-    let trunk = ((trunk as f64 * scale.height * height_scale).round() as i64).clamp(6, tallest);
-    (kind, trunk, spread, squash)
+    let trunk = ((trunk as f64 * scale.height).round() as i64).clamp(6, tallest);
+    (shape, trunk, spread, squash)
+}
+
+// The trunk height, crown spread and crown squash of a `kind` that grew `growth` of the way to its largest, in the usual biome.
+fn grown(kind: TreeKind, growth: f64) -> (i64, f64, f64) {
+    match kind {
+        TreeKind::Pine => (16 + (growth * 9.0) as i64, 4.5 + growth * 1.5, 0.7),
+        TreeKind::Broadleaf => (10 + (growth * 6.0) as i64, 5.0 + growth * 2.0, 0.7),
+        TreeKind::Umbrella => (12 + (growth * 6.0) as i64, 5.5 + growth * 2.5, 0.3),
+        TreeKind::Slender => (16 + (growth * 8.0) as i64, 3.5 + growth * 1.5, 0.85),
+    }
 }
 
 /// How high up a pine's trunk, in blocks, the `k`th whorl of boughs starts, or none above the crown.
@@ -990,7 +1032,7 @@ mod tests {
             "glacier", "desert", "forest", "tundra", "taiga", "steppe", "savanna", "jungle",
         ] {
             let scale = biomes.tree_scale(biomes.id(name).unwrap());
-            for kind in [TreeKind::Pine, TreeKind::Broadleaf] {
+            for kind in [TreeKind::Pine, TreeKind::Broadleaf, TreeKind::Umbrella, TreeKind::Slender] {
                 for growth in [0.0, 0.5, 0.999] {
                     for giant in [false, true] {
                         let (kind, trunk, spread, squash) = scaled_tree(kind, growth, scale, giant);
@@ -1013,10 +1055,24 @@ mod tests {
                 }
             }
         }
-        // and the signatures differ: jungle trees taller than taiga's broadleaf, savanna crowns flatter
-        let jungle = biomes.tree_scale(biomes.id("jungle").unwrap());
-        let savanna = biomes.tree_scale(biomes.id("savanna").unwrap());
-        assert!(jungle.height > 1.0 && savanna.squash < 1.0);
+    }
+
+    #[test]
+    fn umbrellas_are_flat_and_slender_trees_are_tall_and_narrow_against_a_broadleaf() {
+        // the trunk, and the crown's depth and width
+        let size = |kind| {
+            let (kind, trunk, spread, squash) = scaled_tree(kind, 0.5, TreeScale::default(), false);
+            let tree = Tree::new(kind, I64Vec3::ZERO, trunk, spread, squash, 3);
+            let (low, high) = tree.leaf_bounds();
+            (trunk as f64, tree.crown_top() - tree.crown_bottom(), (high.x - low.x) as f64)
+        };
+        let (broad_trunk, _, broad_width) = size(TreeKind::Broadleaf);
+        let (_, umbrella_depth, umbrella_width) = size(TreeKind::Umbrella);
+        let (slender_trunk, _, slender_width) = size(TreeKind::Slender);
+        // the umbrella's crown is wider than a broadleaf's and under half as deep as it is wide
+        assert!(umbrella_width > broad_width && umbrella_depth < umbrella_width / 2.0);
+        // the slender crown is narrower than a broadleaf's, on a taller trunk
+        assert!(slender_width < broad_width && slender_trunk > broad_trunk);
     }
 
     #[test]
@@ -1025,8 +1081,9 @@ mod tests {
         let jungle = biomes.tree_scale(biomes.id("jungle").unwrap());
         assert!(jungle.giants > 0.0);
         for growth in [0.0, 0.5, 0.999] {
-            let (_, canopy, _, _) = scaled_tree(TreeKind::Broadleaf, growth, jungle, false);
-            let (_, giant, wide, _) = scaled_tree(TreeKind::Broadleaf, growth, jungle, true);
+            let (_, canopy, _, _) = scaled_tree(TreeKind::Slender, growth, jungle, false);
+            let (kind, giant, wide, _) = scaled_tree(TreeKind::Slender, growth, jungle, true);
+            assert_eq!(TreeKind::Umbrella, kind);
             assert!(
                 giant >= canopy + 12,
                 "giant {giant} over canopy {canopy} at {growth}"
@@ -1185,11 +1242,16 @@ mod tests {
 
     #[test]
     fn test_pines_grow_in_the_cold_and_up_mountains_but_never_on_the_hot_lowlands() {
-        // savanna, jungle and desert lowlands, however cool: broadleaf
+        // savanna, jungle and desert lowlands, however cool: never pines
         for biome in ["savanna", "jungle", "desert"] {
+            let kind = match biome {
+                "savanna" => TreeKind::Umbrella,
+                "jungle" => TreeKind::Slender,
+                _ => TreeKind::Broadleaf,
+            };
             for (above, warmth) in [(0, 0.8), (200, 0.3), (300, 0.1), (150, 0.44)] {
                 assert_eq!(
-                    TreeKind::Broadleaf,
+                    kind,
                     tree_kind(Some(biome), false, above, warmth),
                     "{biome} {above} {warmth}"
                 );
