@@ -1,0 +1,24 @@
+# A flight over the tundra on seed 4, two minutes: low ground at night under the aurora, a look round, up the foothills with the glacier
+# range ahead, sunrise from the high ground, then down and low over the open plateau in the morning. Format and compass in
+# crates/ochre-gameplay/src/flythrough.rs (`Flight`).
+# seconds   x       z        height  yaw  pitch  day
+# low ground at night, the aurora ahead in the north
+0     11300  -20300    5    350   22   0.130
+12    11200  -20420    5      5   30   0.144
+# looking round: east, back south-west, then north-west to the glacier
+17    11150  -20470    6     90   10   0.152
+22    11100  -20520    7    200   10   0.160
+27    11060  -20560    8    320   14   0.168
+# up the foothills, the glacier ahead and the sky starting to glow
+38    10650  -20920   30    305    6   0.192
+46    10560  -21020   42    380    6   0.214
+# the high ground, turning slowly clockwise through the north and east to the south-east, where the sun comes up (it rises at day
+# 0.25 and the sun is in the south-east at yaw 138, which is 498 here), and holding there while it climbs
+54    10510  -21090   42    498    6   0.240
+60    10500  -21110   40    506    7   0.256
+66    10500  -21120   38    512    8   0.268
+# down the foothills and low over the plateau in the morning light, heading east
+80    11250  -20300   14    130   -3   0.290
+96    12350  -19500    6    112    0   0.312
+110   13300  -18900    5     98    2   0.332
+120   14100  -18650    5     90    3   0.345
