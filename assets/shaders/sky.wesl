@@ -36,10 +36,9 @@ fn read_cube(direction: vec3<f32>, mip: f32, diffuse: bool) -> vec3<f32> {
 }
 }
 
-// Where the sun and moon are among the view's directional lights: Bevy puts lights without shadows,
-// the moon's, before those with them. See `moon` in `sky.rs`.
-const SUN_LIGHT: u32 = 1u;
-const MOON_LIGHT: u32 = 0u;
+// Where the sun and moon are among the view's directional lights: the patched `bevy_pbr` sorts the volumetric sun first, see `Cargo.toml`.
+const SUN_LIGHT: u32 = 0u;
+const MOON_LIGHT: u32 = 1u;
 
 // How dark the sky is for the sun's height: 0 by day, 1 once the sun is far enough below
 // the horizon for the stars to be out.
