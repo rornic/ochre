@@ -11,7 +11,7 @@ Source of `ochre-world` (`../Cargo.toml`): the world map and terrain source (`wo
 - `clouds.rs`: `CloudPlugin { resolution }`, `CloudMaterial` (`set_shade`), re-exported `CloudLayer`, `CLOUD_BASE` (2400.0). A low-resolution ray-march of a seamlessly tiling cover pattern is drawn by `march_clouds` in the render graph and blended up by a dome (see `docs/clouds.md` at the repo root).
 - `sky_dome.rs`: `SunGlareMaterial` / `SunGlarePlugin` (`shaders/sun_glare.wesl`), `NightSkyMaterial` / `NightSkyPlugin` (`shaders/night_sky.wesl`), `dome(meshes, material, camera)`, `SKY_DEPTH_BIAS`.
 - `godrays.rs`: `GodrayPlugin`, `volume()` (the box of air a camera carries as a child), `shining()` (marks the sun volumetric), `REACH`. Bevy's volumetric fog, thickened by `thicken` with the sun's height and thinned by rain; needs the patched `bevy_pbr` in the root `Cargo.toml` so the sun sorts before the moon, and `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl` follow that order.
-- `weather.rs`: `WeatherPlugin`, `Weather` resource (`pub rain`, `sheltering()`), `RainMaterial`, `RainbowMaterial`, `RainSound` / `RainDecoder`, `ThunderDecoder`; `pub(crate)` `Thunder` and `weather_seconds`.
+- `weather.rs`: `WeatherPlugin`, `Weather` resource (`pub rain`, `sheltering()`), `RainMaterial`, `RainbowMaterial`, `ThunderDecoder`; `pub(crate)` `Thunder` and `weather_seconds`.
 - `tonemap.rs`: `TONEMAPPING` (`SomewhatBoringDisplayTransform`), `dry_color_grading()`, `cold_color_grading(&ColorGrading, cold)` (exactly the input at 0), `displayed(LinearRgba)`, `scene_colour(Color)`; `pub(crate)` `EXPOSURE`.
 
 ## Invariants
@@ -33,7 +33,7 @@ Source of `ochre-world` (`../Cargo.toml`): the world map and terrain source (`wo
 - Input: `[` and `]` wind the clock back and forward at `SCRUB_SPEED` 0.1 days a second (`sky.rs:move_sky`).
 - ECS: inserts `TimeOfDay`, `Weather`, `CloudLayer`, `CloudMarch`, `CloudTargetResolution`, `WeatherHandles`; spawns the atmosphere, sun, moon, rain curtain, rainbow, sky domes, bolts, flashes and thunder timers; mutates `DirectionalLight::illuminance` of sun and moon and the camera's `Exposure::ev100` (`weather.rs:darken_sky`).
 - Render: adds a render-world system `march_clouds` between `Core3dSystems::Prepass` and `MainPass`, and allocates `Rgba16Float` target, history and reflection images (`clouds.rs:CloudPlugin::build`, `spawn_clouds`). Refits the target on window resize (`clouds.rs:fit_cloud_target`).
-- Audio: starts rain playback in `Startup` and spawns thunder sources; `RainSound` and `ThunderDecoder` synthesize samples on the audio thread, reading `ambience::Dial` (`weather.rs:spawn_weather`, `RainSound`).
+- Audio: loops `sounds/rain.ogg` from `Startup` (`weather.rs:RainLoop`; `mix_rain` sets its volume from `Weather.rain`, square-rooted and eased over 1.5 s, and pauses it when there is no rain) and spawns thunder sources; `ThunderDecoder` synthesizes samples on the audio thread.
 - Queries `World` for the block at the camera and for ground height under strikes (`weather.rs:fall_rain`, `strike_lightning`).
 - Randomness: `rand::random*` for storm timing and strike placement, so weather differs per run (`weather.rs:Weather::advance`).
 
