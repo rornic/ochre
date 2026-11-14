@@ -8,6 +8,11 @@ const DISC_HIDING: f32 = 4.0;
 // The moon's disc is only a few times brighter than the night sky round it, so thin cloud lets it through, as it does in life.
 const MOON_HIDING: f32 = 1.5;
 
+// How cold the ground under the camera is for the aurora, 0..1, from the map's third texel, see `aurora_chill` in `cloud_target.wesl`.
+fn aurora_chill() -> f32 {
+    return textureLoad(cloud_reflection, vec2<i32>(2, 0), 0).a;
+}
+
 // How much of the sun's disc, or the moon's, shows past the clouds, 0..1, from the march toward each in the map's first two texels, see `reflection` in `cloud_target.wesl`.
 fn disc_showing(moon: bool) -> f32 {
     let cover = textureLoad(cloud_reflection, vec2<i32>(select(0, 1, moon), 0), 0).a;

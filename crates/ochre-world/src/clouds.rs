@@ -443,7 +443,10 @@ fn init_cloud_pipeline(
             vertex: fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: shader.clone(),
-                shader_defs: vec![ShaderDefVal::UInt("MATERIAL_BIND_GROUP".into(), 0)],
+                shader_defs: vec![
+                    ShaderDefVal::UInt("MATERIAL_BIND_GROUP".into(), 0),
+                    water_level(),
+                ],
                 entry_point: Some(entry_point.into()),
                 targets: vec![Some(ColorTargetState {
                     format: TextureFormat::Rgba16Float,
