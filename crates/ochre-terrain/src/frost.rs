@@ -45,11 +45,12 @@ pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
     cold::frost_cold(terrain.temperature(x, z), feet.y - WATER_LEVEL as f32) * thaw
 }
 
-// What the shaders see: the camera's sea-level temperature and how much of the cold's frost its biome keeps, with where each is heading.
+// What the shaders see: the camera's sea-level temperature, how much of the cold's frost its biome keeps and the height of the ground
+// under it, with where each is heading.
 #[derive(Default)]
 struct Seen {
-    now: [f32; 2],
-    target: [f32; 2],
+    now: [f32; 3],
+    target: [f32; 3],
     since: f32,
     started: bool,
 }
@@ -68,7 +69,7 @@ fn sense_frost(
     mut seen: Local<Seen>,
 ) {
     if !switch.0 {
-        curvature.cold = cold::shader_values(0.0, 1.0, false);
+        curvature.cold = cold::shader_values(0.0, 1.0, false, 0.0);
         return;
     }
     let (Some(world), Ok(camera)) = (world, camera.single()) else {
@@ -81,7 +82,9 @@ fn sense_frost(
         let terrain = world.region_store.terrain();
         let (x, z) = (eye.x.floor() as f64, eye.z.floor() as f64);
         let thaw = terrain.biomes().frost(terrain.biome(x, z));
-        seen.target = [terrain.temperature(x, z), thaw];
+        // over water the mist lies on its surface
+        let ground = (terrain.height(x, z) as f32).max(WATER_LEVEL as f32);
+        seen.target = [terrain.temperature(x, z), thaw, ground];
         if !seen.started {
             seen.now = seen.target;
             seen.started = true;
@@ -89,8 +92,8 @@ fn sense_frost(
     }
     let dt = time.delta_secs();
     let target = seen.target;
-    seen.now = [eased(seen.now[0], target[0], dt), eased(seen.now[1], target[1], dt)];
-    curvature.cold = cold::shader_values(seen.now[0], seen.now[1], true);
+    seen.now = std::array::from_fn(|i| eased(seen.now[i], target[i], dt));
+    curvature.cold = cold::shader_values(seen.now[0], seen.now[1], true, seen.now[2]);
 }
 
 #[cfg(test)]
@@ -114,6 +117,6 @@ mod tests {
 
     #[test]
     fn frost_off_hands_the_shaders_a_zero_strength() {
-        assert_eq!(0.0, cold::shader_values(0.1, 0.5, false)[2]);
+        assert_eq!(0.0, cold::shader_values(0.1, 0.5, false, 0.0)[2]);
     }
 }
