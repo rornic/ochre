@@ -109,7 +109,7 @@ const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
 // Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.
 const RUSTLES: usize = 3;
-const RUSTLE_VOLUME: f32 = 0.12;
+const RUSTLE_VOLUME: f32 = 0.08;
 // Snow steps as a share of the others' volume, about -10 dB.
 const SNOW_GAIN: f32 = 0.3;
 // The frost cover, see `frost_cover`, from which ground rings like ice underfoot: tundra caps at 0.5, and its spawn area reads 0.33 to 0.42.
