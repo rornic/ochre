@@ -541,7 +541,8 @@ impl Tree {
         if self.kind == TreeKind::Pine {
             return self.in_bough(offset);
         }
-        // an umbrella's branches leave the trunk's top flat, a broadleaf's from 60% of the way up, rising to its lobes
+        // an umbrella's branches leave the trunk's top flat and turn up for their last block, into the plate; a broadleaf's rise
+        // from 60% of the way up to its lobes
         let umbrella = self.kind == TreeKind::Umbrella;
         let fork_y = if umbrella {
             self.crown.centre.y - self.crown.radius * self.crown.squash - 0.5
@@ -549,10 +550,19 @@ impl Tree {
             self.trunk as f64 * 0.6
         };
         let fork = self.axis() + DVec3::Y * fork_y;
+        // within a branch's radius, 0.6, of the segment `from`..`to`
+        let near = |from: DVec3, to: DVec3| {
+            let along = to - from;
+            let t = ((offset - from).dot(along) / along.length_squared()).clamp(0.0, 1.0);
+            (offset - (from + along * t)).length_squared() <= 0.36
+        };
         self.lobes.iter().filter(|lobe| lobe.radius > 0.0).any(|lobe| {
-            let along = if umbrella { (lobe.centre - fork).with_y(0.0) } else { lobe.centre - fork };
-            let t = ((offset - fork).dot(along) / along.length_squared()).clamp(0.0, 1.0);
-            (offset - (fork + along * t)).length_squared() <= 0.36
+            if !umbrella {
+                return near(fork, lobe.centre);
+            }
+            let end = lobe.centre.with_y(fork_y + 1.0);
+            let knee = end - (end - fork).with_y(0.0).normalize() - DVec3::Y;
+            near(fork, knee) || near(knee, end)
         })
     }
 
