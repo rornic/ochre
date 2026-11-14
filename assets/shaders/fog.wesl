@@ -25,8 +25,8 @@ const SUN_HAZE_COLOUR: vec3<f32> = vec3<f32>(1.0, 0.62, 0.32);
 // density is `MIST_PER_BLOCK` at the ground under the camera and falls by an e-fold every `MIST_HEIGHT` blocks above it, so it pools in
 // hollows and thins away as the camera climbs. `MIST_MAX` of the view is as much as it hides, and the haze goes `MIST_PALE` of the way
 // to a cool white.
-const MIST_PER_BLOCK: f32 = 0.008;
-const MIST_HEIGHT: f32 = 20.0;
+const MIST_PER_BLOCK: f32 = 0.02;
+const MIST_HEIGHT: f32 = 28.0;
 const MIST_MAX: f32 = 0.85;
 const MIST_PALE: f32 = 0.5;
 const MIST_COLOUR: vec3<f32> = vec3<f32>(0.80, 0.87, 0.95);
