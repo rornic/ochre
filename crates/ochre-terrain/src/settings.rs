@@ -39,6 +39,8 @@ pub struct RendererSettings {
     pub material_anisotropy: u16,
     /// Frost on cold ground that has no snow yet, see `crate::frost`.
     pub frost: bool,
+    /// Light shafts from the sun through the air, which cost frame time.
+    pub godrays: bool,
 }
 
 /// Maximum cloud target width; smaller windows still march at half display resolution.
@@ -128,6 +130,7 @@ impl Default for RendererSettings {
             material_period: 8,
             material_anisotropy: 8,
             frost: true,
+            godrays: true,
         }
     }
 }

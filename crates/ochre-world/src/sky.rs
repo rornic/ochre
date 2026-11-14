@@ -28,6 +28,7 @@ use bevy::{
 use std::f32::consts::{PI, TAU};
 
 use crate::clouds::CloudPlugin;
+use crate::godrays::{shining, GodrayPlugin};
 use crate::sky_dome::{NightSkyPlugin, SunGlarePlugin};
 use crate::weather::WeatherPlugin;
 use ochre_terrain::chunk::CHUNK_SIZE;
@@ -126,8 +127,7 @@ struct SunShadows(Quat);
 // moves under 0.02 degrees a second, so a step is a pop of under a texel.
 const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
-/// On the moon, see `move_sky`. Without shadows, so Bevy puts it before the sun among the
-/// lights, matching `MOON_LIGHT` and `SUN_LIGHT` in `sky.wesl`.
+/// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun, matching `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl`.
 #[derive(Component)]
 pub struct Moon;
 
@@ -315,6 +315,8 @@ pub struct SkyPlugin {
     pub shadow_distance: f32,
     pub shadow_cascades: usize,
     pub cloud_resolution: CloudResolution,
+    /// Light shafts through the air, see `godrays.rs`.
+    pub godrays: bool,
 }
 
 impl SkyPlugin {
@@ -324,6 +326,7 @@ impl SkyPlugin {
                 .min(renderer.fog_distance()),
             shadow_cascades: renderer.shadow_cascades,
             cloud_resolution: renderer.cloud_resolution,
+            godrays: renderer.godrays,
         }
     }
 }
@@ -334,7 +337,8 @@ impl Plugin for SkyPlugin {
             .ok()
             .and_then(|time| time.parse().ok())
             .unwrap_or(START_TIME);
-        let (distance, cascades) = (self.shadow_distance, self.shadow_cascades);
+        let (distance, cascades, godrays) =
+            (self.shadow_distance, self.shadow_cascades, self.godrays);
         app.add_plugins((
             NightSkyPlugin,
             SunGlarePlugin,
@@ -347,7 +351,10 @@ impl Plugin for SkyPlugin {
         .add_systems(
             Startup,
             (spawn_atmosphere, move |mut commands: Commands| {
-                commands.spawn(sun(distance, cascades));
+                let sun = commands.spawn(sun(distance, cascades)).id();
+                if godrays {
+                    commands.entity(sun).insert(shining());
+                }
                 commands.spawn(moon());
             }),
         )
@@ -363,6 +370,9 @@ impl Plugin for SkyPlugin {
                 aim_sun_light.after(SimulationLightSystems::UpdateDirectionalLightCascades),
             ),
         );
+        if godrays {
+            app.add_plugins(GodrayPlugin);
+        }
     }
 }
 

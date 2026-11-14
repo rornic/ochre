@@ -49,6 +49,7 @@ use bevy::{
         schedule::IntoScheduleConfigs,
         system::{Commands, SystemParam},
     },
+    light::VolumetricFog,
     pbr::{MaterialPlugin, ScreenSpaceTransmission},
     post_process::{bloom::Bloom, effect_stack::Vignette},
     render::view::Msaa,
@@ -62,6 +63,7 @@ use ochre_terrain::{
 };
 use ochre_world::{
     ambience::Surroundings,
+    godrays,
     sky::{atmosphere_camera, FOG_MAX_OPACITY},
     tonemap::{cold_color_grading, dry_color_grading, scene_colour, TONEMAPPING},
 };
@@ -770,6 +772,15 @@ pub fn spawn_player(
             ChildOf(player),
         ))
         .id();
+    if renderer.godrays {
+        // no ambient: it'd veil the whole view, the land has its own
+        commands.entity(camera).insert(VolumetricFog {
+            ambient_intensity: 0.0,
+            jitter: 4.0,
+            ..default()
+        });
+        commands.spawn((godrays::volume(), ChildOf(camera)));
+    }
     let (murk, handle) = murk(&mut assets.meshes, &mut assets.murk);
     commands.spawn((murk, ChildOf(camera)));
     commands.insert_resource(handle);
