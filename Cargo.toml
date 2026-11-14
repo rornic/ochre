@@ -67,3 +67,51 @@ debug-assertions = false
 [[bench]]
 name = "terrain"
 harness = false
+
+# check later: drop once https://github.com/bevyengine/bevy/pull/26552 is released, then swap SUN_LIGHT and MOON_LIGHT back in sky.wesl
+[patch.crates-io]
+bevy_android = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_animation = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_animation_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_app = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_asset = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_asset_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_camera = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_color = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_core_pipeline = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_curve = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_derive = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_diagnostic = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_ecs = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_ecs_macro_logic = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_ecs_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_encase_derive = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_extract = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_extract_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_gizmos = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_gizmos_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_gltf = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_image = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_input = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_light = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_log = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_macro_utils = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_material = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_material_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_math = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_mesh = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_pbr = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_platform = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_ptr = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_reflect = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_reflect_derive = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_render = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_render_macros = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_shader = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_shape = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_tasks = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_time = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_transform = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_utils = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_window = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
+bevy_world_serialization = { git = "https://github.com/rornic/bevy", branch = "ochre/v0.20.0-volumetric-sort" }
