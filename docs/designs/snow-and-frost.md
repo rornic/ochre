@@ -344,6 +344,10 @@ What was built, and where it differs from the plan above.
 *   **The ground height rides in the cold buffer.** `cold::shader_values` takes the height of the ground under the camera (the spare float, `Cold.camera.w`), sensed and eased with the temperature in `sense_frost`, with the water's surface as the floor over water.
 *   **Not volumetric.** It is a per-fragment blend, not a medium with light scattering. A godrays `FogVolume` (a box of air round the camera) could take the same cold amount as its density so beams show through the mist, which is for that work.
 *   **Not done:** frame time, and the values were set by eye in the tundra only.
+## Implementation Notes (frost patches, 2026-11-14)
+
+*   **The patches looked like a grid from above, and spread evenly.** Every noise octave was axis-aligned value noise on one lattice, so square cells lined up, and no scale was weighted enough to leave stretches bare. Each octave's coordinates are now turned by its own angle (`turned`) after being pushed about by slow noise (`WARP_SCALE`, `WARP_BY`), the dominant patches are 64 and 12 blocks (were 29 and 7), and a clump noise of 380 blocks (`CLUMP`) moves the cover by `CLUMPING` (2.2) so whole stretches are mostly frost or mostly bare. The average cover is a little lower (the constant in `reach`, -0.15 from -0.07).
+*   Set by eye from stills of the tundra on seed 4, and not looked at on a glacier or a mountain. Plates, rim, sheen and glitter are unchanged, and so is frost's cost beyond a few more noise samples a frost fragment.
 
 <!-- Provenance: Indicates initial structural drafting via EGM. -->
 
