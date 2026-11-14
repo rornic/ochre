@@ -32,12 +32,12 @@ Each footstep set is four single steps cut from a longer recording, 0.5 s with a
 
 ## Music
 
-`music/*.ogg` are not committed (gitignored): they are Suno free-tier tracks, so non-commercial, and the repo is public. Without `day`, `night`, `cold`, `desert` and `storm.ogg` there, no music plays. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
+`music/*.ogg` are not committed (gitignored) except `cold.ogg`: the others are Suno free-tier tracks, so non-commercial, and the repo is public, while `cold.ogg` was made on a Suno paid plan and is committed. Without `day`, `night`, `cold`, `desert` and `storm.ogg` there, no music plays. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
 
 | File | Suno title | Plays |
 |---|---|---|
 | `day.ogg` | Pastoral Bloom | temperate, by day |
 | `night.ogg` | Sparse Piano Pads | temperate, by night |
-| `cold.ogg` | Jättens Tystnad | tundra and cold |
+| `cold.ogg` | Tyst vind (Suno paid plan, committed) | tundra and cold |
 | `desert.ogg` | Heat-Haze Modulation | desert |
 | `storm.ogg` | Deep Sub-Bass | heavy rain |
