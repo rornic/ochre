@@ -166,7 +166,7 @@ impl Biomes {
                     .with_relief(&[ReliefKind::Kopjes]),
             ),
             Box::new(
-                Plain::new("jungle", 0.6)
+                Plain::new("jungle", 1.0)
                     .shifted(0.0, 0.15)
                     .with_giants(0.1),
             ),
