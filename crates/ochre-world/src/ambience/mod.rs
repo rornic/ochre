@@ -31,7 +31,7 @@ use ochre_base::{block::BlockType, WATER_LEVEL};
 use ochre_terrain::world::World;
 use wind::Gust;
 pub use wind::{wind_strength, Wind, WindDials};
-pub(crate) use wind::{Dial, SAMPLE_RATE};
+pub(crate) use wind::SAMPLE_RATE;
 
 pub struct AmbiencePlugin;
 

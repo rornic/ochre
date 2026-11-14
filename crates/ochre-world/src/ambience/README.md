@@ -8,7 +8,7 @@ What the world sounds like at the camera: a synthesized wind, six recorded loops
 - `Surroundings` (`mod.rs:Surroundings`): `altitude`, `speed`, `underwater`, `water`, `trees`, `trees_overhead`, `warmth`, `desert`, `day`, `breeze`; the fractions are 0..1. `Default` is calm, dry, mild daylight.
 - `Loop` (`mod.rs:Loop`): `Forest`, `Crickets`, `Waves`, `Desert`, `Underwater`, `Leaves`, each a component on one looping `AudioPlayer`. `Loop::level(&Surroundings)` is the public loudness rule, 0..1 before gain.
 - `Wind`, `WindDials`, `wind_strength(altitude, speed)` (`wind.rs`, re-exported from `mod.rs`): wind loudness from height above ground and flight speed.
-- `Dial` and `SAMPLE_RATE` (`wind.rs:Dial`, `wind.rs:SAMPLE_RATE`): `pub(crate)`, an `f32` shared through an `AtomicU32`, and the 44.1 kHz rate; used by `../weather.rs:RainSound`.
+- `Dial` and `SAMPLE_RATE` (`wind.rs:Dial`, `wind.rs:SAMPLE_RATE`): an `f32` shared through an `AtomicU32` (`Dial` is private to the wind), and the 44.1 kHz rate, `pub(crate)`, which `../weather.rs`'s thunder reads.
 - `smoothstep` (`mod.rs`): `pub(crate)` re-export of `ochre_base::math::smoothstep`.
 - `wind::WindDecoder` (`wind.rs:WindDecoder`) is the `Decodable` iterator behind `Wind`: a low roar swelling with gusts plus a whistle that rises in pitch (doc on `wind.rs:Wind`).
 

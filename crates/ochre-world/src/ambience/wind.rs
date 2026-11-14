@@ -37,7 +37,7 @@ impl WindDials {
 }
 
 /// An f32 shared between threads through its bits, so the sounds made as they play can read
-/// what they follow, see `weather::RainSound` too.
+/// what they follow.
 #[derive(Clone, Default)]
 pub(crate) struct Dial(Arc<AtomicU32>);
 

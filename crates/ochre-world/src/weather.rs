@@ -7,7 +7,7 @@ use std::{
 
 use bevy::{
     asset::RenderAssetUsages,
-    audio::{AddAudioSource, ChannelCount, Decodable, SampleRate, Source},
+    audio::{AddAudioSource, ChannelCount, Decodable, SampleRate, Source, Volume},
     camera::{visibility::NoFrustumCulling, Exposure},
     light::{NotShadowCaster, NotShadowReceiver},
     math::ops,
@@ -23,7 +23,7 @@ use bevy::{
 };
 
 use crate::{
-    ambience::{Dial, SAMPLE_RATE},
+    ambience::SAMPLE_RATE,
     clouds::CloudMaterial,
     sky::{
         camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
@@ -41,7 +41,6 @@ impl Plugin for WeatherPlugin {
             MaterialPlugin::<RainMaterial>::default(),
             MaterialPlugin::<RainbowMaterial>::default(),
         ))
-        .add_audio_source::<RainSound>()
         .add_audio_source::<Thunder>()
         .init_resource::<Weather>()
         .add_systems(Startup, spawn_weather)
@@ -49,7 +48,7 @@ impl Plugin for WeatherPlugin {
             Update,
             (
                 run_weather,
-                (darken_sky, fall_rain, strike_lightning, show_rainbow),
+                (darken_sky, fall_rain, strike_lightning, show_rainbow, mix_rain),
             )
                 .chain(),
         );
@@ -71,8 +70,6 @@ pub struct Weather {
     rainbow_left: f32,
     // seconds until the next lightning strike
     strike_in: f32,
-    // the rain's level, shared with its sound on the audio thread
-    sound: Dial,
 }
 
 impl Default for Weather {
@@ -86,7 +83,6 @@ impl Default for Weather {
             rainbow: 0.0,
             rainbow_left: 0.0,
             strike_in: 6.0,
-            sound: Dial::default(),
         }
     }
 }
@@ -134,7 +130,6 @@ impl Weather {
         };
         let step = dt / RAINBOW_FADE_SECONDS;
         self.rainbow = (self.rainbow + (wanted - self.rainbow).clamp(-step, step)).clamp(0.0, 1.0);
-        self.sound.set(self.rain);
     }
 
     /// Whether it's raining hard enough that what's out and about takes shelter.
@@ -329,8 +324,7 @@ fn spawn_weather(
     mut rains: ResMut<Assets<RainMaterial>>,
     mut rainbows: ResMut<Assets<RainbowMaterial>>,
     mut standard: ResMut<Assets<StandardMaterial>>,
-    mut sounds: ResMut<Assets<RainSound>>,
-    weather: Res<Weather>,
+    assets: Res<AssetServer>,
 ) {
     let rain = rains.add(RainMaterial { params: Vec4::ZERO });
     let rainbow = rainbows.add(RainbowMaterial { params: Vec4::ZERO });
@@ -366,11 +360,44 @@ fn spawn_weather(
         bolt,
     });
     commands.spawn((
-        AudioPlayer(sounds.add(RainSound {
-            level: weather.sound.clone(),
-        })),
-        PlaybackSettings::ONCE,
+        RainLoop,
+        AudioPlayer::<AudioSource>(assets.load("sounds/rain.ogg")),
+        PlaybackSettings::LOOP.with_volume(Volume::SILENT),
     ));
+}
+
+/// The loop of rain on the garden, `sounds/rain.ogg`, as loud as the rain is heavy.
+#[derive(Component)]
+struct RainLoop;
+
+// The rain loop's loudness as recorded and as wanted at full rain, in LUFS, as `ambience::Loop::loudness` does for the others: its drips stand 25 dB over its bed, so it can't be levelled much louder than it is without clipping them.
+const RAIN_LOUDNESS: (f32, f32) = (-31.3, -31.5);
+// How long the rain's sound takes to follow the rain, in seconds, and the volume below which a loop is paused.
+const RAIN_FOLLOW_SECONDS: f32 = 1.5;
+const RAIN_SILENT: f32 = 1e-3;
+
+/// The volume the rain loop plays at when it rains `rain` hard, 0..1.
+fn rain_volume(rain: f32) -> f32 {
+    let gain = 10f32.powf((RAIN_LOUDNESS.1 - RAIN_LOUDNESS.0) / 20.0);
+    // square-rooted, as loudness goes by power
+    rain.clamp(0.0, 1.0).sqrt() * gain
+}
+
+fn mix_rain(time: Res<Time>, weather: Res<Weather>, mut rain: Query<&mut AudioSink, With<RainLoop>>) {
+    let wanted = rain_volume(weather.rain);
+    let follow = 1.0 - (-time.delta_secs() / RAIN_FOLLOW_SECONDS).exp();
+    for mut sink in &mut rain {
+        let volume = sink.volume().to_linear();
+        let volume = volume + (wanted - volume) * follow;
+        sink.set_volume(Volume::Linear(volume));
+        // a loop no one can hear is paused, so it isn't decoded for nothing
+        let silent = volume < RAIN_SILENT && wanted < RAIN_SILENT;
+        if silent && !sink.is_paused() {
+            sink.pause();
+        } else if !silent && sink.is_paused() {
+            sink.play();
+        }
+    }
 }
 
 // Streaks scattered through the box, each four corners at one spot, told apart by their uv.
@@ -694,119 +721,6 @@ fn next_random(state: &mut u64) -> f32 {
     (*state >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0
 }
 
-/// Rain's patter, made as it plays: soft low thumps at random times and sizes with silence
-/// between, as busy and loud as the rain.
-#[derive(Asset, TypePath)]
-pub struct RainSound {
-    level: Dial,
-}
-
-impl Decodable for RainSound {
-    type Decoder = RainDecoder;
-
-    fn decoder(&self) -> RainDecoder {
-        RainDecoder {
-            level: self.level.clone(),
-            heard: 0.0,
-            rng: rand::random::<u64>() | 1,
-            channel: 0,
-            drop: [Drop::default(); 2],
-            swell: 0.0,
-            t: 0,
-        }
-    }
-}
-
-// Thumps per second per ear at the heaviest rain, and their loudest.
-const DROPS_PER_SECOND: f32 = 30.0;
-const DROP_LEVEL: f32 = 0.12;
-// Pitch range in Hz, onset ramp and fade time in seconds.
-const DROP_PITCH: (f32, f32) = (140.0, 380.0);
-const DROP_ATTACK: f32 = 0.006;
-const DROP_FADE: f32 = 0.05;
-
-// A thump is spent once it has faded this many fade times.
-const DROP_LIFE: f32 = 6.0;
-
-#[derive(Clone, Copy, Default)]
-struct Drop {
-    age: f32,
-    pitch: f32,
-    size: f32,
-}
-
-pub struct RainDecoder {
-    level: Dial,
-    heard: f32,
-    rng: u64,
-    channel: usize,
-    // per ear: the thump sounding now, one at a time so they never pile up
-    drop: [Drop; 2],
-    swell: f32,
-    t: u64,
-}
-
-impl Iterator for RainDecoder {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<f32> {
-        if self.channel == 0 {
-            self.t += 1;
-            if self.t.is_multiple_of(64) {
-                let wanted = self.level.get();
-                self.heard += (wanted - self.heard) * 0.004;
-                let t = self.t as f32 / SAMPLE_RATE as f32;
-                self.swell = 0.85 + 0.15 * ops::sin(t * 0.7) * ops::sin(t * 0.23 + 1.0);
-            }
-        }
-        let c = self.channel;
-        self.channel = 1 - self.channel;
-        let rate = SAMPLE_RATE as f32;
-        let d = self.drop[c];
-        if d.age > DROP_LIFE * DROP_FADE {
-            let chance = self.heard * DROPS_PER_SECOND / rate;
-            if next_random(&mut self.rng) * 0.5 + 0.5 < chance {
-                let r = next_random(&mut self.rng) * 0.5 + 0.5;
-                let size = next_random(&mut self.rng) * 0.5 + 0.5;
-                let pitch = DROP_PITCH.0 + (DROP_PITCH.1 - DROP_PITCH.0) * r;
-                self.drop[c] = Drop {
-                    age: 0.0,
-                    pitch,
-                    size: size * size,
-                };
-            }
-        }
-        let d = &mut self.drop[c];
-        let ramp = (d.age / DROP_ATTACK).min(1.0);
-        let env = ramp * ramp * ops::exp(-d.age / DROP_FADE);
-        let sample = ops::sin(std::f32::consts::TAU * d.pitch * d.age)
-            * env
-            * d.size
-            * self.swell
-            * DROP_LEVEL;
-        d.age += 1.0 / rate;
-        Some(sample.clamp(-1.0, 1.0))
-    }
-}
-
-impl Source for RainDecoder {
-    fn current_span_len(&self) -> Option<usize> {
-        None
-    }
-
-    fn channels(&self) -> ChannelCount {
-        ChannelCount::new(2).unwrap()
-    }
-
-    fn sample_rate(&self) -> SampleRate {
-        SampleRate::new(SAMPLE_RATE).unwrap()
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        None
-    }
-}
-
 /// One clap of thunder from `distance` blocks off: close by, a rapid run of sharp cracks over a
 /// deep boom; farther off, only a softer rumble. Then a long roll that swells again as the far
 /// parts of the bolt are heard, echoes, and dies away.
@@ -1098,6 +1012,24 @@ impl Source for ThunderDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_the_rain_is_silent_without_rain_and_grows_with_it_to_the_target() {
+        assert_eq!(rain_volume(0.0), 0.0);
+        assert_eq!(rain_volume(-1.0), 0.0);
+        let mut last = 0.0;
+        for i in 1..=20 {
+            let now = rain_volume(i as f32 / 20.0);
+            assert!(now > last);
+            last = now;
+        }
+        // full rain is the wanted loudness, and more rain than there is changes nothing
+        let gain = 10f32.powf((RAIN_LOUDNESS.1 - RAIN_LOUDNESS.0) / 20.0);
+        assert!((rain_volume(1.0) - gain).abs() < 1e-6);
+        assert_eq!(rain_volume(3.0), rain_volume(1.0));
+        // a light drizzle is heard but well under a storm
+        assert!(rain_volume(0.05) > RAIN_SILENT && rain_volume(0.05) < 0.5 * rain_volume(1.0));
+    }
 
     fn rms(samples: &[f32]) -> f32 {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()

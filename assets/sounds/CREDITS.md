@@ -11,6 +11,7 @@ Every recording here is CC0 1.0 (public domain), so none needs crediting, but th
 | `desert.ogg` | [Looping Gentle Wind Ambience on an Open Desert Plain](https://freesound.org/people/dhallcomposer/sounds/697217/) | dhallcomposer |
 | `owl.ogg` | [Tawny owl hooting](https://freesound.org/people/Patrick_Corra/sounds/745208/) | Patrick Corrà |
 | `leaves.ogg` | [Bushes Rustling.WAV](https://freesound.org/people/G.Lamont/sounds/117884/) | G.Lamont |
+| `rain.ogg` | [Soft rain.WAV](https://freesound.org/people/barkenov/sounds/640655/) | barkenov |
 | `footsteps/rock_*.ogg` | [Footsteps - Stone, Rock, Concrete, Cement](https://freesound.org/people/SecureSubset/sounds/813622/) | SecureSubset |
 | `footsteps/snow_*.ogg` | [footsteps in fresh snow](https://freesound.org/people/florianreichelt/sounds/453168/) | florianreichelt |
 | `footsteps/sand_*.ogg` | [footsteps in wet coarse sand.wav](https://freesound.org/people/bruno.auzet/sounds/539175/) | bruno.auzet |
@@ -24,6 +25,8 @@ The crickets are high-passed at 2.5 kHz to take out the storm behind them, and t
 one hoot with the recording's background noise gated out. The leaves are a close recording
 of bushes, with the rumble cut, the top softened and a short reverb spread over it so it
 sounds like a canopy overhead.
+
+The rain is the whole recording, high-passed at 90 Hz, lightly compressed (3:1) so its drips stay drips, peak-levelled, with its last 4 s crossfaded into its first 4 s (equal power, since rain is noise), so the loop is 57 s.
 
 Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade, mono and peak-levelled. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants. The foliage rustles are three 0.8 s windows of `leaves.ogg` with a fast fade in and a slow fade out, mono, peak-levelled to -6 dB, played over a step taken inside ground flora.
 
