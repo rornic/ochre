@@ -37,13 +37,14 @@ pub fn frost_cold(sea_temperature: f32, above_sea: f32) -> f32 {
 }
 
 /// What the shaders are given about the cold, in the order `Cold` has them in `curvature.wesl`: the camera's sea-level temperature,
-/// how much frost its biome allows, whether frost is on, and the constants the sum needs.
-pub fn shader_values(sea_temperature: f32, thaw: f32, on: bool) -> [f32; 8] {
+/// how much frost its biome allows, whether frost is on, the height of the ground under it (where the mist lies), and the constants
+/// the sum needs.
+pub fn shader_values(sea_temperature: f32, thaw: f32, on: bool, ground: f32) -> [f32; 8] {
     [
         sea_temperature,
         thaw,
         on as u8 as f32,
-        0.0,
+        ground,
         SNOW_LINE_PER_DEGREE as f32,
         SNOW_TEMPERATURE,
         FROST_BAND,
@@ -84,9 +85,9 @@ mod tests {
 
     #[test]
     fn the_shader_values_keep_their_order() {
-        let v = shader_values(0.2, 0.5, true);
-        assert_eq!((v[0], v[1], v[2]), (0.2, 0.5, 1.0));
+        let v = shader_values(0.2, 0.5, true, 130.0);
+        assert_eq!((v[0], v[1], v[2], v[3]), (0.2, 0.5, 1.0, 130.0));
         assert_eq!((v[4], v[5], v[6]), (SNOW_LINE_PER_DEGREE as f32, SNOW_TEMPERATURE, FROST_BAND));
-        assert_eq!(0.0, shader_values(0.2, 0.5, false)[2]);
+        assert_eq!(0.0, shader_values(0.2, 0.5, false, 0.0)[2]);
     }
 }

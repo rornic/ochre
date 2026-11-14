@@ -12,9 +12,15 @@ fn frost_receives(vertex_alpha: f32, leaf: bool) -> bool {
 }
 
 // The patches' sizes, in blocks, and the plates' cell, which is where a patch's edge is jagged.
-const PATCH_LARGE: f32 = 29.0;
-const PATCH_SMALL: f32 = 7.0;
+const PATCH_LARGE: f32 = 64.0;
+const PATCH_SMALL: f32 = 12.0;
 const PLATE: f32 = 0.38;
+// The stretches patches gather in and thin out over, in blocks, and how hard they weigh on the cover.
+const CLUMP: f32 = 380.0;
+const CLUMPING: f32 = 2.2;
+// How far, over what scale in blocks, slow noise pushes the patches' coordinates about, so their edges wander off the noise's square lattice.
+const WARP_SCALE: f32 = 90.0;
+const WARP_BY: f32 = 45.0;
 // Blocks to a pixel over which the plates and the small patches fade out, so far frost is soft and doesn't shimmer.
 const FINE_FADE: vec2<f32> = vec2<f32>(0.06, 0.26);
 // Frost's albedo, a cool off-white well under fresh snow's, the rim's lift over it, and how much of the ground's own light and dark it keeps.
@@ -50,6 +56,13 @@ struct Frost {
 }
 
 const UNFROSTED: Frost = Frost(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+
+// `p` turned by `angle` radians, so each octave's lattice runs its own way and no square cells line up from above.
+fn turned(p: vec2<f32>, angle: f32) -> vec2<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    return vec2<f32>(c * p.x - s * p.y, s * p.x + c * p.y);
+}
 
 struct Plate {
     // the distance to the nearest point and to the seam with the next, in plates
@@ -110,17 +123,20 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
     // away from a seam a plate is judged as a whole, at its middle, so edges follow plates; at a seam it is judged here, so neighbours blend and no edge is a step
     let inside = smoothstep(0.0, 0.4, cell.seam) * fine;
     let judged = mix(mapped, cell.centre * PLATE, inside);
-    let big = value_noise(judged / PATCH_LARGE);
-    let small = value_noise(judged / PATCH_SMALL + vec2<f32>(31.0, 17.0));
+    let warp = (vec2<f32>(value_noise(judged / WARP_SCALE + vec2<f32>(3.0, 59.0)), value_noise(judged / WARP_SCALE + vec2<f32>(83.0, 27.0))) - 0.5) * WARP_BY;
+    let flowed = judged + warp;
+    let big = value_noise(turned(flowed, 0.6) / PATCH_LARGE);
+    let small = value_noise(turned(flowed, 2.1) / PATCH_SMALL + vec2<f32>(31.0, 17.0));
+    let clump = value_noise(turned(flowed, 4.0) / CLUMP + vec2<f32>(47.0, 5.0));
     // mid-sized breakup that holds out to the distance, so far frost is broken ground and not white blobs
-    let mid = (value_noise(judged / 4.5 + vec2<f32>(7.0, 91.0)) - 0.5) * 0.55 * (1.0 - smoothstep(0.3, 1.6, block_rate));
-    let mid2 = (value_noise(judged / 1.7 + vec2<f32>(63.0, 19.0)) - 0.5) * 0.4 * (1.0 - smoothstep(0.12, 0.7, block_rate));
-    // averaging narrows the spread of the noise, so it is stretched back out around its middle
-    let field = (mix(big, small, 0.4 * fine) - 0.5) * 1.6 + 0.5 + mid + mid2;
+    let mid = (value_noise(turned(flowed, 1.1) / 4.5 + vec2<f32>(7.0, 91.0)) - 0.5) * 0.55 * (1.0 - smoothstep(0.3, 1.6, block_rate));
+    let mid2 = (value_noise(turned(flowed, 2.7) / 1.7 + vec2<f32>(63.0, 19.0)) - 0.5) * 0.4 * (1.0 - smoothstep(0.12, 0.7, block_rate));
+    // averaging narrows the spread of the noise, so it is stretched back out around its middle, and the clumps lift and sink whole stretches
+    let field = (mix(big, small, 0.25 * fine) - 0.5) * 2.0 + 0.5 + (clump - 0.5) * CLUMPING + mid + mid2;
     // the colder it is, the lower the bar a patch has to clear, and each plate has a bar of its own
     // a fine grain on top, so the fade out is ragged and not a clean gradient
     let grain = (value_noise(mapped / 0.17 + vec2<f32>(5.0, 53.0)) - 0.5) * 0.45 * fine;
-    let reach = field + (cell.id - 0.5) * 0.5 * inside + grain + (cover - 0.43) * 1.2 - 0.07;
+    let reach = field + (cell.id - 0.5) * 0.5 * inside + grain + (cover - 0.43) * 1.2 - 0.15;
     let alive = smoothstep(0.01, 0.12, cover);
     // the width of the fade from bare to frost, wide close up so an edge thins out over a few plates
     let fade = mix(0.1, 0.36, fine);

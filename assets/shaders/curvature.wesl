@@ -10,7 +10,7 @@ struct Bend {
 
 // What the land is told about the cold, see `ochre_base::cold::shader_values`.
 struct Cold {
-    // the camera's sea-level temperature, how much frost its biome keeps, and 1 if frost is on
+    // the camera's sea-level temperature, how much frost its biome keeps, 1 if frost is on, and the height of the ground under it
     camera: vec4<f32>,
     // blocks of height that cool the ground by one, the temperature of the ground at the snow line, and how far warmer than that frost reaches
     rule: vec4<f32>,
