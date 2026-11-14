@@ -956,3 +956,5 @@ Painted trees against cubes, rendered (2026-11-14, `main` at #127 against its pa
 Umbrella and slender trees (2026-11-14): forest meadow chunk vertices unchanged at 2,269,044 and LOD 334,892 against 334,868, since the forest has none. Not measured on screen in a savanna or jungle.
 
 Jungle tree chance 0.6 to 1.0 (2026-11-14): `BENCH_AT=20000,12000 bench 1`, chunk vertices 3,412,610 to 4,816,957 (+41%), meshing 305 to 385 ms, LOD 300,744 to 372,832 (+24%), LOD level 3 70,539 to 106,603. 1.0 is the most the biome can ask: a cell grows at most one tree and the grove patches still thin it, so denser than this needs more than one tree a cell, which every biome's tree scan would pay for. Not measured on screen.
+
+Jungle clearings (2026-11-14): trees in a jungle clearing keep 90% of their density, not 40% (`TreeScale::clearings`, `Plain::with_clearings`), for a nearly continuous canopy. `BENCH_AT=20000,12000 bench 1`, chunk vertices 4,816,957 to 5,902,079 (+22%, +73% on the original 3,412,610), meshing 385 to 435 ms, LOD 372,832 to 444,906. Not measured on screen.

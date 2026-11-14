@@ -41,6 +41,7 @@ impl Plain {
             spread,
             squash,
             giants: self.scale.giants,
+            clearings: self.scale.clearings,
         };
         self
     }
@@ -61,6 +62,12 @@ impl Plain {
     /// Keeps `share` of the frost the cold would give the ground, 0 to 1.
     pub fn with_frost(mut self, share: f32) -> Self {
         self.frost = share;
+        self
+    }
+
+    /// Keeps `share` of the biome's tree density in a clearing, 0 to 1: near 1 for a canopy that is nearly unbroken.
+    pub fn with_clearings(mut self, share: f64) -> Self {
+        self.scale.clearings = share;
         self
     }
 

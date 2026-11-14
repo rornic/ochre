@@ -12,7 +12,7 @@ Regional warmth is the baseline plus a warped gradient plus continentality over 
 
 ## Biomes (`ochre-base/src/biome`)
 
-A biome sets how thick trees grow, how big they get (`TreeScale`: height, spread, squash, a share of emergent giants), how lush or dry the grass reads (`climate_shift`), the blocks it uses, and its relief features. Mountain and volcanic are a `Modifier` on the climate biome, not biomes of their own, so a desert mountain and a taiga mountain differ by what is under them. A tenth of jungle trees are emergent giants on trunks 2.3 times the canopy's, up to 42 blocks.
+A biome sets how thick trees grow, how big they get (`TreeScale`: height, spread, squash, a share of emergent giants), how lush or dry the grass reads (`climate_shift`), the blocks it uses, and its relief features. Mountain and volcanic are a `Modifier` on the climate biome, not biomes of their own, so a desert mountain and a taiga mountain differ by what is under them. A tenth of jungle trees are emergent giants on trunks 2.3 times the canopy's, up to 42 blocks, and the jungle's trees keep 90% of their density in a clearing (`TreeScale::clearings`, 40% elsewhere), so its canopy is nearly unbroken.
 
 ## Edges between biomes
 

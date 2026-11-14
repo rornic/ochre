@@ -36,8 +36,7 @@ const ZONE_PATCH: f64 = 12.0;
 const RELIEF_ABOVE_SEA: f64 = 6.0;
 // A kopje's heap shows bare rock where it stands this many blocks over the plain.
 const KOPJE_ROCK_ABOVE: f64 = 4.0;
-// Groves and clearings: trees keep this share of their density in a clearing, and grow in patches about `GROVE_PATCH` blocks across.
-const CLEARING_KEEPS: f64 = 0.4;
+// Groves and clearings: trees grow in patches about `GROVE_PATCH` blocks across, keeping `TreeScale::clearings` of their density in a clearing.
 const GROVE_PATCH: f64 = 160.0;
 // How far, in blocks, and over what wavelength, the climate biome's cell is drifted at a point.
 const DRIFT: f64 = 160.0;
@@ -86,11 +85,11 @@ const SPRING_MOUND: f32 = 4.0;
 // Tableland weight over which a river runs in a gorge: its banks widen up to 4 times and rise as a wall, not a slope.
 const GORGE_FROM: f64 = 0.2;
 
-// How much of the map's tree density a point keeps, `CLEARING_KEEPS` to 1: patches of grove and clearing, filtered for the
+// How much of the map's tree density a point keeps, `keeps` to 1: patches of grove and clearing, filtered for the
 // sample's cell so wide cells see their average, never above 1 so `tree_bound` still bounds the density.
-fn grove(seed: u32, x: f64, z: f64, cell: f64) -> f64 {
+fn grove(seed: u32, x: f64, z: f64, cell: f64, keeps: f64) -> f64 {
     let n = fbm_filtered(seed ^ 0x670E, x, z, GROVE_PATCH, 2, cell);
-    CLEARING_KEEPS + (1.0 - CLEARING_KEEPS) * smoothstep(-0.2, 0.3, n)
+    keeps + (1.0 - keeps) * smoothstep(-0.2, 0.3, n)
 }
 
 // The ground over a river's channel: a parabolic bed up to the water's edge, then the bank
@@ -1105,7 +1104,8 @@ impl WorldTerrain {
             trees: if wet || spring_part != SpringPart::None {
                 0.0
             } else {
-                map.bilinear_bytes(&map.trees, x, z) as f64 / 255.0 * grove(seed, x, z, cell)
+                map.bilinear_bytes(&map.trees, x, z) as f64 / 255.0
+                    * grove(seed, x, z, cell, self.biomes.tree_scale(biome).clearings)
             },
             water_surface,
             water_kind,
@@ -1272,6 +1272,7 @@ mod sea_level_tests {
 #[cfg(test)]
 mod river_bank_tests {
     use super::*;
+    use ochre_base::biome::CLEARING_KEEPS;
 
     #[test]
     fn lake_hold_eases_with_distance_and_the_nearer_lake_wins() {
@@ -1445,7 +1446,7 @@ mod river_bank_tests {
             for i in 0..100 {
                 for j in 0..100 {
                     let (x, z) = (i as f64 * 37.0, j as f64 * 37.0);
-                    let g = grove(5, x, z, cell);
+                    let g = grove(5, x, z, cell, CLEARING_KEEPS);
                     assert!((CLEARING_KEEPS..=1.0).contains(&g), "grove {g} at {x},{z}");
                     assert!(terrain.sample_for_cell(x, z, cell).trees <= terrain.tree_bound(x, z));
                     (lowest, highest) = (lowest.min(g), highest.max(g));
