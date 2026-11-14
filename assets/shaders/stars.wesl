@@ -142,8 +142,9 @@ fn moon_disc(direction: vec3<f32>, footprint: f32) -> vec4<f32> {
     let albedo = mix(0.95, 0.5, seas * 0.85) * (0.85 + 0.3 * fbm(face * 9.0));
     let lit = mix(0.04, 1.0, smoothstep(-0.03, 0.06, dot(normal, to_sun)));
     let cover = 1.0 - smoothstep(MOON_RADIUS - footprint, MOON_RADIUS + footprint, angle);
-    // behind cloud its face goes, but it still covers the stars behind it
-    return vec4<f32>(vec3<f32>(1.0, 0.97, 0.9) * albedo * lit * MOON_SCENE * cover * disc_showing(true), cover);
+    // behind cloud its face fades, and with it what it covers of the stars behind, so thick cloud leaves no black disc
+    let showing = disc_showing(true);
+    return vec4<f32>(vec3<f32>(1.0, 0.97, 0.9) * albedo * lit * MOON_SCENE * cover * showing, cover * smoothstep(0.0, 0.25, showing));
 }
 
 // The glow of moonlight in the air round the moon.

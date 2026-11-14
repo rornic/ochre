@@ -351,10 +351,8 @@ impl Plugin for SkyPlugin {
         .add_systems(
             Startup,
             (spawn_atmosphere, move |mut commands: Commands| {
-                let sun = commands.spawn(sun(distance, cascades)).id();
-                if godrays {
-                    commands.entity(sun).insert(shining());
-                }
+                // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
+                commands.spawn((sun(distance, cascades), shining()));
                 commands.spawn(moon());
             }),
         )
