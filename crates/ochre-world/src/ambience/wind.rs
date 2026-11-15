@@ -9,7 +9,7 @@ use std::{
 
 use bevy::{
     asset::{Asset, Assets},
-    audio::{AudioPlayer, ChannelCount, Decodable, PlaybackSettings, SampleRate, Source},
+    audio::{AudioPlayer, ChannelCount, Decodable, PlaybackSettings, SampleRate, Source, Volume},
     ecs::{
         resource::Resource,
         system::{Commands, Res, ResMut},
@@ -70,7 +70,8 @@ pub fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>, dials:
     let wind = winds.add(Wind {
         dials: dials.clone(),
     });
-    commands.spawn((AudioPlayer(wind), PlaybackSettings::ONCE));
+    commands.spawn((AudioPlayer(wind), PlaybackSettings::ONCE.with_volume(Volume::Linear(super::AMBIENCE_TRIM)),
+    ));
 }
 
 /// The wind's strength from how high the camera is over the ground or sea, and how fast it's

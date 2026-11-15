@@ -8,7 +8,6 @@ Every recording here is CC0 1.0 (public domain), so none needs crediting, but th
 | `crickets.ogg` | [Crickets At Night - Raw sound](https://freesound.org/people/Defelozedd94/sounds/522299/) | Defelozedd94 |
 | `waves.ogg` | [Sea Waves](https://bigsoundbank.com/sea-waves_s0698.html) | Joseph Sardin (BigSoundBank) |
 | `underwater.ogg` | [Underwater Ambience.wav](https://freesound.org/people/Tim_Verberne/sounds/482167/) | Tim_Verberne |
-| `desert.ogg` | [Looping Gentle Wind Ambience on an Open Desert Plain](https://freesound.org/people/dhallcomposer/sounds/697217/) | dhallcomposer |
 | `owl.ogg` | [Tawny owl hooting](https://freesound.org/people/Patrick_Corra/sounds/745208/) | Patrick Corrà |
 | `leaves.ogg` | [Bushes Rustling.WAV](https://freesound.org/people/G.Lamont/sounds/117884/) | G.Lamont |
 | `rain.ogg` | [Soft rain.WAV](https://freesound.org/people/barkenov/sounds/640655/) | barkenov |
@@ -28,7 +27,7 @@ sounds like a canopy overhead.
 
 The rain is the whole recording, high-passed at 90 Hz, lightly compressed (3:1) so its drips stay drips, peak-levelled, with its last 4 s crossfaded into its first 4 s (equal power, since rain is noise), so the loop is 57 s.
 
-Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade, mono and peak-levelled. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants. The foliage rustles are three 0.8 s windows of `leaves.ogg` with a fast fade in and a slow fade out, mono, peak-levelled to -6 dB, played over a step taken inside ground flora.
+Each footstep set is four single steps cut from a longer recording, 0.5 s with a short fade and mono, every clip levelled to -28 LUFS, grass to -34 (gain capped at -1.5 dBTP, so `wood_2` sits at -31.7), played at -52 (grass -58) by `footsteps.rs:VOLUME`. The grass is one step, low-passed at 5 kHz and pitched down up to 12% for its four variants. The foliage rustles are three 0.8 s windows of `leaves.ogg` with a fast fade in and a slow fade out, mono, peak-levelled to -6 dB, played over a step taken inside ground flora.
 
 ## Music
 
@@ -41,7 +40,7 @@ Each footstep set is four single steps cut from a longer recording, 0.5 s with a
 | `rainforest.ogg` | Suno paid plan | jungle and swamp |
 | `savanna.ogg` | Suno paid plan | savanna |
 | `steppe.ogg` | Suno paid plan | steppe |
-| `cold.ogg` | Tyst vind (Suno paid plan) | tundra, taiga, glacier and anywhere cold |
+| `cold.ogg` | Tyst vind (Suno paid plan) | tundra, taiga and glacier |
 | `desert.ogg` | Heat-Haze Modulation | desert |
 | `storm.ogg` | Deep Sub-Bass | heavy rain |
 

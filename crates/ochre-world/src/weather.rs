@@ -24,7 +24,7 @@ use bevy::{
 };
 
 use crate::{
-    ambience::SAMPLE_RATE,
+    ambience::{AMBIENCE_TRIM, SAMPLE_RATE},
     clouds::CloudMaterial,
     sky::{
         camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
@@ -489,7 +489,7 @@ fn rain_volume(rain: f32) -> f32 {
 }
 
 fn mix_rain(time: Res<Time>, weather: Res<Weather>, mut rain: Query<&mut AudioSink, With<RainLoop>>) {
-    let wanted = rain_volume(weather.rain);
+    let wanted = rain_volume(weather.rain) * AMBIENCE_TRIM;
     let follow = 1.0 - (-time.delta_secs() / RAIN_FOLLOW_SECONDS).exp();
     for mut sink in &mut rain {
         let volume = sink.volume().to_linear();
@@ -716,7 +716,7 @@ fn strike_lightning(
         if thunder.in_seconds <= 0.0 {
             commands.entity(entity).despawn();
             // far off, only a quiet rumble
-            let volume = (STRIKE_DISTANCE.1 / thunder.distance).sqrt().min(1.0);
+            let volume = (STRIKE_DISTANCE.1 / thunder.distance).sqrt().min(1.0) * AMBIENCE_TRIM;
             commands.spawn((
                 AudioPlayer(thunders.add(Thunder {
                     distance: thunder.distance,

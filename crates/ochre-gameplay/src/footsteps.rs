@@ -52,14 +52,6 @@ impl Surface {
         }
     }
 
-    // How loud a step on this ground is, as a share of the common level: the snow clips are cut much louder than the rest.
-    fn gain(self) -> f32 {
-        match self {
-            Surface::Snow => SNOW_GAIN,
-            _ => 1.0,
-        }
-    }
-
     // What a block sounds like underfoot, none for the ones nothing stands on.
     fn of(block: BlockType) -> Option<Surface> {
         match block {
@@ -102,16 +94,14 @@ pub struct Footstep {
 
 // Clips cut for each surface, as `sounds/footsteps/<surface>_<1..=VARIANTS>.ogg`.
 const VARIANTS: usize = 4;
-// Volume of a walking step before its jitter, and how much louder a sprinting one is.
-const VOLUME: f32 = 0.15;
+// Volume of a walking step before its jitter, and how much louder a sprinting one is. The clips are levelled to -28 LUFS (grass -34), so this plays a step at -52 (grass -58).
+const VOLUME: f32 = 0.06;
 pub const SPRINT_LOUDER: f32 = 1.25;
 const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
 // Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.
 const RUSTLES: usize = 3;
-const RUSTLE_VOLUME: f32 = 0.04;
-// Snow steps as a share of the others' volume, about -10 dB.
-const SNOW_GAIN: f32 = 0.3;
+const RUSTLE_VOLUME: f32 = 0.02;
 // The frost cover, see `frost_cover`, from which ground rings like ice underfoot: tundra caps at 0.5, and its spawn area reads 0.33 to 0.42.
 const ICY_FROST: f32 = 0.35;
 
@@ -168,10 +158,7 @@ fn play_footsteps(
             AudioPlayer(clips.steps[surface as usize][*last].clone()),
             PlaybackSettings {
                 volume: Volume::Linear(
-                    VOLUME
-                        * surface.gain()
-                        * step.loudness
-                        * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
+                    VOLUME * step.loudness * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
                 ),
                 speed: rand::random_range(PITCH_JITTER.0..PITCH_JITTER.1),
                 ..PlaybackSettings::DESPAWN
