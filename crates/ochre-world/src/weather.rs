@@ -70,6 +70,8 @@ pub struct Weather {
     rainbow_left: f32,
     // seconds until the next lightning strike
     strike_in: f32,
+    // whether the weather stands still with a clear sky, `OCHRE_CLEAR_SKY`: a recording that winds the clock on would otherwise drive into the first storm
+    calm: bool,
 }
 
 impl Default for Weather {
@@ -83,6 +85,7 @@ impl Default for Weather {
             rainbow: 0.0,
             rainbow_left: 0.0,
             strike_in: 6.0,
+            calm: std::env::var_os("OCHRE_CLEAR_SKY").is_some(),
         }
     }
 }
@@ -102,6 +105,9 @@ const RAINBOW_FADE_SECONDS: f32 = 10.0;
 impl Weather {
     // Moves the weather on by `dt` seconds.
     fn advance(&mut self, dt: f32) {
+        if self.calm {
+            return;
+        }
         self.turn_in -= dt;
         if self.turn_in <= 0.0 {
             self.storming = !self.storming;
@@ -1012,6 +1018,26 @@ impl Source for ThunderDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_calm_sky_stays_clear_through_days_of_weather() {
+        let mut weather = Weather {
+            calm: true,
+            ..Weather::default()
+        };
+        for _ in 0..(3 * 24 * 3600) {
+            weather.advance(1.0);
+            assert_eq!((weather.rain, weather.rainbow), (0.0, 0.0));
+        }
+        // and the same weather, not calm, has stormed by then
+        let mut stormy = Weather::default();
+        let mut peak = 0.0f32;
+        for _ in 0..3600 {
+            stormy.advance(1.0);
+            peak = peak.max(stormy.rain);
+        }
+        assert!(peak > 0.5, "{peak}");
+    }
 
     #[test]
     fn test_the_rain_is_silent_without_rain_and_grows_with_it_to_the_target() {

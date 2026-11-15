@@ -118,7 +118,11 @@ fn play_music(
             let draw: f32 = rand::random();
             GAP_SECONDS.0 + (GAP_SECONDS.1 - GAP_SECONDS.0) * draw * draw
         } else {
-            rand::random_range(FIRST_SECONDS.0..FIRST_SECONDS.1)
+            // `OCHRE_MUSIC_DELAY=<seconds>` fixes it, so a recording knows when the music starts
+            std::env::var("OCHRE_MUSIC_DELAY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| rand::random_range(FIRST_SECONDS.0..FIRST_SECONDS.1))
         }
     });
     *left -= dt;
