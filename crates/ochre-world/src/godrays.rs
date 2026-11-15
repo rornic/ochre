@@ -21,13 +21,13 @@ pub const REACH: f32 = 96.0;
 
 // Per block. Bevy's defaults (0.1) are a thick fog; shafts need air a few blocks of which you barely see.
 const DENSITY_NOON: f32 = 0.003;
-const DENSITY_LOW_SUN: f32 = 0.016;
+const DENSITY_LOW_SUN: f32 = 0.004;
 const ABSORPTION: f32 = 0.02;
 const SCATTERING: f32 = 0.3;
 // High, so shafts show looking toward the sun and fade looking away.
 const ASYMMETRY: f32 = 0.75;
 // The sun's illuminance already carries `SKY_GAIN`. By estimate (unseen) 0.25 of this left shafts near 0.1 against a sky of several.
-const LIGHT: f32 = 2.5;
+const LIGHT: f32 = 2.0;
 
 // The march's steps a pixel while the air is clear (it still has to run: the pass can't be dropped without unsorting the sun from the
 // moon), at noon, and at its thickest. The shader takes this many shadow lookups for every pixel of the view whatever the ray's length,
