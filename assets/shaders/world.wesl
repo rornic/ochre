@@ -22,6 +22,7 @@ import super::point_lights::point_light_glow;
 import super::dither::dither_threshold;
 import super::curvature::{curved, eye, uncurved};
 import super::frost::{frost_at, frost_receives, frosted};
+import super::ice::{ice_albedo, ice_shine, is_ice};
 // How bright the leaves seen through a solid tree box's holes are, to its surface's.
 const HOLE_SHADE: f32 = 0.55;
 // The same for far full-detail leaves, see `leaf_holes_filled`. Their holes are a texel or so
@@ -273,6 +274,10 @@ fn fragment(
         tinted = tinted * ROCK_COOL;
     }
     color = vec4<f32>(tinted, color.a);
+    // the painting's brightness and the surface's step per pixel, for ice's bump: derivatives need uniform control flow
+    let across = dpdx(world_position);
+    let down = dpdy(world_position);
+    let rise = vec2<f32>(dpdx(dot(tinted, vec3<f32>(0.2126, 0.7152, 0.0722))), dpdy(dot(tinted, vec3<f32>(0.2126, 0.7152, 0.0722))));
 
     // block meshes carry smoothed sky light, all but those with no faces at all
     var sky = 1.0;
@@ -286,6 +291,10 @@ fn fragment(
     if has_wall {
         let turn = wall_blend * select(1.0, RAMP_LIT_TURN, normal.y > 0.99);
         smooth_normal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(wall_side.x, 0.0, wall_side.y), turn));
+    }
+    let icy = is_ice(in.color.a);
+    if icy {
+        color = vec4<f32>(ice_albedo(color.rgb, sky, smooth_normal.y), color.a);
     }
     // cold ground that isn't snow yet is frosted, and plants rimed, see `frost.wesl`
 @if(!NO_FROST) {
@@ -302,6 +311,13 @@ fn fragment(
     let glow = point_light_glow(world_position, normal, in.position.xy);
     let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a), is_flora(in.color.a));
     color = vec4<f32>(painterly_saturation(color.rgb * (lighting.light + glow), lighting.lit), color.a);
+    if icy {
+        var to_sun = vec3<f32>(0.0, 1.0, 0.0);
+        if view_bindings::lights.n_directional_lights > 0u {
+            to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
+        }
+        color = vec4<f32>(color.rgb + ice_shine(world_position, smooth_normal, sky, to_sun, lighting.lit, block_rate, across, down, rise), color.a);
+    }
 
     // so distant chunks fade into the sky instead of popping in and out
     color = fogged(color, world_position, in.position.xy);
