@@ -404,6 +404,9 @@ const SEA_GLINT: f32 = 0.25;
 const SEA_CLOUDS: f32 = 0.0;
 // The water must lie this far over the sea for its surface to be fresh, which has no surf and none of the ocean's depth tint.
 const FRESH_ABOVE_SEA: f32 = 0.6;
+// The sea's look fades out over this many blocks of surface above that, wandered by up to this many either way.
+const SEA_BLEND: f32 = 3.0;
+const SEA_WANDER: f32 = 1.5;
 // How much of the water's own colour shows over the bed at any depth.
 const FRESH_TINT: f32 = 0.1;
 // How far, in screen heights, ripples bend what's seen through the surface, per block of depth.
@@ -693,12 +696,15 @@ fn fragment(
     flat_y -= waves.height * in.color.b;
 }
     let fresh_surface = flat_y > f32(constants::WATER_LEVEL) + FRESH_ABOVE_SEA;
-    let sea = f32(!fresh_surface);
+    let over_sea = flat_y - f32(constants::WATER_LEVEL) - FRESH_ABOVE_SEA + (stroke_noise(world_position.xz, time, 4.0) - 0.5) * SEA_WANDER;
+    let sea = 1.0 - smoothstep(0.0, SEA_BLEND, over_sea);
     ocean *= sea;
 @if(!VERTEX_COLORS) {
     // LOD water has no depth or shore to calm the swell by, and is far enough out to be deep, so is the sea at full size: left flat it's a mirror
-    if !fresh_surface {
+    if sea > 0.0 {
         waves = swell(world_position.xz, time, dist, 1.0, 1.0);
+        waves.slope *= sea;
+        waves.lost *= sea;
     }
 }
 
@@ -710,7 +716,7 @@ fn fragment(
     var foam = 0.0;
 @if(VERTEX_COLORS) {
     // fresh water is calm, with no surf
-    if dist < FOAM_FADE_END && !fresh_surface {
+    if dist < FOAM_FADE_END && sea > 0.01 {
         // Phase is driven by distance-to-shore (baked per vertex - see
         // vertex_shore_distance, anchored at the shared grid corner so it can't
         // disagree between neighbouring blocks) rather than world xz, so the
@@ -725,7 +731,7 @@ fn fragment(
         let wobble = smooth_noise(world_position.xz / FOAM_RIBBON_SIZE + vec2<f32>(time * 0.05, 0.0)) * 0.6 + smooth_noise(world_position.xz / (FOAM_RIBBON_SIZE * 0.4) - vec2<f32>(0.0, time * 0.08)) * 0.4;
         let ribbon = smoothstep(FOAM_RIBBON_EDGE.x, FOAM_RIBBON_EDGE.y, coverage - (1.0 - wobble) * FOAM_WOBBLE);
         let fade = 1.0 - smoothstep(FOAM_FADE_START, FOAM_FADE_END, dist);
-        foam = ribbon * fade;
+        foam = ribbon * fade * sea;
     }
 }
 
