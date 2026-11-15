@@ -610,13 +610,18 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
     let scatter = scene_colour(FRESH_SCATTER) * daylight(uncurved(world_position));
     // however shallow, a lake's water is plainly blue, not just the bed's colour
     var body = mix(behind * transmitted + scatter * (1.0 - transmitted), tint, FRESH_TINT);
+    var plain = mix(far_bed * transmitted + scatter * (1.0 - transmitted), tint, FRESH_TINT);
     // the sea goes on darkening with depth, past where any bed shows
-    body = mix(body, scene_colour(DEEP_OCEAN_COLOR) * daylight(uncurved(world_position)), ocean);
+    let deep = scene_colour(DEEP_OCEAN_COLOR) * daylight(uncurved(world_position));
+    body = mix(body, deep, ocean);
+    plain = mix(plain, deep, ocean);
 
     // strokes no finer than a few pixels, or they'd shimmer
     let stroke_scale = max(1.0, footprint * 2.0);
     let wander = stroke_noise(world_position.xz, time, stroke_scale * 2.0);
-    body = paint_banded(body, BODY_BAND, wander);
+    // bands come from the smooth body without the bed, which passes through as the ratio, or its pixel detail crosses band edges as jagged streaks
+    let ratio = clamp(paint_banded(plain, BODY_BAND, wander) / max(plain, vec3<f32>(1e-4)), vec3<f32>(0.4), vec3<f32>(2.5));
+    body *= ratio;
 
     let reflect_dir = reflect(-to_eye, surface);
     let share = min(fresnel(dot(surface, to_eye)) + 0.03, mix(LAKE_REFLECT_MAX, SEA_REFLECT_MAX, sea));
