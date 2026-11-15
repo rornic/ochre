@@ -188,11 +188,29 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time) + PI + MOON_LAG)
 }
 
-/// Runs the clock, wound with `[` and `]`, and moves the sun and moon to it: the sky, fog and
-/// light all follow them.
+/// How many game seconds pass each real second, 1 normally: `OCHRE_TIMESCALE` speeds the day
+/// up, to watch the weather come and go as a timelapse.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct TimeScale(pub f32);
+
+impl TimeScale {
+    fn from_env() -> Self {
+        Self(
+            std::env::var("OCHRE_TIMESCALE")
+                .ok()
+                .and_then(|s| s.parse::<f32>().ok())
+                .filter(|s| s.is_finite() && *s >= 0.0)
+                .unwrap_or(1.0),
+        )
+    }
+}
+
+/// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
+/// the sky, fog and light all follow them.
 fn move_sky(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    scale: Res<TimeScale>,
     mut clock: ResMut<TimeOfDay>,
     mut sun: Query<(&mut Transform, &mut SunShadows), Without<Moon>>,
     mut moon: Query<&mut Transform, (With<Moon>, Without<Sun>)>,
@@ -201,7 +219,7 @@ fn move_sky(
 ) {
     let wound = keys.pressed(SCRUB_FORWARD_KEY) as i32 - keys.pressed(SCRUB_BACK_KEY) as i32;
     *carry += time.delta_secs()
-        * (TICKS_PER_SECOND as f32 + wound as f32 * SCRUB_SPEED * DAY_TICKS as f32);
+        * (scale.0 * TICKS_PER_SECOND as f32 + wound as f32 * SCRUB_SPEED * DAY_TICKS as f32);
     let whole = carry.floor();
     *carry -= whole;
     clock.0 = clock.0.saturating_add_signed(whole as i64);
@@ -309,7 +327,7 @@ fn match_sky_horizon(
 
 /// Everything overhead: the clock, sun, moon and atmosphere, the night sky and sun's glare, clouds
 /// and weather. `OCHRE_TIME` starts the clock at that time of day, in days, for looking at the sky
-/// at any hour.
+/// at any hour, and `OCHRE_TIMESCALE` runs it that many times faster, see `TimeScale`.
 pub struct SkyPlugin {
     /// How far the sun casts shadows, in blocks, and in how many slices.
     pub shadow_distance: f32,
@@ -348,6 +366,7 @@ impl Plugin for SkyPlugin {
             WeatherPlugin,
         ))
         .insert_resource(TimeOfDay::from_days(start))
+        .insert_resource(TimeScale::from_env())
         .add_systems(
             Startup,
             (spawn_atmosphere, move |mut commands: Commands| {

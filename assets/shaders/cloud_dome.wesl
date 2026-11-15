@@ -7,7 +7,8 @@ import bevy_pbr::render::{
     view_transformations::{depth_ndc_to_view_z, position_world_to_clip},
 };
 import super::clouds::lit_clouds;
-import super::cloud_march::{FAR, cloud_entry};
+import super::cloud_bindings::{most_precipitation, weather_at};
+import super::cloud_march::{BASE, FAR, HAZE, cloud_entry};
 import super::curvature::curvature;
 
 // the share of light they scatter, in x, see `CloudMaterial::set_shade`
@@ -39,17 +40,75 @@ fn scene_distance(frag_coord: vec2<f32>, direction: vec3<f32>) -> f32 {
     return FAR;
 }
 
+// Rain falling from the storms, seen from afar as grey shafts under their clouds (or pale ones
+// of snow, below): light lost per block in the heaviest rain (5 km of it hides about 60% of
+// what's behind), the most of what's behind it any ray of rain hides, so the land always shows through, how far along a ray it's
+// looked for and in how many steps, and how much sun and sky it's lit by, less under a storm's
+// dark cloud.
+const SHAFT_EXTINCTION: f32 = 1.0 / 5000.0;
+const SHAFT_MOST: f32 = 0.6;
+const SHAFT_REACH: f32 = 30000.0;
+const SHAFT_STEPS: i32 = 16;
+const SHAFT_SUNLIT: f32 = 0.08;
+const SHAFT_SKYLIT: f32 = 0.45;
+const SHAFT_STORM_DARK: f32 = 0.55;
+// Snow, where it falls instead, hangs pale and white: it takes more light than rain as hard, and
+// scatters far more of what it's lit by back, under a storm's dark cloud too.
+const SNOW_EXTINCTION: f32 = 1.0 / 3500.0;
+const SNOW_SUNLIT: f32 = 0.2;
+const SNOW_SKYLIT: f32 = 0.9;
+const SNOW_STORM_DARK: f32 = 0.3;
+
+// The rain along a ray from `eye` until `limit`, packed as the clouds' march packs them: sunlit,
+// sky-lit and hazed light in xyz, how much it hides behind it in w. Drawn at full resolution, so
+// the land's own depth cuts it off.
+fn rain_shafts(eye: vec3<f32>, direction: vec3<f32>, limit: f32, bend: f32, jitter: f32) -> vec4<f32> {
+    if most_precipitation() < 0.01 {
+        return vec4<f32>(0.0);
+    }
+    let across = length(direction.xz);
+    let stride = min(limit, SHAFT_REACH) / f32(SHAFT_STEPS);
+    var through = 1.0;
+    var gathered = vec3<f32>(0.0);
+    for (var i = 0; i < SHAFT_STEPS; i++) {
+        let t = (f32(i) + jitter) * stride;
+        // where the sample really is, above where it's drawn
+        let p = eye + direction * t + vec3<f32>(0.0, bend * t * t * across * across, 0.0);
+        if p.y > BASE {
+            continue;
+        }
+        let weather = weather_at(p.xz);
+        let rain = weather.precipitation * (1.0 - smoothstep(BASE - 300.0, BASE, p.y));
+        if rain <= 0.0 {
+            continue;
+        }
+        let taken = 1.0 - exp(-rain * mix(SHAFT_EXTINCTION, SNOW_EXTINCTION, weather.snow) * stride);
+        let hazed = 1.0 - exp2(-t * across / (2.0 * HAZE));
+        let lit = (1.0 - hazed) * (1.0 - mix(SHAFT_STORM_DARK, SNOW_STORM_DARK, weather.snow) * weather.storm);
+        let sunlit = mix(SHAFT_SUNLIT, SNOW_SUNLIT, weather.snow);
+        let skylit = mix(SHAFT_SKYLIT, SNOW_SKYLIT, weather.snow);
+        gathered += through * taken * vec3<f32>(lit * sunlit, lit * skylit, hazed);
+        through *= 1.0 - taken;
+    }
+    let cover = 1.0 - through;
+    return vec4<f32>(gathered, cover) * min(1.0, SHAFT_MOST / max(cover, 1e-4));
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let viewport = view_bindings::view.viewport;
     let marched = textureSampleLevel(cloud_target, cloud_target_sampler, (in.position.xy - viewport.xy) / viewport.zw, 0.0);
-    if marched.w < 0.002 {
-        return vec4<f32>(0.0);
-    }
     let eye = view_bindings::view.world_position.xyz;
     let direction = normalize(in.world_position.xyz - eye);
-    if scene_distance(in.position.xy, direction) < cloud_entry(eye, direction, curvature.now.per_square_block) {
-        return vec4<f32>(0.0);
+    let bend = curvature.now.per_square_block;
+    let scene = scene_distance(in.position.xy, direction);
+    // interleaved gradient noise, so the shafts' few steps don't band
+    let jitter = fract(52.9829189 * fract(dot(in.position.xy, vec2<f32>(0.06711056, 0.00583715))));
+    let shafts = rain_shafts(eye, direction, scene, bend, jitter);
+    let rain = select(vec4<f32>(0.0), lit_clouds(shafts, eye, direction, cloud_shade.x), shafts.w > 0.0005);
+    if marched.w < 0.002 || scene < cloud_entry(eye, direction, bend) {
+        return rain;
     }
-    return lit_clouds(marched, eye, direction, cloud_shade.x);
+    // the rain hangs under the clouds, in front of them
+    return rain + lit_clouds(marched, eye, direction, cloud_shade.x) * (1.0 - rain.w);
 }

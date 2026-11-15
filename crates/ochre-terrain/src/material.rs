@@ -190,6 +190,9 @@ pub struct ChunkMaterial {
     // what the land bends around, see `curvature::Curvature`
     #[storage(8, read_only)]
     pub curvature: Handle<ShaderBuffer>,
+    // the weather round the camera, thickening the clouds whose shadows fall here, see `CloudLayer::weather`
+    #[storage(11, read_only)]
+    pub cloud_weather: Handle<ShaderBuffer>,
     // the painted materials, see `material_array`
     #[texture(12, dimension = "2d_array")]
     #[sampler(13)]
@@ -343,6 +346,7 @@ impl TerrainMaterials {
             cloud_pattern: clouds.pattern.clone(),
             cloud_layer: clouds.layer,
             curvature: inputs.curvature.clone(),
+            cloud_weather: clouds.weather.clone(),
             materials: inputs.materials.clone(),
             debug,
             non_cutout: false,
@@ -361,6 +365,7 @@ impl TerrainMaterials {
             cloud_layer: clouds.layer,
             cloud_reflection: clouds.reflection.clone(),
             curvature: inputs.curvature.clone(),
+            cloud_weather: clouds.weather.clone(),
             solid: false,
         };
         Self {
@@ -389,6 +394,9 @@ pub struct CloudLayer {
     pub target: Handle<Image>,
     /// The clouds over the whole sky, unlit, for water to reflect, see `sky_disc` in `cloud_march.wesl`.
     pub reflection: Handle<Image>,
+    /// The weather round the camera, how cloudy and stormy and wet each cell of a grid is, which
+    /// thickens the pattern's clouds into storms, see `weather_at` in `cloud_bindings.wesl`.
+    pub weather: Handle<ShaderBuffer>,
 }
 
 /// What the terrain's shaders sample that other systems own. The default is blank, for a headless run.
@@ -468,6 +476,9 @@ pub struct WaterMaterial {
     // what the land bends around, see `curvature::Curvature`
     #[storage(8, read_only)]
     pub curvature: Handle<ShaderBuffer>,
+    // the weather round the camera, see `CloudLayer::weather`
+    #[storage(11, read_only)]
+    pub cloud_weather: Handle<ShaderBuffer>,
     // the clouds over the sky, to reflect, see `CloudLayer::reflection`
     #[texture(9)]
     #[sampler(10)]

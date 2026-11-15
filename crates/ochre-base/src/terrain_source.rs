@@ -100,6 +100,12 @@ pub trait TerrainSource: Send + Sync {
     /// The nearest lowland column to the world centre.
     fn find_spawn(&self) -> (i64, i64, f64);
 
+    /// The way the prevailing wind blows over the world, as an x, z direction of any length: the
+    /// wind its climate carries rain on, and its weather drifts with.
+    fn prevailing_wind(&self) -> [f32; 2] {
+        [1.0, 0.0]
+    }
+
     /// The most tree density the column at (x, z) can have, without sampling its terrain, so
     /// callers can rule out trees cheaply. 1 if it can't say.
     fn tree_bound(&self, _x: f64, _z: f64) -> f64 {
@@ -172,6 +178,10 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn find_spawn(&self) -> (i64, i64, f64) {
         (**self).find_spawn()
+    }
+
+    fn prevailing_wind(&self) -> [f32; 2] {
+        (**self).prevailing_wind()
     }
 
     fn tree_bound(&self, x: f64, z: f64) -> f64 {

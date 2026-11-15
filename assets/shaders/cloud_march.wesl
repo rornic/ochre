@@ -1,11 +1,12 @@
 // Cloud shape and the unlit march through it, cumulus from the shadow pattern and cirrus above, see `clouds.rs`.
 
-import super::cloud_bindings::{cloud_pattern, cloud_sampler, cloud_layer};
+import super::cloud_bindings::{Weather, cloud_pattern, cloud_sampler, cloud_layer, most_storm, sky_cover, weather_at};
 import super::hash::hash3;
 
-// The cumulus slab's base and top, matching `CLOUD_BASE` and `CLOUD_TOP` in `clouds.rs`.
+// The cumulus slab's base and top, matching `CLOUD_BASE` and `CLOUD_TOP` in `clouds.rs`, and how high a storm's towers reach.
 const BASE: f32 = 2400.0;
 const TOP: f32 = 3000.0;
+const STORM_TOP: f32 = 6000.0;
 // The highest land can reach, matching `WORLD_HEIGHT` in `chunks::generate`.
 const LAND_TOP: f32 = 2048.0;
 // Light lost a block into the thickest cloud.
@@ -90,11 +91,30 @@ fn fbm(p: vec3<f32>, period: vec2<i32>, octaves: i32) -> f32 {
     return sum / total;
 }
 
-// Cloud density at `p`, 0..1: the pattern's cover piled into a flat-based dome, its edges eaten by noise.
-fn density(p: vec3<f32>, drift: vec2<f32>, octaves: i32) -> f32 {
+// A storm's cloud is this many times thicker than fair-weather cloud, so darker and more opaque.
+const STORM_THICKENING: f32 = 2.5;
+// How much of the sun's light, and of the sky's on their undersides, a storm's cloud keeps.
+const STORM_SUNLIT: f32 = 0.5;
+const STORM_UNDERSIDE: f32 = 0.25;
+// Haze takes a storm's cloud this many times more slowly than fair-weather cloud, and it fades out later, so its towers stand out far off.
+const STORM_CLEARER: f32 = 3.0;
+
+// The top of the slab rays are marched through: storms' towers only while one is about, so fair weather keeps its steps where its clouds are.
+fn slab_top() -> f32 {
+    return select(TOP, STORM_TOP, most_storm() > 0.01);
+}
+
+// How high the cloud at a place can reach, from the fair-weather slab's top to a storm's towers.
+fn ceiling(weather: Weather) -> f32 {
+    return mix(TOP, STORM_TOP, smoothstep(0.2, 0.9, weather.storm));
+}
+
+// Cloud density at `p` under `weather`, 0..1 (more in a storm): the pattern's cover piled into a flat-based dome, its edges eaten by noise.
+fn density(p: vec3<f32>, drift: vec2<f32>, octaves: i32, weather: Weather) -> f32 {
     let xz = p.xz - drift;
-    let cover = textureSampleLevel(cloud_pattern, cloud_sampler, xz / cloud_layer.y, 0.0).r;
-    let height = (p.y - BASE) / (TOP - BASE);
+    let share = textureSampleLevel(cloud_pattern, cloud_sampler, xz / cloud_layer.y, 0.0).r;
+    let cover = sky_cover(share, weather);
+    let height = (p.y - BASE) / (ceiling(weather) - BASE);
     let top = 0.15 + 0.85 * cover;
     let shape = cover * smoothstep(0.0, 0.06, height) * (1.0 - smoothstep(0.4 * top, top, height));
     if shape <= 0.02 {
@@ -102,7 +122,7 @@ fn density(p: vec3<f32>, drift: vec2<f32>, octaves: i32) -> f32 {
     }
     let cells = i32(round(cloud_layer.y / NOISE_CELL));
     let noise = fbm(vec3<f32>(xz.x, p.y, xz.y) / NOISE_CELL, vec2<i32>(cells), octaves);
-    return saturate((noise + shape - 1.0) / SOFTNESS);
+    return saturate((noise + shape - 1.0) / SOFTNESS) * mix(1.0, STORM_THICKENING, weather.storm);
 }
 
 // The span of the ray below `height`, drawn sinking `bend` per square block, `FAR` both ends when never.
@@ -129,7 +149,7 @@ fn below(origin: vec3<f32>, direction: vec3<f32>, bend: f32, height: f32) -> vec
 
 // The span of the ray inside the cumulus, empty when y <= x, cut short where the bent ray meets the land.
 fn cloud_span(origin: vec3<f32>, direction: vec3<f32>, bend: f32) -> vec2<f32> {
-    let top = below(origin, direction, bend, TOP);
+    let top = below(origin, direction, bend, slab_top());
     let base = below(origin, direction, bend, BASE);
     let start = max(top.x, 0.0);
     var end = top.y;
@@ -169,19 +189,25 @@ fn march(so_far: Marched, origin: vec3<f32>, direction: vec3<f32>, bend: f32, sp
         let p = origin + direction * t + vec3<f32>(0.0, bend * t * t * across * across, 0.0);
         // finer octaves only near enough to be seen, or far off they'd shimmer as they drift
         let away = t * across;
-        let filled = density(p, drift, clamp(octaves - i32(away / DETAIL_REACH), 1, octaves));
+        // the weather changes over kilometres, so the light samples share it
+        let weather = weather_at(p.xz);
+        let filled = density(p, drift, clamp(octaves - i32(away / DETAIL_REACH), 1, octaves), weather);
         if filled > 0.0 {
-            let height = saturate((p.y - BASE) / (TOP - BASE));
+            let height = saturate((p.y - BASE) / (ceiling(weather) - BASE));
             // how much cloud lies between here and the sun
-            let toward = density(p + to_sun * LIGHT_REACH.x, drift, 1) * LIGHT_REACH.x
-                + density(p + to_sun * LIGHT_REACH.y, drift, 1) * (LIGHT_REACH.y - LIGHT_REACH.x);
+            let toward = density(p + to_sun * LIGHT_REACH.x, drift, 1, weather) * LIGHT_REACH.x
+                + density(p + to_sun * LIGHT_REACH.y, drift, 1, weather) * (LIGHT_REACH.y - LIGHT_REACH.x);
             let depth = toward * EXTINCTION;
-            let lit = max(exp(-depth), DEEP_LIGHT * exp(-0.2 * depth));
-            // far off, the haze between takes them over, and then they fade away
-            let hazed = 1.0 - exp2(-away / HAZE);
-            let taken = (1.0 - exp(-filled * EXTINCTION * stride)) * (1.0 - smoothstep(FADE.x, FADE.y, away));
+            // a storm's cloud is dark through and through, more than its thickness alone makes it
+            let lit = max(exp(-depth), DEEP_LIGHT * exp(-0.2 * depth)) * mix(1.0, STORM_SUNLIT, weather.storm);
+            let underside = mix(UNDERSIDE, 1.0, height) * mix(1.0, STORM_UNDERSIDE, weather.storm);
+            // far off, the haze between takes them over, and then they fade away, a storm's towers less
+            let clearer = mix(1.0, STORM_CLEARER, weather.storm);
+            let hazed = 1.0 - exp2(-away / (HAZE * clearer));
+            let fading = min(FADE.x * clearer, 0.8 * FADE.y);
+            let taken = (1.0 - exp(-filled * EXTINCTION * stride)) * (1.0 - smoothstep(fading, FADE.y, away));
             let weight = out.through * taken;
-            out.gathered += weight * vec3<f32>((1.0 - hazed) * lit, (1.0 - hazed) * mix(UNDERSIDE, 1.0, height), hazed);
+            out.gathered += weight * vec3<f32>((1.0 - hazed) * lit, (1.0 - hazed) * underside, hazed);
             out.depth += weight * t;
             out.through *= 1.0 - taken;
             if out.through < OPAQUE {
