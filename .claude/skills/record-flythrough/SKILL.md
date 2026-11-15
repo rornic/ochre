@@ -12,11 +12,11 @@ description: Record Ochre as a 1920x1080 60 fps mp4 with the game's own sound an
 python3 .claude/skills/record-flythrough/check.py out.mp4
 ```
 
-`WARMUP` (default 45) is the seconds the world loads before each run, `CRF` (default 18) the video quality, `WORK` where the frames go, `KEEP_WORK=1` keeps them. Leave about 20 GB free on `/tmp` for two minutes, since a frame is a 2.5 MB png. A game window is open on the desktop for most of it. Nothing plays out loud. `check.py` needs numpy.
+`WARMUP` (default 45) is the seconds the world loads before each run, `CRF` (default 18) the video quality, `PRESET` (default medium) the x264 preset, `WORK` where the frames go, `KEEP_WORK=1` keeps them. `SOUND=<wav>` reuses the sound pass of an earlier run (`KEEP_WORK=1` keeps `sound.wav`) and skips about five minutes, but the wind and ambience follow the camera, so redo it when the path or the audio code changes. Leave about 20 GB free on `/tmp` for two minutes, since a frame is a 2.5 MB png. A game window is open on the desktop for most of it, and closing it ends the take. Nothing plays out loud. `check.py` needs numpy.
 
 ## The flight file
 
-One key a line, `seconds x z height yaw pitch day`, `#` for comments. The camera follows the ground, so `height` is blocks over it, and a key's `x z` can be anywhere without looking up the ground. Everything is eased through the keys, and the first and last are still.
+One key a line, `seconds x z height yaw pitch day`, `#` for comments. The camera follows the ground, so `height` is blocks over it, and a key's `x z` can be anywhere without looking up the ground. It also clears the trees: the terrain's own trees near each point of the path are looked up before the flight and the camera stays 6 blocks over the highest crown, so a low leg rides up over a forest in a long curve. Everything is eased through the keys, and the first and last are still.
 
 - `yaw` is a compass bearing in degrees, 0 north (-z) and 90 east (+x). It can run past 360 so a turn keeps going the same way (498 is 138).
 - `pitch` is degrees up.
@@ -24,7 +24,7 @@ One key a line, `seconds x z height yaw pitch day`, `#` for comments. The camera
 - The weather runs on game time, so a flight that winds `day` on quickly drives into the first storm 600 game-seconds in, about 20 s into one that runs 0.13 to 0.30. `record.sh` sets `OCHRE_CLEAR_SKY=1`, which stops the weather (no rain, lightning or rainbow). Set it yourself if you run a flight by hand.
 - The first key's `x z` is where the game spawns, so the world around it loads during the warmup. Keys far from it load as the camera arrives, which a path faster than about 60 blocks a second outruns.
 
-To plan a route use the `worldview` skill and sample `info` heights. Seed 4's tundra is a plateau near y 100 with foothills up to 190 at (10500, -21000) and a glacier range of 700 to 1100 behind them to the north-west. `tundra.flight` flies it for two minutes: low under the aurora, a look round, up the foothills, the sunrise from the top, then down and low over the plateau in daylight. A leg over about 90 blocks a second is too fast to read as flying, and the world has to stream in as the camera goes. The aurora only shows over cold ground, in the north (-z).
+To plan a route use the `worldview` skill and sample `info` heights. Seed 4's tundra is a plateau near y 100 with foothills up to 190 at (10500, -21000) and a glacier range of 700 to 1100 behind them to the north-west. `tundra.flight` flies it for two minutes: low under the aurora, a look round, up the foothills, the sunrise from the top, then down and low over the plateau in daylight. `tundra-day.flight` is a three minute day on the same seed: a short high look at the glacier in the morning, a low run east across the plateau and the strait while the day runs on, the highest point of the far ridge, then a slow sweep back over the tundra as the sun sets and the aurora comes up. A leg over about 90 blocks a second is too fast to read as flying, and the world has to stream in as the camera goes. The aurora only shows over cold ground, in the north (-z).
 
 ## How it works
 
@@ -37,6 +37,7 @@ The code is in `crates/ochre-gameplay/src/flythrough.rs` (`Flight`). The older `
 ## What went wrong, so it does not again
 
 - **Do not screen-record the desktop.** `x11grab` of a game window gave 3% distinct frames in one run and 64% at best, because the compositor does not hand it each frame. Xephyr caps the frame rate and crashed the game with a segfault. Rendering frames in the game avoids both. `check.py` reports the share of distinct frames, and a clean render is 100%.
+- **Do not close the game window.** The picture pass draws in a 1080p window on the desktop, and closing it logs `No windows are open` and ends the game with the take half done.
 - **Run with `BEVY_ASSET_ROOT` set** to the repo root, or a binary run from anywhere else finds no assets and draws a black window. `record.sh` sets it.
 - **Never `pkill -f` or `pgrep -f` a pattern the command itself contains**, since it matches your own shell and kills it (exit 144). Other sessions run their own games too, so kill only the pids you started. `record.sh` does.
 - **The game must run on after the last frame.** It saves screenshots on other threads, and exiting at once left the last four of 721 unwritten. `DRAIN_FRAMES` holds it for two seconds.

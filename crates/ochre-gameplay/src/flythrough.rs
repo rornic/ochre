@@ -11,6 +11,7 @@ use bevy::{
 };
 
 use crate::player::{Player, EYE_HEIGHT};
+use ochre_terrain::generate::trees::trees_near;
 use ochre_terrain::world::World;
 use ochre_world::sky::TimeOfDay;
 
@@ -20,6 +21,8 @@ const WARMUP: f32 = 5.0;
 // Blocks the camera keeps over the ground and water, enough to clear trees, and over any block right round it.
 const CLEARANCE: f32 = 24.0;
 const BLOCK_CLEARANCE: f32 = 4.0;
+// Blocks a flight keeps over the top of any tree near its path.
+const TREE_CLEARANCE: f32 = 6.0;
 // Seconds either side the lift over the ground looks for the highest it needs, and eases over, so it rises and settles in long curves.
 const LIFT_REACH: f32 = 2.5;
 
@@ -315,10 +318,12 @@ fn fly_keys(
     let started = *state.started.get_or_insert_with(Instant::now);
     if state.height.is_empty() {
         let end = state.keys[state.keys.len() - 1][0];
+        let mut ground = world.region_store.sampler();
         let need: Vec<f32> = (0..=(end / HEIGHT_STEP) as usize + 1)
             .map(|i| {
                 let key = sample_keys(&state.keys, i as f32 * HEIGHT_STEP);
-                ground_height(&world, Vec3::new(key[1], 0.0, key[2])) + key[3]
+                let p = Vec3::new(key[1], 0.0, key[2]);
+                (ground_height(&world, p) + key[3]).max(tree_top(&world, &mut ground, p) + TREE_CLEARANCE)
             })
             .collect();
         state.height = smooth_lift(&need, (LIFT_REACH / HEIGHT_STEP) as usize);
@@ -380,6 +385,12 @@ fn ground_height(world: &World, p: Vec3) -> f32 {
         }
     }
     top
+}
+
+// The top of the highest tree that could reach the column at `p`, as the terrain would grow them.
+fn tree_top(world: &World, ground: &mut ochre_terrain::generate::region_store::HeightSampler, p: Vec3) -> f32 {
+    let at = bevy::math::I64Vec2::new(p.x.round() as i64, p.z.round() as i64);
+    trees_near(world.region_store.terrain(), ground, at, at).iter().map(|tree| tree.crown_top() as f32).fold(f32::MIN, f32::max)
 }
 
 // How high the camera must be over any solid block right round `p`, trees included.
