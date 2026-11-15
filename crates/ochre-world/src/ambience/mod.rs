@@ -30,8 +30,8 @@ pub(crate) use ochre_base::math::smoothstep;
 use ochre_base::{block::BlockType, WATER_LEVEL};
 use ochre_terrain::world::World;
 use wind::Gust;
-pub use wind::{wind_strength, Wind, WindDials};
 pub(crate) use wind::SAMPLE_RATE;
+pub use wind::{wind_strength, Wind, WindDials};
 
 pub struct AmbiencePlugin;
 
@@ -70,6 +70,8 @@ pub struct Surroundings {
     pub warmth: f32,
     // 1 over desert
     pub desert: f32,
+    // the climate biome under the camera, None over the base terrain
+    pub biome: Option<&'static str>,
     // 1 by day, 0 by night, in between at dawn and dusk
     pub day: f32,
     // how much of a breeze is blowing, see `WindDials`
@@ -87,6 +89,7 @@ impl Default for Surroundings {
             trees_overhead: 0.0,
             warmth: 1.0,
             desert: 0.0,
+            biome: None,
             day: 1.0,
             breeze: 0.0,
         }
@@ -168,6 +171,7 @@ fn sense_surroundings(
     }
     let here = noise.sample(eye.x as f64, eye.z as f64);
     let temperature = noise.temperature(eye.x as f64, eye.z as f64);
+    let biome = noise.biomes().name(here.biome);
 
     *around = Surroundings {
         altitude: eye.y - ground,
@@ -177,7 +181,8 @@ fn sense_surroundings(
         trees: trees / total,
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
-        desert: (noise.biomes().name(here.biome) == Some("desert")) as u8 as f32,
+        desert: (biome == Some("desert")) as u8 as f32,
+        biome,
         day: smoothstep(-0.05, 0.2, sun_direction(clock.days()).y),
         breeze: dials.breeze(),
     };
