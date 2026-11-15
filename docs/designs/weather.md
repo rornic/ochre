@@ -26,7 +26,7 @@ The world is 64 km across, so a spell usually covers much of it.
 
 **Clear skies.** Cloud follows the same noise, past a lower bar (`CLOUDY_BELOW_BAR`): it starts to build 0.25 under the wet bar, is all there by 0.05 under it, and is gone below that, so cloud comes before the rain and lingers after it, and between spells the sky is completely clear. Dry ground raises the cloud bar too (`CLOUDY_DRY_BAR`), so steppe and desert are clear most of the time. Each place has a fair-weather cloud share of its own that applies in a cloudy spell, from 12% over desert to 60% over humid ground. Storm cloud and dark cloud are scaled by the same factor, so a storm thins out over ground too dry for cloudy spells. The shaders honour a zero: `sky_cover` shows no cloud at all at zero cover, and the cirrus fades out with the cloud share.
 
-**Snow.** Where the ground is cold enough for grass to lie under snow (`ochre_base::cold::SNOWY_GRASS_TEMPERATURE`, easing to rain over `SNOW_FALL_BAND` above it), so the taiga, tundra and glaciers, precipitation falls as snow (`Sky::snow`, its share), and a storm there never thunders. `Weather` splits what falls at the camera into `rain` and `snow`.
+**Snow.** Where the ground is cold enough for grass to lie under snow (`ochre_base::cold::SNOWY_GRASS_TEMPERATURE`, easing to rain over a narrow `SNOW_FALL_BAND` above it, about 35 blocks of height, so the two rarely fall together), so the taiga, tundra and glaciers, precipitation falls as snow (`Sky::snow`, its share), and a storm there never thunders. `Weather` splits what falls at the camera into `rain` and `snow`.
 
 Over 90 game days on five seeds:
 

@@ -15,7 +15,7 @@ use std::{path::Path, sync::Arc};
 
 use bevy::math::DVec2;
 use image::{Rgb, RgbImage};
-use ochre_base::terrain_source::TerrainSource;
+use ochre_base::{cold::SNOWY_GRASS_TEMPERATURE, terrain_source::TerrainSource};
 use ochre_world::{
     sky::{daylight, TimeOfDay, DAY_TICKS},
     storms::Forecast,
@@ -55,6 +55,8 @@ fn find_snow(
     // a sample every 0.005 of a day, about 108 seconds
     const STEP: u64 = DAY_TICKS / 200;
     const GRID: usize = 64;
+    // how much colder than snowy grass a spot must be, about 100 blocks of height
+    const SAFELY_COLD: f64 = 0.03;
     let cell = 2.0 * half / GRID as f64;
     let snowing = |x: f64, z: f64, tick: u64| {
         let sky = forecast.sky(x, z, tick);
@@ -70,6 +72,10 @@ fn find_snow(
             biome,
             BiomeKind::Taiga | BiomeKind::Tundra | BiomeKind::Glacier
         ) {
+            continue;
+        }
+        // well inside the snowy ground, so walking about doesn't cross into rain
+        if forecast.climate_at(x, z).1 > SNOWY_GRASS_TEMPERATURE as f64 - SAFELY_COLD {
             continue;
         }
         let (mut run, mut from) = (0u64, 0u64);
@@ -95,6 +101,12 @@ fn find_snow(
     let time = from as f64 / DAY_TICKS as f64;
     println!(
         "seed {seed}: snow falls for {minutes} game minutes by day over the {biome:?} at {x:.0}, {z:.0}, from day {time:.3}"
+    );
+    let sky = forecast.sky(x, z, from + run * STEP / 2);
+    let (_, warmth) = forecast.climate_at(x, z);
+    println!(
+        "  warmth {warmth:.3}; mid-snowfall precipitation {:.2}, share that's snow {:.2}",
+        sky.precipitation, sky.snow
     );
     println!(
         "  OCHRE_SEED={seed} OCHRE_SPAWN={x:.0},{z:.0} OCHRE_TIME={time:.3} cargo run --release --example sandbox"

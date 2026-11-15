@@ -230,8 +230,8 @@ const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
 // Dry ground raises the cloud bar by this much, so steppe and desert are clearer still.
 const CLOUDY_DRY_BAR: f64 = 0.25;
 
-// How much warmer than snowy grass the ground can be before it's all rain.
-const SNOW_FALL_BAND: f64 = 0.05;
+// How much warmer than snowy grass the ground can be before it's all rain: narrow, about 35 blocks of height, so rain and snow rarely fall together.
+const SNOW_FALL_BAND: f64 = 0.01;
 
 // The share of what falls on ground of `warmth` that's snow: all of it where grass lies under snow, as the taiga's does.
 fn snow_share(warmth: f64) -> f64 {
@@ -688,6 +688,19 @@ mod tests {
             "{} dry after a dry day, {dry} on any",
             share(&after_dry)
         );
+    }
+
+    #[test]
+    fn test_rain_and_snow_rarely_fall_together() {
+        // all snow on snowy grass, all rain a little warmer, and a narrow strip between
+        let share = |warmth: f64| snow_share(warmth);
+        assert_eq!(share(SNOWY_GRASS_TEMPERATURE as f64 - 0.05), 1.0);
+        assert_eq!(share(SNOWY_GRASS_TEMPERATURE as f64 + 0.02), 0.0);
+        let mixed = (0..1000)
+            .map(|i| i as f64 / 1000.0)
+            .filter(|&warmth| (0.1..0.9).contains(&share(warmth)))
+            .count();
+        assert!(mixed <= 10, "{mixed} thousandths of warmth with both");
     }
 
     #[test]
