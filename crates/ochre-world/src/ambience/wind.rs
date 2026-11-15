@@ -145,8 +145,10 @@ const WHISTLE_INPUT_CUTOFF: f32 = 1200.0;
 // Quieter than the roar, and only once the wind picks up, see `WindDecoder::control`.
 const WHISTLE_GAIN: f32 = 0.2;
 const OUTPUT_GAIN: f32 = 0.5;
-// Puts a breeze on the ground at about -37 LUFS, the quietest thing there, and a gale high up
-// at about -22, see `Loop::loudness`.
+// How much of its loudness a full gale loses, so a gale sits under the music and loops, not over them, and a breeze is as it was.
+const GALE_EASE: f32 = 0.85;
+// Puts a breeze on the ground at about -38 LUFS, the quietest thing there, and a gale high up
+// at about -35 once eased by `GALE_EASE`, see `Loop::loudness`.
 const ROAR_MAKEUP: f32 = 0.34;
 
 pub struct WindDecoder {
@@ -236,8 +238,9 @@ impl WindDecoder {
         }
         // noise through a low-pass keeps about the square root of its cutoff's share of power
         let makeup = (SAMPLE_RATE as f32 / 2.0 / cutoff).sqrt();
-        self.roar_gain = blow.powf(0.95) * makeup * ROAR_MAKEUP;
-        self.whistle_gain = WHISTLE_GAIN * blow * blow;
+        let ease = 1.0 - GALE_EASE * blow;
+        self.roar_gain = blow.powf(0.95) * makeup * ROAR_MAKEUP * ease;
+        self.whistle_gain = WHISTLE_GAIN * blow * blow * ease;
     }
 }
 
