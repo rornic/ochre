@@ -439,6 +439,65 @@ const REFLECTION_NEAR: f32 = 160.0;
 const REFLECTION_REACH: f32 = 64.0;
 const REFLECTION_THICKNESS: f32 = 1.2;
 
+// Painted water. The physics above picks the colours, then they're laid down as a painter would: in flat
+// bands of value with soft, wandering edges, the sky's reflection smeared into vertical strokes, and the
+// sun's glint broken into dry brush dashes along the wind. Bands are in stops (log2 of luminance) so they
+// look the same at any exposure.
+// How wide a band of the water's body is, in stops, and how far noise wanders the edge between two, in bands.
+const BODY_BAND: f32 = 0.85;
+const BAND_WANDER: f32 = 0.9;
+// How much warmer the lighter bands are and cooler the darker, as a multiplier on each end.
+const BAND_WARM: vec3<f32> = vec3<f32>(1.14, 1.04, 0.84);
+const BAND_COOL: vec3<f32> = vec3<f32>(0.84, 0.97, 1.16);
+// A stroke is this many blocks along the wind and across it, and drifts this fast.
+const STROKE_LONG: f32 = 18.0;
+const STROKE_SHORT: f32 = 2.6;
+const STROKE_DRIFT: f32 = 0.35;
+// The reflected sky is smeared this many blocks sideways, in strokes this wide, and banded this wide in stops.
+const SMEAR_REACH: f32 = 0.9;
+const SMEAR_SIZE: f32 = 2.5;
+const REFLECT_BAND: f32 = 0.9;
+// The glint breaks into dashes between these thresholds of the stroke noise, each one this many times the
+// glint's own brightness, and the gaps between them this much of it.
+const DASH_EDGE: vec2<f32> = vec2<f32>(0.30, 0.40);
+const DASH_BRIGHT: f32 = 2.2;
+const DASH_GAP: f32 = 0.2;
+// And its brightness is banded this wide in stops, so a dash is a flat dab of paint and not a gradient.
+const GLINT_BAND: f32 = 1.3;
+
+fn luma3(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+// Noise 0..1 stretched along the wind: strokes, as long as they're wide times STROKE_LONG / STROKE_SHORT.
+fn stroke_noise(xz: vec2<f32>, time: f32, scale: f32) -> f32 {
+    let along = normalize(WIND);
+    let across = vec2<f32>(-along.y, along.x);
+    let p = xz - along * STROKE_DRIFT * time;
+    let q = vec2<f32>(dot(p, along) / (STROKE_LONG * scale), dot(p, across) / (STROKE_SHORT * scale));
+    return 0.65 * smooth_noise(q) + 0.35 * smooth_noise(q * 2.3 + vec2<f32>(7.1, 3.7));
+}
+
+// `value` quantized into flat bands `width` stops wide, a soft step between each, whose edges are moved
+// about by `wander`, 0..1, so a band's edge is a wandering stroke and not a contour line.
+fn banded(value: f32, width: f32, wander: f32) -> f32 {
+    let stops = log2(max(value, 1e-4)) / width + (wander - 0.5) * BAND_WANDER * 2.0;
+    let step = floor(stops);
+    let edge = smoothstep(0.42, 0.58, fract(stops));
+    // back to the nearest band's centre, undoing the wander
+    return exp2((step + edge) * width - (wander - 0.5) * BAND_WANDER * 2.0 * width);
+}
+
+// `colour` laid down in flat bands of value, warm in the light ones and cool in the dark.
+fn paint_banded(colour: vec3<f32>, width: f32, wander: f32) -> vec3<f32> {
+    let value = luma3(colour);
+    let flat_value = banded(value, width, wander);
+    // how light this band is among water's usual range, about 1 stop below to 3 above 0.02
+    let lightness = clamp(log2(max(flat_value, 1e-4) / 0.02) / 4.0 + 0.25, 0.0, 1.0);
+    let toned = colour * mix(BAND_COOL, BAND_WARM, lightness);
+    return toned * (flat_value / max(luma3(toned), 1e-5));
+}
+
 // 0..1 noise from a pixel's position, for jittering the march so its steps don't band.
 fn interleaved_noise(pixel: vec2<f32>) -> f32 {
     return fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))));
@@ -559,19 +618,25 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
     // the sea goes on darkening with depth, past where any bed shows
     body = mix(body, scene_colour(DEEP_OCEAN_COLOR) * daylight(uncurved(world_position)), ocean);
 
+    // strokes no finer than a few pixels, or they'd shimmer
+    let stroke_scale = max(1.0, footprint * 2.0);
+    let wander = stroke_noise(world_position.xz, time, stroke_scale * 2.0);
+    body = paint_banded(body, BODY_BAND, wander);
+
     let reflect_dir = reflect(-to_eye, surface);
     let share = min(fresnel(dot(surface, to_eye)) + 0.03, mix(LAKE_REFLECT_MAX, SEA_REFLECT_MAX, sea));
-    var world = vec4<f32>(0.0);
-    if dist < REFLECTION_NEAR && share > 0.06 {
-        world = screen_reflection(world_position, reflect_dir, frag_coord);
+    // the sky is smeared sideways into strokes before it's looked up, so its clouds streak instead of mirroring
+    let smear = (vec2<f32>(stroke_noise(world_position.xz + vec2<f32>(31.0, 5.0), time, stroke_scale * SMEAR_SIZE), stroke_noise(world_position.xz + vec2<f32>(3.0, 47.0), time, stroke_scale * SMEAR_SIZE)) - 0.5) * SMEAR_REACH;
+    let smeared_dir = normalize(reflect_dir + vec3<f32>(smear.x, 0.0, smear.y));
+    let sky = under_clouds(reflected_sky(smeared_dir), uncurved(world_position), smeared_dir, mix(1.0, SEA_CLOUDS, sea));
+    let reflection = paint_banded(sky, REFLECT_BAND, wander);
+    // the glint, broken into dashes along the wind, each a flat dab
+    var sun = glint(surface, to_eye, variance, world_position, frag_coord.xy) * cloud_shadow(uncurved(world_position)) * mix(1.0, SEA_GLINT, sea);
+    let dab = smoothstep(DASH_EDGE.x, DASH_EDGE.y, stroke_noise(world_position.xz + vec2<f32>(11.0, 29.0), time, stroke_scale));
+    sun *= mix(DASH_GAP, DASH_BRIGHT, dab);
+    if luma3(sun) > 1e-5 {
+        sun = paint_banded(sun, GLINT_BAND, wander);
     }
-    // the sky and clouds only where the land's reflection leaves them showing
-    var reflection = world.rgb;
-    if world.a < 1.0 {
-        let sky = under_clouds(reflected_sky(reflect_dir), uncurved(world_position), reflect_dir, mix(1.0, SEA_CLOUDS, sea));
-        reflection = mix(sky, world.rgb, world.a);
-    }
-    let sun = glint(surface, to_eye, variance, world_position, frag_coord.xy) * cloud_shadow(uncurved(world_position)) * mix(1.0, SEA_GLINT, sea);
     return body * (1.0 - share) + reflection * share + sun;
 }
 
