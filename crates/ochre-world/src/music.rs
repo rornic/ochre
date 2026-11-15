@@ -43,10 +43,9 @@ impl Mood {
             Mood::Storm
         } else if around.desert > 0.5 {
             Mood::Desert
-        } else if around.warmth < 0.5 {
-            Mood::Cold
         } else {
             match around.biome {
+                Some("tundra" | "taiga" | "glacier") => Mood::Cold,
                 Some("forest") => Mood::Forest,
                 Some("jungle" | "swamp") => Mood::Rainforest,
                 Some("savanna") => Mood::Savanna,
@@ -186,14 +185,17 @@ mod tests {
         assert_eq!(Mood::Rainforest, Mood::of(&biome("jungle"), 0.0));
         assert_eq!(Mood::Savanna, Mood::of(&biome("savanna"), 0.0));
         assert_eq!(Mood::Steppe, Mood::of(&biome("steppe"), 0.0));
-        let cold = Surroundings {
+        for name in ["tundra", "taiga", "glacier"] {
+            assert_eq!(Mood::Cold, Mood::of(&biome(name), 0.0));
+        }
+        let cold_forest = Surroundings {
             warmth: 0.0,
             ..biome("forest")
         };
-        assert_eq!(Mood::Cold, Mood::of(&cold, 0.0));
+        assert_eq!(Mood::Forest, Mood::of(&cold_forest, 0.0));
         let desert = Surroundings {
             desert: 1.0,
-            ..cold
+            ..cold_forest
         };
         assert_eq!(Mood::Desert, Mood::of(&desert, 0.0));
         assert_eq!(Mood::Storm, Mood::of(&desert, 0.8));
