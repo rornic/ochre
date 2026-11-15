@@ -422,7 +422,9 @@ const FLOW_PERIOD: f32 = 1.2;
 // The cosine off straight up of the edge of what's seen out of the water from under it, by its refraction, and how
 // much of what's above shows past that edge and within it.
 const SNELL_WINDOW: f32 = 0.661;
-const BELOW_CLEAR: vec2<f32> = vec2<f32>(0.7, 0.95);
+const BELOW_CLEAR: vec2<f32> = vec2<f32>(0.06, 0.8);
+// Seen from under it, what's above is blurred by this share of the screen's height, as refracted sky never is sharp.
+const BELOW_BLUR: f32 = 0.012;
 // The reflection ray marches this many steps over up to this many blocks, and counts as having
 // reached a surface it has gone this far behind.
 const REFLECTION_STEPS: i32 = 20;
@@ -659,7 +661,13 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
 @if(VIEW_TRANSMISSION_TEXTURE) {
     let uv = frag_coord.xy / view_bindings::view.viewport.zw;
     let bent = clamp(uv + slope * REFRACTION * 3.0, vec2<f32>(0.001), vec2<f32>(0.999));
-    above = textureSampleLevel(view_bindings::view_transmission_texture, view_bindings::view_transmission_sampler, bent, 0.0).rgb;
+    let aspect = view_bindings::view.viewport.z / view_bindings::view.viewport.w;
+    let reach = vec2<f32>(BELOW_BLUR / aspect, BELOW_BLUR);
+    above = vec3<f32>(0.0);
+    for (var i = 0; i < 5; i++) {
+        let tap = select(vec2<f32>(0.0), vec2<f32>(cos(f32(i) * 1.5708), sin(f32(i) * 1.5708)), i > 0);
+        above += textureSampleLevel(view_bindings::view_transmission_texture, view_bindings::view_transmission_sampler, clamp(bent + tap * reach, vec2<f32>(0.001), vec2<f32>(0.999)), 0.0).rgb * 0.2;
+    }
 }
     return mix(scatter, above, mix(BELOW_CLEAR.x, BELOW_CLEAR.y, window));
 }
