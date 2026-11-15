@@ -106,6 +106,8 @@ const RING_COLUMNS: usize = 8;
 const CENTRE_WEIGHT: f32 = 2.0;
 // The tree density, see `Biome::tree_density`, that sounds like the depths of a forest.
 const DENSE_FOREST: f64 = 0.4;
+// Every ambient sound's share of its own level (loops, rain, thunder, wind, owl), -10 dB, so the whole bed sits under the music.
+pub(crate) const AMBIENCE_TRIM: f32 = 0.32;
 // The temperatures, see `NoiseGenerator::temperature`, between which the cold sets in.
 const FREEZING: (f32, f32) = (0.15, 0.35);
 
@@ -194,17 +196,15 @@ pub enum Loop {
     Forest,
     Crickets,
     Waves,
-    Desert,
     Underwater,
     Leaves,
 }
 
 impl Loop {
-    const ALL: [Loop; 6] = [
+    const ALL: [Loop; 5] = [
         Loop::Forest,
         Loop::Crickets,
         Loop::Waves,
-        Loop::Desert,
         Loop::Underwater,
         Loop::Leaves,
     ];
@@ -214,20 +214,18 @@ impl Loop {
             Loop::Forest => "sounds/forest.ogg",
             Loop::Crickets => "sounds/crickets.ogg",
             Loop::Waves => "sounds/waves.ogg",
-            Loop::Desert => "sounds/desert.ogg",
             Loop::Underwater => "sounds/underwater.ogg",
             Loop::Leaves => "sounds/leaves.ogg",
         }
     }
 
     // Each file's measured loudness and the loudness it plays at in full, in LUFS: the birds
-    // up front, the sea behind them, crickets and the desert behind that, the ground wind quieter still.
+    // up front, the sea behind them, crickets behind that, the ground wind quieter still.
     fn loudness(self) -> (f32, f32) {
         match self {
-            Loop::Forest => (-19.2, -24.0),
+            Loop::Forest => (-19.2, -28.0),
             Loop::Crickets => (-14.0, -29.0),
             Loop::Waves => (-19.7, -30.0),
-            Loop::Desert => (-24.5, -31.0),
             Loop::Underwater => (-18.4, -22.0),
             Loop::Leaves => (-20.2, -35.0),
         }
@@ -235,7 +233,7 @@ impl Loop {
 
     fn gain(self) -> f32 {
         let (measured, wanted) = self.loudness();
-        10f32.powf((wanted - measured) / 20.0)
+        10f32.powf((wanted - measured) / 20.0) * AMBIENCE_TRIM
     }
 
     /// Whether this loop comes and goes on its own, as birds and crickets do, rather than
@@ -251,10 +249,6 @@ impl Loop {
             Loop::Crickets => Some(Bursts {
                 seconds: (2.0, 8.0),
                 quiet: (0.6, 0.9),
-            }),
-            Loop::Desert => Some(Bursts {
-                seconds: (12.0, 40.0),
-                quiet: (0.35, 0.75),
             }),
             // the leaves come and go with the wind's breezes instead, see `Loop::level`
             Loop::Waves | Loop::Underwater | Loop::Leaves => None,
@@ -280,7 +274,6 @@ impl Loop {
             }
             // frozen sea doesn't break on the shore
             Loop::Waves => around.water * around.warmth * near(10.0, 120.0),
-            Loop::Desert => around.desert * near(30.0, 150.0),
             Loop::Underwater => 0.0,
             // only under the trees' crowns, and only while a breeze stirs them
             Loop::Leaves => around.trees_overhead * around.breeze * near(8.0, 40.0),
@@ -372,7 +365,7 @@ const OWL_DISTANCE: (f32, f32) = (20.0, 45.0);
 // this far, so owls a few dozen blocks off are faint but clear.
 const OWL_SCALE: f32 = 0.06;
 // Brings a hoot a few dozen blocks off to about the crickets' loudness.
-const OWL_VOLUME: f32 = 0.2;
+const OWL_VOLUME: f32 = 0.2 * AMBIENCE_TRIM;
 
 #[derive(Resource)]
 struct Owl(Handle<AudioSource>);
