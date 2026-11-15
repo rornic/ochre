@@ -18,8 +18,13 @@ const EDGE_FADE_START: f32 = 0.9;
 const FOG_SCALE: f32 = 0.16;
 
 // The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
-const SUN_HAZE: f32 = 0.35;
+const SUN_HAZE: f32 = 0.08;
 const SUN_HAZE_COLOUR: vec3<f32> = vec3<f32>(1.0, 0.62, 0.32);
+
+// The haze thins as the camera climbs, as the air does: from `THIN_FROM` blocks over the sea it eases to `THIN_TO` of its density by `THIN_FULL`.
+const THIN_FROM: f32 = 150.0;
+const THIN_FULL: f32 = 500.0;
+const THIN_TO: f32 = 0.25;
 
 // Mist: where the camera's ground is cold enough for frost, by the sum `frost.wesl` does, a low mist of its own lies over the fog's. Its
 // density is `MIST_PER_BLOCK` at the ground under the camera and falls by an e-fold every `MIST_HEIGHT` blocks above it, so it pools in
@@ -41,7 +46,8 @@ fn mist(view_position: vec3<f32>) -> f32 {
 // How much of the view the mist hides over `across` blocks from `view_position` to the real `height`, `chill` being `mist`: the
 // density, which falls with height over the ground, averaged along the way up or down the line of sight.
 fn mist_hides(view_position: vec3<f32>, height: f32, across: f32, chill: f32) -> f32 {
-    let base = cold().camera.w;
+    // lower ground than the camera's has its own mist lying on it, not the camera's ground's: from a ridge the lowlands aren't under a sheet of it
+    let base = min(cold().camera.w, height);
     let up_here = max(view_position.y - base, 0.0) / MIST_HEIGHT;
     let up_there = max(height - base, 0.0) / MIST_HEIGHT;
     let rise = up_there - up_here;
@@ -77,7 +83,8 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     let amount = (1.0 - exp(-distance / scale)) / (1.0 - exp(-end / scale));
     let chill = mist(view_position);
     sky = mix(sky, MIST_COLOUR * dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722)), MIST_PALE * chill);
-    let fog_opacity = mix(amount * fog.base_color.a, 1.0, smoothstep(EDGE_FADE_START, 1.0, distance / end));
+    let thin = mix(1.0, THIN_TO, smoothstep(THIN_FROM, THIN_FULL, view_position.y - f32(constants::WATER_LEVEL)));
+    let fog_opacity = mix(amount * fog.base_color.a * thin, 1.0, smoothstep(EDGE_FADE_START, 1.0, distance / end));
     let mist_opacity = mist_hides(view_position, uncurved(world_position).y, distance, chill);
     let opacity = 1.0 - (1.0 - fog_opacity) * (1.0 - mist_opacity);
     return vec4<f32>(mix(color.rgb, sky, opacity), color.a);
