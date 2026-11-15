@@ -88,7 +88,7 @@ pub fn update_wind(
     dials: Res<WindDials>,
     weather: Option<Res<crate::weather::Weather>>,
 ) {
-    let storm = weather.map_or(0.0, |weather| weather.rain) * STORM_WIND;
+    let storm = weather.map_or(0.0, |weather| weather.precipitation()) * STORM_WIND;
     let wanted = if around.underwater {
         UNDERWATER_WIND
     } else {

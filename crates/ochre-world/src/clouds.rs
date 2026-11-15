@@ -5,6 +5,7 @@ use bevy::{
     core_pipeline::{schedule::Core3d, Core3dSystems, FullscreenShader},
     diagnostic::FrameCount,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    math::DVec2,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
@@ -34,8 +35,9 @@ use bevy::{
 };
 use noise::{Fbm, MultiFractal, NoiseFn, Perlin};
 
-use crate::sky::{Moon, Sun};
+use crate::sky::{Moon, Sun, TimeOfDay};
 use crate::sky_dome::dome;
+use crate::storms::{Forecast, Sky};
 use ochre_terrain::curvature::Curvature;
 pub use ochre_terrain::material::CloudLayer;
 use ochre_terrain::material::{push_shader_defs, water_level};
@@ -50,8 +52,14 @@ const CELL: f32 = 48.0;
 const PATTERN: usize = 256;
 // The pattern's width in blocks.
 const SPAN: f32 = PATTERN as f32 * CELL;
-// Share of the sky with any cloud over it, from wisps at the edges to full cover in the middle.
-const CLOUDY: f64 = 0.45;
+// The weather grid round the camera the clouds thicken and thin by: cells this many blocks
+// across, this many each way, reaching past where the clouds fade out, and how far the camera
+// moves, or how many game ticks pass, before it's worked out again.
+const WEATHER_CELL: f64 = 1_100.0;
+const WEATHER_CELLS: usize = 64;
+const WEATHER_TICKS: u64 = 40;
+// The grid's header in the buffer, in floats, before a vec4 per cell, see `WeatherMap` in `cloud_bindings.wesl`.
+const WEATHER_HEADER: usize = 8;
 // Cells across a cloud and a cluster of them, and how much clustering counts against single clouds.
 const CLOUD_CELLS: f64 = 24.0;
 const CLUSTER_CELLS: f64 = 80.0;
@@ -84,7 +92,7 @@ impl Plugin for CloudPlugin {
             .add_systems(PreStartup, spawn_clouds)
             // once the camera's spawned
             .add_systems(PostStartup, spawn_cloud_dome)
-            .add_systems(Update, fit_cloud_target)
+            .add_systems(Update, (fit_cloud_target, map_weather))
             .add_systems(
                 PostUpdate,
                 aim_cloud_march.after(TransformSystems::Propagate),
@@ -120,6 +128,9 @@ pub struct CloudMaterial {
     #[texture(9)]
     #[sampler(10)]
     target: Handle<Image>,
+    // the weather round the camera, for the rain falling from the clouds, see `CloudLayer::weather`
+    #[storage(11, read_only)]
+    weather: Handle<ShaderBuffer>,
 }
 
 impl CloudMaterial {
@@ -183,6 +194,7 @@ struct CloudMarch {
     pattern: Handle<Image>,
     layer: Vec4,
     curvature: Handle<ShaderBuffer>,
+    weather: Handle<ShaderBuffer>,
     view: CloudView,
 }
 
@@ -215,7 +227,9 @@ fn torus(x: usize, z: usize, cells: f64) -> [f64; 4] {
     [x.cos(), x.sin(), z.cos(), z.sin()].map(|v| v * radius)
 }
 
-/// Cloud cover per cell, row-major [z][x]: clear over `1 - CLOUDY` of the sky, rising evenly to 1 over the rest.
+/// Where each cell ranks among the pattern's cells, from 0 for the clearest to 1 for the
+/// cloudiest, row-major [z][x]: a weather that clouds over a share of the sky covers the cells
+/// ranked last, see `sky_cover` in `cloud_bindings.wesl`.
 fn cloud_pattern(seed: u32) -> Vec<f32> {
     let noise = Fbm::<Perlin>::new(seed)
         .set_octaves(3)
@@ -230,16 +244,15 @@ fn cloud_pattern(seed: u32) -> Vec<f32> {
         .collect();
     let mut order: Vec<usize> = (0..values.len()).collect();
     order.sort_by(|&a, &b| values[a].total_cmp(&values[b]));
-    let mut cover = vec![0.0; values.len()];
+    let mut ranks = vec![0.0; values.len()];
     for (rank, i) in order.into_iter().enumerate() {
-        let share = rank as f64 / values.len() as f64;
-        cover[i] = ((share - (1.0 - CLOUDY)) / CLOUDY).max(0.0) as f32;
+        ranks[i] = rank as f32 / (values.len() - 1) as f32;
     }
-    cover
+    ranks
 }
 
 // The pattern as a texture that repeats, u along x and v along z.
-fn pattern_image(cover: &[f32]) -> Image {
+fn pattern_image(ranks: &[f32]) -> Image {
     let mut image = Image::new(
         Extent3d {
             width: PATTERN as u32,
@@ -247,7 +260,7 @@ fn pattern_image(cover: &[f32]) -> Image {
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        cover.iter().map(|c| (c * 255.0).round() as u8).collect(),
+        ranks.iter().map(|r| (r * 255.0).round() as u8).collect(),
         TextureFormat::R8Unorm,
         RenderAssetUsages::RENDER_WORLD,
     );
@@ -264,6 +277,7 @@ fn pattern_image(cover: &[f32]) -> Image {
 fn spawn_clouds(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
     curvature: Res<Curvature>,
     window: Query<&Window, With<PrimaryWindow>>,
     resolution: Res<CloudTargetResolution>,
@@ -284,6 +298,11 @@ fn spawn_clouds(
         None,
     );
     reflection.sampler = ImageSampler::linear();
+    // no cells until the weather's known, which the shaders read as fair weather
+    let weather = buffers.add(ShaderBuffer::new(
+        vec![0.0f32; WEATHER_HEADER + 4 * WEATHER_CELLS * WEATHER_CELLS],
+        RenderAssetUsages::default(),
+    ));
     let clouds = CloudLayer {
         // OCHRE_SEED repeats the clouds too, for comparing frames across runs
         pattern: images.add(pattern_image(&cloud_pattern(
@@ -295,6 +314,7 @@ fn spawn_clouds(
         layer: Vec4::new((CLOUD_BASE + CLOUD_TOP) / 2.0, SPAN, WIND.x, WIND.y),
         target: images.add(target),
         reflection: images.add(reflection),
+        weather,
     };
     commands.insert_resource(CloudMarch {
         target: clouds.target.clone(),
@@ -303,6 +323,7 @@ fn spawn_clouds(
         pattern: clouds.pattern.clone(),
         layer: clouds.layer,
         curvature: curvature.buffer.clone(),
+        weather: clouds.weather.clone(),
         view: CloudView::default(),
     });
     commands.insert_resource(clouds);
@@ -334,6 +355,7 @@ fn spawn_cloud_dome(
         shade: Vec4::ONE,
         curvature: curvature.buffer.clone(),
         target: clouds.target.clone(),
+        weather: clouds.weather.clone(),
     });
     commands.spawn(dome(&mut meshes, material, camera));
 }
@@ -406,6 +428,67 @@ fn aim_cloud_march(
     };
 }
 
+/// The weather round the camera, as the clouds' shaders read it: the grid's corner, one over its
+/// cells' width and how many across, the most precipitation and storm cloud on it, then each
+/// cell's cloud share, storm, precipitation and the share of that falling as snow. See `WeatherMap` in `cloud_bindings.wesl`.
+fn weather_map(corner: DVec2, skies: &[Sky]) -> Vec<f32> {
+    let most = |of: fn(&Sky) -> f32| skies.iter().map(of).fold(0.0f32, f32::max);
+    let mut out = Vec::with_capacity(WEATHER_HEADER + 4 * skies.len());
+    out.extend([
+        corner.x as f32,
+        corner.y as f32,
+        (1.0 / WEATHER_CELL) as f32,
+        WEATHER_CELLS as f32,
+        most(|sky| sky.precipitation),
+        most(|sky| sky.storm),
+        0.0,
+        0.0,
+    ]);
+    for sky in skies {
+        out.extend([sky.cloud, sky.storm, sky.precipitation, sky.snow]);
+    }
+    out
+}
+
+// The grid's north-west corner for a camera at `eye`, on whole cells so they don't swim as it moves.
+fn weather_corner(eye: Vec3) -> DVec2 {
+    let cell = (DVec2::new(eye.x as f64, eye.z as f64) / WEATHER_CELL).floor();
+    (cell - (WEATHER_CELLS / 2) as f64) * WEATHER_CELL
+}
+
+// Works the weather grid out again round the camera once it's moved a cell or the weather's moved on.
+fn map_weather(
+    forecast: Option<Res<Forecast>>,
+    weather: Option<Res<crate::weather::Weather>>,
+    clock: Res<TimeOfDay>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
+    clouds: Option<Res<CloudLayer>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
+    // where the grid was last worked out, and when
+    mut last: Local<Option<(DVec2, u64)>>,
+) {
+    let (Some(forecast), Ok(camera), Some(clouds)) = (forecast, camera.single(), clouds) else {
+        return;
+    };
+    // a sky held clear leaves the grid empty, which the shaders read as fair weather
+    if weather.is_some_and(|weather| weather.calm()) {
+        return;
+    }
+    let corner = weather_corner(camera.translation());
+    if last.is_some_and(|(at, tick)| at == corner && clock.0.abs_diff(tick) < WEATHER_TICKS) {
+        return;
+    }
+    *last = Some((corner, clock.0));
+    let skies = forecast.map(corner, WEATHER_CELLS, WEATHER_CELL, clock.0);
+    let values = weather_map(corner, &skies);
+    // the same size as made in `spawn_clouds`, so it's written in place
+    if let Some(mut buffer) = buffers.get_mut(&clouds.weather) {
+        if let Some(floats) = buffer.cast_slice_mut::<f32>() {
+            floats.copy_from_slice(&values);
+        }
+    }
+}
+
 #[derive(Resource)]
 struct CloudPipeline {
     layout: BindGroupLayoutDescriptor,
@@ -432,6 +515,7 @@ fn init_cloud_pipeline(
                 (8, storage_buffer_read_only_sized(false, None)),
                 (9, texture_2d(TextureSampleType::Float { filterable: true })),
                 (10, sampler(SamplerBindingType::Filtering)),
+                (11, storage_buffer_read_only_sized(false, None)),
             ),
         ),
     );
@@ -501,6 +585,7 @@ fn march_clouds(
         Some(history),
         Some(pattern),
         Some(curvature),
+        Some(weather),
     ) = (
         pipeline_cache.get_render_pipeline(pipeline.pipeline),
         pipeline_cache.get_render_pipeline(pipeline.reflection),
@@ -509,6 +594,7 @@ fn march_clouds(
         images.get(&march.history),
         images.get(&march.pattern),
         buffers.get(&march.curvature),
+        buffers.get(&march.weather),
     )
     else {
         return;
@@ -531,6 +617,7 @@ fn march_clouds(
             (8, curvature.buffer.as_entire_binding()),
             (9, &history.texture_view),
             (10, &history.sampler),
+            (11, weather.buffer.as_entire_binding()),
         )),
     );
     let diagnostics = ctx.diagnostic_recorder();
@@ -572,6 +659,31 @@ fn march_clouds(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Share of the sky with any cloud over it until the weather's known, matching
+    // `FAIR_CLOUD` in `cloud_bindings.wesl`, and how far a storm's cloud fills the pattern in,
+    // matching `STORM_FILL` there.
+    const FAIR_CLOUD: f32 = 0.45;
+    const STORM_FILL: f32 = 0.75;
+
+    // Where the gaps close into an overcast, and how thick it is at its thinnest, matching
+    // `OVERCAST` and `OVERCAST_FILL` there.
+    const OVERCAST: (f32, f32) = (0.75, 0.97);
+    const OVERCAST_FILL: f32 = 0.8;
+
+    // How much cloud there is, 0..1, where the pattern ranks a cell `share` and the weather
+    // clouds over `cloudy` of the sky with `storm` of a storm's cloud: clear over `1 - cloudy`
+    // of it, rising evenly to 1 over the rest, closing into an overcast as that nears all of
+    // it, and filling in under a storm. The Rust twin of `sky_cover` in `cloud_bindings.wesl`, so
+    // its shares can be tested.
+    fn cover(share: f32, cloudy: f32, storm: f32) -> f32 {
+        let scattered = ((share - (1.0 - cloudy)) / cloudy.max(0.05)).clamp(0.0, 1.0);
+        let overcast = ochre_base::math::smoothstep(OVERCAST.0, OVERCAST.1, cloudy)
+            * (OVERCAST_FILL + (1.0 - OVERCAST_FILL) * share);
+        let cover = scattered.max(overcast);
+        let filled = cover.max(STORM_FILL + (1.0 - STORM_FILL) * share);
+        cover + (filled - cover) * storm
+    }
 
     #[test]
     fn cloud_target_caps_high_resolutions_and_keeps_smaller_views_half_size() {
@@ -626,10 +738,74 @@ mod tests {
 
     #[test]
     fn test_pattern_covers_the_share_of_sky_asked() {
-        let cover = cloud_pattern(3);
-        let cloudy = cover.iter().filter(|&&c| c > 0.0).count() as f64 / cover.len() as f64;
-        assert!((cloudy - CLOUDY).abs() < 0.01, "{cloudy}");
-        assert!(cover.iter().all(|c| (0.0..=1.0).contains(c)));
+        let ranks = cloud_pattern(3);
+        assert!(ranks.iter().all(|c| (0.0..=1.0).contains(c)));
+        for cloudy in [0.12, FAIR_CLOUD, 0.6, 0.7] {
+            let covered = ranks
+                .iter()
+                .filter(|&&s| cover(s, cloudy, 0.0) > 0.0)
+                .count() as f32
+                / ranks.len() as f32;
+            assert!((covered - cloudy).abs() < 0.01, "{cloudy}: {covered}");
+        }
+        // a clear sky has no cloud at all, and a thin one only the faintest
+        assert!(ranks.iter().all(|&s| cover(s, 0.0, 0.0) == 0.0));
+        assert!(ranks.iter().all(|&s| cover(s, 0.02, 0.0) < 0.5));
+        // near full cloud, the gaps close into an overcast
+        assert!(ranks.iter().all(|&s| cover(s, 0.97, 0.0) >= OVERCAST_FILL));
+        // a storm fills the sky in, thickest where the pattern's cloudiest
+        let stormy: Vec<f32> = ranks.iter().map(|&s| cover(s, 0.5, 1.0)).collect();
+        assert!(stormy.iter().all(|&c| c >= STORM_FILL));
+        assert!(cover(0.99, 0.5, 1.0) > cover(0.1, 0.5, 1.0));
+    }
+
+    #[test]
+    fn test_the_weather_grid_sits_on_whole_cells_round_the_camera() {
+        let corner = weather_corner(Vec3::new(12_345.0, 500.0, -6_789.0));
+        assert_eq!(corner % WEATHER_CELL, DVec2::ZERO);
+        let middle = corner + DVec2::splat(WEATHER_CELLS as f64 * WEATHER_CELL / 2.0);
+        assert!(
+            (middle - DVec2::new(12_345.0, -6_789.0))
+                .abs()
+                .max_element()
+                <= WEATHER_CELL
+        );
+        // and reaches past where the clouds fade, 35 km out, see `FADE` in `cloud_march.wesl`
+        assert!(WEATHER_CELLS as f64 * WEATHER_CELL / 2.0 >= 35_000.0);
+    }
+
+    #[test]
+    fn test_the_weather_buffer_holds_its_header_then_each_cell() {
+        let skies = vec![
+            Sky {
+                precipitation: 0.3,
+                snow: 0.2,
+                cloud: 0.9,
+                storm: 0.5,
+                thunder: 0.1,
+            };
+            WEATHER_CELLS * WEATHER_CELLS
+        ];
+        let values = weather_map(DVec2::new(-100.0, 200.0), &skies);
+        assert_eq!(
+            values.len(),
+            WEATHER_HEADER + 4 * WEATHER_CELLS * WEATHER_CELLS
+        );
+        assert_eq!(
+            &values[..6],
+            &[
+                -100.0,
+                200.0,
+                (1.0 / WEATHER_CELL) as f32,
+                WEATHER_CELLS as f32,
+                0.3,
+                0.5
+            ]
+        );
+        assert_eq!(
+            &values[WEATHER_HEADER..WEATHER_HEADER + 4],
+            &[0.9, 0.5, 0.3, 0.2]
+        );
     }
 
     #[test]

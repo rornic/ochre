@@ -1196,6 +1196,11 @@ impl TerrainSource for WorldTerrain {
         let (x, z) = nearest.map_or((0, 0), |f| (f.x as i64, f.z as i64));
         (x, z, self.height(x as f64, z as f64))
     }
+
+    fn prevailing_wind(&self) -> [f32; 2] {
+        let climate = &self.map.config.climate;
+        [climate.wind_x, climate.wind_z]
+    }
 }
 
 #[cfg(test)]

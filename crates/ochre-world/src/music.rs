@@ -92,7 +92,7 @@ fn play_music(
     mut played: Local<bool>,
 ) {
     let dt = time.delta_secs();
-    let mood = Mood::of(&around, weather.map_or(0.0, |weather| weather.rain));
+    let mood = Mood::of(&around, weather.map_or(0.0, |weather| weather.precipitation()));
     if let Ok((entity, mut track, sink)) = tracks.single_mut() {
         // the sink arrives a frame after the player is spawned
         let Some(mut sink) = sink else {

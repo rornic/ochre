@@ -93,7 +93,7 @@ fn thicken(
     mut air: Query<&mut FogVolume, bevy::ecs::query::With<Shafts>>,
     mut march: Query<&mut VolumetricFog>,
 ) {
-    let thickness = density(sun_direction(clock.days()).y, weather.rain);
+    let thickness = density(sun_direction(clock.days()).y, weather.precipitation());
     for mut fog in &mut air {
         if (fog.density_factor - thickness).abs() > 1e-6 {
             fog.density_factor = thickness;

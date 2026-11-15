@@ -38,7 +38,7 @@ die() { echo "$1, see $work" >&2; KEEP_WORK=1; exit 1; }
 cargo build --release --example sandbox
 
 # BEVY_ASSET_ROOT: run from a copied binary and the game looks for assets beside it, finds none and draws nothing
-# OCHRE_CLEAR_SKY: the weather runs on game time, so a flight that winds the clock on would drive into the first storm
+# OCHRE_CLEAR_SKY: the weather runs on game time, so a flight that winds the clock on would sweep through the seed's storms
 game_env=(BEVY_ASSET_ROOT="$PWD" OCHRE_SEED="$seed" OCHRE_SPAWN="$first_x,$first_z,5" OCHRE_TIME="$first_day"
   OCHRE_FLIGHT="$flight" OCHRE_FLIGHT_WARMUP="$warmup" OCHRE_CLEAR_SKY=1)
 
