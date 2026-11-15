@@ -2,6 +2,10 @@
 //! biome sees rain, and maps of the storms drifting over it.
 //!
 //!   cargo run --release --example weather_map -- --seed 1 [--days 30] [--out target/weather_map]
+//!   cargo run --release --example weather_map -- --seed 1 --snow
+//!
+//! `--snow` instead finds where and when it snows longest by day in the taiga, tundra and
+//! glaciers, within the first `--days` (at most 12), and prints the command to start a game there.
 //!
 //! Prints, per biome over `--days` game days: the share of the time it rains, the share of days
 //! with any rain, and how long runs of wet days and of dry days last on average. Writes `<out>/seed<N>-day<D>.png` for a few moments
@@ -13,7 +17,7 @@ use bevy::math::DVec2;
 use image::{Rgb, RgbImage};
 use ochre_base::terrain_source::TerrainSource;
 use ochre_world::{
-    sky::DAY_TICKS,
+    sky::{daylight, TimeOfDay, DAY_TICKS},
     storms::Forecast,
     worldmap::{character, climate::BiomeKind, io::load_or_generate, WorldConfig, WorldTerrain},
 };
@@ -40,12 +44,74 @@ fn biome_colour(kind: BiomeKind) -> [f32; 3] {
     }
 }
 
+// Prints where and when it snows longest by day in the cold biomes, with the command to start there.
+fn find_snow(
+    forecast: &Forecast,
+    biome_at: &dyn Fn(f64, f64) -> BiomeKind,
+    half: f64,
+    seed: u32,
+    days: u64,
+) {
+    // a sample every 0.005 of a day, about 108 seconds
+    const STEP: u64 = DAY_TICKS / 200;
+    const GRID: usize = 64;
+    let cell = 2.0 * half / GRID as f64;
+    let snowing = |x: f64, z: f64, tick: u64| {
+        let sky = forecast.sky(x, z, tick);
+        sky.precipitation > 0.5 && sky.snow > 0.9 && daylight(&TimeOfDay(tick)) > 0.9
+    };
+    // the longest run of snowing samples: its length, where, in which biome, and its first tick
+    let mut best: Option<(u64, f64, f64, BiomeKind, u64)> = None;
+    for k in (0..GRID * GRID).filter(|k| (k % GRID + k / GRID) % 2 == 0) {
+        let x = -half + ((k % GRID) as f64 + 0.5) * cell;
+        let z = -half + ((k / GRID) as f64 + 0.5) * cell;
+        let biome = biome_at(x, z);
+        if !matches!(
+            biome,
+            BiomeKind::Taiga | BiomeKind::Tundra | BiomeKind::Glacier
+        ) {
+            continue;
+        }
+        let (mut run, mut from) = (0u64, 0u64);
+        for tick in (0..days * DAY_TICKS).step_by(STEP as usize) {
+            if !snowing(x, z, tick) {
+                run = 0;
+                continue;
+            }
+            if run == 0 {
+                from = tick;
+            }
+            run += 1;
+            if best.is_none_or(|(longest, ..)| run > longest) {
+                best = Some((run, x, z, biome, from));
+            }
+        }
+    }
+    let Some((run, x, z, biome, from)) = best else {
+        println!("seed {seed}: no daytime snowfall in the first {days} days");
+        return;
+    };
+    let minutes = run * STEP / 20 / 60;
+    let time = from as f64 / DAY_TICKS as f64;
+    println!(
+        "seed {seed}: snow falls for {minutes} game minutes by day over the {biome:?} at {x:.0}, {z:.0}, from day {time:.3}"
+    );
+    println!(
+        "  OCHRE_SEED={seed} OCHRE_SPAWN={x:.0},{z:.0} OCHRE_TIME={time:.3} cargo run --release --example sandbox"
+    );
+}
+
 fn main() {
     let mut seed = 1u32;
     let mut days = 30u64;
     let mut out = "target/weather_map".to_string();
+    let mut snow = false;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
+        if flag == "--snow" {
+            snow = true;
+            continue;
+        }
         let value = args
             .next()
             .unwrap_or_else(|| panic!("missing value for {flag}"));
@@ -81,6 +147,11 @@ fn main() {
         BiomeKind::from_u8(map.biome[k])
     };
 
+    if snow {
+        find_snow(&forecast, &biome_at, half, seed, days.min(12));
+        return;
+    }
+
     // how often it rains in each biome, and whether it comes in spells: a day is wet if it rains
     // at all, sampled every quarter of a game hour
     const GRID: usize = 32;
@@ -92,6 +163,8 @@ fn main() {
     let mut wet_days = vec![vec![false; days as usize]; GRID * GRID];
     let mut cloudy_days = vec![vec![false; days as usize]; GRID * GRID];
     let mut stats = vec![(0usize, 0usize, 0usize); BiomeKind::ALL.len()];
+    // per biome, the samples with rain or snow falling, and the ones where it's mostly snow
+    let mut falling = vec![(0usize, 0usize); BiomeKind::ALL.len()];
     let biomes: Vec<BiomeKind> = (0..GRID * GRID)
         .map(|k| {
             let p = corner + (DVec2::new((k % GRID) as f64, (k / GRID) as f64) + 0.5) * cell;
@@ -108,6 +181,11 @@ fn main() {
             entry.0 += 1;
             entry.1 += raining as usize;
             entry.2 += clear as usize;
+            if raining {
+                let entry = &mut falling[biomes[k] as usize];
+                entry.0 += 1;
+                entry.1 += (sky.snow > 0.5) as usize;
+            }
             let day = (step / SAMPLES_A_DAY) as usize;
             wet_days[k][day] |= raining;
             cloudy_days[k][day] |= !clear;
@@ -166,6 +244,29 @@ fn main() {
             mean(&dry_runs),
             100.0 * clear as f64 / samples as f64,
             100.0 * clear_days as f64 / (cells.len() * days as usize) as f64,
+        );
+    }
+
+    println!("\n{:<10} {:>7} {:>16}", "biome", "warmth", "falls as snow");
+    for kind in BiomeKind::ALL {
+        let cells: Vec<usize> = (0..GRID * GRID).filter(|&k| biomes[k] == kind).collect();
+        let (precipitating, snowing) = falling[kind as usize];
+        if cells.is_empty() || precipitating == 0 {
+            continue;
+        }
+        let warmth = cells
+            .iter()
+            .map(|&k| {
+                let p = corner + (DVec2::new((k % GRID) as f64, (k / GRID) as f64) + 0.5) * cell;
+                forecast.climate_at(p.x, p.y).1
+            })
+            .sum::<f64>()
+            / cells.len() as f64;
+        println!(
+            "{:<10} {:>7.2} {:>15.0}%",
+            format!("{kind:?}"),
+            warmth,
+            100.0 * snowing as f64 / precipitating as f64
         );
     }
 

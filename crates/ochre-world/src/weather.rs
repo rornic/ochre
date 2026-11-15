@@ -65,7 +65,7 @@ impl Plugin for WeatherPlugin {
 pub struct Weather {
     /// How hard it's raining, 0..1: what falls where it's too warm for snow.
     pub rain: f32,
-    /// How hard it's snowing, 0..1: what falls where it's cold enough for frost.
+    /// How hard it's snowing, 0..1: what falls where grass lies under snow.
     pub snow: f32,
     /// The share of the sky clouded over, 0..1.
     pub cloud: f32,

@@ -14,7 +14,7 @@
 //! strong enough for the ground there, which almost everywhere is rarely, in jungle often, and in
 //! desert never. So rain comes in short runs of showery days with dry ones between. Cloud follows
 //! the same air masses a little more loosely: it builds before the rain and thins out after it,
-//! and between spells the sky is completely clear. Where the ground's cold enough for frost,
+//! and between spells the sky is completely clear. Where grass lies under snow,
 //! precipitation falls as snow, and never thunders.
 //!
 //! Every value comes from `+ - * / sqrt floor` and integer hashing, which give the same answer
@@ -30,7 +30,7 @@ use bevy::{
 };
 use ochre_base::{
     biome::Climate,
-    cold::{FROST_BAND, SNOW_TEMPERATURE},
+    cold::SNOWY_GRASS_TEMPERATURE,
     math::smoothstep_f64,
     noise::{hash, perlin},
     terrain_source::TerrainSource,
@@ -44,8 +44,7 @@ use crate::sky::{DAY_SECONDS, TICKS_PER_SECOND};
 pub struct Sky {
     /// How hard rain or snow falls, 0..1.
     pub precipitation: f32,
-    /// The share of it that falls as snow, 0 for rain to 1: snow where the ground is cold enough
-    /// for frost, as `ochre_base::cold::frost_cold` has it.
+    /// The share of it that falls as snow, 0 for rain to 1: snow wherever grass lies under snow.
     pub snow: f32,
     /// The share of the sky with cloud over it, 0..1: the clear-sky clouds of the climate, and
     /// up to full cover under a storm's shield.
@@ -231,11 +230,13 @@ const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
 // Dry ground raises the cloud bar by this much, so steppe and desert are clearer still.
 const CLOUDY_DRY_BAR: f64 = 0.25;
 
-// The share of what falls on ground of `warmth` that's snow, 0..1: all of it where the ground's
-// cold enough for frost to settle, easing to none across the frost band, as on the ground.
+// How much warmer than snowy grass the ground can be before it's all rain.
+const SNOW_FALL_BAND: f64 = 0.05;
+
+// The share of what falls on ground of `warmth` that's snow: all of it where grass lies under snow, as the taiga's does.
 fn snow_share(warmth: f64) -> f64 {
-    let (snow, band) = (SNOW_TEMPERATURE as f64, FROST_BAND as f64);
-    1.0 - smoothstep_f64(snow, snow + band, warmth)
+    let cold = SNOWY_GRASS_TEMPERATURE as f64;
+    1.0 - smoothstep_f64(cold, cold + SNOW_FALL_BAND, warmth)
 }
 
 // The share of the sky with fair-weather cloud over it, from clear desert skies to humid ones.
