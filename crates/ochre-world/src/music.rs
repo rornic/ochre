@@ -1,5 +1,6 @@
-//! Music that drifts in now and then: one track picked for where the camera is and what the sky
-//! is doing, long silences between. Needs `AmbiencePlugin`, which keeps `Surroundings` current.
+//! Music that drifts in now and then: one track picked for the camera's biome and the weather,
+//! long silences between, crossfading when the mood changes under a playing track. Needs
+//! `AmbiencePlugin`, which keeps `Surroundings` current.
 use bevy::{
     app::{App, Plugin, Update},
     asset::AssetServer,
@@ -29,8 +30,11 @@ pub enum Mood {
     Storm,
     Desert,
     Cold,
-    Night,
-    Day,
+    Forest,
+    Rainforest,
+    Savanna,
+    Steppe,
+    Grassland,
 }
 
 impl Mood {
@@ -41,10 +45,14 @@ impl Mood {
             Mood::Desert
         } else if around.warmth < 0.5 {
             Mood::Cold
-        } else if around.day < 0.4 {
-            Mood::Night
         } else {
-            Mood::Day
+            match around.biome {
+                Some("forest") => Mood::Forest,
+                Some("jungle" | "swamp") => Mood::Rainforest,
+                Some("savanna") => Mood::Savanna,
+                Some("steppe") => Mood::Steppe,
+                _ => Mood::Grassland,
+            }
         }
     }
 
@@ -54,17 +62,21 @@ impl Mood {
             Mood::Storm => "sounds/music/storm.ogg",
             Mood::Desert => "sounds/music/desert.ogg",
             Mood::Cold => "sounds/music/cold.ogg",
-            Mood::Night => "sounds/music/night.ogg",
-            Mood::Day => "sounds/music/day.ogg",
+            Mood::Forest => "sounds/music/forest.ogg",
+            Mood::Rainforest => "sounds/music/rainforest.ogg",
+            Mood::Savanna => "sounds/music/savanna.ogg",
+            Mood::Steppe => "sounds/music/steppe.ogg",
+            Mood::Grassland => "sounds/music/grassland.ogg",
         }
     }
 }
 
-/// A playing track and how long its mood has stopped fitting.
+/// A playing track, how long its mood has stopped fitting, and whether it's on its way out.
 #[derive(Component)]
 struct Track {
     mood: Mood,
     mismatch: f32,
+    fading: bool,
 }
 
 // The files are levelled to -20 LUFS with their fades baked in; this sits them under the ambience.
@@ -73,7 +85,7 @@ const MUSIC_VOLUME: f32 = 0.15;
 const GAP_SECONDS: (f32, f32) = (60.0, 600.0);
 // Seconds before the first track, so a run doesn't open on minutes of silence.
 const FIRST_SECONDS: (f32, f32) = (10.0, 40.0);
-// Seconds a track rides out a change of mood (dusk, a desert's edge) before fading away early.
+// Seconds a track rides out a change of mood (a biome's patchy edge, a shower) before crossfading away.
 const GRACE_SECONDS: f32 = 20.0;
 // Seconds the volume takes to follow its target, so a fade is about three times this.
 const FOLLOW_SECONDS: f32 = 4.0;
@@ -92,26 +104,39 @@ fn play_music(
     mut played: Local<bool>,
 ) {
     let dt = time.delta_secs();
-    let mood = Mood::of(&around, weather.map_or(0.0, |weather| weather.precipitation()));
-    if let Ok((entity, mut track, sink)) = tracks.single_mut() {
+    let mood = Mood::of(
+        &around,
+        weather.map_or(0.0, |weather| weather.precipitation()),
+    );
+    let (mut live, mut handover) = (false, false);
+    for (entity, mut track, sink) in &mut tracks {
+        if !track.fading {
+            let fits = mood == track.mood && !around.underwater;
+            track.mismatch = if fits { 0.0 } else { track.mismatch + dt };
+            if track.mismatch >= GRACE_SECONDS {
+                track.fading = true;
+                // the next track starts as this one fades, unless the cause is the water
+                handover = !around.underwater;
+            }
+        }
+        live |= !track.fading;
         // the sink arrives a frame after the player is spawned
         let Some(mut sink) = sink else {
-            return;
+            continue;
         };
-        let fits = mood == track.mood && !around.underwater;
-        track.mismatch = if fits { 0.0 } else { track.mismatch + dt };
-        let wanted = if track.mismatch < GRACE_SECONDS {
-            MUSIC_VOLUME
-        } else {
-            0.0
-        };
+        let wanted = if track.fading { 0.0 } else { MUSIC_VOLUME };
         let current = sink.volume().to_linear();
         let volume = current + (wanted - current) * (1.0 - (-dt / FOLLOW_SECONDS).exp());
         sink.set_volume(Volume::Linear(volume));
-        if wanted == 0.0 && volume < SILENT {
+        if track.fading && volume < SILENT {
             commands.entity(entity).despawn();
         }
+    }
+    if live {
         return;
+    }
+    if handover {
+        *wait = Some(0.0);
     }
     let left = wait.get_or_insert_with(|| {
         if *played {
@@ -135,6 +160,7 @@ fn play_music(
         Track {
             mood,
             mismatch: 0.0,
+            fading: false,
         },
         AudioPlayer::<AudioSource>(assets.load(mood.file())),
         PlaybackSettings {
@@ -149,14 +175,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mood_follows_the_weather_then_the_place_then_the_hour() {
-        let day = Surroundings::default();
-        assert_eq!(Mood::Day, Mood::of(&day, 0.0));
-        let night = Surroundings { day: 0.0, ..day };
-        assert_eq!(Mood::Night, Mood::of(&night, 0.0));
+    fn test_mood_follows_the_weather_then_the_place_then_the_biome() {
+        let temperate = Surroundings::default();
+        assert_eq!(Mood::Grassland, Mood::of(&temperate, 0.0));
+        let biome = |name| Surroundings {
+            biome: Some(name),
+            ..temperate
+        };
+        assert_eq!(Mood::Forest, Mood::of(&biome("forest"), 0.0));
+        assert_eq!(Mood::Rainforest, Mood::of(&biome("jungle"), 0.0));
+        assert_eq!(Mood::Savanna, Mood::of(&biome("savanna"), 0.0));
+        assert_eq!(Mood::Steppe, Mood::of(&biome("steppe"), 0.0));
         let cold = Surroundings {
             warmth: 0.0,
-            ..night
+            ..biome("forest")
         };
         assert_eq!(Mood::Cold, Mood::of(&cold, 0.0));
         let desert = Surroundings {

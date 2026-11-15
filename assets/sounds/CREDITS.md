@@ -32,12 +32,17 @@ Each footstep set is four single steps cut from a longer recording, 0.5 s with a
 
 ## Music
 
-`music/*.ogg` are not committed (gitignored) except `cold.ogg`: the others are Suno free-tier tracks, so non-commercial, and the repo is public, while `cold.ogg` was made on a Suno paid plan and is committed. Without `day`, `night`, `cold`, `desert` and `storm.ogg` there, no music plays. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
+`music/*.ogg` are not committed (gitignored) except `cold`, `forest`, `grassland`, `rainforest`, `savanna` and `steppe.ogg`: the others are Suno free-tier tracks, so non-commercial, and the repo is public, while those six were made on a Suno paid plan and are committed. Without a mood's file there, no music plays for it; a biome with no track of its own falls back to grassland's. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
 
 | File | Suno title | Plays |
 |---|---|---|
-| `day.ogg` | Pastoral Bloom | temperate, by day |
-| `night.ogg` | Sparse Piano Pads | temperate, by night |
-| `cold.ogg` | Tyst vind (Suno paid plan, committed) | tundra and cold |
+| `grassland.ogg` | Suno paid plan | grassland, and any biome without a track |
+| `forest.ogg` | Suno paid plan | forest |
+| `rainforest.ogg` | Suno paid plan | jungle and swamp |
+| `savanna.ogg` | Suno paid plan | savanna |
+| `steppe.ogg` | Suno paid plan | steppe |
+| `cold.ogg` | Tyst vind (Suno paid plan) | tundra, taiga, glacier and anywhere cold |
 | `desert.ogg` | Heat-Haze Modulation | desert |
 | `storm.ogg` | Deep Sub-Bass | heavy rain |
+
+A playing track whose mood stops fitting for 20 s (a new biome, rain) fades out over about 12 s while the next mood's track fades in, so a crossing is a crossfade rather than silence.
