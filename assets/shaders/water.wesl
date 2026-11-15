@@ -48,10 +48,11 @@ const FOAM_PHASE_SCALE: f32 = 5.0;
 // Scales how much of the lapping envelope gets revealed as foam cells - pushes
 // coverage up for a denser look without changing where/how fast the envelope moves.
 const FOAM_DENSITY: f32 = 1.2;
-// Foam is a blocky, flickering cutout (Minecraft's animated-texture-frame look)
-// rather than smooth organic noise - a coarse grid hashed per discrete time step.
-const FOAM_CELL_SIZE: f32 = 0.125;
-const FOAM_FRAME_RATE: f32 = 1.2;
+// Foam is painted as ribbons: strokes of white with wavering edges, this many blocks across, thresholded between these
+// edges of the lapping envelope, and broken up by up to this much of it, which only takes foam away.
+const FOAM_RIBBON_SIZE: f32 = 3.0;
+const FOAM_RIBBON_EDGE: vec2<f32> = vec2<f32>(0.04, 0.14);
+const FOAM_WOBBLE: f32 = 0.6;
 
 // The swell the mesh rises and falls with: waves from around the wind's direction, each
 // at an angle off it in radians, a wavelength and a height in blocks, crest to trough
@@ -250,15 +251,6 @@ fn smooth_noise(p: vec2<f32>) -> f32 {
     return mix(a, b, u.y);
 }
 
-// Reveals a fraction (`coverage`) of a coarse, block-aligned grid - a blocky,
-// hard-edged cutout (like Minecraft's animated water/foam texture frames) instead
-// of a smooth noise gradient. `frame` steps discretely so the revealed cells
-// flicker between frames rather than sliding continuously.
-fn foam_cells(xz: vec2<f32>, frame: f32, coverage: f32) -> f32 {
-    let cell = floor(xz / FOAM_CELL_SIZE) + vec2<f32>(frame * 13.7, frame * 7.3);
-    return step(1.0 - coverage, hash2(cell));
-}
-
 fn tonemap_curve(v: vec3<f32>) -> vec3<f32> {
     return 1.0 - exp(-v);
 }
@@ -412,6 +404,9 @@ const SEA_GLINT: f32 = 0.25;
 const SEA_CLOUDS: f32 = 0.0;
 // The water must lie this far over the sea for its surface to be fresh, which has no surf and none of the ocean's depth tint.
 const FRESH_ABOVE_SEA: f32 = 0.6;
+// The sea's look fades out over this many blocks of surface above that, wandered by up to this many either way.
+const SEA_BLEND: f32 = 3.0;
+const SEA_WANDER: f32 = 1.5;
 // How much of the water's own colour shows over the bed at any depth.
 const FRESH_TINT: f32 = 0.1;
 // How far, in screen heights, ripples bend what's seen through the surface, per block of depth.
@@ -438,6 +433,73 @@ const FAR_BED: vec3<f32> = vec3<f32>(0.42, 0.44, 0.42);
 const REFLECTION_NEAR: f32 = 160.0;
 const REFLECTION_REACH: f32 = 64.0;
 const REFLECTION_THICKNESS: f32 = 1.2;
+
+// Painted water. The physics above picks the colours, then they're laid down as a painter would: in flat
+// bands of value with soft, wandering edges, the sky's reflection smeared into vertical strokes, and the
+// sun's glint broken into dry brush dashes along the wind. Bands are in stops (log2 of luminance) so they
+// look the same at any exposure.
+// How wide a band of the water's body is, in stops, and how far noise wanders the edge between two, in bands.
+const BODY_BAND: f32 = 0.85;
+const BAND_WANDER: f32 = 0.9;
+// How much warmer the lighter bands are and cooler the darker, as a multiplier on each end.
+const BAND_WARM: vec3<f32> = vec3<f32>(1.14, 1.04, 0.84);
+const BAND_COOL: vec3<f32> = vec3<f32>(0.84, 0.97, 1.16);
+// A stroke is this many blocks along the wind and across it, and drifts this fast.
+const STROKE_LONG: f32 = 18.0;
+const STROKE_SHORT: f32 = 2.6;
+const STROKE_DRIFT: f32 = 0.35;
+// The reflected sky is smeared this many blocks sideways, in strokes this wide, and banded this wide in stops.
+const SMEAR_REACH: f32 = 0.9;
+const SMEAR_SIZE: f32 = 2.5;
+const REFLECT_BAND: f32 = 0.9;
+// The glint breaks into dashes between these thresholds of the stroke noise, each one this many times the
+// glint's own brightness, and the gaps between them this much of it.
+const DASH_EDGE: vec2<f32> = vec2<f32>(0.30, 0.40);
+const DASH_BRIGHT: f32 = 2.2;
+const DASH_GAP: f32 = 0.2;
+// And its brightness is banded this wide in stops, so a dash is a flat dab of paint and not a gradient.
+const GLINT_BAND: f32 = 1.3;
+
+fn luma3(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+// Noise 0..1 stretched along the wind: strokes, as long as they're wide times STROKE_LONG / STROKE_SHORT.
+fn stroke_noise(xz: vec2<f32>, time: f32, scale: f32) -> f32 {
+    let along = normalize(WIND);
+    let across = vec2<f32>(-along.y, along.x);
+    let p = xz - along * STROKE_DRIFT * time;
+    let q = vec2<f32>(dot(p, along) / (STROKE_LONG * scale), dot(p, across) / (STROKE_SHORT * scale));
+    return 0.65 * smooth_noise(q) + 0.35 * smooth_noise(q * 2.3 + vec2<f32>(7.1, 3.7));
+}
+
+// stroke_noise at `base` times the nearest two powers of two over the pixel's footprint, faded between, so strokes stay anchored in the world and never rescale with the view.
+fn stroke_lod(xz: vec2<f32>, time: f32, base: f32, footprint: f32) -> f32 {
+    let level = log2(max(footprint * 2.0, 1.0));
+    let octave = floor(level);
+    let blend = smoothstep(0.0, 1.0, level - octave);
+    return mix(stroke_noise(xz, time, base * exp2(octave)), stroke_noise(xz, time, base * exp2(octave + 1.0)), blend);
+}
+
+// `value` quantized into flat bands `width` stops wide, a soft step between each, whose edges are moved
+// about by `wander`, 0..1, so a band's edge is a wandering stroke and not a contour line.
+fn banded(value: f32, width: f32, wander: f32) -> f32 {
+    let stops = log2(max(value, 1e-4)) / width + (wander - 0.5) * BAND_WANDER * 2.0;
+    let step = floor(stops);
+    let edge = smoothstep(0.42, 0.58, fract(stops));
+    // back to the nearest band's centre, undoing the wander
+    return exp2((step + edge) * width - (wander - 0.5) * BAND_WANDER * 2.0 * width);
+}
+
+// `colour` laid down in flat bands of value, warm in the light ones and cool in the dark.
+fn paint_banded(colour: vec3<f32>, width: f32, wander: f32) -> vec3<f32> {
+    let value = luma3(colour);
+    let flat_value = banded(value, width, wander);
+    // how light this band is among water's usual range, about 1 stop below to 3 above 0.02
+    let lightness = clamp(log2(max(flat_value, 1e-4) / 0.02) / 4.0 + 0.25, 0.0, 1.0);
+    let toned = colour * mix(BAND_COOL, BAND_WARM, lightness);
+    return toned * (flat_value / max(luma3(toned), 1e-5));
+}
 
 // 0..1 noise from a pixel's position, for jittering the march so its steps don't band.
 fn interleaved_noise(pixel: vec2<f32>) -> f32 {
@@ -556,22 +618,31 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
     let scatter = scene_colour(FRESH_SCATTER) * daylight(uncurved(world_position));
     // however shallow, a lake's water is plainly blue, not just the bed's colour
     var body = mix(behind * transmitted + scatter * (1.0 - transmitted), tint, FRESH_TINT);
+    var plain = mix(far_bed * transmitted + scatter * (1.0 - transmitted), tint, FRESH_TINT);
     // the sea goes on darkening with depth, past where any bed shows
-    body = mix(body, scene_colour(DEEP_OCEAN_COLOR) * daylight(uncurved(world_position)), ocean);
+    let deep = scene_colour(DEEP_OCEAN_COLOR) * daylight(uncurved(world_position));
+    body = mix(body, deep, ocean);
+    plain = mix(plain, deep, ocean);
+
+    let wander = stroke_lod(world_position.xz, time, 2.0, footprint);
+    // bands come from the smooth body without the bed, which passes through as the ratio, or its pixel detail crosses band edges as jagged streaks
+    let ratio = clamp(paint_banded(plain, BODY_BAND, wander) / max(plain, vec3<f32>(1e-4)), vec3<f32>(0.4), vec3<f32>(2.5));
+    body *= ratio;
 
     let reflect_dir = reflect(-to_eye, surface);
     let share = min(fresnel(dot(surface, to_eye)) + 0.03, mix(LAKE_REFLECT_MAX, SEA_REFLECT_MAX, sea));
-    var world = vec4<f32>(0.0);
-    if dist < REFLECTION_NEAR && share > 0.06 {
-        world = screen_reflection(world_position, reflect_dir, frag_coord);
+    // the sky is smeared sideways into strokes before it's looked up, so its clouds streak instead of mirroring
+    let smear = (vec2<f32>(stroke_lod(world_position.xz + vec2<f32>(31.0, 5.0), time, SMEAR_SIZE, footprint), stroke_lod(world_position.xz + vec2<f32>(3.0, 47.0), time, SMEAR_SIZE, footprint)) - 0.5) * SMEAR_REACH;
+    let smeared_dir = normalize(reflect_dir + vec3<f32>(smear.x, 0.0, smear.y));
+    let sky = under_clouds(reflected_sky(smeared_dir), uncurved(world_position), smeared_dir, mix(1.0, SEA_CLOUDS, sea));
+    let reflection = paint_banded(sky, REFLECT_BAND, wander);
+    // the glint, broken into dashes along the wind, each a flat dab
+    var sun = glint(surface, to_eye, variance, world_position, frag_coord.xy) * cloud_shadow(uncurved(world_position)) * mix(1.0, SEA_GLINT, sea);
+    let dab = smoothstep(DASH_EDGE.x, DASH_EDGE.y, stroke_lod(world_position.xz + vec2<f32>(11.0, 29.0), time, 1.0, footprint));
+    sun *= mix(DASH_GAP, DASH_BRIGHT, dab);
+    if luma3(sun) > 1e-5 {
+        sun = paint_banded(sun, GLINT_BAND, wander);
     }
-    // the sky and clouds only where the land's reflection leaves them showing
-    var reflection = world.rgb;
-    if world.a < 1.0 {
-        let sky = under_clouds(reflected_sky(reflect_dir), uncurved(world_position), reflect_dir, mix(1.0, SEA_CLOUDS, sea));
-        reflection = mix(sky, world.rgb, world.a);
-    }
-    let sun = glint(surface, to_eye, variance, world_position, frag_coord.xy) * cloud_shadow(uncurved(world_position)) * mix(1.0, SEA_GLINT, sea);
     return body * (1.0 - share) + reflection * share + sun;
 }
 
@@ -636,26 +707,27 @@ fn fragment(
     flat_y -= waves.height * in.color.b;
 }
     let fresh_surface = flat_y > f32(constants::WATER_LEVEL) + FRESH_ABOVE_SEA;
-    let sea = f32(!fresh_surface);
+    let over_sea = flat_y - f32(constants::WATER_LEVEL) - FRESH_ABOVE_SEA + (stroke_noise(world_position.xz, time, 4.0) - 0.5) * SEA_WANDER;
+    let sea = 1.0 - smoothstep(0.0, SEA_BLEND, over_sea);
     ocean *= sea;
 @if(!VERTEX_COLORS) {
     // LOD water has no depth or shore to calm the swell by, and is far enough out to be deep, so is the sea at full size: left flat it's a mirror
-    if !fresh_surface {
+    if sea > 0.0 {
         waves = swell(world_position.xz, time, dist, 1.0, 1.0);
+        waves.slope *= sea;
+        waves.lost *= sea;
     }
 }
 
     // its colour's tuned for midday, so follows the light from there
     let tint = scene_colour((material_color * textureSample(material_color_texture, material_color_sampler, in.uv)).rgb) * daylight(uncurved(world_position));
 
-    // Foam's noise sampling (up to 6 hash lookups per pixel between the 3 octaves
-    // and the frame crossfade) is the most expensive part of this shader, for
-    // detail that's imperceptible at distance anyway - branching around it entirely
-    // beyond FOAM_FADE_END is a real cost saving, not just a visual fade.
+    // Foam is still worth branching around beyond FOAM_FADE_END: detail that's
+    // imperceptible at distance anyway, so skipping it is a real saving, not just a fade.
     var foam = 0.0;
 @if(VERTEX_COLORS) {
     // fresh water is calm, with no surf
-    if dist < FOAM_FADE_END && !fresh_surface {
+    if dist < FOAM_FADE_END && sea > 0.01 {
         // Phase is driven by distance-to-shore (baked per vertex - see
         // vertex_shore_distance, anchored at the shared grid corner so it can't
         // disagree between neighbouring blocks) rather than world xz, so the
@@ -666,15 +738,11 @@ fn fragment(
         let lap = smoothstep(1.0 - FOAM_BAND, 1.0, sin(phase)) * in.color.r;
         let coverage = clamp(lap * FOAM_DENSITY, 0.0, 1.0);
 
-        // Crossfade between this frame's cell pattern and the next, instead of
-        // hard-cutting straight to a whole new random pattern every frame - that cut
-        // read as a jarring jump/pop, especially once FOAM_FRAME_RATE was slowed.
-        let frame_t = time * FOAM_FRAME_RATE;
-        let frame = floor(frame_t);
-        let foam_a = foam_cells(world_position.xz, frame, coverage);
-        let foam_b = foam_cells(world_position.xz, frame + 1.0, coverage);
+        // painted as ribbons: the lapping envelope with a wavering edge, thresholded to a flat stroke of white, drifting slowly
+        let wobble = smooth_noise(world_position.xz / FOAM_RIBBON_SIZE + vec2<f32>(time * 0.05, 0.0)) * 0.6 + smooth_noise(world_position.xz / (FOAM_RIBBON_SIZE * 0.4) - vec2<f32>(0.0, time * 0.08)) * 0.4;
+        let ribbon = smoothstep(FOAM_RIBBON_EDGE.x, FOAM_RIBBON_EDGE.y, coverage - (1.0 - wobble) * FOAM_WOBBLE);
         let fade = 1.0 - smoothstep(FOAM_FADE_START, FOAM_FADE_END, dist);
-        foam = mix(foam_a, foam_b, fract(frame_t)) * fade;
+        foam = ribbon * fade * sea;
     }
 }
 
