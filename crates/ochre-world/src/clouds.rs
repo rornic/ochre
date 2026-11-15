@@ -337,6 +337,10 @@ fn target_size(size: UVec2, resolution: CloudResolution) -> UVec2 {
     UVec2::new(width, height)
 }
 
+/// Marks the dome that blends the clouds over the scene, so it can be hidden where something else hides the sky.
+#[derive(Component)]
+pub struct CloudDome;
+
 /// Spawns the dome over the main camera blending the clouds' target up over the scene.
 fn spawn_cloud_dome(
     mut commands: Commands,
@@ -357,7 +361,7 @@ fn spawn_cloud_dome(
         target: clouds.target.clone(),
         weather: clouds.weather.clone(),
     });
-    commands.spawn(dome(&mut meshes, material, camera));
+    commands.spawn((dome(&mut meshes, material, camera), CloudDome));
 }
 
 // Refits the cloud target on resize and rebinds its readers, whose bind groups would otherwise freeze the old texture on screen.

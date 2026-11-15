@@ -4,10 +4,14 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use bevy::{
     asset::{Asset, Assets, Handle},
-    camera::{visibility::NoFrustumCulling, Camera},
+    camera::{
+        visibility::{NoFrustumCulling, Visibility},
+        Camera,
+    },
     ecs::hierarchy::ChildOf,
     ecs::{
         bundle::Bundle,
+        change_detection::DetectChangesMut,
         component::Component,
         message::{MessageReader, MessageWriter},
         query::{With, Without},
@@ -63,6 +67,7 @@ use ochre_terrain::{
 };
 use ochre_world::{
     ambience::Surroundings,
+    clouds::CloudDome,
     godrays,
     sky::{atmosphere_camera, FOG_MAX_OPACITY},
     tonemap::{cold_color_grading, dry_color_grading, scene_colour, TONEMAPPING},
@@ -550,6 +555,7 @@ fn update_underwater_effects(
     world: Res<World>,
     murk: Res<Murk>,
     mut murk_materials: ResMut<Assets<MurkMaterial>>,
+    mut clouds: Query<&mut Visibility, With<CloudDome>>,
     mut clear_color: ResMut<ClearColor>,
     player_query: Query<&Transform, With<Player>>,
     mut camera_query: Query<
@@ -587,6 +593,15 @@ fn update_underwater_effects(
             show_murk(&murk, &mut murk_materials, !fresh);
             *murk_shown = Some(!fresh);
         }
+        // the clouds are blended over the scene by depth, which the murk doesn't write, so they'd show over it
+        let clouds_shown = if fresh {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        for mut visibility in &mut clouds {
+            visibility.set_if_neq(clouds_shown);
+        }
         // Matches ClearColor to the fog color, same trick setup_scene uses above water (its
         // ClearColor equals the dry fog's color) - otherwise empty/unloaded space shows the old
         // background color straight through, breaking the underwater illusion.
@@ -617,6 +632,9 @@ fn update_underwater_effects(
         clear_color.0 = dry.clear_color;
         show_murk(&murk, &mut murk_materials, false);
         *murk_shown = None;
+        for mut visibility in &mut clouds {
+            visibility.set_if_neq(Visibility::Inherited);
+        }
     }
 }
 
