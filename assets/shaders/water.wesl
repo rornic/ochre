@@ -48,10 +48,11 @@ const FOAM_PHASE_SCALE: f32 = 5.0;
 // Scales how much of the lapping envelope gets revealed as foam cells - pushes
 // coverage up for a denser look without changing where/how fast the envelope moves.
 const FOAM_DENSITY: f32 = 1.2;
-// Foam is a blocky, flickering cutout (Minecraft's animated-texture-frame look)
-// rather than smooth organic noise - a coarse grid hashed per discrete time step.
-const FOAM_CELL_SIZE: f32 = 0.125;
-const FOAM_FRAME_RATE: f32 = 1.2;
+// Foam is painted as ribbons: strokes of white with wavering edges, this many blocks across, thresholded between these
+// edges of the lapping envelope, and broken up by up to this much of it, which only takes foam away.
+const FOAM_RIBBON_SIZE: f32 = 3.0;
+const FOAM_RIBBON_EDGE: vec2<f32> = vec2<f32>(0.04, 0.14);
+const FOAM_WOBBLE: f32 = 0.6;
 
 // The swell the mesh rises and falls with: waves from around the wind's direction, each
 // at an angle off it in radians, a wavelength and a height in blocks, crest to trough
@@ -248,15 +249,6 @@ fn smooth_noise(p: vec2<f32>) -> f32 {
     let a = mix(hash2(cell), hash2(cell + vec2<f32>(1.0, 0.0)), u.x);
     let b = mix(hash2(cell + vec2<f32>(0.0, 1.0)), hash2(cell + vec2<f32>(1.0, 1.0)), u.x);
     return mix(a, b, u.y);
-}
-
-// Reveals a fraction (`coverage`) of a coarse, block-aligned grid - a blocky,
-// hard-edged cutout (like Minecraft's animated water/foam texture frames) instead
-// of a smooth noise gradient. `frame` steps discretely so the revealed cells
-// flicker between frames rather than sliding continuously.
-fn foam_cells(xz: vec2<f32>, frame: f32, coverage: f32) -> f32 {
-    let cell = floor(xz / FOAM_CELL_SIZE) + vec2<f32>(frame * 13.7, frame * 7.3);
-    return step(1.0 - coverage, hash2(cell));
 }
 
 fn tonemap_curve(v: vec3<f32>) -> vec3<f32> {
@@ -713,10 +705,8 @@ fn fragment(
     // its colour's tuned for midday, so follows the light from there
     let tint = scene_colour((material_color * textureSample(material_color_texture, material_color_sampler, in.uv)).rgb) * daylight(uncurved(world_position));
 
-    // Foam's noise sampling (up to 6 hash lookups per pixel between the 3 octaves
-    // and the frame crossfade) is the most expensive part of this shader, for
-    // detail that's imperceptible at distance anyway - branching around it entirely
-    // beyond FOAM_FADE_END is a real cost saving, not just a visual fade.
+    // Foam is still worth branching around beyond FOAM_FADE_END: detail that's
+    // imperceptible at distance anyway, so skipping it is a real saving, not just a fade.
     var foam = 0.0;
 @if(VERTEX_COLORS) {
     // fresh water is calm, with no surf
@@ -731,15 +721,11 @@ fn fragment(
         let lap = smoothstep(1.0 - FOAM_BAND, 1.0, sin(phase)) * in.color.r;
         let coverage = clamp(lap * FOAM_DENSITY, 0.0, 1.0);
 
-        // Crossfade between this frame's cell pattern and the next, instead of
-        // hard-cutting straight to a whole new random pattern every frame - that cut
-        // read as a jarring jump/pop, especially once FOAM_FRAME_RATE was slowed.
-        let frame_t = time * FOAM_FRAME_RATE;
-        let frame = floor(frame_t);
-        let foam_a = foam_cells(world_position.xz, frame, coverage);
-        let foam_b = foam_cells(world_position.xz, frame + 1.0, coverage);
+        // painted as ribbons: the lapping envelope with a wavering edge, thresholded to a flat stroke of white, drifting slowly
+        let wobble = smooth_noise(world_position.xz / FOAM_RIBBON_SIZE + vec2<f32>(time * 0.05, 0.0)) * 0.6 + smooth_noise(world_position.xz / (FOAM_RIBBON_SIZE * 0.4) - vec2<f32>(0.0, time * 0.08)) * 0.4;
+        let ribbon = smoothstep(FOAM_RIBBON_EDGE.x, FOAM_RIBBON_EDGE.y, coverage - (1.0 - wobble) * FOAM_WOBBLE);
         let fade = 1.0 - smoothstep(FOAM_FADE_START, FOAM_FADE_END, dist);
-        foam = mix(foam_a, foam_b, fract(frame_t)) * fade;
+        foam = ribbon * fade;
     }
 }
 
