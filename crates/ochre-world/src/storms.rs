@@ -9,11 +9,13 @@
 //! two, and its cloud shield reaches farther ahead of it than behind, so the sky clouds over
 //! before the rain arrives.
 //!
-//! The climate has its say in one place, `wet_spell`: slow air masses that drift with the storms
+//! The climate has its say in one place, `air_mass`: slow air masses that drift with the storms
 //! and last a day or two. Storms are only born inside one, and their rain only lands inside one
 //! strong enough for the ground there, which almost everywhere is rarely, in jungle often, and in
-//! desert never. So rain comes in short runs of showery days with dry ones between. Where the
-//! ground's cold enough for frost, it falls as snow, and never thunders.
+//! desert never. So rain comes in short runs of showery days with dry ones between. Cloud follows
+//! the same air masses a little more loosely: it builds before the rain and thins out after it,
+//! and between spells the sky is completely clear. Where the ground's cold enough for frost,
+//! precipitation falls as snow, and never thunders.
 //!
 //! Every value comes from `+ - * / sqrt floor` and integer hashing, which give the same answer
 //! on every machine, so a server and its clients see the same weather.
@@ -166,13 +168,16 @@ fn lerp(range: (f64, f64), t: f64) -> f64 {
     range.0 + (range.1 - range.0) * t
 }
 
-// How far into a wet spell the air carried to `carried` (in the frame drifting with the storms)
-// is at `t` game seconds, over ground of `moisture` and `warmth`: 0 between spells to 1 deep in
-// one. Smooth value noise over the drifting air masses and time, past a bar the climate sets: high
-// almost everywhere, low where it's wet and warm (jungle), and out of reach on dry ground
-// (desert). Everything the climate does to the weather is here: storms are only born in a spell,
-// and their rain only lands in one. So rain comes in short runs of showery days, dry ones between.
-fn wet_spell(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> f64 {
+/// What the air over a place is doing, each 0..1.
+struct Air {
+    /// In a wet spell: storms are born and rain lands.
+    wet: f64,
+    /// In a cloudy spell, which starts before a wet one and ends after it; between them the sky is clear.
+    cloudy: f64,
+}
+
+// Slow noise over air masses drifting with the storms, past bars the climate sets: it's all the climate does to the weather.
+fn air_mass(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> Air {
     let p = DVec3::new(
         carried.x / SPELL_CELL,
         carried.y / SPELL_CELL,
@@ -198,8 +203,17 @@ fn wet_spell(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> f
     let tropical = smoothstep_f64(SPELL_WET.0, SPELL_WET.1, moisture)
         * smoothstep_f64(SPELL_WARM.0, SPELL_WARM.1, warmth);
     let dry = 1.0 - smoothstep_f64(SPELL_DRY_GROUND.0, SPELL_DRY_GROUND.1, moisture);
-    let bar = lerp(SPELL_BAR, tropical) + SPELL_DRY_BAR * dry;
-    smoothstep_f64(bar - 0.04, bar + 0.04, noise)
+    let bar = lerp(SPELL_BAR, tropical);
+    let wet_bar = bar + SPELL_DRY_BAR * dry;
+    let cloudy_bar = bar + CLOUDY_DRY_BAR * dry;
+    Air {
+        wet: smoothstep_f64(wet_bar - 0.04, wet_bar + 0.04, noise),
+        cloudy: smoothstep_f64(
+            cloudy_bar - CLOUDY_BELOW_BAR.0,
+            cloudy_bar - CLOUDY_BELOW_BAR.1,
+            noise,
+        ),
+    }
 }
 
 // The noise a wet spell needs to clear, over the driest climates and the wettest.
@@ -212,6 +226,10 @@ const SPELL_WARM: (f64, f64) = (0.45, 0.7);
 // dry, easing back by the second, over steppe.
 const SPELL_DRY_GROUND: (f64, f64) = (0.16, 0.35);
 const SPELL_DRY_BAR: f64 = 0.4;
+// How far under the wet bar the noise is where cloud starts to build, and where it's all there.
+const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
+// Dry ground raises the cloud bar by this much, so steppe and desert are clearer still.
+const CLOUDY_DRY_BAR: f64 = 0.25;
 
 // The share of what falls on ground of `warmth` that's snow, 0..1: all of it where the ground's
 // cold enough for frost to settle, easing to none across the frost band, as on the ground.
@@ -377,7 +395,7 @@ impl Forecast {
         // only born in a wet spell, more often the deeper in it
         let at_birth = origin + self.wind * born;
         let (moisture, warmth) = self.climate_at(at_birth.x, at_birth.y);
-        if d(0) >= MOST_LIKELY * wet_spell(self.seed, origin, born, moisture, warmth) {
+        if d(0) >= MOST_LIKELY * air_mass(self.seed, origin, born, moisture, warmth).wet {
             return None;
         }
         let strength = lerp((0.55, 1.0), d(5));
@@ -502,12 +520,12 @@ impl Forecast {
     // storm's shield.
     fn finish(&self, most: [f64; 4], p: DVec2, t: f64, (moisture, warmth): (f64, f64)) -> Sky {
         let [mut rain, shield, dark, mut thunder] = most;
-        if rain > 0.0 {
-            let spell = wet_spell(self.seed, p - self.wind * t, t, moisture, warmth);
-            rain *= spell;
-            thunder *= spell;
-        }
-        let fair = fair_cloud(moisture);
+        let air = air_mass(self.seed, p - self.wind * t, t, moisture, warmth);
+        rain *= air.wet;
+        thunder *= air.wet;
+        // storm cloud thins out over ground too dry for cloudy spells
+        let (shield, dark) = (shield * air.cloudy, dark * air.cloudy);
+        let fair = fair_cloud(moisture) * air.cloudy;
         let snow = snow_share(warmth);
         Sky {
             precipitation: rain as f32,
@@ -691,16 +709,63 @@ mod tests {
         assert!(warm.iter().any(|sky| sky.thunder > 0.0));
     }
 
+    // Over two months at a spread of places, the share of samples with no cloud at all, and the mean cloud.
+    fn clear_and_mean_cloud(moisture: f32, warmth: f32) -> (f64, f64) {
+        let forecast = Forecast::new(3, [1.0, 0.0], uniform(moisture, warmth));
+        let (mut clear, mut cloud, mut all) = (0, 0.0, 0);
+        for step in 0..60 * 12u64 {
+            let sky = forecast.map(DVec2::splat(-40_000.0), 16, 5_000.0, step * DAY_TICKS / 12);
+            clear += sky.iter().filter(|s| s.cloud < 0.01).count();
+            cloud += sky.iter().map(|s| s.cloud as f64).sum::<f64>();
+            all += sky.len();
+        }
+        (clear as f64 / all as f64, cloud / all as f64)
+    }
+
     #[test]
     fn test_skies_are_clearer_over_deserts() {
-        let mean_cloud = |moisture| {
-            let forecast = Forecast::new(3, [1.0, 0.0], uniform(moisture, 0.6));
-            let sky = forecast.map(DVec2::splat(-40_000.0), 16, 5_000.0, DAY_TICKS);
-            sky.iter().map(|s| s.cloud as f64).sum::<f64>() / sky.len() as f64
+        let (desert, grassland, jungle) = (
+            clear_and_mean_cloud(0.08, 0.8),
+            clear_and_mean_cloud(0.45, 0.45),
+            clear_and_mean_cloud(0.9, 0.8),
+        );
+        assert!(
+            desert.1 < grassland.1 && grassland.1 < jungle.1,
+            "{desert:?} {grassland:?} {jungle:?}"
+        );
+        assert!(
+            desert.0 > grassland.0 && grassland.0 > jungle.0,
+            "{desert:?} {grassland:?} {jungle:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_sky_goes_completely_clear_for_stretches() {
+        let (grassland, _) = clear_and_mean_cloud(0.45, 0.45);
+        assert!(
+            (0.3..0.8).contains(&grassland),
+            "grassland clear {grassland}"
+        );
+        let (desert, _) = clear_and_mean_cloud(0.08, 0.8);
+        assert!(desert > 0.7, "desert clear {desert}");
+        // jungle clears now and then, but is mostly overcast
+        let (jungle, _) = clear_and_mean_cloud(0.9, 0.8);
+        assert!(jungle < 0.25, "jungle clear {jungle}");
+        // and whole days go by without a cloud, and others are cloudy
+        let forecast = Forecast::new(6, [1.0, 0.2], uniform(0.5, 0.5));
+        let day_is_clear = |day: u64| {
+            (0..24).all(|q| {
+                forecast
+                    .sky(0.0, 0.0, day * DAY_TICKS + q * DAY_TICKS / 24)
+                    .cloud
+                    < 0.01
+            })
         };
-        assert!(mean_cloud(0.08) < 0.2);
-        assert!(mean_cloud(0.85) > mean_cloud(0.45));
-        assert!(mean_cloud(0.45) > mean_cloud(0.08));
+        let clear_days = (0..120).filter(|&day| day_is_clear(day)).count();
+        assert!(
+            (12..90).contains(&clear_days),
+            "{clear_days} clear days in 120"
+        );
     }
 
     #[test]

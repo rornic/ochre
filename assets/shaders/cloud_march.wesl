@@ -237,7 +237,9 @@ fn cirrus(so_far: Marched, origin: vec3<f32>, direction: vec3<f32>, t: f32, limi
     let streaks = (2.0 * flat_noise(streak, cells) + flat_noise(streak * 2.0 + 7.31, cells * 2)) / 3.0;
     let sharpness = mix(2.5, 0.8, smoothstep(CIRRUS_SOFTEN.x, CIRRUS_SOFTEN.y, away));
     let edge_on = mix(0.3, 1.0, smoothstep(CIRRUS_EDGE_ON.x, CIRRUS_EDGE_ON.y, abs(direction.y)));
-    let wisp = saturate((streaks - 0.45) * sharpness) * saturate((patches - 0.35) * 2.5) * edge_on * CIRRUS_OPACITY * (1.0 - smoothstep(FADE.x, FADE.y, away));
+    // none under a clear sky
+    let clouded = smoothstep(0.0, 0.25, weather_at(origin.xz + direction.xz * t).cloud);
+    let wisp = saturate((streaks - 0.45) * sharpness) * saturate((patches - 0.35) * 2.5) * edge_on * CIRRUS_OPACITY * clouded * (1.0 - smoothstep(FADE.x, FADE.y, away));
     let hazed = 1.0 - exp2(-away / HAZE);
     // thin, so lit straight through, with no more sunlight scattered to the eye than off a cumulus's face
     out.gathered += out.through * wisp * vec3<f32>((1.0 - hazed) / SUN_SCATTER, 1.0 - hazed, hazed);

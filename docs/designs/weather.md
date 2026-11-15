@@ -14,7 +14,7 @@ It is now a pure function of the world's seed, a place and a game tick (`ochre-w
 
 **Storms on a drifting lattice.** Storms drift with the seed's prevailing wind, the same wind the world map carries its rain on (`TerrainSource::prevailing_wind`, from `ClimateConfig::wind_x/wind_z`), at 2.5 to 5 blocks a game second, drawn from the seed. They are laid on a lattice of 12 km cells that drifts with that wind, and 3-hour slots of game time. Each cell may hold one storm per slot. An integer hash of the seed, the cell and the slot decides whether it does, when in the slot it's born, where in the cell, how long it lives (4 to 10 game hours), how wide its rain core is (2 to 6 km, mostly small), how strong it is, whether it thunders, how elongated it is and which way it lies (squall lines lie across the wind). Because the lattice drifts with the storms, a point is reached only by storms from a few nearby cells and slots, so asking about one place costs a couple of hundred hashes.
 
-**Wet spells: where the climate has its say.** Storms themselves are only shapes: a map of precipitation, cloud and thunder. The climate acts in one place, `wet_spell`. A slow field of value noise lies over air masses 100 km across that drift with the storms, and changes every game day and a half. Where it clears a bar, the air is in a wet spell. Storms are only born in one, and their rain only lands where the spell is strong enough for the ground's climate.
+**Wet spells: where the climate has its say.** Storms themselves are only shapes: a map of precipitation, cloud and thunder. The climate acts in one place, `air_mass`. A slow field of value noise lies over air masses 100 km across that drift with the storms, and changes every game day and a half. Where it clears a bar, the air is in a wet spell. Storms are only born in one, and their rain only lands where the spell is strong enough for the ground's climate.
 
 The bar sets the climate's character:
 
@@ -22,7 +22,9 @@ The bar sets the climate's character:
 *   Where the ground is both wet and warm, it falls to 0.45, so jungle is wet most days (`SPELL_BAR`, `SPELL_WET`, `SPELL_WARM`). Moisture alone can't tell a jungle from a wet coastal forest; warmth can.
 *   On dry ground it's raised out of the noise's reach, easing back over steppe, so deserts stay dry (`SPELL_DRY_GROUND`, `SPELL_DRY_BAR`).
 
-The world is 64 km across, so a spell usually covers much of it. Each place also has a fair-weather cloud share of its own, from clear desert skies (12%) to humid ones (60%).
+The world is 64 km across, so a spell usually covers much of it.
+
+**Clear skies.** Cloud follows the same noise, past a lower bar (`CLOUDY_BELOW_BAR`): it starts to build 0.25 under the wet bar, is all there by 0.05 under it, and is gone below that, so cloud comes before the rain and lingers after it, and between spells the sky is completely clear. Dry ground raises the cloud bar too (`CLOUDY_DRY_BAR`), so steppe and desert are clear most of the time. Each place has a fair-weather cloud share of its own that applies in a cloudy spell, from 12% over desert to 60% over humid ground. Storm cloud and dark cloud are scaled by the same factor, so a storm thins out over ground too dry for cloudy spells. The shaders honour a zero: `sky_cover` shows no cloud at all at zero cover, and the cirrus fades out with the cloud share.
 
 **Snow.** Where the ground is cold enough for frost to settle (`ochre_base::cold::SNOW_TEMPERATURE`, easing over `FROST_BAND`), precipitation falls as snow (`Sky::snow`, its share), and a storm there never thunders. `Weather` splits what falls at the camera into `rain` and `snow`.
 
@@ -36,7 +38,16 @@ Over 90 game days on five seeds:
 | Forest and taiga | 3 to 5.5% | 18 to 33% | about 1.5 to 2 days | 4 to 8 days |
 | Jungle | 10 to 13% | 57 to 65% | 3 to 3.5 days | 2 to 2.5 days |
 
-A wet day in grassland brings a passing storm or two. Seeds differ, as a seed's own warmth and humidity vary (`worldmap/character.rs`). `weather_map` prints this table for any seed.
+A wet day in grassland brings a passing storm or two.
+
+How much of the time the sky has no cloud at all (under 1% cover), and the share of days with none all day, over 90 game days on four seeds. The wetter a seed's climate, the less clear it is:
+
+| Biome | Clear sky | Clear all day |
+| --- | --- | --- |
+| Desert and steppe | 80 to 90% | 60 to 80% |
+| Grassland | 50 to 60% | 25 to 40% |
+| Forest | 45 to 55% | 20 to 35% |
+| Jungle | 7 to 19% | 0 to 4% | Seeds differ, as a seed's own warmth and humidity vary (`worldmap/character.rs`). `weather_map` prints this table for any seed.
 
 **Shape over time.** A storm grows over the first quarter of its life, matures, and dies over the last 30%. Its rain core fades out over its outer half. Its cloud shield reaches 1.9 radii out, stretched 1.6 times farther ahead of it than behind, so the sky clouds over before the rain arrives. Its edge is ragged, by a quarter of its radius. Everything is continuous in place and time: a game second apart, nothing jumps.
 
@@ -81,7 +92,7 @@ The GPU cost was not measured: this was built without a GPU. Three costs need a 
 
 ## Not built
 
-*   **Seasons.** Storm chance and strength don't change through the year, because the game has no seasons yet. `wet_spell` is where a season factor would go.
+*   **Seasons.** Storm chance and strength don't change through the year, because the game has no seasons yet. `air_mass` is where a season factor would go.
 *   **Lying snow.** Snow falls but doesn't settle: the ground's snow and frost come from the climate alone (`docs/designs/snow-and-frost.md`), not from what has fallen.
 *   **Fog, mist and wind strength** from the weather. Ambient wind already rises with `rain`.
 *   **Cloud drift.** The base cloud pattern still drifts on its own fixed cosmetic wind in real time (`clouds.rs:WIND`), which needs a whole number of patterns an hour. The weather drifts on the seed's wind in game time. Under a timelapse, storms move as regions where the clouds thicken, not as individual clouds.

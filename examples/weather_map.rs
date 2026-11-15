@@ -85,10 +85,13 @@ fn main() {
     // at all, sampled every quarter of a game hour
     const GRID: usize = 32;
     const SAMPLES_A_DAY: u64 = 24;
+    // no cloud to speak of below this share of the sky
+    const CLEAR_BELOW: f32 = 0.01;
     let cell = 2.0 * half / GRID as f64;
     let corner = DVec2::splat(-half);
     let mut wet_days = vec![vec![false; days as usize]; GRID * GRID];
-    let mut stats = vec![(0usize, 0usize); BiomeKind::ALL.len()];
+    let mut cloudy_days = vec![vec![false; days as usize]; GRID * GRID];
+    let mut stats = vec![(0usize, 0usize, 0usize); BiomeKind::ALL.len()];
     let biomes: Vec<BiomeKind> = (0..GRID * GRID)
         .map(|k| {
             let p = corner + (DVec2::new((k % GRID) as f64, (k / GRID) as f64) + 0.5) * cell;
@@ -100,20 +103,26 @@ fn main() {
         let tick = step * DAY_TICKS / SAMPLES_A_DAY;
         for (k, sky) in forecast.map(corner, GRID, cell, tick).iter().enumerate() {
             let raining = sky.precipitation > 0.1;
+            let clear = sky.cloud < CLEAR_BELOW;
             let entry = &mut stats[biomes[k] as usize];
             entry.0 += 1;
             entry.1 += raining as usize;
-            wet_days[k][(step / SAMPLES_A_DAY) as usize] |= raining;
+            entry.2 += clear as usize;
+            let day = (step / SAMPLES_A_DAY) as usize;
+            wet_days[k][day] |= raining;
+            cloudy_days[k][day] |= !clear;
         }
     }
     println!(
-        "\n{:<10} {:>6} {:>8} {:>9} {:>9} {:>9}   ({days} days, {:.1?})",
+        "\n{:<10} {:>6} {:>8} {:>9} {:>9} {:>9} {:>7} {:>10}   ({days} days, {:.1?})",
         "biome",
         "cells",
         "raining",
         "wet days",
         "wet run",
         "dry run",
+        "clear",
+        "clear days",
         start.elapsed()
     );
     for kind in BiomeKind::ALL {
@@ -121,7 +130,11 @@ fn main() {
         if cells.is_empty() {
             continue;
         }
-        let (samples, raining) = stats[kind as usize];
+        let (samples, raining, clear) = stats[kind as usize];
+        let clear_days: usize = cells
+            .iter()
+            .map(|&k| cloudy_days[k].iter().filter(|&&cloudy| !cloudy).count())
+            .sum();
         // runs of wet days and of dry ones, in days, averaged over the biome's cells
         let (mut wet, mut wet_runs, mut dry_runs) = (0usize, Vec::new(), Vec::new());
         for &k in &cells {
@@ -144,13 +157,15 @@ fn main() {
         }
         let mean = |runs: &[f64]| runs.iter().sum::<f64>() / runs.len().max(1) as f64;
         println!(
-            "{:<10} {:>6} {:>7.1}% {:>8.0}% {:>8.1}d {:>8.1}d",
+            "{:<10} {:>6} {:>7.1}% {:>8.0}% {:>8.1}d {:>8.1}d {:>6.0}% {:>9.0}%",
             format!("{kind:?}"),
             cells.len(),
             100.0 * raining as f64 / samples as f64,
             100.0 * wet as f64 / (cells.len() * days as usize) as f64,
             mean(&wet_runs),
             mean(&dry_runs),
+            100.0 * clear as f64 / samples as f64,
+            100.0 * clear_days as f64 / (cells.len() * days as usize) as f64,
         );
     }
 

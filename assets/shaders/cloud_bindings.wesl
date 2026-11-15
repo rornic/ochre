@@ -70,8 +70,9 @@ fn most_storm() -> f32 {
 // How much cloud there is, 0..1, where the pattern ranks `share` (0..1, the cloudiest last) and the weather is `weather`:
 // the share of the sky the weather clouds over, closing into an overcast as that nears all of it, and thickening under a storm.
 fn sky_cover(share: f32, weather: Weather) -> f32 {
-    let cloudy = max(weather.cloud, 0.01);
-    let scattered = saturate((share - (1.0 - cloudy)) / cloudy);
+    let cloudy = weather.cloud;
+    // only the divisor is floored, so the last clouds thin out to nothing instead of snapping off
+    let scattered = saturate((share - (1.0 - cloudy)) / max(cloudy, 0.05));
     let overcast = smoothstep(OVERCAST.x, OVERCAST.y, cloudy) * (OVERCAST_FILL + (1.0 - OVERCAST_FILL) * share);
     let cover = max(scattered, overcast);
     return mix(cover, max(cover, STORM_FILL + (1.0 - STORM_FILL) * share), weather.storm);

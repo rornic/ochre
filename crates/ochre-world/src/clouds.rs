@@ -677,8 +677,7 @@ mod tests {
     // it, and filling in under a storm. The Rust twin of `sky_cover` in `cloud_bindings.wesl`, so
     // its shares can be tested.
     fn cover(share: f32, cloudy: f32, storm: f32) -> f32 {
-        let cloudy = cloudy.max(0.01);
-        let scattered = ((share - (1.0 - cloudy)) / cloudy).clamp(0.0, 1.0);
+        let scattered = ((share - (1.0 - cloudy)) / cloudy.max(0.05)).clamp(0.0, 1.0);
         let overcast = ochre_base::math::smoothstep(OVERCAST.0, OVERCAST.1, cloudy)
             * (OVERCAST_FILL + (1.0 - OVERCAST_FILL) * share);
         let cover = scattered.max(overcast);
@@ -749,6 +748,9 @@ mod tests {
                 / ranks.len() as f32;
             assert!((covered - cloudy).abs() < 0.01, "{cloudy}: {covered}");
         }
+        // a clear sky has no cloud at all, and a thin one only the faintest
+        assert!(ranks.iter().all(|&s| cover(s, 0.0, 0.0) == 0.0));
+        assert!(ranks.iter().all(|&s| cover(s, 0.02, 0.0) < 0.5));
         // near full cloud, the gaps close into an overcast
         assert!(ranks.iter().all(|&s| cover(s, 0.97, 0.0) >= OVERCAST_FILL));
         // a storm fills the sky in, thickest where the pattern's cloudiest
