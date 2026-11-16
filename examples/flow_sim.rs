@@ -6,13 +6,13 @@
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
+mod common;
+
 use bevy::prelude::*;
 use ochre_base::block::BlockType;
-use ochre_engine::settings::{DebugSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk::{ChunkCoordinate, CHUNK_SIZE};
-use ochre_terrain::material::{ChunkMaterial, SprayMaterial, WaterMaterial};
 use ochre_terrain::world::World;
-use ochre_terrain::{task_pool_plugin, TerrainPlugin};
 
 #[derive(Component)]
 struct SimCamera;
@@ -108,22 +108,8 @@ fn summary(frames: &mut [f32]) -> String {
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
     let dev = ochre_engine::DevEnv::from_env();
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin::new(
-            ochre_engine::load_world(&settings, &dev.world),
-            settings.renderer,
-            DebugSettings::default(),
-        ),
-    ))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let count: usize = std::env::args().nth(1).map_or(8, |s| s.parse().unwrap());

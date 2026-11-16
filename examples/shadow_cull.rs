@@ -17,16 +17,17 @@ use bevy::light::{
 };
 use bevy::mesh::{Indices, VertexAttributeValues};
 use bevy::pbr::MeshMaterial3d;
+mod common;
+
 use bevy::prelude::*;
 use bevy::shape::ViewFrustum;
 use ochre_base::block::Tile;
-use ochre_engine::settings::{DebugSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk_loader::{GenerateChunkData, GenerateChunkMesh};
 use ochre_terrain::group::ChunkGroup;
 use ochre_terrain::lod::{GenerateLodMesh, LodNode};
-use ochre_terrain::material::{ChunkMaterial, SprayMaterial, WaterMaterial};
+use ochre_terrain::material::ChunkMaterial;
 use ochre_terrain::world::World;
-use ochre_terrain::{task_pool_plugin, TerrainPlugin};
 
 // The game's camera, see `spawn_player`.
 const FOV_DEGREES: f32 = 90.0;
@@ -209,24 +210,10 @@ fn main() {
 
     // the leaves are found by vertex colours, which packing turns to half-floats
     ochre_terrain::pack::set_packed(false);
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TransformPlugin,
-        TerrainPlugin::new(
-            ochre_engine::load_world(&settings, &dev.world),
-            renderer,
-            DebugSettings::default(),
-        ),
-    ))
-    .init_resource::<DirectionalLightShadowMap>()
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_plugins(TransformPlugin)
+        .init_resource::<DirectionalLightShadowMap>();
+    app.add_systems(Startup, setup);
     app.update();
 
     // let the start area load: nothing left to build for a few seconds running

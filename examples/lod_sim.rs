@@ -9,19 +9,19 @@ use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
 use bevy::platform::collections::HashMap;
+mod common;
+
 use bevy::prelude::*;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_base::WATER_LEVEL;
-use ochre_engine::settings::{DebugSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk::{ChunkCoordinate, CHUNK_SIZE};
 use ochre_terrain::chunk_loader::{ChunkLoader, DirtyChunk, GenerateChunkData, GenerateChunkMesh};
 use ochre_terrain::generate::columns::COARSE_CELL;
 use ochre_terrain::group::{BuiltGroup, ChunkGroup, GroupedChunk, MeshedChunk};
 use ochre_terrain::horizon::render_distance_at;
 use ochre_terrain::lod::{LodKey, LodLayout, LodLoader, LodNode};
-use ochre_terrain::material::{ChunkMaterial, SprayMaterial, WaterMaterial};
 use ochre_terrain::world::World;
-use ochre_terrain::{task_pool_plugin, TerrainPlugin};
 
 #[derive(Component)]
 struct SimCamera;
@@ -302,22 +302,8 @@ fn main() {
     let dev = ochre_engine::DevEnv::from_env();
     let renderer = settings.renderer;
     let layout = renderer.lod_layout();
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin::new(
-            ochre_engine::load_world(&settings, &dev.world),
-            renderer,
-            DebugSettings::default(),
-        ),
-    ))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let speed: f32 = std::env::args().nth(1).map_or(80.0, |s| s.parse().unwrap());

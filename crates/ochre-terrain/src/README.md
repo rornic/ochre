@@ -16,7 +16,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `material.rs`: `ChunkMaterial`, `WaterMaterial`, `SprayMaterial`, `TerrainMaterials`, `ShaderInputs`, `CloudLayer`, `TerrainAssets`, `block_atlas`, `material_array`, `MATERIAL_SIZE` (512), `water_level`, `push_shader_defs`.
 - `fade.rs`: `FadeMaterials`, `Fade`, `SolidWater`, `FULLY_VISIBLE`, `set_shown`, `fade_out_and_despawn`.
 - `frost.rs`: `FrostPlugin`: reads the camera's temperature, biome frost factor and ground height four times a second, eases them, and writes them with the snow rule's constants into `Curvature.cold` (`ochre_base::cold::shader_values`) for `frost.wesl` and the mist in `fog.wesl`. `FrostOn` is present while the plugin is, and `frost_cover(&World, feet) -> f32` is the same cold sum at a point without the shader's patchiness (footsteps ring like ice above `ICY_FROST`).
-- `curvature.rs`: `Curve` (`is_flat_at`, `horizon_distance`, `edge_dip`), `WORLD_CURVE`, `Curvature`, `CurvaturePlugin`. `horizon.rs`: `MAX_RENDER_DISTANCE` (2048), `render_distance_at`, `update_horizon`.
+- `curvature.rs`: `Curve` (`horizon_distance`, `edge_dip`), `WORLD_CURVE`, `Curvature`, `CurvaturePlugin`. `horizon.rs`: `MAX_RENDER_DISTANCE` (2048), `render_distance_at`, `update_horizon`.
 - `settings.rs`: `RendererSettings` (`lod_layout`, `fog_distance`, `material_period`; both settings types are resources `TerrainPlugin` inserts), `DebugSettings { still_leaves, solid_leaves, no_frost }`. The sky's settings are `ochre_world::sky::SkySettings`.
 - `pack.rs`: `set_packed`, `pack`. `raycast.rs`: `raycast`, `RayHit`. `shadow_mesh.rs`: crate-private `split`.
 

@@ -13,7 +13,6 @@ fn window_size() -> Option<(u32, u32)> {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("Failed to read settings.toml");
-    let flythrough = std::env::var_os("OCHRE_FLYTHROUGH").is_some();
     // a flight is 1080p, and unsynced only when its frames are saved, as its real-time run keeps the desktop's compositor its share of the GPU
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
@@ -29,16 +28,14 @@ fn main() {
                 primary_window: Some(Window {
                     // uncapped, the GPU runs flat out and can starve the desktop's compositor until the PC stalls
                     // a recording runs unsynced, as the desktop throttles a hidden vsynced window to a crawl
-                    present_mode: if flythrough
-                        || flight_frames
-                        || std::env::var_os("OCHRE_NOVSYNC").is_some()
+                    present_mode: if flight_frames || std::env::var_os("OCHRE_NOVSYNC").is_some()
                     {
                         bevy::window::PresentMode::AutoNoVsync
                     } else {
                         bevy::window::PresentMode::AutoVsync
                     },
-                    // a flythrough is recorded at video size
-                    resolution: if flythrough || flight {
+                    // a flight is recorded at video size
+                    resolution: if flight {
                         bevy::window::WindowResolution::new(1920, 1080)
                     } else if let Some((w, h)) = window_size() {
                         bevy::window::WindowResolution::new(w, h)

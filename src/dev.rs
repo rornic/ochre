@@ -21,8 +21,6 @@ pub struct DevEnv {
     pub stats: bool,
     /// `OCHRE_FLIGHT`, with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`.
     pub flight: Option<FlightConfig>,
-    /// `OCHRE_FLYTHROUGH`.
-    pub flythrough: Option<String>,
 }
 
 fn number<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -56,7 +54,6 @@ impl DevEnv {
                 warmup: number("OCHRE_FLIGHT_WARMUP"),
                 frames: var("OCHRE_FLIGHT_FRAMES").ok(),
             }),
-            flythrough: var("OCHRE_FLYTHROUGH").ok(),
         }
     }
 }

@@ -8,15 +8,16 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
+mod common;
+
 use bevy::prelude::*;
-use ochre_engine::settings::{DebugSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk_loader::{Chunk, GenerateChunkData};
 use ochre_terrain::group::ChunkGroup;
 use ochre_terrain::horizon::render_distance_at;
 use ochre_terrain::lod::{GenerateLodMesh, LodLoader, LodNode};
-use ochre_terrain::material::{ChunkMaterial, SprayMaterial, WaterMaterial};
+use ochre_terrain::material::{ChunkMaterial, WaterMaterial};
 use ochre_terrain::world::World;
-use ochre_terrain::{task_pool_plugin, TerrainPlugin};
 
 const FRAME: f32 = 1.0 / 60.0;
 const WALK_SPEED: f32 = 20.0;
@@ -295,22 +296,8 @@ fn main() {
             .expect("--render-distance is a number of chunks");
     }
     let renderer = settings.renderer;
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin::new(
-            ochre_engine::load_world(&settings, &dev.world),
-            renderer,
-            DebugSettings::default(),
-        ),
-    ))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let mut flight = Flight {

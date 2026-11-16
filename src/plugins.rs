@@ -97,10 +97,7 @@ impl PluginGroup for OchrePlugins {
             .add(CritterPlugin)
             .add(BirdPlugin)
             .add(DebugOverlayPlugin { stats: dev.stats })
-            .add(FlythroughPlugin {
-                flight: dev.flight,
-                flythrough: dev.flythrough,
-            });
+            .add(FlythroughPlugin { flight: dev.flight });
         if !plugins.frost {
             group = group.disable::<FrostPlugin>();
         }

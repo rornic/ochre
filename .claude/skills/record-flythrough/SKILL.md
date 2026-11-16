@@ -32,7 +32,7 @@ To plan a route use the `worldview` skill and sample `info` heights. Seed 4's tu
 2. It runs again with `OCHRE_FLIGHT_FRAMES=<dir>`, which switches the clock to a fixed 60 fps and saves `frame_NNNNN.png` for every frame, however long each takes to draw.
 3. ffmpeg joins them, with the sound brought to -16 LUFS (the game mixes it at about -37).
 
-The code is in `crates/ochre-gameplay/src/flythrough.rs` (`Flight`). The older `OCHRE_FLYTHROUGH=<dir>` is a fixed path on another seed with no sound.
+The code is in `crates/ochre-gameplay/src/flythrough.rs` (`Flight`).
 
 ## What went wrong, so it does not again
 
