@@ -39,7 +39,7 @@ def mean_row(m):
     global rewritten
     rewritten += 1
     mean = next(means)
-    if TILES[rewritten - 1]["name"] in PAINTED:  # materials.py owns these rows, from the 512px layers
+    if TILES[rewritten - 1]["name"] in PAINTED or TILES[rewritten - 1]["name"] == "SteppeTop":  # materials.py owns these rows, from the 512px layers; steppe_ground.py the last
         return m.group(0)
     return "vec3<f32>(%.4f, %.4f, %.4f)" % tuple(mean)
 

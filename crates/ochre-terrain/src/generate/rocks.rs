@@ -81,6 +81,8 @@ fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
         // the tundra is strewn with boulder fields, where a taiga has one in a hundred
         "tundra" => Some((RockKind::Erratic, 0.9)),
         "taiga" => Some((RockKind::Erratic, 0.04)),
+        // the steppe has only its outcrops, one now and then, more on crests and valley walls
+        "steppe" => Some((RockKind::Erratic, 0.1)),
         "savanna" => Some((RockKind::Mound, 0.075)),
         _ => None,
     }
@@ -328,6 +330,10 @@ fn rock_in_cell(
     let share = match kind {
         // the tundra's `CELL` grid holds only the ledges now, a share of what it once held as boulders
         RockKind::Erratic if noise.biomes().name(biome) == Some("tundra") => (share * OUTCROP_SHARE * field(noise.seed() as u64, x, z)).min(1.0),
+        RockKind::Erratic if noise.biomes().name(biome) == Some("steppe") => {
+            let (exposure, wall) = (noise.exposure(x as f64, z as f64) as f64, noise.valley_wall(x as f64, z as f64) as f64);
+            (share * OUTCROP_SHARE * (0.4 + 1.2 * exposure) * (1.0 + 8.0 * wall)).min(1.0)
+        }
         RockKind::Erratic => {
             let p = (hash(noise.seed() as u64 ^ 0xF1E1_D5ED, x.div_euclid(FIELD), z.div_euclid(FIELD)) >> 11) as f64 / (1u64 << 53) as f64;
             (share * (FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p)).min(1.0)
@@ -349,7 +355,7 @@ fn rock_in_cell(
     let (mut low, mut high) = (i64::MAX, i64::MIN);
     let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     // an outcrop, where the biome has them: wide, low and on ground that may vary under it
-    let outcrop = kind == RockKind::Erratic && noise.biomes().name(biome) == Some("tundra");
+    let outcrop = kind == RockKind::Erratic && matches!(noise.biomes().name(biome), Some("tundra" | "steppe"));
     let (spread, foot) = if outcrop {
         (OUTCROP_SPREAD, ((OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth) * 0.5).round() as i64)
     } else {
@@ -560,6 +566,17 @@ mod tests {
         assert!(SMALL_RADIUS.1 * 2.0 < OUTCROP_RADIUS.0);
         assert!(OUTCROP_RADIUS.1 + 1.0 <= MEDIUM_REACH as f64 && MEDIUM_REACH <= ROCK_REACH);
         assert!(GIANT_RADIUS.0 > OUTCROP_RADIUS.0);
+    }
+
+    #[test]
+    fn the_steppe_has_only_outcrops_and_far_fewer_than_the_tundra() {
+        let (kind, share) = share(Some("steppe")).unwrap();
+        assert_eq!(RockKind::Erratic, kind);
+        let tundra = super::share(Some("tundra")).unwrap().1;
+        // a ledge in about one 24 block cell in 80, where the tundra has about one in 9 before its fields thin or thicken it
+        assert!(share * OUTCROP_SHARE < 0.02 && share * OUTCROP_SHARE * 5.0 < tundra * OUTCROP_SHARE);
+        // crests and walls raise it, a hollow lowers it, and it never passes a certain thing
+        assert!(share * OUTCROP_SHARE * (0.4 + 1.2) * (1.0 + 8.0) < 1.0);
     }
 
     // An arch's pillars are far enough apart that a player can walk between them, under a capstone that rests on both.

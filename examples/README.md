@@ -18,7 +18,7 @@ Headless simulations (`MinimalPlugins` + `TerrainPlugin::new`, no window or GPU,
 
 Stage timers and probes (no Bevy app)
 - `bench.rs` `[seed=1] [lod]`: single-thread timings of map, terrain, regions, chunk generation, chunk meshing and LOD meshing (levels 1 to 8, best of 3), with vertex counts. Env `BENCH_MOUNTAIN` (find mountain 150+ blocks over sea) or `BENCH_AT=x,z` moves the site.
-- `worldprobe.rs` `<seed> <cmd> <x> <z> ...`: `info`, `line`, `grid`, `png`, `route`, `edges`, `sites`, `falls`, `features`, `slice`, `top`, `passes`. `slice`, `top`, `passes` generate real chunks through `generate_chunk_with`. `--no-cliffs`, `--no-trees`, `--no-flora` (`ChunkPasses`) switch passes off.
+- `worldprobe.rs` `<seed> <cmd> <x> <z> ...`: `info`, `line`, `grid`, `png`, `route`, `edges`, `sites`, `falls`, `features`, `valley`, `slice`, `top`, `passes`. `slice`, `top`, `passes` generate real chunks through `generate_chunk_with`. `--no-cliffs`, `--no-trees`, `--no-flora` (`ChunkPasses`) switch passes off.
 - `water_audit.rs` `<seed> [--fine]`: samples rivers, lake shores and coasts. Prints `AUDIT seed=...` lines (walls, tall walls, steps, raised banks, uncontained cells, deep river cuts) for before/after diffs. See `docs/water.md`.
 
 Viewer

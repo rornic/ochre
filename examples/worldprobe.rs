@@ -21,6 +21,7 @@ use ochre_terrain::generate::generator::{generate_chunk_with, ChunkPasses};
 use image::{Rgb, RgbImage};
 use ochre_base::terrain_source::{TerrainSource, WaterKind};
 use ochre_terrain::generate::region_store::RegionStore;
+use ochre_world::worldmap::valleys::Valley;
 use ochre_world::worldmap::{WaterCell, WorldConfig, WorldMap, WorldTerrain, NEIGHBOURS};
 
 fn kind_char(kind: WaterKind) -> char {
@@ -276,7 +277,7 @@ fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 4 {
-        eprintln!("usage: worldprobe <seed> info|line|grid|png|route|edges <x> <z> ...");
+        eprintln!("usage: worldprobe <seed> info|line|grid|png|route|edges|valley <x> <z> ...");
         std::process::exit(2);
     }
     let seed: u32 = args[0].parse().unwrap();
@@ -297,6 +298,52 @@ fn main() {
                     "{} {} {} {:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={},{} OCHRE_LOOK={:.2},{:.2},{:.2}",
                     site.x, site.z, site.open_rays, site.relief, site.x, site.z, site.look.0, site.look.1, site.look.2
                 );
+            }
+        }
+        "valley" => {
+            // the valley at a point, then how much of the window round it is floor or wall, with spawn lines at walls
+            let half: i64 = args.get(4).map_or(2048, |s| s.parse().unwrap());
+            let valley = Valley::of(&map);
+            let dim = map.dim() as f64;
+            let weight = |x: f64, z: f64| {
+                let (u, v) = map.to_cell(x, z);
+                let cell = |t: f64| t.round().clamp(0.0, dim - 1.0) as usize;
+                map.valley[map.index(cell(u), cell(v))] as f64 / 255.0
+            };
+            let cut = valley.at(x as f64, z as f64);
+            println!(
+                "at ({x}, {z}): weight {:.2} depth {:.0} soft {:.2} sharp {:.2} wall {:.2} exposure {:.2} ground {:.1}",
+                weight(x as f64, z as f64),
+                cut.depth,
+                cut.soft,
+                cut.sharp,
+                terrain.valley_wall(x as f64, z as f64),
+                terrain.exposure(x as f64, z as f64),
+                terrain.height(x as f64, z as f64)
+            );
+            let (mut samples, mut floors, mut walls, mut floor_spots) = (0, 0, Vec::new(), Vec::new());
+            for wz in (z - half..z + half).step_by(32) {
+                for wx in (x - half..x + half).step_by(32) {
+                    samples += 1;
+                    let (fx, fz) = (wx as f64, wz as f64);
+                    if weight(fx, fz) > 0.2 && valley.at(fx, fz).soft > 0.9 {
+                        floors += 1;
+                        if floor_spots.iter().all(|&(px, pz): &(i64, i64)| (px - wx).abs().max((pz - wz).abs()) > 1024) {
+                            floor_spots.push((wx, wz));
+                        }
+                    }
+                    if terrain.valley_wall(fx, fz) > 0.6 && walls.iter().all(|&(px, pz): &(i64, i64)| (px - wx).abs().max((pz - wz).abs()) > 256) {
+                        walls.push((wx, wz));
+                    }
+                }
+            }
+            println!("{samples} samples: {floors} on a floor, {} wall spots", walls.len());
+            for (wx, wz) in walls.iter().take(args.get(5).map_or(8, |s| s.parse().unwrap())) {
+                println!("OCHRE_SEED={seed} OCHRE_SPAWN={wx},{wz},20 OCHRE_LOOK=0,-0.1,1");
+            }
+            println!("floor spots:");
+            for (fx, fz) in floor_spots.iter().take(args.get(5).map_or(8, |s| s.parse().unwrap())) {
+                println!("OCHRE_SEED={seed} OCHRE_SPAWN={fx},{fz},20 OCHRE_LOOK=0,-0.1,1");
             }
         }
         "falls" => {

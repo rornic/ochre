@@ -19,15 +19,19 @@ use crate::{
     weather::Weather,
 };
 
-/// Plays one track at a time, picked by `Surroundings`. `first_delay` fixes the seconds before the first track, so a
-/// recording knows when the music starts.
+/// Plays one track at a time, picked by `Surroundings`. `first_delay` fixes the seconds before the first track, and `track` the
+/// one played, by what its file name has in it (`steppe4`), so a recording knows when the music starts and which it is.
 #[derive(Default)]
 pub struct MusicPlugin {
     pub first_delay: Option<f32>,
+    pub track: Option<String>,
 }
 
 #[derive(Resource)]
 struct FirstDelay(Option<f32>);
+
+#[derive(Resource)]
+struct ForcedTrack(Option<String>);
 
 impl Plugin for MusicPlugin {
     fn build(&self, app: &mut App) {
@@ -35,6 +39,7 @@ impl Plugin for MusicPlugin {
             app.add_plugins(SurroundingsPlugin);
         }
         app.insert_resource(FirstDelay(self.first_delay))
+            .insert_resource(ForcedTrack(self.track.clone()))
             .add_systems(Update, play_music.after(SenseSurroundings));
     }
 }
@@ -70,19 +75,36 @@ impl Mood {
         }
     }
 
-    // shortcut: one track a mood, add a pick among several here when there are more
-    fn file(self) -> &'static str {
+    // the tracks a mood has, one of which is picked each time music starts, see `pick`
+    fn files(self) -> &'static [&'static str] {
         match self {
-            Mood::Storm => "sounds/music/storm.ogg",
-            Mood::Desert => "sounds/music/desert.ogg",
-            Mood::Cold => "sounds/music/cold.ogg",
-            Mood::Forest => "sounds/music/forest.ogg",
-            Mood::Rainforest => "sounds/music/rainforest.ogg",
-            Mood::Savanna => "sounds/music/savanna.ogg",
-            Mood::Steppe => "sounds/music/steppe.ogg",
-            Mood::Grassland => "sounds/music/grassland.ogg",
+            Mood::Storm => &["sounds/music/storm.ogg"],
+            Mood::Desert => &["sounds/music/desert.ogg"],
+            Mood::Cold => &["sounds/music/cold.ogg"],
+            Mood::Forest => &["sounds/music/forest.ogg"],
+            Mood::Rainforest => &["sounds/music/rainforest.ogg"],
+            Mood::Savanna => &["sounds/music/savanna.ogg"],
+            Mood::Steppe => &[
+                "sounds/music/steppe.ogg",
+                "sounds/music/steppe2.ogg",
+                "sounds/music/steppe3.ogg",
+                "sounds/music/steppe4.ogg",
+            ],
+            Mood::Grassland => &["sounds/music/grassland.ogg"],
         }
     }
+}
+
+// The first of `files` with `name` in its file name, if any.
+fn named(files: &'static [&'static str], name: &str) -> Option<&'static str> {
+    files.iter().copied().find(|f| f.contains(name))
+}
+
+// One of `files` for a `draw` in 0..1, never the `last` played unless it is the only one.
+fn pick(files: &'static [&'static str], last: Option<&str>, draw: f32) -> &'static str {
+    let others: Vec<&'static str> = files.iter().copied().filter(|f| Some(*f) != last).collect();
+    let choices = if others.is_empty() { files } else { &others[..] };
+    choices[((draw * choices.len() as f32) as usize).min(choices.len() - 1)]
 }
 
 /// A playing track, how long its mood has stopped fitting, and whether it's on its way out.
@@ -111,7 +133,15 @@ const SILENT: f32 = 1e-3;
 struct Context<'w> {
     around: Res<'w, Surroundings>,
     first_delay: Res<'w, FirstDelay>,
+    forced: Res<'w, ForcedTrack>,
     weather: Option<Res<'w, Weather>>,
+}
+
+// Whether a first track has played, and which was the last, so the next is a different one.
+#[derive(Default)]
+struct Played {
+    any: bool,
+    last: Option<&'static str>,
 }
 
 fn play_music(
@@ -121,11 +151,12 @@ fn play_music(
     context: Context,
     mut tracks: Query<(Entity, &mut Track, Option<&mut AudioSink>)>,
     mut wait: Local<Option<f32>>,
-    mut played: Local<bool>,
+    mut played: Local<Played>,
 ) {
     let Context {
         around,
         first_delay,
+        forced,
         weather,
     } = context;
     let dt = time.delta_secs();
@@ -164,7 +195,7 @@ fn play_music(
         *wait = Some(0.0);
     }
     let left = wait.get_or_insert_with(|| {
-        if *played {
+        if played.any {
             let draw: f32 = rand::random();
             GAP_SECONDS.0 + (GAP_SECONDS.1 - GAP_SECONDS.0) * draw * draw
         } else {
@@ -178,14 +209,20 @@ fn play_music(
         return;
     }
     *wait = None;
-    *played = true;
+    played.any = true;
+    let file = forced
+        .0
+        .as_deref()
+        .and_then(|name| named(mood.files(), name))
+        .unwrap_or_else(|| pick(mood.files(), played.last, rand::random()));
+    played.last = Some(file);
     commands.spawn((
         Track {
             mood,
             mismatch: 0.0,
             fading: false,
         },
-        AudioPlayer::<AudioSource>(assets.load(mood.file())),
+        AudioPlayer::<AudioSource>(assets.load(file)),
         PlaybackSettings {
             volume: Volume::SILENT,
             ..PlaybackSettings::DESPAWN
@@ -196,6 +233,40 @@ fn play_music(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn music_starts_on_a_different_track_each_time_and_uses_them_all() {
+        let files = Mood::Steppe.files();
+        assert_eq!(4, files.len());
+        let mut last = None;
+        let mut heard = std::collections::HashSet::new();
+        for i in 0..300 {
+            let file = pick(files, last, (i as f32 * 0.6180339) % 1.0);
+            assert_ne!(Some(file), last, "the same track twice running");
+            heard.insert(file);
+            last = Some(file);
+        }
+        assert_eq!(4, heard.len());
+        // a mood with one track plays it again, and a draw at the top of its range stays in it
+        let only = Mood::Grassland.files();
+        assert_eq!(only[0], pick(only, Some(only[0]), 0.999));
+        assert_eq!(files[files.len() - 1], pick(files, None, 0.9999));
+    }
+
+    #[test]
+    fn a_track_can_be_asked_for_by_name() {
+        let files = Mood::Steppe.files();
+        assert_eq!(Some("sounds/music/steppe4.ogg"), named(files, "steppe4"));
+        assert_eq!(Some("sounds/music/steppe.ogg"), named(files, "steppe."));
+        assert_eq!(None, named(files, "desert"));
+    }
+
+    #[test]
+    fn the_committed_steppe_track_is_a_file_that_exists() {
+        // the others are gitignored, see assets/sounds/CREDITS.md, so a fresh clone has only this one
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sounds/music/steppe.ogg");
+        assert!(path.exists(), "steppe.ogg is missing");
+    }
 
     #[test]
     fn test_mood_follows_the_weather_then_the_place_then_the_biome() {

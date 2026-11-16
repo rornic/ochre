@@ -181,6 +181,7 @@ impl LodBlocks {
                     world_x,
                     world_z,
                     gradient,
+                    noise.valley_wall(world_x as f64, world_z as f64) as f64,
                 );
                 let gradient =
                     face_slope(gradient, grid.gradient(cx, cz), grid.exposed(cx, cz), cell);
@@ -334,6 +335,7 @@ impl LodBlocks {
                     world_x,
                     world_z,
                     combined_gradient,
+                    noise.valley_wall(world_x as f64, world_z as f64) as f64,
                 );
                 let lowest_beside = [(cell, 0), (-cell, 0), (0, cell), (0, -cell)]
                     .map(|(dx, dz)| heights.ground_top(world_x + dx, world_z + dz))

@@ -14,10 +14,12 @@ Pipeline, in the order of `mod.rs:generate`:
 | landforms | `shapes.rs:fjords, cones, inselbergs, cold_uplands, karst, cirques` | `height` |
 | passes | `gameplay.rs:carve_passes` | `height`, `Pass` features |
 | beds | `landform.rs:run`, `landform.rs:terrace` | `landform`, terraced `height` |
+| valleys | `valleys.rs:run` (`generate_with(.., false)` skips it) | `height`, `valley` |
 | scatter | `hydrology.rs:scatter` | `height` |
 | hydrology 2 | `hydrology.rs:run(map, true)` | `flow`, `down`, `water_kind`, `water_surface`, `river_width`, carved `height` |
 | landform again | `landform.rs:run` | `landform` |
 | climate | `climate.rs:run` | `precipitation`, `temperature`, `moisture`, `biome`, `biome_alt`, `biome_margin`, `trees` |
+| exposure | `exposure.rs:run` | `exposure` |
 | roughness | `detail.rs:roughness_layer` | `roughness`, `range` |
 | label | `gameplay.rs:label` | `features`, `ford` |
 

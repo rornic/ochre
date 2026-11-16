@@ -842,6 +842,9 @@ pub fn trees_near(
     trees
 }
 
+// The most exposed ground, 0..1, a steppe tree stands on: hollows only.
+const STEPPE_TREE_EXPOSURE: f32 = 0.38;
+
 fn tree_in_cell(
     noise: &dyn TerrainSource,
     heights: &mut impl TreeGround,
@@ -870,6 +873,10 @@ fn tree_in_cell(
         return None;
     }
     let biome = heights.biome(x, z);
+    // the steppe's few trees stand in sheltered hollows, not on crests or open plain
+    if noise.biomes().name(biome) == Some("steppe") && noise.exposure(x as f64, z as f64) > STEPPE_TREE_EXPOSURE {
+        return None;
+    }
     let (gradient_x, gradient_z) = heights.gradient(x, z);
     // meadow clings to a mountain's faces, and trees stand on it
     let gradient = super::generator::block_gradient(
@@ -879,6 +886,7 @@ fn tree_in_cell(
         x,
         z,
         gradient_x.abs() + gradient_z.abs(),
+        noise.valley_wall(x as f64, z as f64) as f64,
     );
     if gradient > MAX_GRADIENT {
         return None;

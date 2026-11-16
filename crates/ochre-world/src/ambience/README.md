@@ -5,8 +5,9 @@ What the world sounds like at the camera: a synthesized wind, six recorded loops
 
 ## Interface
 - `AmbiencePlugin` (`mod.rs:AmbiencePlugin`): registers the `Wind` audio source, inits `WindDials` and `Surroundings`, runs `wind::play_wind` and `play_loops` at `Startup`, and chains `listen_from_camera`, `sense_surroundings`, then (`wind::update_wind`, `mix_loops`, `hoot`) in `Update`.
-- `Surroundings` (`mod.rs:Surroundings`): `altitude`, `speed`, `underwater`, `water`, `trees`, `trees_overhead`, `warmth`, `desert`, `day`, `breeze`; the fractions are 0..1. `Default` is calm, dry, mild daylight.
+- `Surroundings` (`mod.rs:Surroundings`): `altitude`, `speed`, `underwater`, `water`, `trees`, `trees_overhead`, `warmth`, `desert`, `steppe`, `day`, `breeze`; the fractions are 0..1. `steppe` is the weighted share of the camera's ring samples that are steppe, which lifts the wind's floor to `STEPPE_BREEZE` and adds a grass hiss (`wind.rs`). `Default` is calm, dry, mild daylight.
 - `Loop` (`mod.rs:Loop`): `Forest`, `Crickets`, `Waves`, `Underwater`, `Leaves`, each a component on one looping `AudioPlayer`. `Loop::level(&Surroundings)` is the public loudness rule, 0..1 before gain.
+- `gust_at(position, time, direction)` and `wind_direction(prevailing)` (`wind.rs`): the foliage shader's gust, read at the camera into a dial each frame so the sound swells with the visible grass; keep `gust_at` in step with `foliage.wesl`.
 - `Wind`, `WindDials`, `wind_strength(altitude, speed)` (`wind.rs`, re-exported from `mod.rs`): wind loudness from height above ground and flight speed.
 - `Dial` and `SAMPLE_RATE` (`wind.rs:Dial`, `wind.rs:SAMPLE_RATE`): an `f32` shared through an `AtomicU32` (`Dial` is private to the wind), and the 44.1 kHz rate, `pub(crate)`, which `../weather.rs`'s thunder reads.
 - `smoothstep` (`mod.rs`): `pub(crate)` re-export of `ochre_base::math::smoothstep`.

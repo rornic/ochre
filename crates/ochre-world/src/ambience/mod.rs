@@ -86,6 +86,10 @@ pub struct Surroundings {
     pub warmth: f32,
     // 1 over desert
     pub desert: f32,
+    // how much of what's round it is steppe, 0..1
+    pub steppe: f32,
+    // how far the ground under it stands over the ground round it, 0..1: 0.5 on level ground, up on crests, down in hollows
+    pub exposure: f32,
     // the climate biome under the camera, None over the base terrain
     pub biome: Option<&'static str>,
     // 1 by day, 0 by night, in between at dawn and dusk
@@ -105,6 +109,8 @@ impl Default for Surroundings {
             trees_overhead: 0.0,
             warmth: 1.0,
             desert: 0.0,
+            steppe: 0.0,
+            exposure: 0.5,
             biome: None,
             day: 1.0,
             breeze: 0.0,
@@ -162,7 +168,7 @@ fn sense_surroundings(
     let ground = store
         .get_height(eye.x.floor() as i64, eye.z.floor() as i64)
         .max(WATER_LEVEL as f64) as f32;
-    let (mut water, mut trees, mut total) = (0.0, 0.0, 0.0);
+    let (mut water, mut trees, mut total, mut steppe) = (0.0, 0.0, 0.0, 0.0);
     let (mut overhead, mut overhead_total) = (0.0, 0.0);
     // the camera's own column and the inner ring count as overhead
     let mut sample = |x: f32, z: f32, weight: f32, is_overhead: bool| {
@@ -173,6 +179,7 @@ fn sense_surroundings(
         } else {
             cover = (column.trees / DENSE_FOREST).min(1.0) as f32;
             trees += weight * cover;
+            steppe += weight * (noise.biomes().name(column.biome) == Some("steppe")) as u8 as f32;
         }
         total += weight;
         if is_overhead {
@@ -205,6 +212,8 @@ fn sense_surroundings(
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
         desert: (biome == Some("desert")) as u8 as f32,
+        steppe: steppe / total,
+        exposure: noise.exposure(eye.x as f64, eye.z as f64),
         biome,
         day: smoothstep(-0.05, 0.2, sun_direction(clock.days()).y),
         breeze: dials.breeze(),

@@ -66,6 +66,8 @@ TILES = [
     dict(name="Shale", prompt="dark grey shale, thin flaky layers, fine fissile rock", avoid="bricks, tiles, brown, grid, blue", mean=(92, 88, 84)),
     dict(name="CompactedGranite", derive="shade", body="Granite", factor=0.85, tint=(1.0, 1.0, 1.0)),
     dict(name="CompactedShale", derive="shade", body="Shale", factor=0.85, tint=(1.0, 1.0, 1.0)),
+    # the steppe's ground, greyscale for the tint: the layer is drawn by steppe_ground.py, and this cell is a placeholder copy of the grass's
+    dict(name="SteppeTop", derive="shade", body="GrassTop", factor=1.0, tint=(1.0, 1.0, 1.0)),
     # ground flora, drawn by flora.py; grass and fern are greyscale for the climate's tint
     dict(name="TallGrass", derive="sprite", grey=187),  # as bright as GrassTop, so it tints alike
     dict(name="Fern", derive="sprite", grey=150),
@@ -73,6 +75,8 @@ TILES = [
     dict(name="Dandelion", derive="sprite"),
     dict(name="ShortGrass", derive="sprite", grey=187),
     dict(name="SeedGrass", derive="sprite", grey=187),
+    dict(name="FeatherGrass", derive="sprite", grey=187),
+    dict(name="SteppeFlower", derive="sprite"),
     dict(name="Shrub", derive="sprite", grey=187),
     dict(name="Heath", derive="sprite", grey=187),
 ]

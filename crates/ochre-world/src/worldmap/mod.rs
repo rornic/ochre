@@ -8,6 +8,7 @@ pub mod character;
 pub mod climate;
 mod detail;
 mod erosion;
+mod exposure;
 mod features;
 pub mod gameplay;
 pub mod geology;
@@ -17,6 +18,7 @@ pub mod landform;
 mod shapes;
 mod source;
 pub mod tectonics;
+pub mod valleys;
 pub mod view;
 mod water;
 
@@ -27,7 +29,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 99;
+pub const GENERATOR_VERSION: u32 = 101;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -164,6 +166,10 @@ pub struct WorldMap {
     pub landform: Vec<u8>,
     /// 1 on the river cells that are fords, shallow however wide the river is there.
     pub ford: Vec<u8>,
+    /// How much of a valley's cut each cell takes, 0..1 as 0..=255, sited before the valleys are cut: see `valleys`.
+    pub valley: Vec<u8>,
+    /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
+    pub exposure: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
     /// The share of soft beds at each cell, worked out by geology and not saved: erosion asks for it millions
@@ -231,6 +237,8 @@ impl WorldMap {
             range: vec![0; cells],
             landform: vec![0; cells],
             ford: vec![0; cells],
+            valley: vec![0; cells],
+            exposure: vec![128; cells],
             features: Vec::new(),
             soft: SoftCache::default(),
         }
@@ -473,6 +481,11 @@ pub(crate) fn par_rows<T: Send>(dim: usize, layer: &mut [T], f: impl Fn(usize, &
 
 /// Makes the whole map for `seed`.
 pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
+    generate_with(seed, config, true)
+}
+
+/// `generate`, with the valleys left out when `valleys` is false, to compare a world with and without them.
+pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap {
     config.validate().expect("invalid world config");
     let timed = std::env::var_os("OCHRE_STAGE_TIMES").is_some();
     let mut clock = std::time::Instant::now();
@@ -511,6 +524,9 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     landform::run(&mut map);
     landform::terrace(&mut map, knobs.tableland_share);
     lap("terrace");
+    // after the terraces, which make lakes of their own that no valley is cut through, and before the water
+    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 });
+    lap("valleys");
     hydrology::scatter(&mut map);
     lap("scatter");
     hydrology::run(&mut map, true);
@@ -522,6 +538,8 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     lap("landform");
     climate::run(&mut map);
     lap("climate");
+    exposure::run(&mut map);
+    lap("exposure");
     detail::roughness_layer(&mut map);
     lap("roughness");
     gameplay::label(&mut map);

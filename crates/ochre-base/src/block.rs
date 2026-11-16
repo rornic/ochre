@@ -41,6 +41,9 @@ pub enum BlockType {
     Shale,
     CompactedGranite,
     CompactedShale,
+    // the steppe's grass and flower, flora like the rest, see `BlockType::is_flora`: last so no stored block's number moves
+    FeatherGrass,
+    SteppeFlower,
 }
 
 impl BlockType {
@@ -137,6 +140,8 @@ impl BlockType {
             BlockType::SeedGrass => "seed grass",
             BlockType::Shrub => "shrub",
             BlockType::Heath => "heath",
+            BlockType::FeatherGrass => "feather grass",
+            BlockType::SteppeFlower => "steppe flower",
             BlockType::CompactedRock => "compacted rock",
             BlockType::Limestone => "limestone",
             BlockType::Clay => "clay",
@@ -165,6 +170,8 @@ impl BlockType {
                 | BlockType::Dandelion
                 | BlockType::ShortGrass
                 | BlockType::SeedGrass
+                | BlockType::FeatherGrass
+                | BlockType::SteppeFlower
                 | BlockType::Shrub
                 | BlockType::Heath
         )
@@ -223,21 +230,24 @@ pub enum Tile {
     Shale,
     CompactedGranite,
     CompactedShale,
+    SteppeTop,
     TallGrass,
     Fern,
     Poppy,
     Dandelion,
     ShortGrass,
     SeedGrass,
+    FeatherGrass,
+    SteppeFlower,
     Shrub,
     Heath,
 }
 
-pub const TILE_COUNT: usize = 37;
+pub const TILE_COUNT: usize = 40;
 
 // The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`. `Tile::Stone` and `Tile::CompactedStone`, which
 // terrain only lays as placeholders, have none of their own and draw shale's and compacted shale's.
-pub const MATERIAL_FILES: [&str; 31] = [
+pub const MATERIAL_FILES: [&str; 34] = [
     "dirt",
     "grass_top",
     "sand",
@@ -268,8 +278,12 @@ pub const MATERIAL_FILES: [&str; 31] = [
     "dandelion",
     "short_grass",
     "seed_grass",
+    "feather_grass",
+    "steppe_flower",
     "shrub",
     "heath",
+    // ground again, last so no layer above moves: the steppe's, drawn by `steppe_ground.py`
+    "steppe_top",
 ];
 pub const MATERIAL_LAYERS: usize = MATERIAL_FILES.len();
 
@@ -304,6 +318,7 @@ impl Tile {
             Tile::CompactedSandstone => Some(19),
             Tile::CompactedGranite => Some(20),
             Tile::CompactedShale | Tile::CompactedStone => Some(21),
+            Tile::SteppeTop => Some(33),
             _ => None,
         }
     }
@@ -336,11 +351,13 @@ impl Tile {
             self,
             Tile::GrassTop
                 | Tile::GrassSide
+                | Tile::SteppeTop
                 | Tile::Leaves
                 | Tile::TallGrass
                 | Tile::Fern
                 | Tile::ShortGrass
                 | Tile::SeedGrass
+                | Tile::FeatherGrass
                 | Tile::Shrub
         )
     }
@@ -389,6 +406,8 @@ impl BlockType {
             (BlockType::Dandelion, _) => Tile::Dandelion,
             (BlockType::ShortGrass, _) => Tile::ShortGrass,
             (BlockType::SeedGrass, _) => Tile::SeedGrass,
+            (BlockType::FeatherGrass, _) => Tile::FeatherGrass,
+            (BlockType::SteppeFlower, _) => Tile::SteppeFlower,
             (BlockType::Shrub, _) => Tile::Shrub,
             (BlockType::Heath, _) => Tile::Heath,
         }
@@ -451,6 +470,7 @@ mod tests {
             Tile::CompactedSandstone,
             Tile::CompactedGranite,
             Tile::CompactedShale,
+            Tile::SteppeTop,
         ] {
             let layer = tile.material_layer().unwrap() as usize;
             assert_eq!(file_name(tile), MATERIAL_FILES[layer]);
@@ -491,6 +511,8 @@ mod tests {
             Tile::Dandelion,
             Tile::ShortGrass,
             Tile::SeedGrass,
+            Tile::FeatherGrass,
+            Tile::SteppeFlower,
             Tile::Shrub,
             Tile::Heath,
         ] {
@@ -499,11 +521,12 @@ mod tests {
         }
         assert_eq!(None, Tile::Water.foliage_layer());
         assert_eq!(None, Tile::Stone.foliage_layer());
-        // every layer is a world-space material or a foliage layer, so none is orphaned
+        // every layer is a world-space material or a foliage layer, so none is orphaned: the steppe's ground follows the foliage
         assert_eq!(
             MATERIAL_LAYERS,
-            Tile::FIRST_FLORA_LAYER as usize + (Tile::Heath as usize - Tile::FIRST_FLORA as usize) + 1
+            Tile::FIRST_FLORA_LAYER as usize + (Tile::Heath as usize - Tile::FIRST_FLORA as usize) + 1 + 1
         );
+        assert_eq!(Some(MATERIAL_LAYERS as u8 - 1), Tile::SteppeTop.material_layer());
     }
 
     #[test]
@@ -540,6 +563,8 @@ mod tests {
             BlockType::Dandelion,
             BlockType::ShortGrass,
             BlockType::SeedGrass,
+            BlockType::FeatherGrass,
+            BlockType::SteppeFlower,
             BlockType::Shrub,
             BlockType::Heath,
         ] {
@@ -550,7 +575,7 @@ mod tests {
         }
         assert!(!BlockType::Grass.is_flora() && !BlockType::Leaves.is_flora());
         // the shaders take every tile from the first flora's on as a plant's, see `foliage.wesl`
-        assert_eq!(8, TILE_COUNT - Tile::FIRST_FLORA as usize);
+        assert_eq!(10, TILE_COUNT - Tile::FIRST_FLORA as usize);
     }
 
     #[test]

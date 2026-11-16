@@ -1,5 +1,5 @@
 use super::buffers::{ChunkMeshes, GrassTint, MeshStyle};
-use super::flora::flora_at;
+use super::flora::{flora_at, steppe_bare};
 use super::mesh::mesh_blocks;
 use super::source::{BlockSource, ChunkNeighbourhood};
 use super::terrain::{
@@ -124,6 +124,7 @@ pub fn generate_chunk_with(
                 chunk_pos.0.x * size + x,
                 chunk_pos.0.z * size + z,
                 gradient,
+                columns.wall(x, z),
             );
             let slope = face_slope(slope, gradient, columns.exposed(x, z), 1);
             // the top of a kopje is bare rock whatever the slope
@@ -148,6 +149,7 @@ pub fn generate_chunk_with(
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
             let ice_cliffs = biomes.block(biome, BlockType::Rock, 20, 0.0) == BlockType::Ice;
             let soil = soil_depth(slope);
+            let bare = biomes.name(biome) == Some("steppe") && steppe_bare(seed, world_x, world_z, columns.exposure(x, z));
             let column_block_at = |y: i64| {
                 if let Some(block) = spring.filter(|_| y == column_height - 1) {
                     return block;
@@ -169,6 +171,12 @@ pub fn generate_chunk_with(
                     soil,
                     columns.exposed(x, z),
                 );
+                // bare earth on the steppe's most exposed crests
+                let block = if bare && y == column_height - 1 && block == BlockType::Grass {
+                    BlockType::Dirt
+                } else {
+                    block
+                };
                 // cliffs are cut from the ground before the water fills what they open
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
                     return block;
@@ -268,6 +276,7 @@ pub fn generate_chunk_with(
                 chunk_pos.0.x * size + x,
                 chunk_pos.0.z * size + z,
                 gradient,
+                columns.wall(x, z),
             );
             let ground = column_block(
                 biomes,
@@ -295,6 +304,7 @@ pub fn generate_chunk_with(
                 shaded,
                 temperature,
                 biomes.name(biome),
+                columns.exposure(x, z),
             ) {
                 chunk_data.set_block_at(coord, plant);
             }

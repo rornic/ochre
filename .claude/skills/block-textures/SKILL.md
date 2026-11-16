@@ -73,9 +73,15 @@ The compacted rocks aren't painted: `materials.py` derives each from its rock's 
 
 What reads well in play: a block is 32px of a layer at repeat 16 (64px at the default 8). Detail much finer than a block averages into grain, and flat colour reads as plastic, so ask for shapes of about a block with soft shading. Reject any candidate with one large distinctive feature (a long crack, a big blob). It shows as an obvious repeat across the world, so prefer even, uniform candidates, and look at them tiled 2x2. Judge in the game, not on the contact sheet, which exaggerates detail the mip chain removes.
 
+To redraw one plant and leave the other layers as committed: `python foliage.py --only SteppeFlower --paint-file ../../../assets/textures/materials/grass_top.png` (the painting only varies the strokes' tone, so the committed grass layer will do where `out/sdxl` has none).
+
+## Steppe ground
+
+`steppe_top` is the one painted layer SDXL doesn't make: `python steppe_ground.py` draws it from `dirt.png` and `grass_top.png` (earthy mottling, grit, a trace of the grass layer's leaves, sparse rust and pale pebbles worked out against the steppe's golden tint), grey at GrassTop's linear mean so the grass tint colours it, and writes `assets/textures/materials/steppe_top.png`. It is the last entry of `MATERIAL_FILES`, after the foliage, and its tile's atlas cell is a placeholder copy of GrassTop's. `pack.py` leaves its `block_mean` row alone: it is the layer's own mean, which the script prints, and a test checks it.
+
 ## Foliage
 
-Leaves and the eight flora sprites draw 512px RGBA layers 22 to 30 of the materials array, see `Tile::foliage_layer` and `docs/materials.md`. They are made by `foliage.py`, not `materials.py`:
+Leaves and the nine flora sprites draw 512px RGBA layers 22 to 31 of the materials array, see `Tile::foliage_layer` and `docs/materials.md`. They are made by `foliage.py`, not `materials.py`:
 
 ```
 python lora_paint.py Leaves --tag l --seeds 1 2 3 4 --prompt "overlapping painted green leaves, dense foliage, broad simple leaf shapes each edged with darker green, small dark gaps between the leaf clumps, flat front view" --avoid "flowers, branches, trunk, sky, fruit, border, frame, single leaf, vein detail"

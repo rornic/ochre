@@ -27,9 +27,11 @@ const SALT_CONES: u32 = 0xC4A0_000B;
 const SALT_INSELBERGS: u32 = 0xC4A0_000E;
 const SALT_KARST: u32 = 0xC4A0_000F;
 const SALT_CIRQUES: u32 = 0xC4A0_0010;
+const SALT_VALLEYS: u32 = 0xC4A0_0011;
 const INSELBERGS: (f64, f64) = (0.0, 9.0);
 const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
 const CIRQUES: (f64, f64) = (0.0, 7.0);
+const VALLEY_SHARE: (f64, f64) = (0.5, 1.0);
 const CONE_SHARE: (f64, f64) = (0.0, 0.25);
 const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
@@ -67,6 +69,8 @@ pub(crate) struct LandformKnobs {
     pub karst_groups: u32,
     /// How many cirques a cold world cuts, 0 to 6.
     pub cirques: u32,
+    /// How much of the weight the valleys' siting gives it, 0.5 to 1.
+    pub valley_share: f64,
 }
 
 impl LandformKnobs {
@@ -80,6 +84,7 @@ impl LandformKnobs {
             inselbergs: draw(seed, SALT_INSELBERGS, INSELBERGS).floor() as u32,
             karst_groups: draw(seed, SALT_KARST, KARST_GROUPS).floor() as u32,
             cirques: draw(seed, SALT_CIRQUES, CIRQUES).floor() as u32,
+            valley_share: round(draw(seed, SALT_VALLEYS, VALLEY_SHARE), 3),
         }
     }
 }
@@ -190,6 +195,11 @@ mod tests {
             .collect();
         assert!(boosts.iter().all(|&b| (0.0..=1.0).contains(&b)));
         assert!(boosts.iter().any(|&b| b < 0.03) && boosts.iter().any(|&b| b > 0.97));
+        let valleys: Vec<f64> = (0..1000)
+            .map(|s| LandformKnobs::from_seed(s).valley_share)
+            .collect();
+        assert!(valleys.iter().all(|&v| (VALLEY_SHARE.0..=VALLEY_SHARE.1).contains(&v)));
+        assert!(valleys.iter().any(|&v| v < 0.53) && valleys.iter().any(|&v| v > 0.97));
         let cones: Vec<f64> = (0..1000)
             .map(|s| LandformKnobs::from_seed(s).cone_share)
             .collect();

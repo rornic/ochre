@@ -75,8 +75,14 @@ const RIPARIAN_REACH: u8 = 14;
 // River widths, in blocks, that count for a little, a lot and everything of that reach, and the
 // moisture between which ground is dry: rivers lose their water crossing it, see `hydrology`.
 const RIPARIAN_WIDTHS: (f32, f32, f32) = (20.0, 38.0, 65.0);
-const DRY_BELOW: (f64, f64) = (0.2, 0.45);
+const DRY_BELOW: (f64, f64) = (0.1, 0.3);
 const RIPARIAN_MOISTURE: f32 = 1.0;
+// A lake with fewer cells than this is a pond, and wets no ground round it.
+const RIPARIAN_LAKE_CELLS: usize = 20;
+// Ground drier than the second of these has banks only as wet as this, just under where steppe ends: a lake or river in the steppe leaves it
+// steppe, not a patch of grassland or wood. The cap eases in from the first moisture, where a bank can be wet as it likes.
+const DRY_BANK_MOISTURE: f32 = 0.29;
+const DRY_BANK: (f64, f64) = (0.35, 0.28);
 const RIPARIAN_COOLING: f32 = 0.14;
 // Water cools its banks only where the ground is warmer than this: none at the first, in full at the second.
 const RIPARIAN_COOLS_FROM: (f64, f64) = (0.30, 0.55);
@@ -422,7 +428,8 @@ pub fn run(map: &mut WorldMap) {
     let near_water = fresh_water_closeness(map);
     for i in 0..dim * dim {
         if map.height[i] >= sea {
-            moisture[i] = (moisture[i] + RIPARIAN_MOISTURE * near_water[i]).min(1.0);
+            let wet = 1.0 - (1.0 - DRY_BANK_MOISTURE) * smoothstep(DRY_BANK.0, DRY_BANK.1, moisture[i] as f64) as f32;
+            moisture[i] = (moisture[i] + RIPARIAN_MOISTURE * near_water[i]).min(wet.max(moisture[i]));
             // not in cold country, where it would cut strips of snow along every bank
             let warm = smoothstep(
                 RIPARIAN_COOLS_FROM.0,
@@ -579,11 +586,12 @@ fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
         (RIPARIAN_WIDTHS.2, 1.0),
     ];
     let mut out = vec![0.0f32; map.height.len()];
+    let lakes = big_lake_cells(map);
     for (index, (width, strength)) in tiers.into_iter().enumerate() {
         let near = closeness(map, |i| {
             let river = map.water_kind[i] == WaterCell::River as u8 && map.river_width[i] >= width;
             // lakes are the top tier
-            river || (index == tiers.len() - 1 && map.water_kind[i] == WaterCell::Lake as u8)
+            river || (index == tiers.len() - 1 && lakes[i])
         });
         for (o, n) in out.iter_mut().zip(near) {
             *o = o.max(n * strength);
@@ -592,8 +600,44 @@ fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     out
 }
 
+// The lake cells in lakes of at least `RIPARIAN_LAKE_CELLS`, so a pond of a few cells wets no ground round it.
+fn big_lake_cells(map: &WorldMap) -> Vec<bool> {
+    let dim = map.dim();
+    let lake = |i: usize| map.water_kind[i] == WaterCell::Lake as u8;
+    let mut big = vec![false; dim * dim];
+    let mut seen = vec![false; dim * dim];
+    for start in (0..dim * dim).filter(|&i| lake(i)) {
+        if seen[start] {
+            continue;
+        }
+        let (mut cells, mut next) = (vec![start], 0);
+        seen[start] = true;
+        while next < cells.len() {
+            let (x, z) = ((cells[next] % dim) as i64, (cells[next] / dim) as i64);
+            next += 1;
+            for (dx, dz) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, nz) = (x + dx, z + dz);
+                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+                    continue;
+                }
+                let n = nz as usize * dim + nx as usize;
+                if lake(n) && !seen[n] {
+                    seen[n] = true;
+                    cells.push(n);
+                }
+            }
+        }
+        if cells.len() >= RIPARIAN_LAKE_CELLS {
+            for i in cells {
+                big[i] = true;
+            }
+        }
+    }
+    big
+}
+
 // 1 on the cells `source` picks, falling to 0 at RIPARIAN_REACH cells from them, squared.
-fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
+pub(super) fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
     let dim = map.dim();
     let reach = RIPARIAN_REACH;
     let mut dist = vec![u8::MAX; dim * dim];

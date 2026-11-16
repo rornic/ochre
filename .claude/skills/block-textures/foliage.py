@@ -12,6 +12,7 @@ fern, leaves) are tinted by the climate, so are levelled to the mean the tint as
 """
 import argparse
 import re
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -29,6 +30,7 @@ LEAF_MEAN = 0.25  # LEAF_TEXTURE_MEAN in crates/ochre-base/src/biome/mod.rs, lin
 GRASS_MEAN = 0.5  # GRASS_TEXTURE_MEAN
 FERN_MEAN = 0.3  # a darker fern, as the atlas tile was
 SHRUB_MEAN = 0.27  # shrubs are clearly darker than the grass they stand in
+FEATHER_MEAN = 0.62  # a feather grass's silky plumes are paler than the grass whose tint it takes
 HOLES = 0.3  # share of a leaf layer that is gap
 
 
@@ -115,9 +117,10 @@ def curve(x0, y0, x1, y1, bend, t):
     return ((1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t * t * x1, (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t * t * y1)
 
 
-def stroke(cv, x0, y0, x1, y1, bend, w0, w1, tone0, tone1, rgb=None, steps=14):
-    """A tapered brush stroke, root to tip, `tone` greys or `rgb` (root, tip) colours."""
-    pts = [curve(x0, y0, x1, y1, bend, i / steps) for i in range(steps + 1)]
+def stroke(cv, x0, y0, x1, y1, bend, w0, w1, tone0, tone1, rgb=None, steps=14, path=None):
+    """A tapered brush stroke, root to tip, `tone` greys or `rgb` (root, tip) colours, along `path` (points) when given."""
+    pts = path or [curve(x0, y0, x1, y1, bend, i / steps) for i in range(steps + 1)]
+    steps = len(pts) - 1
     for i in range(steps):
         t = (i + 0.5) / steps
         (ax, ay), (bx, by) = pts[i], pts[i + 1]
@@ -160,6 +163,32 @@ def seed_grass(rng, cv):
         tx, ty = curve(x, 511, x + lean, 511 - h, lean * 0.3, 1.0)
         for k in range(5):  # the head: pale seeds climbing the stalk's tip
             cv.ellipse(tx + (k % 2 - 0.5) * 9, ty + 22 + k * 20, 10, 17, (238, 238, 238), angle=0.25 * (k % 2 - 0.5))
+
+
+def feather_grass(rng, cv):
+    """A tussock of narrow blades with tall stems, each ending in a plume of a few broad, tapering locks that arch out and fall like hair: the steppe's grass.
+    The shader blurs alpha by distance and cuts it at a lower coverage, so anything much under 12 texels wide merges into a blob: the locks are bold, with gaps."""
+    for _ in range(9):  # narrow blades round the base, arching over
+        x = rng.uniform(70, 440)
+        h = rng.uniform(130, 260)
+        lean = rng.uniform(-50, 50) + (x - 256) * 0.25
+        tone = rng.uniform(-15, 15)
+        stroke(cv, x, 511, x + lean, 511 - h, lean * 0.45, rng.uniform(8, 12), 1.5, 115 + tone, 185 + tone)
+    for x in rng.choice(np.arange(110, 410, 50), size=4, replace=False):  # the flowering stems
+        h = rng.uniform(300, 430)
+        lean = rng.uniform(-55, 55) + (x - 256) * 0.2
+        stroke(cv, x, 511, x + lean, 511 - h, lean * 0.35, 6.5, 3.5, 125, 190)
+        tx, ty = curve(x, 511, x + lean, 511 - h, lean * 0.35, 1.0)
+        # the plume falls toward the middle of the sprite, mostly, so it stays on the canvas
+        side = (-1 if tx > 256 else 1) * (1 if rng.uniform() < 0.8 else -1)
+        for k in range(5):  # locks: out from the tip, then down under their own length, each its own way
+            share = k / 4
+            reach = 40 + 90 * share + rng.uniform(-12, 12)
+            fall = 190 - 60 * share + rng.uniform(-20, 20)
+            ex, ey = tx + side * reach, ty + fall
+            ctrl = (tx + side * reach * rng.uniform(0.7, 1.15), ty - rng.uniform(25, 70))
+            pts = [((1 - t) ** 2 * tx + 2 * (1 - t) * t * ctrl[0] + t * t * ex, (1 - t) ** 2 * ty + 2 * (1 - t) * t * ctrl[1] + t * t * ey) for t in np.linspace(0, 1, 14)]
+            stroke(cv, 0, 0, 0, 0, 0, rng.uniform(6.5, 9.5), 2.0, 205, 250, path=pts)
 
 
 def fern(rng, cv):
@@ -211,6 +240,23 @@ def dandelion(rng, cv):
             a = k * 2 * np.pi / 18
             cv.ellipse(x + 38 * np.cos(a), top + 38 * np.sin(a), 30, 8, (246, 206, 52), angle=a, steps=14)
         cv.ellipse(x, top, 26, 26, (232, 176, 24))
+
+
+def steppe_flower(rng, cv):
+    """Slender stems each ending in a small round cluster of dusty lilac florets, over a few narrow grey-green blades: muted, so it sits quietly in dry grass."""
+    for _ in range(7):  # narrow blades, grey-green like the dry steppe's
+        x = rng.uniform(80, 430)
+        lean = rng.uniform(-40, 40) + (x - 256) * 0.2
+        stroke(cv, x, 511, x + lean, 511 - rng.uniform(90, 190), lean * 0.4, rng.uniform(8, 12), 1.5, 0, 0, rgb=((84, 100, 62), (122, 138, 88)))
+    lilacs = ((178, 150, 188), (196, 170, 200), (162, 134, 178))
+    for x, top in ((rng.uniform(130, 190), rng.uniform(150, 190)), (rng.uniform(240, 290), rng.uniform(260, 300)), (rng.uniform(350, 400), rng.uniform(190, 230))):
+        lean = rng.uniform(-25, 25)
+        stroke(cv, x, 511, x + lean, top + 24, lean * 0.4, 6.5, 4.5, 0, 0, rgb=((82, 102, 62), (116, 136, 86)))
+        hx = x + lean
+        for k in range(7):  # a head of overlapping florets, bold enough to hold together blurred
+            a = k * 2 * np.pi / 7 + rng.uniform(-0.3, 0.3)
+            cv.ellipse(hx + 27 * np.cos(a), top + 27 * np.sin(a), 24, 21, lilacs[k % 3], angle=a)
+        cv.ellipse(hx, top, 20, 19, (216, 202, 216))
 
 
 def leaf(cv, x, y, length, width, angle, tone, rgb=None):
@@ -269,8 +315,8 @@ def heath(rng, cv):
         cv.ellipse(fx, fy, rng.uniform(7, 11), rng.uniform(7, 11), tuple(int(c * rng.uniform(0.85, 1.1)) for c in HEATH_FLOWER))
 
 
-DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass, "Shrub": shrub, "Heath": heath}
-GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN, "Shrub": SHRUB_MEAN}
+DRAW = {"TallGrass": tall_grass, "Fern": fern, "Poppy": poppy, "Dandelion": dandelion, "ShortGrass": short_grass, "SeedGrass": seed_grass, "Shrub": shrub, "Heath": heath, "FeatherGrass": feather_grass, "SteppeFlower": steppe_flower}
+GREY = {"TallGrass": GRASS_MEAN, "Fern": FERN_MEAN, "ShortGrass": GRASS_MEAN, "SeedGrass": GRASS_MEAN, "Shrub": SHRUB_MEAN, "FeatherGrass": FEATHER_MEAN}
 
 
 def file_name(tile):
@@ -305,16 +351,19 @@ if __name__ == "__main__":
     ap.add_argument("--leaves", type=int, help="the Leaves_l<seed> candidate to cut holes in")
     ap.add_argument("--seed", type=int, default=3, help="the flora's brush seed")
     ap.add_argument("--paint", default="Leaves_l1", help="a painting in out/sdxl whose tone varies the strokes")
+    ap.add_argument("--paint-file", help="a painting by path instead, as the committed assets/textures/materials/grass_top.png")
+    ap.add_argument("--only", choices=list(DRAW), help="draw just this plant, leaving the others' layers as committed")
     args = ap.parse_args()
     FOLIAGE_OUT.mkdir(parents=True, exist_ok=True)
     if args.leaves:
         Image.fromarray(leaves(SDXL_OUT / f"Leaves_l{args.leaves}.png"), "RGBA").save(FOLIAGE_OUT / "Leaves.png")
-    paint = paint_noise(SDXL_OUT / f"{args.paint}.png")
+    paint = paint_noise(Path(args.paint_file) if args.paint_file else SDXL_OUT / f"{args.paint}.png")
     for i, name in enumerate(DRAW):
-        Image.fromarray(flora(name, args.seed + i, paint), "RGBA").save(FOLIAGE_OUT / f"{name}.png")
+        if args.only in (None, name):
+            Image.fromarray(flora(name, args.seed + i, paint), "RGBA").save(FOLIAGE_OUT / f"{name}.png")
     DEST.mkdir(exist_ok=True)
     means = {}
-    for name in ["Leaves", *DRAW]:
+    for name in [args.only] if args.only else ["Leaves", *DRAW]:
         a = np.asarray(Image.open(FOLIAGE_OUT / f"{name}.png").convert("RGBA"))
         assert a.shape == (SIZE, SIZE, 4), f"{name} is {a.shape}, layers are 512x512"
         means[name] = opaque_mean(a)

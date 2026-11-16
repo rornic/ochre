@@ -1635,13 +1635,13 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
 fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
     use crate::generate::trees::trees_near;
     use bevy::math::I64Vec2;
-    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(6)));
     let mut heights = regions.sampler();
     let trees = trees_near(
         regions.terrain(),
         &mut heights,
-        sparse_at(5) - I64Vec2::splat(700),
-        sparse_at(5) + I64Vec2::splat(700),
+        sparse_at(6) - I64Vec2::splat(700),
+        sparse_at(6) + I64Vec2::splat(700),
     );
     let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
         (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
@@ -2716,7 +2716,7 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     let (mut meadow, mut rock) = (0, 0);
     for i in 0..3000 {
         let (x, z) = (i * 23, i * 7 - 9000);
-        let gradient = super::terrain::block_gradient(&biomes, mountain, 1, x, z, steep);
+        let gradient = super::terrain::block_gradient(&biomes, mountain, 1, x, z, steep, 0.0);
         let top = super::terrain::column_block(
             &biomes,
             mountain,
@@ -2747,20 +2747,24 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
     );
     for i in 0..500 {
         let gradient =
-            super::terrain::block_gradient(&biomes, taiga, 1, i * 23, i * 7 - 9000, steep);
+            super::terrain::block_gradient(&biomes, taiga, 1, i * 23, i * 7 - 9000, steep, 0.0);
         assert!(
             gradient >= steep * 0.5,
             "{gradient}: a meadow on a taiga mountain"
         );
     }
     // gentle ground and other biomes are left as they were
-    let gentle = super::terrain::block_gradient(&biomes, mountain, 1, 5, 5, 0.3);
+    let gentle = super::terrain::block_gradient(&biomes, mountain, 1, 5, 5, 0.3, 0.0);
     assert!(gentle <= 0.3, "{gentle}: eased, or at most an outcrop");
     let plain = ochre_base::biome::BiomeId::BASE;
     assert_eq!(
         steep,
-        super::terrain::block_gradient(&biomes, plain, 1, 5, 5, steep)
+        super::terrain::block_gradient(&biomes, plain, 1, 5, 5, steep, 0.0)
     );
+    // a valley wall makes ground that much steeper to choose blocks by, and none makes none
+    let walled = super::terrain::block_gradient(&biomes, plain, 1, 5, 5, 1.5, 1.0);
+    assert!((walled - 2.5).abs() < 1e-9, "{walled}");
+    assert_eq!(1.5, super::terrain::block_gradient(&biomes, plain, 1, 5, 5, 1.5, 0.0));
 }
 
 #[test]
@@ -4837,4 +4841,57 @@ fn every_lod_level_draws_the_trees_of_a_forest() {
         }
         assert!(boxes > 0 && leaf > 0 && logs > 0, "level {level}: {boxes} boxes, {leaf} leaf and {logs} log vertices of {total}");
     }
+}
+
+// The atlas cell of each top-facing vertex of a mesh, which vertex colour carries in its alpha.
+fn top_cells(mesh: &Mesh) -> Vec<f32> {
+    let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) else {
+        panic!("missing normals");
+    };
+    let Some(VertexAttributeValues::Float32x4(colours)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else {
+        panic!("missing colours");
+    };
+    (0..normals.len()).filter(|&i| normals[i] == [0.0, 1.0, 0.0]).map(|i| colours[i][3]).collect()
+}
+
+#[test]
+fn test_steppe_grass_draws_its_own_ground_and_other_grass_does_not() {
+    use ochre_base::block::Tile;
+    let (steppe, grass) = (Tile::SteppeTop.atlas_cell(), Tile::GrassTop.atlas_cell());
+    let (mut on_steppe, mut on_grassland) = (None, None);
+    'seeds: for seed in 1..=12u32 {
+        let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(seed)));
+        let terrain = regions.terrain();
+        for gx in -8..8 {
+            for gz in -8..8 {
+                let (x, z) = (gx as f64 * 1000.0 + 500.0, gz as f64 * 1000.0 + 500.0);
+                let name = terrain.biomes().name(terrain.biome(x, z));
+                let ground = terrain.height(x, z);
+                if ground < 20.0 || terrain.water(x, z).kind != ochre_base::terrain_source::WaterKind::None {
+                    continue;
+                }
+                let slot = match name {
+                    Some("steppe") if terrain.steppe(x, z) => &mut on_steppe,
+                    // grassland is the base biome, which has no name
+                    None => &mut on_grassland,
+                    _ => continue,
+                };
+                if slot.is_none() {
+                    *slot = Some((regions.clone(), I64Vec3::new((x as i64).div_euclid(16), (ground as i64).div_euclid(16), (z as i64).div_euclid(16))));
+                }
+                if on_steppe.is_some() && on_grassland.is_some() {
+                    break 'seeds;
+                }
+            }
+        }
+    }
+    let cells_at = |spot: &(Arc<RegionStore>, I64Vec3)| {
+        let coord = ChunkCoordinate(spot.1);
+        let chunk = generate_chunk(spot.0.clone(), coord);
+        top_cells(&generate_chunk_mesh_with(Arc::new(chunk), vec![None; 26], coord, &spot.0, false).opaque)
+    };
+    let steppe_cells = cells_at(&on_steppe.expect("no steppe on the test worlds"));
+    assert!(steppe_cells.contains(&steppe), "steppe's grass should draw the steppe ground: {steppe_cells:?}");
+    let grass_cells = cells_at(&on_grassland.expect("no grassland on the test worlds"));
+    assert!(!grass_cells.contains(&steppe) && grass_cells.contains(&grass), "grassland's grass should draw the grass layer");
 }
