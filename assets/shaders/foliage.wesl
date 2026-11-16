@@ -9,6 +9,24 @@ const FLORA_SWAY: f32 = 0.16;
 // bends one way in a gust rather than wobbling about upright.
 const FLORA_LEAN: f32 = 0.35;
 
+// The world's prevailing wind in x and z, see `ChunkMaterial::wind`: zero until set, which reads as the old fixed direction.
+@group(constants::MATERIAL_BIND_GROUP) @binding(14) var<uniform> wind: vec4<f32>;
+// How far apart, in blocks, the broad gust bands that cross open ground are, along the wind.
+const BAND_BLOCKS: f32 = 190.0;
+
+fn wind_direction() -> vec2<f32> {
+    if dot(wind.xy, wind.xy) < 0.0001 {
+        return normalize(vec2<f32>(0.846, 0.538));
+    }
+    return normalize(wind.xy);
+}
+
+// How hard the wind pushes at `world` at `time`, about -1.2..1.2: a quick gust plus slow broad bands rolling along the wind.
+fn gust_at(world: vec2<f32>, time: f32) -> f32 {
+    let along = dot(world, wind_direction());
+    return 0.7 * sin(time * 1.3 + along * 0.13) + 0.5 * sin(time * 0.55 + along * 6.2831853 / BAND_BLOCKS);
+}
+
 // Whether a block mesh's vertex alpha, its atlas cell, is leaves'. `LEAF_CELL` comes from
 // `ChunkMaterial::specialize`.
 fn is_leaf(vertex_alpha: f32) -> bool {
@@ -42,23 +60,23 @@ fn swayed(world: vec3<f32>, vertex_alpha: f32, uv: vec2<f32>, coarse: bool, time
     if coarse {
         return world;
     }
-    // slow gusts roll across the land, the same for leaves and plants, so one crosses a
-    // meadow and the wood behind it alike
+    // slow gusts roll across the land with the wind, see `gust_at`
+    let toward = wind_direction();
     if is_flora(vertex_alpha) {
-        let gust = sin(time * 1.3 + dot(world.xz, vec2<f32>(0.11, 0.07)));
+        let gust = gust_at(world.xz, time);
         // bending most at the tip, as a stem does, and quicker than the boughs
         let bend = 1.0 - clamp(uv.y, 0.0, 1.0);
         let flutter = sin(time * 3.3 + dot(world.xz, vec2<f32>(1.7, 1.1)));
         let push = (FLORA_LEAN + gust * 0.45 + flutter * 0.25) * bend * bend * FLORA_SWAY;
         // a leaning tip dips a little, as its stem doesn't stretch
-        return world + vec3<f32>(push, -abs(push) * 0.3, push * 0.6);
+        return world + vec3<f32>(toward.x * push * 1.17, -abs(push) * 0.3, toward.y * push * 1.17);
     }
     if !is_leaf(vertex_alpha) {
         return world;
     }
-    let gust = sin(time * 1.3 + dot(world.xz, vec2<f32>(0.11, 0.07)));
+    let gust = gust_at(world.xz, time);
     // with a quicker flutter on top
     let flutter = sin(time * 4.1 + dot(world, vec3<f32>(0.9, 0.7, 1.3)));
     let push = gust * 0.7 + flutter * 0.3;
-    return world + vec3<f32>(push, flutter * 0.4, push * 0.6) * SWAY;
+    return world + vec3<f32>(toward.x * push * 1.17, flutter * 0.4, toward.y * push * 1.17) * SWAY;
 }

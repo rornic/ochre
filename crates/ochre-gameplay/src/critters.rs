@@ -41,6 +41,8 @@ const NEAR: f32 = 26.0;
 const FAR: f32 = 44.0;
 // How many spots round the camera are looked at for a new one each frame.
 const SEARCHES: usize = 3;
+// How often a butterfly takes to a steppe flower, which there are few of and which are not the sort butterflies crowd, against a meadow's.
+const STEPPE_FLOWER_BUTTERFLIES: f64 = 0.2;
 // How long one takes to appear, or to fade away once it's the wrong time of day, in seconds.
 const FADE_SECONDS: f32 = 1.5;
 // How much of the day it is, see `daylight`, when butterflies come out and fireflies leave.
@@ -217,8 +219,13 @@ fn find_spot(
     None
 }
 
+// A flower a butterfly may be drawn to this time.
 fn is_flower(block: BlockType) -> bool {
-    matches!(block, BlockType::Poppy | BlockType::Dandelion)
+    match block {
+        BlockType::Poppy | BlockType::Dandelion => true,
+        BlockType::SteppeFlower => rand::random_bool(STEPPE_FLOWER_BUTTERFLIES),
+        _ => false,
+    }
 }
 
 fn is_meadow(block: BlockType) -> bool {

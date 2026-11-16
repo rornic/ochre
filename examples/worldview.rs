@@ -154,7 +154,7 @@ fn block_colour(b: BlockType) -> Option<Rgb> {
         Shale => [92.0, 88.0, 84.0],
         CompactedGranite => [107.0, 94.0, 88.0],
         CompactedShale => [57.0, 55.0, 52.0],
-        Grass | TallGrass | Fern | ShortGrass | SeedGrass | Poppy | Dandelion | Shrub | Heath => {
+        Grass | TallGrass | Fern | ShortGrass | SeedGrass | FeatherGrass | SteppeFlower | Poppy | Dandelion | Shrub | Heath => {
             [90.0, 160.0, 60.0]
         }
         Sand => [222.0, 204.0, 140.0],
@@ -259,7 +259,7 @@ fn fill(w: &World, v: &View, grid: &mut [Col], gw: usize) {
                             w.map.seed,
                             (bx, bz),
                             (ground, water_top),
-                            gradient,
+                            (gradient, w.terrain.valley_wall(bx as f64, bz as f64) as f64),
                             col.temp,
                         );
                     }
@@ -665,7 +665,7 @@ fn info(w: &World, x: f64, z: f64) -> String {
         map.seed,
         (bx, bz),
         (ground, water_top),
-        gx.abs() + gz.abs(),
+        (gx.abs() + gz.abs(), w.terrain.valley_wall(bx as f64, bz as f64) as f64),
         temp,
     );
     let (u, v) = map.to_cell(bx as f64, bz as f64);

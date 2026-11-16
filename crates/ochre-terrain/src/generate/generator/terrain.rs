@@ -248,6 +248,8 @@ const MEADOW_GRADIENT: f64 = 0.9;
 // leaving bare rock to the steepest faces and the outcrops, which add `OUTCROP_GRADIENT` to it.
 const MOUNTAIN_EASE: f64 = 0.5;
 const OUTCROP_GRADIENT: f64 = 1.0;
+// A valley wall adds this much to the gradient blocks are chosen by, so a face short of bare rock still shows some.
+const VALLEY_WALL_GRADIENT: f64 = 1.0;
 
 // The gradient to choose a column's blocks by: on a mountain, in a patch of meadow, as gentle as
 // MEADOW_GRADIENT at most, so grass and the trees and flora on it cling to the face where the
@@ -259,7 +261,9 @@ pub(in crate::generate) fn block_gradient(
     x: i64,
     z: i64,
     gradient: f64,
+    wall: f64,
 ) -> f64 {
+    let gradient = gradient + wall * VALLEY_WALL_GRADIENT;
     if biomes.modifier(biome) != ochre_base::biome::Modifier::Mountain {
         return gradient;
     }
@@ -316,10 +320,10 @@ pub fn surface_block(
     seed: u32,
     (x, z): (i64, i64),
     (ground, water_top): (i64, i64),
-    gradient: f64,
+    (gradient, wall): (f64, f64),
     temperature: f32,
 ) -> BlockType {
-    let slope = block_gradient(biomes, biome, seed, x, z, gradient);
+    let slope = block_gradient(biomes, biome, seed, x, z, gradient, wall);
     column_block(
         biomes,
         biome,

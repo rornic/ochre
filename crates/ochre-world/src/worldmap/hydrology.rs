@@ -286,14 +286,14 @@ impl FloodQueue {
 // A basin the flood filled: its cells, how deep it is filled, the level it spills at and its lowest cell.
 pub(super) struct Basin {
     pub(super) cells: Vec<usize>,
-    depth: f32,
+    pub(super) depth: f32,
     pub(super) spill: f32,
     floor: usize,
 }
 
 // The connected runs of cells the flood raised, each one water it filled to its spill point, and
 // the basin each cell is in, or `NONE`.
-fn basins(height: &[f32], flood: &Flood, dim: usize) -> (Vec<Basin>, Vec<u32>) {
+pub(super) fn basins(height: &[f32], flood: &Flood, dim: usize) -> (Vec<Basin>, Vec<u32>) {
     let wet = |i: usize| flood.filled[i] - height[i] > 0.25;
     let mut of = vec![NONE; height.len()];
     let mut stack = Vec::new();
@@ -373,6 +373,18 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         i = d;
     }
     cut
+}
+
+/// Fills every basin `wanted` picks up to its spill level, leaving a flat with no pit and no channel cut out of it.
+pub(super) fn fill_where(height: &mut [f32], dim: usize, ties: &[u32], wanted: impl Fn(&Basin) -> bool) {
+    let open = open_sea(height, dim);
+    let flood = flood_over(height, dim, ties, &open);
+    let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
+    for basin in basins(height, &flood, dim).0.iter().filter(|b| wanted(b)) {
+        for &i in &basin.cells {
+            height[i] = height[i].max(flood.filled[i]).max(floor);
+        }
+    }
 }
 
 /// Cells of land draining through each cell, itself included.
@@ -954,12 +966,14 @@ mod tests {
 
     #[test]
     fn test_ground_under_the_sea_walled_in_holds_a_lake_over_it() {
-        // a bowl too big and deep to be a lake, its rim too thick to breach, dipping under the sea in its middle
-        let config = WorldConfig {
+        // a bowl too big and deep to be a lake, its rim too thick to breach, dipping under the sea in its middle, in a dry climate so
+        // its lake stands under the brim
+        let mut config = WorldConfig {
             size: 340 * 32,
             map_cell: 32,
             ..Default::default()
         };
+        config.climate.humidity = 0.4;
         let dim = config.dim();
         let mut map = WorldMap::empty(1, config);
         for z in 0..dim {

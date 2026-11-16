@@ -9,14 +9,20 @@ use std::{
 
 use bevy::{
     asset::{Asset, Assets},
+    camera::Camera3d,
+    math::Vec2,
+    transform::components::GlobalTransform,
     audio::{AudioPlayer, ChannelCount, Decodable, PlaybackSettings, SampleRate, Source, Volume},
     ecs::{
+        query::With,
         resource::Resource,
-        system::{Commands, Res, ResMut},
+        system::{Commands, Query, Res, ResMut},
     },
     reflect::TypePath,
     time::Time,
 };
+
+use ochre_terrain::world::World;
 
 use super::{smoothstep, Surroundings};
 
@@ -28,6 +34,10 @@ pub struct WindDials {
     // how much of a breeze the sound is blowing right now, 0..1, whatever its strength: set
     // on the audio thread, for the leaves to rustle in, see `Loop::Leaves`
     breeze: Dial,
+    // how much of the ground round the camera is steppe, 0..1, gliding with it: the wind there never drops to still and the grass rustles
+    steppe: Dial,
+    // the gust the shader has at the camera, 0..1, see `gust_at`, so the sound swells as the grass bends
+    gust: Dial,
 }
 
 impl WindDials {
@@ -65,6 +75,28 @@ const STORM_WIND: f32 = 0.6;
 const UNDERWATER_WIND: f32 = 0.02;
 // How long the wind takes to follow a change in where the camera is, in seconds.
 const WIND_FOLLOW_SECONDS: f32 = 0.6;
+// The least strength wind blows on the most exposed steppe, well over where `STEADY` starts so it keeps blowing between
+// spells: it blows from the exposure's first value up to full at the second, and not at all in a hollow.
+const STEPPE_BREEZE: f32 = 0.5;
+const STEPPE_EXPOSED: (f32, f32) = (0.3, 0.75);
+// The gust's greatest push either way, see `gust_at`.
+const GUST_RANGE: f32 = 1.2;
+
+/// The direction the wind blows, as the foliage shader takes it: a unit vector, and the old fixed direction when none is set.
+pub fn wind_direction(prevailing: [f32; 2]) -> Vec2 {
+    let wind = Vec2::from(prevailing);
+    if wind.length_squared() < 0.0001 {
+        Vec2::new(0.846, 0.538).normalize()
+    } else {
+        wind.normalize()
+    }
+}
+
+/// How hard the wind pushes at `at` (x, z) at `time`, about -1.2..1.2: the function `gust_at` in `foliage.wesl`, to keep in step with it.
+pub fn gust_at(at: Vec2, time: f32, direction: Vec2) -> f32 {
+    let along = at.dot(direction);
+    0.7 * (time * 1.3 + along * 0.13).sin() + 0.5 * (time * 0.55 + along * TAU / 190.0).sin()
+}
 
 pub(crate) fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>, dials: Res<WindDials>) {
     let wind = winds.add(Wind {
@@ -88,14 +120,27 @@ pub(crate) fn update_wind(
     around: Res<Surroundings>,
     dials: Res<WindDials>,
     weather: Option<Res<crate::weather::Weather>>,
+    world: Res<World>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
 ) {
+    if let Ok(camera) = camera.single() {
+        let eye = camera.translation();
+        let direction = wind_direction(world.region_store.terrain().prevailing_wind());
+        let push = gust_at(Vec2::new(eye.x, eye.z), time.elapsed_secs_wrapped(), direction);
+        dials.gust.set((push / (2.0 * GUST_RANGE) + 0.5).clamp(0.0, 1.0));
+    }
     let storm = weather.map_or(0.0, |weather| weather.precipitation()) * STORM_WIND;
+    let follow = 1.0 - (-time.delta_secs() / WIND_FOLLOW_SECONDS).exp();
+    let steppe = dials.steppe.get();
+    dials.steppe.set(steppe + (if around.underwater { 0.0 } else { around.steppe } - steppe) * follow);
     let wanted = if around.underwater {
         UNDERWATER_WIND
     } else {
-        wind_strength(around.altitude, around.speed).max(storm)
+        let exposed = smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, around.exposure);
+        wind_strength(around.altitude, around.speed)
+            .max(storm)
+            .max(dials.steppe.get() * STEPPE_BREEZE * exposed)
     };
-    let follow = 1.0 - (-time.delta_secs() / WIND_FOLLOW_SECONDS).exp();
     let current = dials.strength.get();
     dials.strength.set(current + (wanted - current) * follow);
 }
@@ -130,8 +175,6 @@ const CALM: (f32, f32) = (0.35, 0.8);
 // Wind this strong, from high up or flying fast, keeps blowing between spells: from none of
 // it at the first to all of it at the second.
 const STEADY: (f32, f32) = (0.35, 0.8);
-// How long one gust takes to rise or die away, in seconds, at the least and most.
-const GUST_SECONDS: (f32, f32) = (2.5, 7.0);
 // The roar's low-pass cutoff in calm air and in the strongest gusts, in Hz. Wind is mostly
 // rumble: anything much higher hisses like a detuned radio.
 const ROAR_CUTOFF: (f32, f32) = (200.0, 600.0);
@@ -145,6 +188,9 @@ const WHISTLE_Q: f32 = 14.0;
 const WHISTLE_INPUT_CUTOFF: f32 = 1200.0;
 // Quieter than the roar, and only once the wind picks up, see `WindDecoder::control`.
 const WHISTLE_GAIN: f32 = 0.2;
+// Grass rustling in the wind is hiss above this cutoff, in Hz, at this share of the wind's level on steppe.
+const RUSTLE_CUTOFF: f32 = 2400.0;
+const RUSTLE_GAIN: f32 = 0.18;
 const OUTPUT_GAIN: f32 = 0.5;
 // How much of its loudness a full gale loses, so a gale sits under the music and loops, not over them, and a breeze is as it was.
 const GALE_EASE: f32 = 0.85;
@@ -160,12 +206,14 @@ pub struct WindDecoder {
     // the strength as heard, gliding after `strength`
     level: f32,
     spell: Gust,
-    gust: Gust,
     flutter: Gust,
     // per channel, so the two ears hear different air
     roar: [[OnePole; ROAR_POLES]; 2],
     whistle_input: [OnePole; 2],
     whistle: [Bandpass; 2],
+    // low-passes the grass's hiss is the white noise minus
+    rustle: [OnePole; 2],
+    rustle_gain: f32,
     // how much of each the control step last asked for; the roar's also makes up for what
     // its low-pass takes, so moving the cutoff changes how bright it is, not how loud
     roar_gain: f32,
@@ -182,16 +230,20 @@ impl WindDecoder {
             channel: 0,
             level,
             spell: Gust::default(),
-            gust: Gust::default(),
             flutter: Gust::default(),
             roar: [[OnePole::default(); ROAR_POLES]; 2],
             whistle_input: [OnePole::default(); 2],
             whistle: [Bandpass::default(); 2],
+            rustle: [OnePole::default(); 2],
+            rustle_gain: 0.0,
             roar_gain: 0.0,
             whistle_gain: 0.0,
         };
         for filter in &mut decoder.whistle_input {
             filter.tune(WHISTLE_INPUT_CUTOFF);
+        }
+        for filter in &mut decoder.rustle {
+            filter.tune(RUSTLE_CUTOFF);
         }
         decoder.control();
         decoder
@@ -217,14 +269,12 @@ impl WindDecoder {
         let (a, b) = (self.random(), self.random());
         let spell = self.spell.advance(step, SPELL_SECONDS, a, b);
         let (a, b) = (self.random(), self.random());
-        let gust = self.gust.advance(step, GUST_SECONDS, a, b);
-        let (a, b) = (self.random(), self.random());
         let flutter = self.flutter.advance(step, (0.2, 0.8), a, b);
 
         let up = smoothstep(CALM.0, CALM.1, spell);
         let steady = smoothstep(STEADY.0, STEADY.1, self.level);
         let blowing = up + (1.0 - up) * steady;
-        let gusting = 0.65 + 0.35 * gust;
+        let gusting = 0.45 + 0.55 * self.dials.gust.get();
         self.dials.breeze.set(blowing * gusting);
         // gusts swing a calm day's wind far less than a gale's
         let blow = (self.level * blowing * gusting * (0.9 + 0.1 * flutter)).clamp(0.0, 1.0);
@@ -242,6 +292,8 @@ impl WindDecoder {
         let ease = 1.0 - GALE_EASE * blow;
         self.roar_gain = blow.powf(0.95) * makeup * ROAR_MAKEUP * ease;
         self.whistle_gain = WHISTLE_GAIN * blow * blow * ease;
+        // the grass rustles in the gusts, and with the flutter
+        self.rustle_gain = RUSTLE_GAIN * self.dials.steppe.get() * blow * (0.4 + 0.6 * flutter);
     }
 }
 
@@ -264,7 +316,8 @@ impl Iterator for WindDecoder {
             .fold(white, |signal, pole| pole.process(signal));
         let whistle_input = self.whistle_input[channel].process(white);
         let whistle = self.whistle[channel].process(whistle_input);
-        let sample = roar * self.roar_gain + whistle * self.whistle_gain;
+        let hiss = white - self.rustle[channel].process(white);
+        let sample = roar * self.roar_gain + whistle * self.whistle_gain + hiss * self.rustle_gain;
         Some((sample * OUTPUT_GAIN).tanh())
     }
 }
@@ -380,6 +433,7 @@ mod tests {
     fn loudness(strength: f32) -> Vec<f32> {
         let shared = WindDials::default();
         shared.strength.set(strength);
+        shared.gust.set(0.5);
         let second = SAMPLE_RATE as usize * CHANNELS as usize;
         let samples: Vec<f32> = WindDecoder::new(shared, 7).take(second * 120).collect();
         assert!(samples.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
@@ -398,5 +452,56 @@ mod tests {
         let gale = loudness(1.0);
         let quietest = gale.iter().cloned().fold(1.0, f32::min);
         assert!(quietest > loudest, "quietest {quietest}, breeze {loudest}");
+    }
+
+    // How much of the two minutes' sound is above 2 kHz-ish hiss: the energy of its differences, left ear only.
+    fn hiss(strength: f32, steppe: f32) -> f32 {
+        let shared = WindDials::default();
+        shared.strength.set(strength);
+        shared.gust.set(0.5);
+        shared.steppe.set(steppe);
+        let samples: Vec<f32> = WindDecoder::new(shared, 7).take(SAMPLE_RATE as usize * 2 * 60).step_by(2).collect();
+        samples.windows(2).map(|w| (w[1] - w[0]).powi(2)).sum::<f32>() / samples.len() as f32
+    }
+
+    #[test]
+    fn grass_rustles_on_steppe_and_not_elsewhere() {
+        let (steppe, grassland) = (hiss(STEPPE_BREEZE, 1.0), hiss(STEPPE_BREEZE, 0.0));
+        assert!(steppe > grassland * 1.25, "steppe {steppe}, grassland {grassland}");
+    }
+
+    #[test]
+    fn steppe_wind_never_drops_to_still() {
+        // a ground breeze comes and goes, and the steppe's floor is over where the wind stops dropping out between spells
+        assert!(STEPPE_BREEZE > STEADY.0 && STEPPE_BREEZE > GROUND_BREEZE);
+        let steady = loudness(STEPPE_BREEZE);
+        let quiet = steady.iter().cloned().fold(1.0, f32::min);
+        assert!(quiet > 0.001, "quietest second {quiet}");
+    }
+
+    #[test]
+    fn the_gust_stays_in_range_and_depends_on_where_and_when() {
+        let direction = wind_direction([0.0, 0.0]);
+        assert!((direction.length() - 1.0).abs() < 1e-5);
+        let east = wind_direction([3.0, 0.0]);
+        assert_eq!(Vec2::X, east);
+        let (mut low, mut high) = (f32::MAX, f32::MIN);
+        for t in 0..400 {
+            for p in 0..40 {
+                let push = gust_at(Vec2::new(p as f32 * 23.0, p as f32 * 7.0), t as f32 * 0.37, east);
+                (low, high) = (low.min(push), high.max(push));
+            }
+        }
+        assert!(low >= -GUST_RANGE && high <= GUST_RANGE && low < -1.0 && high > 1.0, "{low} {high}");
+        assert_ne!(gust_at(Vec2::ZERO, 1.0, east), gust_at(Vec2::new(60.0, 0.0), 1.0, east));
+        assert_eq!(gust_at(Vec2::new(0.0, 80.0), 2.0, east), gust_at(Vec2::new(0.0, -300.0), 2.0, east), "no change across the wind");
+    }
+
+    #[test]
+    fn the_steppe_wind_is_gone_in_a_hollow_and_full_on_a_crest() {
+        let exposed = |e| smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, e);
+        assert_eq!(0.0, exposed(0.1));
+        assert!(exposed(0.5) > 0.2 && exposed(0.5) < 0.6);
+        assert_eq!(1.0, exposed(0.9));
     }
 }

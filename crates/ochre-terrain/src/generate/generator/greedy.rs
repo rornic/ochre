@@ -16,7 +16,7 @@ use crate::generate::light::MAX_LIGHT;
 use bevy::math::IVec3;
 use bevy::math::Vec3;
 use ochre_base::block::BlockType;
-use ochre_base::block::Face;
+use ochre_base::block::{Face, Tile};
 use std::cell::RefCell;
 use std::ops::Deref;
 
@@ -60,6 +60,8 @@ pub(super) struct FaceCell {
     pub(super) dip: [bool; 4],
     // grass or rock whose tint varies across the world, which its faces must not merge over, see `GrassTint::varied_at`
     pub(super) varied: bool,
+    // grass on steppe, top and sides, which draws the steppe's own ground, see `Tile::SteppeTop`
+    pub(super) steppe: bool,
 }
 
 impl FaceCell {
@@ -107,6 +109,7 @@ impl FaceCell {
             && self.dip == other.dip
             && !self.varied
             && !other.varied
+            && self.steppe == other.steppe
             && !self.dip.contains(&true)
             && self.even_along(corners, axis)
     }
@@ -615,6 +618,7 @@ pub(super) fn mesh_opaque_greedy(
             Some(FaceCell {
                 span,
                 varied: block == BlockType::Grass && grass_tint.varied_at(coord.as_vec3()),
+                steppe: textured && block == BlockType::Grass && source.steppe(coord.x, coord.z),
                 corner: match (bevelled, normal.y) {
                     (true, 1) => shapes.shape(source, coord).raised,
                     (true, 0) => {
@@ -663,7 +667,10 @@ pub(super) fn mesh_opaque_greedy(
                     buffers: &mut MeshBuffers| {
             let origin = at.as_vec3();
             let tile = if textured {
-                cell.block.tile(Face::of_normal_y(normal.y as f32))
+                match cell.block.tile(Face::of_normal_y(normal.y as f32)) {
+                    Tile::GrassTop | Tile::GrassSide if cell.steppe => Tile::SteppeTop,
+                    tile => tile,
+                }
             } else {
                 cell.block.lod_tile()
             };

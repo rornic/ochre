@@ -627,7 +627,7 @@ fn mesh_flora(
         let jitter = |salt: u32| hash01(world, salt);
         let grass = matches!(
             block,
-            BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass
+            BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass | BlockType::FeatherGrass
         );
         let shorten = if grass { GRASS_SHORTEN } else { FLORA_SHORTEN };
         // grasses may stand a little over a block, where the cell above is open

@@ -93,6 +93,7 @@ impl PluginGroup for OchrePlugins {
             .add(AmbiencePlugin)
             .add(MusicPlugin {
                 first_delay: dev.music_delay,
+                track: dev.music_track.clone(),
             })
             .add(CritterPlugin)
             .add(BirdPlugin)

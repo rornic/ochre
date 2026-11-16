@@ -97,6 +97,21 @@ pub trait TerrainSource: Send + Sync {
         0.0
     }
 
+    /// How much of a valley's wall the column at (x, z) is, 0..1: 0 away from valleys.
+    fn valley_wall(&self, _x: f64, _z: f64) -> f32 {
+        0.0
+    }
+
+    /// How far the column at (x, z) stands over the ground round it, 0..1: 0.5 on level ground, up on crests, down in hollows.
+    fn exposure(&self, _x: f64, _z: f64) -> f32 {
+        0.5
+    }
+
+    /// Whether the column at (x, z) is steppe, whose grass ground draws its own rougher texture.
+    fn steppe(&self, _x: f64, _z: f64) -> bool {
+        false
+    }
+
     /// The nearest lowland column to the world centre.
     fn find_spawn(&self) -> (i64, i64, f64);
 
@@ -174,6 +189,18 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn cliff_boost(&self, x: f64, z: f64) -> f32 {
         (**self).cliff_boost(x, z)
+    }
+
+    fn valley_wall(&self, x: f64, z: f64) -> f32 {
+        (**self).valley_wall(x, z)
+    }
+
+    fn exposure(&self, x: f64, z: f64) -> f32 {
+        (**self).exposure(x, z)
+    }
+
+    fn steppe(&self, x: f64, z: f64) -> bool {
+        (**self).steppe(x, z)
     }
 
     fn find_spawn(&self) -> (i64, i64, f64) {

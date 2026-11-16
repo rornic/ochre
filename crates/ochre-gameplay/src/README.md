@@ -20,7 +20,7 @@ What moves through the world (`lib.rs`: module doc): the player and its collisio
   - `WingPlugin`, `Flap { beat, sweep, lift, glides }`.
   - `wing_mesh([[f32; 3]; 4]) -> Mesh`.
   - `spawn_winged(commands, creature, at, body, wing, flap)`.
-- `birds.rs`: `BirdPlugin` (160 starlings via `STARLINGS`, plus periodic goose skeins). `flock_heading` and `steering` are `pub(crate)`.
+- `birds.rs`: `BirdPlugin`: a starling flock and periodic goose skeins, sized and timed by the biome under the camera (`BirdLife`, `bird_life`; `BASE` is grassland's: 160 starlings, a skein every 45 to 110 s). `flock_heading` and `steering` are `pub(crate)`.
 - `critters.rs`: `CritterPlugin` (butterflies over `Poppy` and `Dandelion`, fireflies over meadow, both near the camera).
 - `debug.rs`: `DebugOverlayPlugin`; F1 (`TOGGLE_KEY`) toggles a text readout.
 - `flythrough.rs`: `FlythroughPlugin { flight }`; active only when a `FlightConfig` is given (`OCHRE_FLIGHT` through `DevEnv`).

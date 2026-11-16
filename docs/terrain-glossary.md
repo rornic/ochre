@@ -47,7 +47,10 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 | Drumlin | taiga | A smooth streamlined hill left by an ice sheet, long axis along the ice flow. | Parallel swells 80 to 200 long, 4 to 8 high, along the world's ridge angle. |
 | Yardang | desert | A ridge carved out of soft rock by wind-blown sand. | Parallel ridges up to 5 high and troughs up to 2.5 deep, along the wind. |
 | Kopje | savanna | A small rock hill on a plain, from granite that weathered into rounded heaps. Also *koppie*, or *tor* elsewhere. | Heaps 6 to 14 high, 10 to 25 across, in clusters of 2 to 6. |
-| Gully | steppe | A small channel cut by runoff down a slope. | Swales 2 to 6 deep and about 10 across, running along a direction fixed for the world. |
+| Gully | foothills | A small channel cut by runoff down a slope. | Swales 2 to 6 deep and about 10 across, running along a direction fixed for the world. Steppe had them and lost them, since flat ground never showed them. |
+| Valley | steppe, any | A long trough with a flat floor and steep walls. | Cut 40 to 70 blocks, floors about 200 across, slopes about 200 wide with cliff bands in stretches, along the world's ridge angle, in reaches that deepen and shallow. |
+| Outcrop | tundra, steppe | A ledge of bedrock standing out of the ground. | A wide low ledge 5.5 to 11 blocks in radius and a third as tall as wide, on the 24-block grid. |
+| Exposure | steppe | How far ground stands over the ground round it. | The height over the land average within 8 cells, 0.5 on level ground, up on crests, down in hollows. |
 | Hummock | swamp | A low tussock of raised ground in wet ground. | Mounds 1 to 3 high, 4 to 8 across. |
 
 ## Cliffs and carving at chunk time

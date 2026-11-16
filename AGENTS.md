@@ -14,7 +14,7 @@ cargo clippy --workspace --all-targets
 
 Always `--release`: debug generation is unusably slow. Run from the repo root, since assets and shaders load by relative path. Rust 1.97.1+ (Bevy 0.20), plus `libudev-dev` and `pkg-config` on Linux. Wayland is deliberately off (X11 only).
 
-Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
+Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_MUSIC_TRACK` (play the track whose file name has this in it, as `steppe4`), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
 
 ## Crates
 
@@ -44,6 +44,7 @@ Every plugin but the terrain's can be left out: one that reads another's resourc
 - Terrain generation: `ochre-terrain/src/generate/` (columns, regions, trees, light), meshing in `generate/generator/`.
 - LODs: `ochre-terrain/src/lod/`. Chunk streaming: `chunk_loader.rs`. Both run on `TerrainPlugin`.
 - World map pipeline: `ochre-world/src/worldmap/` (tectonics, erosion, hydrology, water, climate, then `source.rs` as the `TerrainSource`).
+- Known issues, with what is known and what is a guess: `docs/issues.md`. Delete an entry in the commit that fixes it.
 - Lakes, rivers and the sea, and the rule that keeps them from leaking: `docs/water.md`. Read it before changing water.
 - Chamfers, ramps and the seam pass that closes the gaps between them, and the tests that keep every mesh closed: `docs/bevels.md`. Read it before changing a cut.
 - What the world is made of and why: `docs/world-plan.md` (scope, gates, open defects, glossary), `docs/landforms.md` (the landforms and relief features), `docs/climate.md` (climate, biomes, transitions, trees), `docs/terrain-glossary.md` (what each landform and feature is). A seed draws its own plates, relief, warmth, wind, humidity and landform counts (`worldmap/character.rs`); `OCHRE_CHARACTER=off` keeps the config as given.

@@ -197,6 +197,9 @@ pub struct ChunkMaterial {
     #[texture(12, dimension = "2d_array")]
     #[sampler(13)]
     pub materials: Option<Handle<Image>>,
+    // the prevailing wind's direction in x and z that gusts across leaves and flora travel along, zero until it is set
+    #[uniform(14)]
+    pub wind: Vec4,
     // compiled into the shaders, see `specialize`
     pub debug: DebugSettings,
     /// No leaf or flora holes. Camera passes still alpha-test LOD fades.
@@ -348,6 +351,7 @@ impl TerrainMaterials {
             curvature: inputs.curvature.clone(),
             cloud_weather: clouds.weather.clone(),
             materials: inputs.materials.clone(),
+            wind: Vec4::new(inputs.wind.x, inputs.wind.y, 0.0, 0.0),
             debug,
             non_cutout: false,
             period,
@@ -431,6 +435,8 @@ pub(crate) struct ShaderInputs {
     pub materials: Option<Handle<Image>>,
     pub clouds: CloudLayer,
     pub curvature: Handle<ShaderBuffer>,
+    /// The prevailing wind's direction in x and z, any length: the way gusts cross the land. Zero keeps the old fixed direction.
+    pub wind: Vec2,
 }
 
 #[derive(SystemParam)]
@@ -817,6 +823,8 @@ mod tests {
             Tile::Dandelion,
             Tile::ShortGrass,
             Tile::SeedGrass,
+            Tile::FeatherGrass,
+            Tile::SteppeFlower,
         ] {
             let sprite = foliage(tile);
             let (w, h) = (sprite.width(), sprite.height());
@@ -862,6 +870,37 @@ mod tests {
         }
     }
 
+    // Replays `block_alpha_at` on a layer at mip `level`: the share of the sprite drawn, after the lowered cut that keeps thin grass from vanishing.
+    fn drawn_at(tile: Tile, level: u32) -> f32 {
+        let layer = foliage(tile);
+        let size = layer.width() as usize;
+        let texel = 1usize << level;
+        let cut = 0.5 + (0.1 - 0.5) * (level as f32 / 5.0).min(1.0);
+        let alpha: Vec<f32> = layer.pixels().map(|p| p[3] as f32 / 255.0).collect();
+        let (mut passed, mut texels) = (0, 0);
+        for ty in 0..size / texel {
+            for tx in 0..size / texel {
+                let sum: f32 = (0..texel)
+                    .flat_map(|y| (0..texel).map(move |x| (x, y)))
+                    .map(|(x, y)| alpha[(ty * texel + y) * size + tx * texel + x])
+                    .sum();
+                passed += ((sum / (texel * texel) as f32) * 0.5 / cut >= 0.5) as usize;
+                texels += 1;
+            }
+        }
+        passed as f32 / texels as f32
+    }
+
+    // The shader blurs alpha by distance and cuts it at a lower coverage, so a strand much under a dozen texels wide merges into a blob a
+    // few blocks away: strands drawn hair-thin made the feather grass's plumes a lumpy mass and its stems dashes.
+    #[test]
+    fn test_thin_plants_stay_apart_at_the_blur_they_are_cut_at() {
+        for tile in [Tile::FeatherGrass, Tile::TallGrass] {
+            let (sharp, blurred) = (drawn_at(tile, 0), drawn_at(tile, 3));
+            assert!(blurred < sharp * 1.4, "{tile:?} is {sharp:.2} drawn sharp and {blurred:.2} at mip 3, a blob");
+        }
+    }
+
     #[test]
     fn test_tinted_foliage_is_greyscale_at_the_mean_the_tint_assumes() {
         for (tile, mean) in [
@@ -869,6 +908,7 @@ mod tests {
             (Tile::TallGrass, 0.5),
             (Tile::ShortGrass, 0.5),
             (Tile::SeedGrass, 0.5),
+            (Tile::FeatherGrass, 0.62),
             (Tile::Fern, 0.3),
             (Tile::Shrub, 0.27),
         ] {

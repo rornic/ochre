@@ -87,6 +87,11 @@ pub(super) trait BlockSource {
         1.0
     }
 
+    /// Whether the column is steppe, whose grass ground draws its own texture, see `Tile::SteppeTop`.
+    fn steppe(&self, _x: i32, _z: i32) -> bool {
+        false
+    }
+
     /// The tint of the tree whose leaves are at `coord`, see `Tree::tint`.
     fn leaf_tint(&self, _coord: IVec3) -> Vec3 {
         Vec3::ONE
@@ -172,6 +177,8 @@ pub(super) struct ChunkNeighbourhood<'a> {
     blocks: Vec<BlockType>,
     water: Option<(&'a RegionStore, IVec3)>,
     levels: OnceCell<Vec<Option<FreshColumn>>>,
+    // whether each of the chunk's own columns is steppe, by `x * CHUNK_SIZE + z`
+    steppes: OnceCell<Vec<bool>>,
     // the surface of the flowing water in each column it's in, from the chunk's lowest block, see `flow`
     flowing: HashMap<(i32, i32), f32>,
 }
@@ -230,6 +237,7 @@ impl<'a> ChunkNeighbourhood<'a> {
             blocks,
             water: None,
             levels: OnceCell::new(),
+            steppes: OnceCell::new(),
             flowing,
         }
     }
@@ -383,6 +391,22 @@ impl BlockSource for ChunkNeighbourhood<'_> {
         self.fresh_at(x, z).is_some_and(|fresh| fresh.pool)
     }
 
+    fn steppe(&self, x: i32, z: i32) -> bool {
+        let size = CHUNK_SIZE as i32;
+        let Some((regions, origin)) = self.water else {
+            return false;
+        };
+        if !(0..size).contains(&x) || !(0..size).contains(&z) {
+            return false;
+        }
+        self.steppes.get_or_init(|| {
+            let terrain = regions.terrain();
+            (0..size * size)
+                .map(|i| terrain.steppe((origin.x + i / size) as f64 + 0.5, (origin.z + i % size) as f64 + 0.5))
+                .collect()
+        })[(x * size + z) as usize]
+    }
+
     fn flowing(&self, x: i32, z: i32) -> bool {
         self.flowing.contains_key(&(x, z))
     }
@@ -481,6 +505,10 @@ impl<S: BlockSource> BlockSource for GridView<'_, S> {
 
     fn forest_shade(&self, position: Vec3) -> f32 {
         self.source.forest_shade(position)
+    }
+
+    fn steppe(&self, x: i32, z: i32) -> bool {
+        self.source.steppe(x, z)
     }
 
     fn leaf_tint(&self, coord: IVec3) -> Vec3 {
@@ -616,6 +644,10 @@ impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
 
     fn forest_shade(&self, position: Vec3) -> f32 {
         self.source.forest_shade(position)
+    }
+
+    fn steppe(&self, x: i32, z: i32) -> bool {
+        self.source.steppe(x, z)
     }
 
     fn leaf_tint(&self, coord: IVec3) -> Vec3 {

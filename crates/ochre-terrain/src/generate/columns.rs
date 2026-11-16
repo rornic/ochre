@@ -164,6 +164,8 @@ pub struct ChunkColumns {
     // how far each column stands over its lowest neighbour of the four, in blocks
     exposed: Vec<i64>,
     boosts: Vec<f32>,
+    walls: Vec<f32>,
+    exposures: Vec<f32>,
     biomes: Vec<BiomeId>,
     temperatures: Vec<f32>,
     water_tops: Vec<i64>,
@@ -183,6 +185,8 @@ impl ChunkColumns {
             gradients: Vec::with_capacity(cells),
             exposed: Vec::with_capacity(cells),
             boosts: Vec::with_capacity(cells),
+            walls: Vec::with_capacity(cells),
+            exposures: Vec::with_capacity(cells),
             biomes: Vec::with_capacity(cells),
             temperatures: Vec::with_capacity(cells),
             water_tops: Vec::with_capacity(cells),
@@ -206,6 +210,8 @@ impl ChunkColumns {
                 columns.exposed.push((height - lowest_beside).max(0));
                 let boost = noise.cliff_boost(world_x as f64, world_z as f64);
                 columns.boosts.push(boost);
+                columns.walls.push(noise.valley_wall(world_x as f64, world_z as f64));
+                columns.exposures.push(noise.exposure(world_x as f64, world_z as f64));
                 columns.biomes.push(heights.biome(world_x, world_z));
                 columns.water_tops.push(heights.water_top(world_x, world_z));
                 columns.springs.push(heights.spring(world_x, world_z));
@@ -242,6 +248,16 @@ impl ChunkColumns {
     /// How much longer than usual the cliffs in the column reach, 0..1.
     pub fn cliff_boost(&self, cx: i64, cz: i64) -> f64 {
         self.boosts[Self::index(cx, cz)] as f64
+    }
+
+    /// How much of a valley wall the column is, 0..1.
+    pub fn wall(&self, cx: i64, cz: i64) -> f64 {
+        self.walls[Self::index(cx, cz)] as f64
+    }
+
+    /// How far the column stands over the ground round it, 0..1.
+    pub fn exposure(&self, cx: i64, cz: i64) -> f32 {
+        self.exposures[Self::index(cx, cz)]
     }
 
     pub fn biome(&self, cx: i64, cz: i64) -> BiomeId {

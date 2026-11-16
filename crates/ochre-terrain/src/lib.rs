@@ -217,6 +217,7 @@ fn setup_terrain(
         materials: sources.textures.as_ref().map(|t| t.materials.clone()),
         clouds: sources.clouds.map(|c| c.clone()).unwrap_or_default(),
         curvature: sources.curvature.map(|c| c.buffer.clone()).unwrap_or_default(),
+        wind: bevy::math::Vec2::from(world.region_store.terrain().prevailing_wind()),
     };
     let materials = TerrainMaterials::new(*debug, renderer.material_period(), &inputs, &mut assets);
     commands.insert_resource(materials.clone());

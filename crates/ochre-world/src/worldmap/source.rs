@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::climate::{BiomeKind, LAPSE_PER_BLOCK};
 use super::detail::{detail, dunes, foothill_weight, gully_relief, Dunes, FOOTHILL_RELIEF};
+use super::valleys::{self, Valley};
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
 use super::{WaterCell, WorldMap};
@@ -27,6 +28,9 @@ const SHORE_SMOOTH: f64 = 5.0;
 pub(super) const HOLD: f64 = 1.5;
 const CALM: f64 = 8.0;
 // Tableland weighs in between these heights above the sea (up from the first pair, out by the second), in patches this many blocks across.
+// Cells this wide see the valley walls at the map's soft rise, and narrower cells their full steepness.
+const SHARPEN_CELL: (f64, f64) = (16.0, 32.0);
+
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
 // Cells this wide or wider take their own biome, not a patchwork near a class boundary, whose patches are about `ZONE_PATCH` blocks.
@@ -224,6 +228,8 @@ pub struct WorldTerrain {
     dunes: Dunes,
     // how much longer than usual cliffs reach on mountain and tableland, see `cliff_boost`
     cliff_boost: f64,
+    // the valleys this world's map was cut with, see `valleys`
+    valley: Valley,
     // tells this terrain's entries apart from another's in `HEIGHT_MEMO`
     id: u64,
 }
@@ -266,6 +272,7 @@ impl WorldTerrain {
         let (mountain_kinds, volcanic_kinds) =
             (under(Modifier::Mountain), under(Modifier::Volcanic));
         let tangents = map.river_tangents();
+        let valley = Valley::of(&map);
         let knobs = super::character::LandformKnobs::from_seed(map.seed);
         let (wx, wz) = (
             map.config.climate.wind_x as f64,
@@ -291,6 +298,7 @@ impl WorldTerrain {
             tableland_share: knobs.tableland_share,
             dunes,
             cliff_boost: knobs.cliff_boost,
+            valley,
             id: NEXT_TERRAIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         terrain.near_still = terrain.near_still();
@@ -605,10 +613,27 @@ impl WorldTerrain {
         dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea, self.dunes) * desert * shore
     }
 
-    // The map's smooth height with the detail laid over it, and terraced, calmed by `calm`, 0..1. It
-    // reads the map's height, range, roughness and landform alone, never climate or biome: this is the
-    // ground water is routed over, see `landform`.
+    // The map's height with detail, terraces and valley walls, from map layers only (never live climate or biome), see `landform`.
     fn landform_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
+        self.bedded_ground(x, z, cell, base, calm) + self.valley_sharpening(x, z, cell, calm)
+    }
+
+    // How much of a valley's cut the map holds at a point, 0..1.
+    fn valley_weight(&self, x: f64, z: f64) -> f64 {
+        self.map.bilinear_bytes(&self.map.valley, x, z) as f64 / 255.0
+    }
+
+    // How far the valley walls pull the ground from the map's, none in cells too wide to see past the map's soft wall.
+    fn valley_sharpening(&self, x: f64, z: f64, cell: f64, calm: f64) -> f64 {
+        let weight = self.valley_weight(x, z) * calm * (1.0 - smoothstep(SHARPEN_CELL.0, SHARPEN_CELL.1, cell));
+        if weight <= 0.0 {
+            return 0.0;
+        }
+        valleys::sharpening(&self.valley.at(x, z), weight)
+    }
+
+    // The map's smooth height with the detail laid over it, and terraced.
+    fn bedded_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let map = &self.map;
         let sea = WATER_LEVEL as f64;
         let shore = smoothstep(0.0, SHORE_SMOOTH, base - sea) * calm;
@@ -1177,11 +1202,29 @@ impl TerrainSource for WorldTerrain {
         self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0
     }
 
-    // The seed's cliff boost, where there is mountain or tableland to carry it: 0 on other ground.
+    // The seed's cliff boost, where there is mountain, tableland or a valley wall to carry it: 0 on other ground.
     fn cliff_boost(&self, x: f64, z: f64) -> f32 {
         let mountain = self.landform_cover(x, z);
         let above_sea = self.map.height_at(x, z) as f64 - WATER_LEVEL as f64;
-        (self.cliff_boost * mountain.max(self.tableland(x, z, above_sea, mountain))) as f32
+        let covered = mountain.max(self.tableland(x, z, above_sea, mountain)).max(self.valley_wall(x, z) as f64);
+        (self.cliff_boost * covered) as f32
+    }
+
+    fn exposure(&self, x: f64, z: f64) -> f32 {
+        self.map.bilinear_bytes(&self.map.exposure, x, z) / 255.0
+    }
+
+    fn steppe(&self, x: f64, z: f64) -> bool {
+        self.biomes.name(self.biome_at(x, z, 1.0)) == Some("steppe")
+    }
+
+    // How much of a valley wall the point is, 0..1: the siting weight where the wall's rise is half over.
+    fn valley_wall(&self, x: f64, z: f64) -> f32 {
+        let weight = self.valley_weight(x, z);
+        if weight <= 0.0 {
+            return 0.0;
+        }
+        valleys::wall(&self.valley.at(x, z), weight) as f32
     }
 
     // The spawn region nearest the world's middle.
@@ -1591,7 +1634,42 @@ mod river_bank_tests {
     }
 
     #[test]
-    fn the_cliff_boost_is_the_seeds_on_mountain_and_tableland_and_nothing_elsewhere() {
+    fn valley_walls_steepen_into_cliffs_and_floors_and_plateaus_are_left_alone() {
+        use ochre_base::terrain_source::TerrainSource;
+        let config = super::super::WorldConfig { size: 65536, map_cell: 128, ..Default::default() };
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        let (mut cliffs, mut walls, mut seen) = (0, 0, 0);
+        for i in 0..400 {
+            for j in 0..400 {
+                let (x, z) = (i as f64 * 160.0 - 32000.0, j as f64 * 160.0 - 32000.0);
+                let cut = terrain.valley.at(x, z);
+                let weight = terrain.valley_weight(x, z);
+                if weight < 0.2 {
+                    continue;
+                }
+                seen += 1;
+                // on a floor or the plateau the walls add nothing to the map's ground
+                if (cut.soft == 1.0 && cut.sharp == 1.0) || (cut.soft == 0.0 && cut.sharp == 0.0) {
+                    assert_eq!(0.0, terrain.valley_sharpening(x, z, 1.0, 1.0));
+                    continue;
+                }
+                // across the wall, how steep is the ground, as the steepest rise over 4 blocks
+                if cut.cliff > 0.7 && terrain.valley_wall(x, z) > 0.05 {
+                    walls += 1;
+                    let steepest = (-40..40).map(|k| (terrain.height(x + k as f64 * 4.0 + 4.0, z) - terrain.height(x + k as f64 * 4.0, z)).abs() / 4.0)
+                        .chain((-40..40).map(|k| (terrain.height(x, z + k as f64 * 4.0 + 4.0) - terrain.height(x, z + k as f64 * 4.0)).abs() / 4.0))
+                        .fold(0.0, f64::max);
+                    cliffs += (steepest >= 1.0) as usize;
+                }
+            }
+        }
+        assert!(walls >= 20, "only {walls} cliff wall points to look at, of {seen} valley points");
+        // a wall's edge is 14 to 64 blocks wide and the steepest stretches are cliffs: some reach a gradient of 1, not all
+        assert!(cliffs >= 10 && cliffs * 8 >= walls, "{cliffs} of {walls} cliff wall points reach a gradient of 1");
+    }
+
+    #[test]
+    fn the_cliff_boost_is_the_seeds_on_mountain_tableland_and_valley_walls_and_nothing_elsewhere() {
         use ochre_base::terrain_source::TerrainSource;
         let config = super::super::WorldConfig {
             size: 65536,
@@ -1611,7 +1689,7 @@ mod river_bank_tests {
                 over += (!(0.0..=1.0).contains(&boost)) as usize;
                 if carries {
                     on += (boost > 0.5) as usize;
-                } else if mountain == 0.0 && terrain.tableland(x, z, above, mountain) == 0.0 {
+                } else if mountain == 0.0 && terrain.tableland(x, z, above, mountain) == 0.0 && terrain.valley_wall(x, z) == 0.0 {
                     off += (boost != 0.0) as usize;
                 }
             }

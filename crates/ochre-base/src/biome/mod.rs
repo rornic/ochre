@@ -163,8 +163,7 @@ impl Biomes {
             ),
             Box::new(
                 Plain::new("steppe", 0.004)
-                    .shifted(0.0, -0.10)
-                    .with_relief(&[ReliefKind::Gullies]),
+                    .shifted(0.0, -0.10),
             ),
             Box::new(
                 Plain::new("savanna", 0.03)

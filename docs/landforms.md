@@ -1,10 +1,10 @@
 # Landforms
 
-How the ground gets its shapes beyond what tectonics and erosion make. Water is `docs/water.md`; climate and biomes are `docs/climate.md`. The one rule: landforms read the ground, never the climate or biome output, so the water can be routed over the ground it will really stand on (`landform.rs`, `source.rs::landform_ground`).
+How the ground gets its shapes beyond what tectonics and erosion make. Water is `docs/water.md`; climate and biomes are `docs/climate.md`. The one rule: landforms read the ground, never the live climate or biome output, so the water can be routed over the ground it will really stand on (`landform.rs`, `source.rs::landform_ground`). Valleys read a snapshot of warmth and moisture taken once before they are cut, as cold uplands already read warmth, and keep it in `map.valley`, so the block-level ground reads that stored layer and never the climate itself.
 
 ## The pipeline
 
-`worldmap::generate`: tectonics, geology, hydrology, erosion, the floor, then in order fjords, cones, inselbergs, cold uplands, tower karst and cirques (`shapes.rs`), the mountain passes, the tableland terraces (`landform::terrace`), scatter, the last hydrology run, landform, climate, roughness and labels. Everything a shape or terrace does to `map.height` is therefore in place before the last water is routed.
+`worldmap::generate`: tectonics, geology, hydrology, erosion, the floor, then in order fjords, cones, inselbergs, cold uplands, tower karst and cirques (`shapes.rs`), the mountain passes, the tableland terraces (`landform::terrace`), the valleys (`valleys.rs`), scatter, the last hydrology run, landform, climate, roughness and labels. Everything a shape or terrace does to `map.height` is therefore in place before the last water is routed.
 
 ## Map-scale shapes (`shapes.rs`)
 
@@ -36,10 +36,24 @@ Each is a pure function of the seed and position returning blocks to add to the 
 | Taiga | drumlins along the config's gradient angle |
 | Desert | yardangs along the wind |
 | Savanna | kopjes (rounded rock heaps 6 to 14 high, bare stone where the heap stands 4 or more blocks over the plain, with grass round the foot) |
-| Steppe | gullies (swales 2 to 6 deep, about 10 across) in a frame fixed by the world's ridge angle |
+| Steppe | none of its own: its shape is the valleys below (the gullies it had went unseen on its flat ground, and the kind remains for the foothills) |
 | Swamp | hummocks |
 
 `worldprobe features <seed> <x> <z> <half>` counts them.
+
+## Valleys
+
+Long troughs with flat floors, broad slopes and cliff bands, cut into inland ground (6 blocks or more over the sea, under about 220) after the tableland terraces and before the last water routing, so rivers find the floors (`valleys.rs`). A valley is a pure function of the seed and a place: a noise field along the world's ridge angle, bent at three scales so it meanders, with distance to its line measured as the field's value over its slope, so floors stay about 200 blocks wide where the field is flat as well as where it is steep. Floors are flat, slopes rise over about 200 blocks (gradient 0.2 to 0.35), and the cut is 40 to 70 blocks, deepening and shallowing along a valley's length (never under 40% of its depth).
+
+Before the valleys are cut, steppe ground is flattened (`valleys::flatten`): pulled 90% of the way toward a copy of itself smoothed over 60 cells each way (about 4 km), averaged over land only, in proportion to how steppe-like the ground is (the same warmth and moisture band as the siting, softened over 40 cells so the zone has no cliff at its edge) and how far over the sea it is (none under 20 blocks, full from 80, so there is no coastal step). Mountains and the ground within 8 cells of one are left alone. It makes steppe broad open plain with long sightlines, removing hills smaller than a few kilometres. A bigger radius makes steep edges, and hills wider than the radius, such as foothills, remain: it flattens the ground and does not change where steppe grows.
+
+About a third of a slope is cliff, in stretches a few hundred blocks long: a face 14 to 64 blocks wide that sits at a height up the slope which varies, with a ragged edge, so a wall is a broad slope in some stretches and a broken face in others.
+
+`valleys::run` writes `map.valley`, the share of the cut each cell takes, 0..1 as a byte, sited from the ground as it stands before the cut: full on warmth 0.26 to 0.58 (after the height lapse) and moisture under 0.3, which is where `classify` puts steppe, with a quarter of it everywhere else on flat ground, scaled by the seed's `valley_share` (0.5 to 1) and by how far the ground is over the sea. Steppe is favoured, not required: a valley can lie in any biome. Two things keep valleys off water. None is cut within about 7 cells of a lake or of a basin hydrology will fill (a priority flood on the ground after the terraces finds them), and none within about 14 cells of a big basin (2,000 cells, 6 blocks deep), since a valley's sump at the flat rim of a big dry basin fills the whole basin into a lake that floods the plain round it. After the cut, the basins the valleys made (cells no basin held before) are drained by a channel cut through their dam, two rounds of the drain `hydrology::run` uses for small basins (`hydrology::drain_where`).
+
+The cut is `depth * soft_mask * share`, so every LOD sees the trough. Block-level ground adds `depth * share * cliff * (soft_mask - sharp_mask)` (`WorldTerrain::valley_sharpening`), so the face steepens into a cliff while floor and plateau stay where the map put them. It is calmed near water like the tableland's beds, and fades out in cells wider than 16 blocks (none from 32). `TerrainSource::valley_wall` is 0..1 where a cliff face is: it extends `cliff_boost` and adds a gradient of 1 at full wall to the one blocks are chosen by (`terrain.rs::block_gradient`), so mid-steep faces show rock. LOD cells take the same bias so colours do not change at a swap.
+
+`worldprobe`'s `valley` and worldview's `hillshade` layer show them. `generate_with(seed, config, false)` makes the same world without valleys, to compare.
 
 ## Not built
 
