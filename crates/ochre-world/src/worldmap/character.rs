@@ -102,7 +102,8 @@ pub fn derive(seed: u32, mut config: WorldConfig) -> WorldConfig {
     config
 }
 
-/// The config a world for `seed` is made with. `OCHRE_CHARACTER=off` keeps `config` as given.
+/// The config a world for `seed` is made with, for the tools: `OCHRE_CHARACTER=off` keeps `config` as given. The game passes
+/// `WorldOptions::character` to `world_config_with` instead.
 pub fn world_config(seed: u32, config: WorldConfig) -> WorldConfig {
     let off = std::env::var("OCHRE_CHARACTER").is_ok_and(|v| v == "off");
     world_config_with(seed, config, !off)

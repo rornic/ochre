@@ -1,5 +1,5 @@
-//! OCHRE_FLYTHROUGH=<dir> flies a scripted path, laid out on seed 2665537132, on a fixed 60 fps clock and saves every frame there.
-//! OCHRE_FLIGHT=<file> flies the keys in a text file in real time instead, for recording the screen with its sound, see `Flight`.
+//! `FlythroughPlugin::flythrough` flies a scripted path, laid out on seed 2665537132, on a fixed 60 fps clock and saves every frame to a directory.
+//! `FlythroughPlugin::flight` flies the keys in a text file in real time instead, for recording the screen with its sound, see `Flight`.
 use std::time::{Duration, Instant};
 
 use bevy::{
@@ -57,22 +57,33 @@ const KEYS: [(f32, [f32; 3], [f32; 3]); 22] = [
     (83.0, [6170.0, 500.0, -8500.0], [6200.0, 450.0, -9300.0]),
 ];
 
-pub struct FlythroughPlugin;
+/// Flies a recording, if either is set. Does nothing otherwise.
+#[derive(Default)]
+pub struct FlythroughPlugin {
+    pub flight: Option<FlightConfig>,
+    /// The directory the scripted flythrough saves its frames to.
+    pub flythrough: Option<String>,
+}
+
+/// A flight read from a file of keys, see `Flight`.
+pub struct FlightConfig {
+    pub file: String,
+    /// Seconds spent holding the first key while the world round it loads, `FLIGHT_WARMUP` if unset.
+    pub warmup: Option<f32>,
+    /// With a directory the flight is rendered a frame at a time on a fixed 60 fps clock, a frame saved for each, however
+    /// slowly the machine draws, for a picture to put the sound of a real-time run to.
+    pub frames: Option<String>,
+}
 
 impl Plugin for FlythroughPlugin {
     fn build(&self, app: &mut App) {
-        if let Ok(file) = std::env::var("OCHRE_FLIGHT") {
-            let keys = std::fs::read_to_string(&file)
+        if let Some(FlightConfig { file, warmup, frames }) = &self.flight {
+            let keys = std::fs::read_to_string(file)
                 .map_err(|e| e.to_string())
                 .and_then(|text| parse_keys(&text))
-                .unwrap_or_else(|e| panic!("OCHRE_FLIGHT {file}: {e}"));
-            let warmup = std::env::var("OCHRE_FLIGHT_WARMUP")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(FLIGHT_WARMUP);
-            // with a directory the flight is rendered a frame at a time on a fixed 60 fps clock, a frame saved for each, however
-            // slowly the machine draws, for a picture to put the sound of a real-time run to
-            let frames = std::env::var("OCHRE_FLIGHT_FRAMES").ok();
+                .unwrap_or_else(|e| panic!("flight {file}: {e}"));
+            let warmup = warmup.unwrap_or(FLIGHT_WARMUP);
+            let frames = frames.clone();
             if let Some(dir) = &frames {
                 std::fs::create_dir_all(dir).expect("flight frame directory");
             }
@@ -88,10 +99,10 @@ impl Plugin for FlythroughPlugin {
             })
             .add_systems(PostUpdate, fly_keys.before(TransformSystems::Propagate));
         }
-        if let Ok(dir) = std::env::var("OCHRE_FLYTHROUGH") {
-            std::fs::create_dir_all(&dir).expect("flythrough frame directory");
+        if let Some(dir) = &self.flythrough {
+            std::fs::create_dir_all(dir).expect("flythrough frame directory");
             app.insert_resource(Flythrough {
-                dir,
+                dir: dir.clone(),
                 started: None,
                 frame: None,
                 lift: Vec::new(),

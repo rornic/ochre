@@ -36,7 +36,12 @@ use bevy::math::DVec2;
 use ochre_base::{block::BlockType, math::smoothstep};
 use ochre_terrain::{curvature::WORLD_CURVE, world::World};
 
-pub struct WeatherPlugin;
+/// Rain, snow, storms and rainbows. `clear_sky` holds the sky clear: no storms, rain, snow, lightning or rainbow, and
+/// only fair-weather cloud, so a recording that winds the clock on doesn't drive into a storm.
+#[derive(Default)]
+pub struct WeatherPlugin {
+    pub clear_sky: bool,
+}
 
 impl Plugin for WeatherPlugin {
     fn build(&self, app: &mut App) {
@@ -47,7 +52,10 @@ impl Plugin for WeatherPlugin {
         ))
         .add_audio_source::<Thunder>()
         .init_resource::<TimeOfDay>()
-        .init_resource::<Weather>()
+        .insert_resource(Weather {
+            calm: self.clear_sky,
+            ..default()
+        })
         .add_systems(Startup, spawn_weather)
         .add_systems(
             Update,
@@ -80,9 +88,7 @@ pub struct Weather {
     pub wind: Vec2,
     // seconds until the next lightning strike
     strike_in: f32,
-    // whether the sky's held clear, `OCHRE_CLEAR_SKY`: no storms, rain, snow, lightning or
-    // rainbow, and only fair-weather cloud, so a recording that winds the clock on doesn't drive
-    // into a storm
+    // whether the sky's held clear, see `WeatherPlugin`
     calm: bool,
 }
 
@@ -97,13 +103,13 @@ impl Default for Weather {
             rainbow: 0.0,
             wind: Vec2::X,
             strike_in: 6.0,
-            calm: std::env::var_os("OCHRE_CLEAR_SKY").is_some(),
+            calm: false,
         }
     }
 }
 
 impl Weather {
-    /// Whether the sky's held clear by `OCHRE_CLEAR_SKY`.
+    /// Whether the sky's held clear, see `WeatherPlugin::clear_sky`.
     pub fn calm(&self) -> bool {
         self.calm
     }

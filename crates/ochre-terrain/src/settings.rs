@@ -19,12 +19,6 @@ pub struct RendererSettings {
     pub lod_base_distance: Option<u32>,
     /// How long swapping between LOD levels takes to cross-fade, in seconds.
     pub lod_fade_seconds: f32,
-    /// How far the sun casts shadows, in chunks.
-    pub shadow_distance: u32,
-    /// Shadow map cascades, each drawing the terrain in its slice again.
-    pub shadow_cascades: usize,
-    /// Cloud march resolution preset. Height follows the window's aspect ratio.
-    pub cloud_resolution: CloudResolution,
     /// The most megabytes in one buffer the terrain's meshes are packed into. A buffer that fills
     /// is copied into a bigger one, with both alive for a moment, so smaller buffers mean a lower
     /// peak and less empty room in the last one.
@@ -38,32 +32,6 @@ pub struct RendererSettings {
     pub material_period: u32,
     /// Anisotropic filtering taps on painted materials, 1 to 16.
     pub material_anisotropy: u16,
-    /// Frost on cold ground that has no snow yet, see `crate::frost`.
-    pub frost: bool,
-    /// Light shafts from the sun through the air, which cost frame time.
-    pub godrays: bool,
-}
-
-/// Maximum cloud target width; smaller windows still march at half display resolution.
-#[derive(Default, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CloudResolution {
-    Low,
-    #[default]
-    Medium,
-    High,
-    Ultra,
-}
-
-impl CloudResolution {
-    pub const fn width(self) -> u32 {
-        match self {
-            Self::Low => 320,
-            Self::Medium => 640,
-            Self::High => 960,
-            Self::Ultra => 1280,
-        }
-    }
 }
 
 /// Switches for testing what the renderer spends its time on, all off by default.
@@ -122,16 +90,11 @@ impl Default for RendererSettings {
             lod_level_scale: 4,
             lod_base_distance: None,
             lod_fade_seconds: 1.5,
-            shadow_distance: 64,
-            shadow_cascades: 3,
-            cloud_resolution: CloudResolution::default(),
             mesh_slab_mb: 64,
             mesh_slab_growth: 1.25,
             pack_meshes: true,
             material_period: 8,
             material_anisotropy: 8,
-            frost: true,
-            godrays: true,
         }
     }
 }

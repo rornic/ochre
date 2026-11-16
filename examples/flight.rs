@@ -285,9 +285,10 @@ fn main() {
     let fly_height: f32 =
         arg("--fly-height").map_or(FLY_HEIGHT, |s| s.parse().expect("--fly-height is a number"));
     let out = arg("--out");
-    std::env::set_var("OCHRE_SEED", &seed);
 
     let mut settings = Settings::read("assets/settings.toml").expect("failed to read settings");
+    let mut dev = ochre_engine::DevEnv::from_env();
+    dev.world.seed = Some(seed.parse().expect("--seed is a number"));
     if let Some(distance) = arg("--render-distance") {
         settings.renderer.render_distance = distance
             .parse()
@@ -299,7 +300,7 @@ fn main() {
         MinimalPlugins.set(task_pool_plugin()),
         AssetPlugin::default(),
         TerrainPlugin::new(
-            ochre_engine::load_world(&settings),
+            ochre_engine::load_world(&settings, &dev.world),
             renderer,
             DebugSettings::default(),
         ),

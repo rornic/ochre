@@ -23,18 +23,23 @@ use ochre_world::{
     sky::SkyPlugin,
     sky_dome::{NightSkyPlugin, SunGlarePlugin},
     weather::WeatherPlugin,
+    WorldOptions,
 };
 
 fn settings() -> Settings {
-    toml::from_str("[renderer]\nfrost = true\ngodrays = true\n[world]\nsize = 4096\nmap_cell = 32")
-        .unwrap()
+    toml::from_str("[renderer]\n[world]\nsize = 4096\nmap_cell = 32").unwrap()
 }
 
 // A few frames of the game with the plugins `trim` leaves.
 fn run(name: &str, trim: impl FnOnce(bevy::app::PluginGroupBuilder) -> bevy::app::PluginGroupBuilder) {
     eprintln!("=== without {name}");
     let settings = settings();
-    let world = load_world(&settings);
+    let options = WorldOptions {
+        seed: Some(1),
+        dir: std::env::temp_dir().join("ochre-plugin-subsets"),
+        ..default()
+    };
+    let world = load_world(&settings, &options);
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
@@ -68,8 +73,6 @@ macro_rules! without {
 
 #[test]
 fn each_plugin_can_be_left_out() {
-    std::env::set_var("OCHRE_SEED", "1");
-    std::env::set_var("OCHRE_WORLD_DIR", std::env::temp_dir().join("ochre-plugin-subsets"));
     std::env::remove_var("OCHRE_FLYTHROUGH");
     run("nothing", |group| group);
     run("CurvaturePlugin", without!(CurvaturePlugin));

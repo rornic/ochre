@@ -194,15 +194,16 @@ fn classes(tally: &Tally) -> String {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
+    let dev = ochre_engine::DevEnv::from_env();
     let renderer = settings.renderer;
     let args: Vec<String> = std::env::args().collect();
     let shadow_distance: f32 = args.get(1).map_or(
-        (renderer.shadow_distance as f32 * 16.0).min(renderer.fog_distance()),
+        (settings.sky.shadow_distance as f32 * 16.0).min(renderer.fog_distance()),
         |s| s.parse().unwrap(),
     );
     let cascades: usize = args
         .get(2)
-        .map_or(renderer.shadow_cascades, |s| s.parse().unwrap());
+        .map_or(settings.sky.shadow_cascades, |s| s.parse().unwrap());
     let pitch: f32 = args.get(3).map_or(0.0, |s| s.parse().unwrap());
     let far = renderer.fog_distance();
 
@@ -214,7 +215,7 @@ fn main() {
         AssetPlugin::default(),
         TransformPlugin,
         TerrainPlugin::new(
-            ochre_engine::load_world(&settings),
+            ochre_engine::load_world(&settings, &dev.world),
             renderer,
             DebugSettings::default(),
         ),

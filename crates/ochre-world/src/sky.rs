@@ -30,7 +30,9 @@ use std::f32::consts::{PI, TAU};
 use crate::godrays::shining;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
+use crate::clouds::CloudResolution;
 use ochre_terrain::settings::RendererSettings;
+use serde::Deserialize;
 
 /// How opaque fog gets at its far end.
 pub const FOG_MAX_OPACITY: f32 = 0.8;
@@ -191,22 +193,10 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time) + PI + MOON_LAG)
 }
 
-/// How many game seconds pass each real second, 1 normally: `OCHRE_TIMESCALE` speeds the day
-/// up, to watch the weather come and go as a timelapse.
+/// How many game seconds pass each real second, 1 normally. A bigger one speeds the day up, to watch the weather
+/// come and go as a timelapse.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct TimeScale(pub f32);
-
-impl TimeScale {
-    fn from_env() -> Self {
-        Self(
-            std::env::var("OCHRE_TIMESCALE")
-                .ok()
-                .and_then(|s| s.parse::<f32>().ok())
-                .filter(|s| s.is_finite() && *s >= 0.0)
-                .unwrap_or(1.0),
-        )
-    }
-}
 
 /// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
 /// the sky, fog and light all follow them.
@@ -328,43 +318,67 @@ fn match_sky_horizon(
     ));
 }
 
-/// The clock, sun, moon and atmosphere. The night sky, clouds, weather and light shafts are plugins of their
-/// own. `OCHRE_TIME` starts the clock at that time of day, in days, for looking at the sky
-/// at any hour, and `OCHRE_TIMESCALE` runs it that many times faster, see `TimeScale`.
-pub struct SkyPlugin {
-    /// How far the sun casts shadows, in blocks, and in how many slices.
-    pub shadow_distance: f32,
+/// What `[sky]` in `settings.toml` sets.
+#[derive(Resource, Deserialize, Clone, Copy)]
+#[serde(default)]
+pub struct SkySettings {
+    /// How far the sun casts shadows, in chunks, or as far as the land is drawn if that's nearer.
+    pub shadow_distance: u32,
+    /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
+    /// Cloud march resolution preset. Height follows the window's aspect ratio.
+    pub cloud_resolution: CloudResolution,
 }
 
-impl SkyPlugin {
-    pub fn new(renderer: &RendererSettings) -> Self {
+impl Default for SkySettings {
+    fn default() -> Self {
         Self {
-            shadow_distance: (renderer.shadow_distance as f32 * CHUNK_SIZE as f32)
-                .min(renderer.fog_distance()),
-            shadow_cascades: renderer.shadow_cascades,
+            shadow_distance: 64,
+            shadow_cascades: 3,
+            cloud_resolution: CloudResolution::default(),
         }
     }
 }
 
+/// The clock, sun, moon and atmosphere. The night sky, clouds, weather and light shafts are plugins of their own.
+pub struct SkyPlugin {
+    pub settings: SkySettings,
+    /// What time of day the clock starts at, in days, see `TimeOfDay`.
+    pub start: f32,
+    /// How many game seconds pass each real second, see `TimeScale`.
+    pub time_scale: f32,
+}
+
+impl SkyPlugin {
+    pub fn new(settings: SkySettings) -> Self {
+        Self {
+            settings,
+            start: START_TIME,
+            time_scale: 1.0,
+        }
+    }
+}
+
+// The sun and moon, the sun's shadows reaching as far as the land is drawn at most.
+fn spawn_sun_and_moon(
+    mut commands: Commands,
+    sky: Res<SkySettings>,
+    renderer: Option<Res<RendererSettings>>,
+) {
+    let fog = renderer.map_or(f32::MAX, |renderer| renderer.fog_distance());
+    let distance = (sky.shadow_distance as f32 * CHUNK_SIZE as f32).min(fog);
+    // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
+    commands.spawn((sun(distance, sky.shadow_cascades), shining()));
+    commands.spawn(moon());
+}
+
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        let start = std::env::var("OCHRE_TIME")
-            .ok()
-            .and_then(|time| time.parse().ok())
-            .unwrap_or(START_TIME);
-        let (distance, cascades) = (self.shadow_distance, self.shadow_cascades);
-        app.insert_resource(TimeOfDay::from_days(start))
-        .insert_resource(TimeScale::from_env())
-        .add_systems(
-            Startup,
-            (spawn_atmosphere, move |mut commands: Commands| {
-                // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
-                commands.spawn((sun(distance, cascades), shining()));
-                commands.spawn(moon());
-            }),
-        )
-        .add_systems(Update, move_sky)
+        app.insert_resource(self.settings)
+            .insert_resource(TimeOfDay::from_days(self.start))
+            .insert_resource(TimeScale(self.time_scale))
+            .add_systems(Startup, (spawn_atmosphere, spawn_sun_and_moon))
+            .add_systems(Update, move_sky)
         // once the camera's moved, see `TransformSystems::Propagate`
         .add_systems(
             PostUpdate,

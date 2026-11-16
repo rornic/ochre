@@ -30,8 +30,14 @@ const CPU_PASSES_SHOWN: usize = 5;
 const MAIN_STAGES: [&str; 5] = ["first", "pre", "update", "post", "last"];
 
 /// F1 toggles a text readout of the player's climate, the block it's looking at, frame cost and
-/// loaded terrain.
-pub struct DebugOverlayPlugin;
+/// loaded terrain. With `stats` it starts shown and prints each readout to stdout as a `STATS` line.
+#[derive(Default)]
+pub struct DebugOverlayPlugin {
+    pub stats: bool,
+}
+
+#[derive(Resource)]
+struct Stats(bool);
 
 impl Plugin for DebugOverlayPlugin {
     fn build(&self, app: &mut App) {
@@ -56,7 +62,8 @@ impl Plugin for DebugOverlayPlugin {
             app.add_schedule(schedule);
         }
         let counts = DrawCounts::default();
-        app.insert_resource(counts.clone())
+        app.insert_resource(Stats(self.stats))
+            .insert_resource(counts.clone())
             .add_systems(Startup, spawn_overlay)
             .add_systems(Update, (toggle_overlay, update_overlay).chain());
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
@@ -153,7 +160,7 @@ fn count_draws(
 #[derive(Component)]
 struct DebugOverlay;
 
-fn spawn_overlay(mut commands: Commands) {
+fn spawn_overlay(mut commands: Commands, stats: Res<Stats>) {
     commands.spawn((
         DebugOverlay,
         Text::new(""),
@@ -170,7 +177,7 @@ fn spawn_overlay(mut commands: Commands) {
             padding: UiRect::all(Val::Px(6.0)),
             ..default()
         },
-        if std::env::var("OCHRE_STATS").is_ok() {
+        if stats.0 {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -230,6 +237,7 @@ fn update_overlay(
     counts: Res<DrawCounts>,
     main_times: Res<MainTimes>,
     looked_at: Option<Res<LookedAt>>,
+    stats: Res<Stats>,
     mut overlay: Query<(&mut Text, &Visibility), With<DebugOverlay>>,
 ) {
     let Ok((mut text, visibility)) = overlay.single_mut() else {
@@ -352,7 +360,7 @@ fn update_overlay(
         let _ = write!(out, "\n    {pass}: {ms:.2}");
     }
 
-    if std::env::var("OCHRE_STATS").is_ok() {
+    if stats.0 {
         println!("STATS {}", out.replace('\n', " | "));
     }
     text.0 = out;

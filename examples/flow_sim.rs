@@ -107,12 +107,13 @@ fn summary(frames: &mut [f32]) -> String {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
+    let dev = ochre_engine::DevEnv::from_env();
     let mut app = App::new();
     app.add_plugins((
         MinimalPlugins.set(task_pool_plugin()),
         AssetPlugin::default(),
         TerrainPlugin::new(
-            ochre_engine::load_world(&settings),
+            ochre_engine::load_world(&settings, &dev.world),
             settings.renderer,
             DebugSettings::default(),
         ),

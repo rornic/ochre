@@ -7,6 +7,7 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        resource::Resource,
         schedule::IntoScheduleConfigs,
         system::{Commands, Local, Query, Res},
     },
@@ -18,15 +19,23 @@ use crate::{
     weather::Weather,
 };
 
-/// Plays one track at a time, picked by `Surroundings`.
-pub struct MusicPlugin;
+/// Plays one track at a time, picked by `Surroundings`. `first_delay` fixes the seconds before the first track, so a
+/// recording knows when the music starts.
+#[derive(Default)]
+pub struct MusicPlugin {
+    pub first_delay: Option<f32>,
+}
+
+#[derive(Resource)]
+struct FirstDelay(Option<f32>);
 
 impl Plugin for MusicPlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<SurroundingsPlugin>() {
             app.add_plugins(SurroundingsPlugin);
         }
-        app.add_systems(Update, play_music.after(SenseSurroundings));
+        app.insert_resource(FirstDelay(self.first_delay))
+            .add_systems(Update, play_music.after(SenseSurroundings));
     }
 }
 
@@ -103,6 +112,7 @@ fn play_music(
     time: Res<Time>,
     assets: Res<AssetServer>,
     around: Res<Surroundings>,
+    first_delay: Res<FirstDelay>,
     weather: Option<Res<Weather>>,
     mut tracks: Query<(Entity, &mut Track, Option<&mut AudioSink>)>,
     mut wait: Local<Option<f32>>,
@@ -148,10 +158,8 @@ fn play_music(
             let draw: f32 = rand::random();
             GAP_SECONDS.0 + (GAP_SECONDS.1 - GAP_SECONDS.0) * draw * draw
         } else {
-            // `OCHRE_MUSIC_DELAY=<seconds>` fixes it, so a recording knows when the music starts
-            std::env::var("OCHRE_MUSIC_DELAY")
-                .ok()
-                .and_then(|s| s.parse().ok())
+            first_delay
+                .0
                 .unwrap_or_else(|| rand::random_range(FIRST_SECONDS.0..FIRST_SECONDS.1))
         }
     });

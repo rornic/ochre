@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use ochre_engine::settings::Settings;
-use ochre_engine::{load_world, OchrePlugins};
+use ochre_engine::{load_world, DevEnv, OchrePlugins};
 use ochre_gameplay::player::PlayerPlugin;
 use ochre_terrain::task_pool_plugin;
 
@@ -18,7 +18,8 @@ fn main() {
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
     // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell
-    let game_world = load_world(&settings);
+    let dev = DevEnv::from_env();
+    let game_world = load_world(&settings, &dev.world);
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
@@ -49,9 +50,13 @@ fn main() {
                 ..default()
             }),
     ))
-    .add_plugins(OchrePlugins::new(settings, game_world).set(PlayerPlugin {
-        look: look_direction(),
-    }))
+    .add_plugins(
+        OchrePlugins::new(settings, game_world)
+            .with_dev(dev)
+            .set(PlayerPlugin {
+                look: look_direction(),
+            }),
+    )
     .insert_resource(winit_settings())
     .insert_resource(ClearColor(Color::BLACK))
     .run();

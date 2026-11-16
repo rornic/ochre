@@ -299,6 +299,7 @@ fn camera_pos(app: &mut App) -> Vec3 {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
+    let dev = ochre_engine::DevEnv::from_env();
     let renderer = settings.renderer;
     let layout = renderer.lod_layout();
     let mut app = App::new();
@@ -306,7 +307,7 @@ fn main() {
         MinimalPlugins.set(task_pool_plugin()),
         AssetPlugin::default(),
         TerrainPlugin::new(
-            ochre_engine::load_world(&settings),
+            ochre_engine::load_world(&settings, &dev.world),
             renderer,
             DebugSettings::default(),
         ),
