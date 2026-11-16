@@ -8,17 +8,16 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
+mod common;
+
 use bevy::prelude::*;
-use ochre_engine::settings::{DebugSettings, RendererSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk_loader::{Chunk, GenerateChunkData};
 use ochre_terrain::group::ChunkGroup;
 use ochre_terrain::horizon::render_distance_at;
 use ochre_terrain::lod::{GenerateLodMesh, LodLoader, LodNode};
-use ochre_terrain::material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
-};
-use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::worldmap::WorldConfig;
+use ochre_terrain::material::{ChunkMaterial, WaterMaterial};
+use ochre_terrain::world::World;
 
 const FRAME: f32 = 1.0 / 60.0;
 const WALK_SPEED: f32 = 20.0;
@@ -29,16 +28,8 @@ const FLY_HEIGHT: f32 = 900.0;
 #[derive(Component)]
 struct FlightCamera;
 
-#[derive(Resource)]
-struct Renderer(RendererSettings, WorldConfig);
-
-fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAssets) {
-    let world_config = renderer.1;
-    let renderer = &renderer.0;
-    let world = ochre_world::load_world(renderer.lod_layout().region_reach() as u32, world_config);
+fn setup(mut commands: Commands, world: Res<World>) {
     let spawn = world.spawn();
-    let height = world.bounds;
-    commands.insert_resource(world);
     let player = commands.spawn(Transform::from_translation(spawn)).id();
     let camera = commands
         .spawn((
@@ -48,15 +39,6 @@ fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAss
         ))
         .id();
     commands.entity(player).add_children(&[camera]);
-    // nothing's drawn, so the shaders get no clouds, curvature or atlas
-    insert_terrain_resources(
-        &mut commands,
-        renderer,
-        DebugSettings::default(),
-        height,
-        &ShaderInputs::default(),
-        &mut assets,
-    );
 }
 
 #[derive(Default)]
@@ -304,28 +286,18 @@ fn main() {
     let fly_height: f32 =
         arg("--fly-height").map_or(FLY_HEIGHT, |s| s.parse().expect("--fly-height is a number"));
     let out = arg("--out");
-    std::env::set_var("OCHRE_SEED", &seed);
 
     let mut settings = Settings::read("assets/settings.toml").expect("failed to read settings");
+    let mut dev = ochre_engine::DevEnv::from_env();
+    dev.world.seed = Some(seed.parse().expect("--seed is a number"));
     if let Some(distance) = arg("--render-distance") {
         settings.renderer.render_distance = distance
             .parse()
             .expect("--render-distance is a number of chunks");
     }
-    let (renderer, world) = (settings.renderer, settings.world);
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin,
-    ))
-    .insert_resource(Renderer(renderer, world))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let renderer = settings.renderer;
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let mut flight = Flight {

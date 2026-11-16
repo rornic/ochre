@@ -1,5 +1,4 @@
-//! OCHRE_FLYTHROUGH=<dir> flies a scripted path, laid out on seed 2665537132, on a fixed 60 fps clock and saves every frame there.
-//! OCHRE_FLIGHT=<file> flies the keys in a text file in real time instead, for recording the screen with its sound, see `Flight`.
+//! `FlythroughPlugin::flight` flies the keys in a text file, for recording the screen with its sound, see `Flight`.
 use std::time::{Duration, Instant};
 
 use bevy::{
@@ -16,63 +15,38 @@ use ochre_terrain::world::World;
 use ochre_world::sky::TimeOfDay;
 
 const FPS: u32 = 60;
-// Real seconds, from the player spawning, the camera waits at the start for the terrain round it to load.
-const WARMUP: f32 = 5.0;
-// Blocks the camera keeps over the ground and water, enough to clear trees, and over any block right round it.
-const CLEARANCE: f32 = 24.0;
+// Blocks the camera keeps over any block right round it.
 const BLOCK_CLEARANCE: f32 = 4.0;
 // Blocks a flight keeps over the top of any tree near its path.
 const TREE_CLEARANCE: f32 = 6.0;
 // Seconds either side the lift over the ground looks for the highest it needs, and eases over, so it rises and settles in long curves.
 const LIFT_REACH: f32 = 2.5;
 
-// (seconds, camera position, where it looks)
-const KEYS: [(f32, [f32; 3], [f32; 3]); 22] = [
-    // high over the world, looking out to the horizon away from the sun, then down and round from the east by the south to the west
-    (0.0, [7520.0, 6000.0, -2800.0], [7520.0, 5600.0, -6800.0]),
-    (3.0, [7520.0, 6000.0, -2800.0], [7520.0, 5600.0, -6800.0]),
-    (6.0, [7520.0, 6000.0, -2800.0], [11520.0, 500.0, -2800.0]),
-    (9.0, [7520.0, 6000.0, -2800.0], [7520.0, 500.0, 1200.0]),
-    (12.0, [7520.0, 6000.0, -2800.0], [3520.0, 500.0, -2800.0]),
-    // down through the clouds to the summit, always looking north past it, then round by the east and south to the lake in the west
-    (17.0, [7520.0, 2600.0, -3600.0], [7520.0, 830.0, -5280.0]),
-    (22.0, [7520.0, 925.0, -4680.0], [7520.0, 830.0, -5280.0]),
-    (25.0, [7520.0, 925.0, -4680.0], [8120.0, 830.0, -4680.0]),
-    (28.0, [7520.0, 925.0, -4680.0], [7520.0, 830.0, -4080.0]),
-    (31.0, [7520.0, 925.0, -4680.0], [6900.0, 650.0, -4900.0]),
-    // down the ridge's west flank and out over the lake, north along it to where the stream leaves
-    (36.0, [6700.0, 700.0, -5100.0], [5800.0, 540.0, -5500.0]),
-    (41.0, [6100.0, 560.0, -5300.0], [5400.0, 520.0, -5700.0]),
-    (47.0, [5550.0, 545.0, -6000.0], [5400.0, 520.0, -6600.0]),
-    (53.0, [5380.0, 545.0, -6900.0], [5330.0, 520.0, -7500.0]),
-    // down the stream to the sea
-    (57.0, [5312.0, 540.0, -7376.0], [5360.0, 510.0, -7520.0]),
-    (60.5, [5400.0, 525.0, -7560.0], [5560.0, 500.0, -7690.0]),
-    (64.0, [5600.0, 515.0, -7720.0], [5700.0, 490.0, -7830.0]),
-    (67.5, [5800.0, 505.0, -7830.0], [5950.0, 485.0, -7870.0]),
-    (71.0, [6000.0, 495.0, -7900.0], [6080.0, 470.0, -8040.0]),
-    (74.5, [6080.0, 490.0, -8030.0], [6150.0, 455.0, -8200.0]),
-    (78.0, [6130.0, 480.0, -8140.0], [6170.0, 450.0, -8450.0]),
-    // out over the sea
-    (83.0, [6170.0, 500.0, -8500.0], [6200.0, 450.0, -9300.0]),
-];
+/// Flies a recorded flight, if one is set. Does nothing otherwise.
+#[derive(Default)]
+pub struct FlythroughPlugin {
+    pub flight: Option<FlightConfig>,
+}
 
-pub struct FlythroughPlugin;
+/// A flight read from a file of keys, see `Flight`.
+pub struct FlightConfig {
+    pub file: String,
+    /// Seconds spent holding the first key while the world round it loads, `FLIGHT_WARMUP` if unset.
+    pub warmup: Option<f32>,
+    /// With a directory the flight is rendered a frame at a time on a fixed 60 fps clock, a frame saved for each, however
+    /// slowly the machine draws, for a picture to put the sound of a real-time run to.
+    pub frames: Option<String>,
+}
 
 impl Plugin for FlythroughPlugin {
     fn build(&self, app: &mut App) {
-        if let Ok(file) = std::env::var("OCHRE_FLIGHT") {
-            let keys = std::fs::read_to_string(&file)
+        if let Some(FlightConfig { file, warmup, frames }) = &self.flight {
+            let keys = std::fs::read_to_string(file)
                 .map_err(|e| e.to_string())
                 .and_then(|text| parse_keys(&text))
-                .unwrap_or_else(|e| panic!("OCHRE_FLIGHT {file}: {e}"));
-            let warmup = std::env::var("OCHRE_FLIGHT_WARMUP")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(FLIGHT_WARMUP);
-            // with a directory the flight is rendered a frame at a time on a fixed 60 fps clock, a frame saved for each, however
-            // slowly the machine draws, for a picture to put the sound of a real-time run to
-            let frames = std::env::var("OCHRE_FLIGHT_FRAMES").ok();
+                .unwrap_or_else(|e| panic!("flight {file}: {e}"));
+            let warmup = warmup.unwrap_or(FLIGHT_WARMUP);
+            let frames = frames.clone();
             if let Some(dir) = &frames {
                 std::fs::create_dir_all(dir).expect("flight frame directory");
             }
@@ -88,123 +62,6 @@ impl Plugin for FlythroughPlugin {
             })
             .add_systems(PostUpdate, fly_keys.before(TransformSystems::Propagate));
         }
-        if let Ok(dir) = std::env::var("OCHRE_FLYTHROUGH") {
-            std::fs::create_dir_all(&dir).expect("flythrough frame directory");
-            app.insert_resource(Flythrough {
-                dir,
-                started: None,
-                frame: None,
-                lift: Vec::new(),
-            })
-            .add_systems(PostUpdate, fly.before(TransformSystems::Propagate));
-        }
-    }
-}
-
-#[derive(Resource)]
-struct Flythrough {
-    dir: String,
-    // when the player first existed, which the warmup counts from
-    started: Option<Instant>,
-    // the frame being recorded, once warmed up
-    frame: Option<u32>,
-    // blocks over the path the camera rises each frame, worked out for the whole flight up front
-    lift: Vec<f32>,
-}
-
-// The path at `t` seconds: a Hermite curve through the keys, with monotone tangents so it never overshoots a key and swings back.
-fn path(t: f32) -> (Vec3, Vec3) {
-    let at = |i: usize| (KEYS[i].0, Vec3::from(KEYS[i].1), Vec3::from(KEYS[i].2));
-    let last = KEYS.len() - 1;
-    let i = (0..last).find(|&i| t < KEYS[i + 1].0).unwrap_or(last - 1);
-    // per axis, the harmonic mean of the speeds either side, or still where the path turns back or ends
-    let tangent = |i: usize, value: &dyn Fn(usize) -> Vec3| {
-        if i == 0 || i == last {
-            return Vec3::ZERO;
-        }
-        let before = (value(i) - value(i - 1)) / (KEYS[i].0 - KEYS[i - 1].0);
-        let after = (value(i + 1) - value(i)) / (KEYS[i + 1].0 - KEYS[i].0);
-        Vec3::from_array(std::array::from_fn(|k| {
-            let (a, b) = (before[k], after[k]);
-            if a * b <= 0.0 {
-                0.0
-            } else {
-                2.0 * a * b / (a + b)
-            }
-        }))
-    };
-    let (position, look) = (|i: usize| at(i).1, |i: usize| at(i).2);
-    let ((t0, p0, q0), (t1, p1, q1)) = (at(i), at(i + 1));
-    let (m0, m1) = (tangent(i, &position), tangent(i + 1, &position));
-    let (n0, n1) = (tangent(i, &look), tangent(i + 1, &look));
-    let span = t1 - t0;
-    let s = ((t - t0) / span).clamp(0.0, 1.0);
-    let (s2, s3) = (s * s, s * s * s);
-    let (h00, h10, h01, h11) = (
-        2.0 * s3 - 3.0 * s2 + 1.0,
-        s3 - 2.0 * s2 + s,
-        -2.0 * s3 + 3.0 * s2,
-        s3 - s2,
-    );
-    let hermite = |a: Vec3, ma: Vec3, b: Vec3, mb: Vec3| {
-        a * h00 + ma * span * h10 + b * h01 + mb * span * h11
-    };
-    (hermite(p0, m0, p1, m1), hermite(q0, n0, q1, n1))
-}
-
-fn fly(
-    mut commands: Commands,
-    mut state: ResMut<Flythrough>,
-    world: Res<World>,
-    mut exit: MessageWriter<AppExit>,
-    mut player: Query<&mut Transform, With<Player>>,
-    mut camera: Query<&mut Transform, (With<Camera3d>, Without<Player>)>,
-) {
-    let (Ok(mut body), Ok(mut eye)) = (player.single_mut(), camera.single_mut()) else {
-        return;
-    };
-    let started = *state.started.get_or_insert_with(Instant::now);
-    let frame = match state.frame {
-        Some(frame) => frame,
-        None if started.elapsed().as_secs_f32() < WARMUP => 0,
-        None => {
-            commands.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-                1.0 / FPS as f64,
-            )));
-            state.frame = Some(0);
-            0
-        }
-    };
-    if state.lift.is_empty() {
-        let frames = (KEYS[KEYS.len() - 1].0 * FPS as f32) as usize + 1;
-        let need: Vec<f32> = (0..frames)
-            .map(|frame| {
-                let p = path(frame as f32 / FPS as f32).0;
-                ground_height(&world, p) + CLEARANCE - p.y
-            })
-            .collect();
-        state.lift = smooth_lift(&need, (LIFT_REACH * FPS as f32) as usize);
-    }
-    let t = frame as f32 / FPS as f32;
-    if t > KEYS[KEYS.len() - 1].0 {
-        exit.write(AppExit::Success);
-        return;
-    }
-    let (mut at, look) = path(t);
-    at.y += state.lift[(frame as usize).min(state.lift.len() - 1)];
-    // and never in a block the ground's height missed, a tree or an overhang
-    at.y = at.y.max(block_height(&world, at));
-    let facing = (look - at).normalize_or_zero();
-    body.translation = at - Vec3::Y * EYE_HEIGHT;
-    body.rotation = Quat::from_rotation_y(f32::atan2(-facing.x, -facing.z));
-    eye.translation = Vec3::Y * EYE_HEIGHT;
-    eye.rotation = Quat::from_rotation_x(facing.y.clamp(-1.0, 1.0).asin());
-    if let Some(frame) = state.frame {
-        let file = format!("{}/frame_{frame:05}.png", state.dir);
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(file));
-        state.frame = Some(frame + 1);
     }
 }
 
@@ -436,30 +293,6 @@ fn smooth_lift(need: &[f32], reach: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_path_passes_through_each_key_and_never_overshoots_between() {
-        for (i, &(t, at, look)) in KEYS.iter().enumerate() {
-            let (p, q) = path(t);
-            assert!(
-                p.distance(Vec3::from(at)) < 1e-2 && q.distance(Vec3::from(look)) < 1e-2,
-                "key {i}"
-            );
-        }
-        for pair in KEYS.windows(2) {
-            let ((t0, a0, _), (t1, a1, _)) = (pair[0], pair[1]);
-            for step in 0..=50 {
-                let p = path(t0 + (t1 - t0) * step as f32 / 50.0).0;
-                for k in 0..3 {
-                    let (lo, hi) = (a0[k].min(a1[k]), a0[k].max(a1[k]));
-                    assert!(
-                        (lo - 1e-2..=hi + 1e-2).contains(&p[k]),
-                        "overshoot between {t0} and {t1}"
-                    );
-                }
-            }
-        }
-    }
 
     #[test]
     fn test_a_flight_file_reads_keys_and_says_what_is_wrong_with_a_bad_one() {

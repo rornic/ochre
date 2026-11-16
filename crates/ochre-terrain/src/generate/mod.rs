@@ -1,7 +1,7 @@
 pub mod columns;
 pub mod generator;
-pub mod light;
-pub mod region;
+mod light;
+mod region;
 pub mod region_store;
-pub mod rocks;
+mod rocks;
 pub mod trees;

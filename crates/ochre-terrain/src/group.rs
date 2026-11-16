@@ -283,7 +283,7 @@ fn merge_meshes(parts: Vec<(Vec3, Mesh)>) -> Option<Mesh> {
 }
 
 /// The chunks' meshes as one, each moved by its offset in blocks.
-pub fn merge_chunk_meshes(parts: Vec<(Vec3, ChunkMeshes)>) -> ChunkMeshes {
+pub(crate) fn merge_chunk_meshes(parts: Vec<(Vec3, ChunkMeshes)>) -> ChunkMeshes {
     let mut opaque = Vec::new();
     let mut cutout = Vec::new();
     let mut water = Vec::new();

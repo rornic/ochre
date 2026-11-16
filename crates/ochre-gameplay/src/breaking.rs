@@ -42,10 +42,10 @@ impl Plugin for BreakingPlugin {
 
 /// The block the player's looking at in reach, and what it is.
 #[derive(Resource, Default, Debug)]
-pub struct LookedAt(pub Option<(RayHit, BlockType)>);
+pub(crate) struct LookedAt(pub Option<(RayHit, BlockType)>);
 
 /// The first block from `eye` along `forward`, past air and water, within `REACH`.
-pub fn block_looked_at(world: &World, eye: Vec3, forward: Vec3) -> Option<(RayHit, BlockType)> {
+pub(crate) fn block_looked_at(world: &World, eye: Vec3, forward: Vec3) -> Option<(RayHit, BlockType)> {
     raycast(eye, forward, REACH, |block| {
         world.get_block_at(block).is_targetable()
     })
@@ -54,7 +54,7 @@ pub fn block_looked_at(world: &World, eye: Vec3, forward: Vec3) -> Option<(RayHi
 
 fn look_at_block(
     world: Option<Res<World>>,
-    camera: Query<&GlobalTransform, (With<Camera3d>, With<ChildOf>)>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
     mut looked_at: ResMut<LookedAt>,
 ) {
     let (Some(world), Ok(camera)) = (world, camera.single()) else {

@@ -13,6 +13,9 @@ use ochre_base::WorldBounds;
 
 use crate::chunk::{ChunkCoordinate, ChunkData, CHUNK_SIZE};
 
+// Blocks over the ground the player spawns.
+const DEFAULT_SPAWN_LIFT: f32 = 20.0;
+
 #[derive(Resource)]
 pub struct World {
     seed: u32,
@@ -34,17 +37,7 @@ impl World {
     pub fn with_terrain(seed: u32, region_distance: u32, terrain: Arc<dyn TerrainSource>) -> Self {
         let bounds = terrain.bounds();
         bounds.validate().expect("invalid world bounds");
-        let (mut spawn_x, mut spawn_z, mut spawn_height) = terrain.find_spawn();
-        // OCHRE_SPAWN=x,z[,lift] starts the player there, lift blocks over the ground (20 by default)
-        let mut lift = 20.0;
-        if let Some((x, z, up)) = std::env::var("OCHRE_SPAWN").ok().and_then(|s| {
-            let mut parts = s.split(',').map(|p| p.trim().parse::<f64>().ok());
-            Some((parts.next()??, parts.next()??, parts.next().flatten()))
-        }) {
-            (spawn_x, spawn_z) = (x as i64, z as i64);
-            spawn_height = terrain.sample(x, z).height;
-            lift = up.unwrap_or(lift);
-        }
+        let (spawn_x, spawn_z, spawn_height) = terrain.find_spawn();
         let region_distance_blocks = region_distance as i64 * CHUNK_SIZE as i64;
         Self {
             seed,
@@ -61,12 +54,20 @@ impl World {
             ),
             spawn: Vec3::new(
                 spawn_x as f32,
-                spawn_height as f32 + lift as f32,
+                spawn_height as f32 + DEFAULT_SPAWN_LIFT,
                 spawn_z as f32,
             ),
             edits: Vec::new(),
             stirred: HashSet::new(),
         }
+    }
+
+    /// This world with the player spawning over `x`, `z`, `lift` blocks above the ground.
+    pub fn with_spawn(mut self, x: f64, z: f64, lift: Option<f64>) -> Self {
+        let height = self.region_store.terrain().sample(x, z).height;
+        let lift = lift.map_or(DEFAULT_SPAWN_LIFT, |lift| lift as f32);
+        self.spawn = Vec3::new((x as i64) as f32, height as f32 + lift, (z as i64) as f32);
+        self
     }
 
     pub fn seed(&self) -> u32 {

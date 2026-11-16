@@ -539,9 +539,9 @@ impl ChunkMeshes {
 }
 
 /// Past this many blocks of the camera leaves' holes fill in with the shade of the leaves behind them, dithered in over `INNER_LEAVES_BAND` blocks.
-pub const INNER_LEAVES_REACH: f32 = 64.0;
+pub(crate) const INNER_LEAVES_REACH: f32 = 64.0;
 
-pub const INNER_LEAVES_BAND: f32 = 16.0;
+pub(crate) const INNER_LEAVES_BAND: f32 = 16.0;
 
 // The temperatures between which the long grasses go from oxblood to the grass's own colour: full below the first, and none above the second.
 const OXBLOOD_FULL_BELOW: f32 = 0.08;

@@ -9,35 +9,25 @@ use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
 use bevy::platform::collections::HashMap;
+mod common;
+
 use bevy::prelude::*;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_base::WATER_LEVEL;
-use ochre_engine::settings::{DebugSettings, RendererSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk::{ChunkCoordinate, CHUNK_SIZE};
 use ochre_terrain::chunk_loader::{ChunkLoader, DirtyChunk, GenerateChunkData, GenerateChunkMesh};
 use ochre_terrain::generate::columns::COARSE_CELL;
 use ochre_terrain::group::{BuiltGroup, ChunkGroup, GroupedChunk, MeshedChunk};
 use ochre_terrain::horizon::render_distance_at;
 use ochre_terrain::lod::{LodKey, LodLayout, LodLoader, LodNode};
-use ochre_terrain::material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
-};
-use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::worldmap::WorldConfig;
+use ochre_terrain::world::World;
 
 #[derive(Component)]
 struct SimCamera;
 
-#[derive(Resource)]
-struct Renderer(RendererSettings, WorldConfig);
-
-fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAssets) {
-    let world_config = renderer.1;
-    let renderer = &renderer.0;
-    let world = ochre_world::load_world(renderer.lod_layout().region_reach() as u32, world_config);
+fn setup(mut commands: Commands, world: Res<World>) {
     let spawn = world.spawn();
-    let height = world.bounds;
-    commands.insert_resource(world);
     let player = commands.spawn(Transform::from_translation(spawn)).id();
     let camera = commands
         .spawn((
@@ -47,15 +37,6 @@ fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAss
         ))
         .id();
     commands.entity(player).add_children(&[camera]);
-    // nothing's drawn, so the shaders get no clouds, curvature or atlas
-    insert_terrain_resources(
-        &mut commands,
-        renderer,
-        DebugSettings::default(),
-        height,
-        &ShaderInputs::default(),
-        &mut assets,
-    );
 }
 
 struct Report {
@@ -318,21 +299,11 @@ fn camera_pos(app: &mut App) -> Vec3 {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
-    let (renderer, world) = (settings.renderer, settings.world);
+    let dev = ochre_engine::DevEnv::from_env();
+    let renderer = settings.renderer;
     let layout = renderer.lod_layout();
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin,
-    ))
-    .insert_resource(Renderer(renderer, world))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let speed: f32 = std::env::args().nth(1).map_or(80.0, |s| s.parse().unwrap());

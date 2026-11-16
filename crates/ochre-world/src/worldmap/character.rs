@@ -50,7 +50,7 @@ fn round(value: f64, decimals: i32) -> f64 {
 /// What a seed decides about its landforms, worked out where it is used rather than stored in the
 /// config or the map file, so a new landform adds no file format change. `OCHRE_CHARACTER=off` does not touch them.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LandformKnobs {
+pub(crate) struct LandformKnobs {
     /// About how much of the sedimentary lowland is tableland.
     pub tableland_share: f64,
     /// Multiplies the spacing and height of dunes.
@@ -102,13 +102,14 @@ pub fn derive(seed: u32, mut config: WorldConfig) -> WorldConfig {
     config
 }
 
-/// The config a world for `seed` is made with. `OCHRE_CHARACTER=off` keeps `config` as given.
+/// The config a world for `seed` is made with, for the tools: `OCHRE_CHARACTER=off` keeps `config` as given. The game passes
+/// `WorldOptions::character` to `world_config_with` instead.
 pub fn world_config(seed: u32, config: WorldConfig) -> WorldConfig {
     let off = std::env::var("OCHRE_CHARACTER").is_ok_and(|v| v == "off");
     world_config_with(seed, config, !off)
 }
 
-pub fn world_config_with(seed: u32, config: WorldConfig, derived: bool) -> WorldConfig {
+pub(crate) fn world_config_with(seed: u32, config: WorldConfig, derived: bool) -> WorldConfig {
     if derived {
         derive(seed, config)
     } else {

@@ -17,7 +17,7 @@ use bevy::{
         entity::Entity,
         query::{With, Without},
         resource::Resource,
-        schedule::IntoScheduleConfigs,
+        schedule::{IntoScheduleConfigs, SystemSet},
         system::{Commands, Local, Query, Res, ResMut},
     },
     math::{ops, Vec3},
@@ -33,25 +33,41 @@ use wind::Gust;
 pub(crate) use wind::SAMPLE_RATE;
 pub use wind::{wind_strength, Wind, WindDials};
 
+/// Wind, loops and the odd owl, each as loud as the camera's `Surroundings` call for.
 pub struct AmbiencePlugin;
 
 impl Plugin for AmbiencePlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<SurroundingsPlugin>() {
+            app.add_plugins(SurroundingsPlugin);
+        }
         app.add_audio_source::<Wind>()
-            .init_resource::<WindDials>()
-            .init_resource::<Surroundings>()
             .add_systems(Startup, (wind::play_wind, play_loops))
             .add_systems(
                 Update,
                 (
                     listen_from_camera,
-                    sense_surroundings,
-                    (wind::update_wind, mix_loops, hoot),
-                )
-                    .chain(),
+                    (wind::update_wind, mix_loops, hoot).after(SenseSurroundings),
+                ),
             );
     }
 }
+
+/// Keeps `Surroundings` current. Added by whichever of `AmbiencePlugin` and `MusicPlugin` comes first.
+pub struct SurroundingsPlugin;
+
+impl Plugin for SurroundingsPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<TimeOfDay>()
+            .init_resource::<WindDials>()
+            .init_resource::<Surroundings>()
+            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings));
+    }
+}
+
+/// The system that updates `Surroundings`, for systems that read it to run after.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct SenseSurroundings;
 
 /// What's round the camera, as far as what it hears goes. The fractions are 0..1.
 #[derive(Resource, Debug, Clone, Copy, PartialEq)]
@@ -111,7 +127,13 @@ pub(crate) const AMBIENCE_TRIM: f32 = 0.32;
 // The temperatures, see `NoiseGenerator::temperature`, between which the cold sets in.
 const FREEZING: (f32, f32) = (0.15, 0.35);
 
-#[allow(clippy::too_many_arguments)]
+/// When the camera was last sensed, and where it was, for its speed.
+#[derive(Default)]
+struct Sensed {
+    since: f32,
+    last: Option<Vec3>,
+}
+
 fn sense_surroundings(
     time: Res<Time>,
     world: Res<World>,
@@ -119,22 +141,21 @@ fn sense_surroundings(
     dials: Res<WindDials>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut around: ResMut<Surroundings>,
-    mut since: Local<f32>,
-    mut last: Local<Option<Vec3>>,
+    mut sensed: Local<Sensed>,
 ) {
     let Ok(camera) = camera.single() else {
         return;
     };
-    *since += time.delta_secs();
-    if last.is_some() && *since < SENSE_SECONDS {
+    sensed.since += time.delta_secs();
+    if sensed.last.is_some() && sensed.since < SENSE_SECONDS {
         return;
     }
     let eye = camera.translation();
-    let speed = match last.replace(eye) {
-        Some(last) if *since > 0.0 => last.distance(eye) / *since,
+    let speed = match sensed.last.replace(eye) {
+        Some(last) if sensed.since > 0.0 => last.distance(eye) / sensed.since,
         _ => 0.0,
     };
-    *since = 0.0;
+    sensed.since = 0.0;
 
     let store = &world.region_store;
     let noise = store.terrain();
@@ -192,7 +213,7 @@ fn sense_surroundings(
 
 /// A recorded loop, and how loud it plays at most, as the files are all levelled alike.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Loop {
+pub(crate) enum Loop {
     Forest,
     Crickets,
     Waves,

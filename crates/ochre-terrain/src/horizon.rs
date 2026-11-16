@@ -16,7 +16,7 @@ use crate::lod::LodLoader;
 use ochre_base::WATER_LEVEL;
 
 /// The farthest terrain is drawn, in chunks, however high up.
-pub const MAX_RENDER_DISTANCE: f32 = 2048.0;
+pub(crate) const MAX_RENDER_DISTANCE: f32 = 2048.0;
 // How far above the sea the top of the world is.
 const ABOVE_SEA_AT_TOP: f32 = 2048.0;
 // Smaller changes than this, as a share of the render distance, are let be, so bobbing up

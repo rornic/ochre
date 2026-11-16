@@ -6,28 +6,19 @@
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
+mod common;
+
 use bevy::prelude::*;
 use ochre_base::block::BlockType;
-use ochre_engine::settings::{DebugSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk::{ChunkCoordinate, CHUNK_SIZE};
-use ochre_terrain::material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
-};
 use ochre_terrain::world::World;
-use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::worldmap::WorldConfig;
 
 #[derive(Component)]
 struct SimCamera;
 
-#[derive(Resource)]
-struct Config(ochre_terrain::settings::RendererSettings, WorldConfig);
-
-fn setup(mut commands: Commands, config: Res<Config>, mut assets: TerrainAssets) {
-    let renderer = &config.0;
-    let world = ochre_world::load_world(renderer.lod_layout().region_reach() as u32, config.1);
-    let (spawn, height) = (world.spawn(), world.bounds);
-    commands.insert_resource(world);
+fn setup(mut commands: Commands, world: Res<World>) {
+    let spawn = world.spawn();
     let player = commands.spawn(Transform::from_translation(spawn)).id();
     let camera = commands
         .spawn((
@@ -37,14 +28,6 @@ fn setup(mut commands: Commands, config: Res<Config>, mut assets: TerrainAssets)
         ))
         .id();
     commands.entity(player).add_children(&[camera]);
-    insert_terrain_resources(
-        &mut commands,
-        renderer,
-        DebugSettings::default(),
-        height,
-        &ShaderInputs::default(),
-        &mut assets,
-    );
 }
 
 const SIDES: [I64Vec3; 4] = [I64Vec3::X, I64Vec3::NEG_X, I64Vec3::Z, I64Vec3::NEG_Z];
@@ -124,19 +107,9 @@ fn summary(frames: &mut [f32]) -> String {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TerrainPlugin,
-    ))
-    .insert_resource(Config(settings.renderer, settings.world))
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let dev = ochre_engine::DevEnv::from_env();
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_systems(Startup, setup);
     app.update();
 
     let count: usize = std::env::args().nth(1).map_or(8, |s| s.parse().unwrap());

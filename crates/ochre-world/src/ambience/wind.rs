@@ -66,7 +66,7 @@ const UNDERWATER_WIND: f32 = 0.02;
 // How long the wind takes to follow a change in where the camera is, in seconds.
 const WIND_FOLLOW_SECONDS: f32 = 0.6;
 
-pub fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>, dials: Res<WindDials>) {
+pub(crate) fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>, dials: Res<WindDials>) {
     let wind = winds.add(Wind {
         dials: dials.clone(),
     });
@@ -83,7 +83,7 @@ pub fn wind_strength(altitude: f32, speed: f32) -> f32 {
     (GROUND_BREEZE + (1.0 - GROUND_BREEZE) * height + rush).min(1.0)
 }
 
-pub fn update_wind(
+pub(crate) fn update_wind(
     time: Res<Time>,
     around: Res<Surroundings>,
     dials: Res<WindDials>,

@@ -10,12 +10,12 @@ use ochre_base::WATER_LEVEL;
 // Objects stand on a grid of cells this many blocks across, at most one in each.
 const CELL: i64 = 24;
 /// The widest cell, in blocks, of a LOD mesh that shows rocks: past it even a giant is under a pixel.
-pub const ROCK_MAX_CELL: i64 = 8;
+pub(crate) const ROCK_MAX_CELL: i64 = 8;
 // The widest cell that still shows the ledges, mounds and taiga boulders on the `CELL` grid, and the one that shows small rocks.
 const MEDIUM_MAX_CELL: i64 = 4;
 const SMALL_MAX_CELL: i64 = 2;
 /// How far out from its centre any rock reaches: a giant's arch.
-pub const ROCK_REACH: i64 = 20;
+pub(crate) const ROCK_REACH: i64 = 20;
 // How far a rock on the `CELL` grid reaches: the widest ledge.
 const MEDIUM_REACH: i64 = 12;
 const MAX_GRADIENT: f64 = 0.4;
@@ -123,7 +123,7 @@ fn cells_near(min: I64Vec2, max: I64Vec2, cell: i64, reach: i64) -> impl Iterato
 
 // Every rock that could reach into the columns `min..=max` (x, z), as seen from cells `scale` blocks across: a LOD node leaves out
 // what would be under a pixel.
-pub fn rocks_near(
+pub(crate) fn rocks_near(
     noise: &dyn TerrainSource,
     heights: &mut impl TreeGround,
     min: I64Vec2,

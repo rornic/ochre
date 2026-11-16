@@ -4,7 +4,6 @@ use bevy::prelude::Resource;
 use bevy::{
     asset::Handle,
     camera::Camera,
-    ecs::hierarchy::ChildOf,
     ecs::{
         component::Component,
         entity::Entity,
@@ -48,7 +47,7 @@ pub struct GenerateChunkMesh {
 }
 
 /// A chunk still on its way to being meshed.
-pub type Unsettled = Or<(
+pub(crate) type Unsettled = Or<(
     With<GenerateChunkData>,
     With<DirtyChunk>,
     With<GenerateChunkMesh>,
@@ -142,12 +141,15 @@ pub(crate) fn gather_chunks(
     mut commands: Commands,
     mut chunk_loader: ResMut<ChunkLoader>,
     world: Res<World>,
-    camera_query: Query<&GlobalTransform, (With<Camera>, With<ChildOf>)>,
+    camera_query: Query<&GlobalTransform, With<Camera>>,
     generating_chunks_query: Query<(), With<GenerateChunkData>>,
 ) {
     let loader = &mut *chunk_loader;
     let mut in_flight = generating_chunks_query.iter().count();
-    let camera = camera_query.single().expect("could not find camera");
+    // a game spawns its camera when it likes
+    let Ok(camera) = camera_query.single() else {
+        return;
+    };
     let camera_chunk = ChunkCoordinate::containing(camera.translation().floor().as_i64vec3());
     let task_pool = AsyncComputeTaskPool::get();
     let start = Instant::now();

@@ -2,13 +2,38 @@ use std::error::Error;
 
 use serde::Deserialize;
 
-pub use ochre_terrain::settings::{CloudResolution, DebugSettings, RendererSettings};
+pub use ochre_terrain::settings::{DebugSettings, RendererSettings};
+pub use ochre_world::clouds::CloudResolution;
+pub use ochre_world::sky::SkySettings;
 use ochre_world::worldmap::WorldConfig;
+
+/// Which of the plugins that cost frame time or change the look start on, see `OchrePlugins`.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(default)]
+pub struct PluginSettings {
+    /// Frost on cold ground that has no snow yet, see `FrostPlugin`.
+    pub frost: bool,
+    /// Light shafts from a low sun, see `GodrayPlugin`.
+    pub godrays: bool,
+}
+
+impl Default for PluginSettings {
+    fn default() -> Self {
+        Self {
+            frost: true,
+            godrays: true,
+        }
+    }
+}
 
 /// Everything `settings.toml` holds, each part read by the crate it configures.
 #[derive(Default, Deserialize, Clone, Copy)]
 pub struct Settings {
     pub renderer: RendererSettings,
+    #[serde(default)]
+    pub sky: SkySettings,
+    #[serde(default)]
+    pub plugins: PluginSettings,
     #[serde(default)]
     pub debug: DebugSettings,
     #[serde(default)]
@@ -35,7 +60,7 @@ mod tests {
         assert_eq!(8, settings.renderer.material_anisotropy);
         assert_eq!(
             super::CloudResolution::Medium,
-            settings.renderer.cloud_resolution
+            settings.sky.cloud_resolution
         );
         assert!(!settings.debug.still_leaves && !settings.debug.solid_leaves);
         assert_eq!(WorldConfig::default(), settings.world);
@@ -81,10 +106,10 @@ mod tests {
             ("ultra", super::CloudResolution::Ultra),
         ] {
             let settings: Settings =
-                toml::from_str(&format!("[renderer]\ncloud_resolution = '{name}'")).unwrap();
-            assert_eq!(preset, settings.renderer.cloud_resolution);
+                toml::from_str(&format!("[renderer]\n[sky]\ncloud_resolution = '{name}'")).unwrap();
+            assert_eq!(preset, settings.sky.cloud_resolution);
         }
-        assert!(toml::from_str::<Settings>("[renderer]\ncloud_resolution = 'medum'").is_err());
+        assert!(toml::from_str::<Settings>("[renderer]\n[sky]\ncloud_resolution = 'medum'").is_err());
     }
 
     #[test]
@@ -94,7 +119,7 @@ mod tests {
         assert_eq!(12, settings.renderer.full_detail_distance);
         assert_eq!(
             super::CloudResolution::Medium,
-            settings.renderer.cloud_resolution
+            settings.sky.cloud_resolution
         );
         assert_eq!(Some(16), settings.renderer.lod_base_distance);
         assert_eq!(2, settings.renderer.lod_level_scale);
@@ -105,6 +130,8 @@ mod tests {
         let layout = settings.renderer.lod_layout();
         assert_eq!(12.0, layout.reach(0));
         assert_eq!([32.0, 64.0], [layout.reach(1), layout.reach(2)]);
+        assert_eq!(64, settings.sky.shadow_distance);
+        assert!(settings.plugins.frost && settings.plugins.godrays);
         // the debug switches ship off
         assert!(!settings.debug.still_leaves && !settings.debug.solid_leaves);
     }

@@ -1,6 +1,5 @@
 //! Music that drifts in now and then: one track picked for the camera's biome and the weather,
-//! long silences between, crossfading when the mood changes under a playing track. Needs
-//! `AmbiencePlugin`, which keeps `Surroundings` current.
+//! long silences between, crossfading when the mood changes under a playing track.
 use bevy::{
     app::{App, Plugin, Update},
     asset::AssetServer,
@@ -8,25 +7,41 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        resource::Resource,
+        schedule::IntoScheduleConfigs,
         system::{Commands, Local, Query, Res},
     },
     time::Time,
 };
 
-use crate::{ambience::Surroundings, weather::Weather};
+use crate::{
+    ambience::{SenseSurroundings, Surroundings, SurroundingsPlugin},
+    weather::Weather,
+};
 
-pub struct MusicPlugin;
+/// Plays one track at a time, picked by `Surroundings`. `first_delay` fixes the seconds before the first track, so a
+/// recording knows when the music starts.
+#[derive(Default)]
+pub struct MusicPlugin {
+    pub first_delay: Option<f32>,
+}
+
+#[derive(Resource)]
+struct FirstDelay(Option<f32>);
 
 impl Plugin for MusicPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Surroundings>()
-            .add_systems(Update, play_music);
+        if !app.is_plugin_added::<SurroundingsPlugin>() {
+            app.add_plugins(SurroundingsPlugin);
+        }
+        app.insert_resource(FirstDelay(self.first_delay))
+            .add_systems(Update, play_music.after(SenseSurroundings));
     }
 }
 
 /// What a track is for; the first that holds picks the track.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mood {
+pub(crate) enum Mood {
     Storm,
     Desert,
     Cold,
@@ -91,17 +106,28 @@ const FOLLOW_SECONDS: f32 = 4.0;
 // A fading track is dropped once it's this quiet, as a linear volume.
 const SILENT: f32 = 1e-3;
 
-#[allow(clippy::too_many_arguments)]
+/// What a track is picked and paced by.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Context<'w> {
+    around: Res<'w, Surroundings>,
+    first_delay: Res<'w, FirstDelay>,
+    weather: Option<Res<'w, Weather>>,
+}
+
 fn play_music(
     mut commands: Commands,
     time: Res<Time>,
     assets: Res<AssetServer>,
-    around: Res<Surroundings>,
-    weather: Option<Res<Weather>>,
+    context: Context,
     mut tracks: Query<(Entity, &mut Track, Option<&mut AudioSink>)>,
     mut wait: Local<Option<f32>>,
     mut played: Local<bool>,
 ) {
+    let Context {
+        around,
+        first_delay,
+        weather,
+    } = context;
     let dt = time.delta_secs();
     let mood = Mood::of(
         &around,
@@ -142,10 +168,8 @@ fn play_music(
             let draw: f32 = rand::random();
             GAP_SECONDS.0 + (GAP_SECONDS.1 - GAP_SECONDS.0) * draw * draw
         } else {
-            // `OCHRE_MUSIC_DELAY=<seconds>` fixes it, so a recording knows when the music starts
-            std::env::var("OCHRE_MUSIC_DELAY")
-                .ok()
-                .and_then(|s| s.parse().ok())
+            first_delay
+                .0
                 .unwrap_or_else(|| rand::random_range(FIRST_SECONDS.0..FIRST_SECONDS.1))
         }
     });

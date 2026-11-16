@@ -41,7 +41,7 @@ pub(crate) const FOOTHILL_RELIEF: f64 = 0.6;
 
 /// How much of the way, 0..1, ground `above_sea` blocks up and `range` (0..1) near a mountain range
 /// is foothills: none far from a range or on the lowlands, all of it on the higher ground against one.
-pub fn foothill_weight(range: f64, above_sea: f64) -> f64 {
+pub(crate) fn foothill_weight(range: f64, above_sea: f64) -> f64 {
     smoothstep(0.1, 0.55, range) * smoothstep(15.0, 90.0, above_sea)
 }
 
@@ -53,7 +53,7 @@ pub fn gullies(seed: u32, x: f64, z: f64) -> f64 {
 }
 
 /// How high gullies cut into ground `weight` of foothills or mountain.
-pub fn gully_relief(seed: u32, x: f64, z: f64, weight: f64, cell: f64) -> f64 {
+pub(crate) fn gully_relief(seed: u32, x: f64, z: f64, weight: f64, cell: f64) -> f64 {
     // finer than wide cells can show, so they fade out in them, as the other detail does
     let seen = 1.0 - smoothstep(4.0, 16.0, cell);
     if weight <= 0.0 || seen <= 0.0 {
@@ -127,7 +127,7 @@ pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64, style: Dunes)
 }
 
 /// Fills the roughness layer: steep and high ground is rough, plains and flat biomes are not.
-pub fn roughness_layer(map: &mut WorldMap) {
+pub(crate) fn roughness_layer(map: &mut WorldMap) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
     let cell = map.config.map_cell as f32;

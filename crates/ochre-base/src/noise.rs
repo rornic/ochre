@@ -65,7 +65,7 @@ const GRADIENTS_3D: [(f64, f64, f64); 12] = [
 
 /// Perlin noise in three dimensions, about -1..1. The lattice's third coordinate is hashed in with
 /// the seed, so layers of it differ.
-pub fn perlin3(seed: u32, x: f64, y: f64, z: f64) -> f64 {
+pub(crate) fn perlin3(seed: u32, x: f64, y: f64, z: f64) -> f64 {
     let (fx, fy, fz) = (x.floor(), y.floor(), z.floor());
     let (ix, iy, iz) = (fx as i32, fy as i32, fz as i32);
     let (dx, dy, dz) = (x - fx, y - fy, z - fz);

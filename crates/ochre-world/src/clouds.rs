@@ -39,12 +39,12 @@ use crate::sky::{Moon, Sun, TimeOfDay};
 use crate::sky_dome::dome;
 use crate::storms::{Forecast, Sky};
 use ochre_terrain::curvature::Curvature;
+use ochre_terrain::world::World;
 pub use ochre_terrain::material::CloudLayer;
 use ochre_terrain::material::{push_shader_defs, water_level};
-use ochre_terrain::settings::CloudResolution;
 
 /// Height of the clouds' undersides, far above the highest land; matches `BASE` in `cloud_march.wesl`.
-pub const CLOUD_BASE: f32 = 2400.0;
+pub(crate) const CLOUD_BASE: f32 = 2400.0;
 // Height the tallest clouds' tops reach; matches `TOP` in `cloud_march.wesl`.
 const CLOUD_TOP: f32 = 3000.0;
 // The pattern's cells, in blocks, and how many it has each way: it repeats seamlessly.
@@ -73,6 +73,28 @@ const TARGET_SCALE: u32 = 2;
 // Texels across each half of the reflections' map, matching `REFLECTION_TEXELS` in `cloud_march.wesl`.
 const REFLECTION_SIZE: u32 = 512;
 
+/// Maximum cloud target width; smaller windows still march at half display resolution.
+#[derive(Default, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudResolution {
+    Low,
+    #[default]
+    Medium,
+    High,
+    Ultra,
+}
+
+impl CloudResolution {
+    pub const fn width(self) -> u32 {
+        match self {
+            Self::Low => 320,
+            Self::Medium => 640,
+            Self::High => 960,
+            Self::Ultra => 1280,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct CloudPlugin {
     pub resolution: CloudResolution,
@@ -84,6 +106,8 @@ struct CloudTargetResolution(CloudResolution);
 impl Plugin for CloudPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CloudTargetResolution(self.resolution))
+            .init_resource::<TimeOfDay>()
+            .init_resource::<Curvature>()
             .add_plugins((
                 MaterialPlugin::<CloudMaterial>::default(),
                 ExtractResourcePlugin::<CloudMarch>::default(),
@@ -113,7 +137,7 @@ impl Plugin for CloudPlugin {
 
 /// The clouds drawn into the target, lit and blended up to the screen, see `cloud_dome.wesl`.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct CloudMaterial {
+pub(crate) struct CloudMaterial {
     #[texture(4)]
     #[sampler(5)]
     pattern: Handle<Image>,
@@ -279,6 +303,7 @@ fn spawn_clouds(
     mut images: ResMut<Assets<Image>>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     curvature: Res<Curvature>,
+    world: Option<Res<World>>,
     window: Query<&Window, With<PrimaryWindow>>,
     resolution: Res<CloudTargetResolution>,
 ) {
@@ -305,11 +330,9 @@ fn spawn_clouds(
     ));
     let clouds = CloudLayer {
         // OCHRE_SEED repeats the clouds too, for comparing frames across runs
+        // the world's seed, so a seed repeats its clouds too
         pattern: images.add(pattern_image(&cloud_pattern(
-            std::env::var("OCHRE_SEED")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_else(rand::random),
+            world.map_or_else(rand::random, |world| world.seed()),
         ))),
         layer: Vec4::new((CLOUD_BASE + CLOUD_TOP) / 2.0, SPAN, WIND.x, WIND.y),
         target: images.add(target),

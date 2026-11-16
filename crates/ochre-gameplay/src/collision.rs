@@ -7,7 +7,7 @@ const EPSILON: f32 = 1e-3;
 /// How far into the face of a ledge it can step onto the box walks before it steps, so the step isn't taken a body's width away from
 /// the ledge. It is also how shallow an overlap on a horizontal axis still stops the box and pushes it back out, so a box in the air
 /// can't be walked on through the ledge it walked into.
-pub const STEP_REACH: f32 = 0.25;
+pub(crate) const STEP_REACH: f32 = 0.25;
 
 /// An axis-aligned box, as offsets from the position it's moved by.
 #[derive(Debug, Clone, Copy)]
@@ -20,7 +20,7 @@ pub struct Aabb {
 /// against the first block `solid` says it would move into. Returns where it ends up, and
 /// which axes were stopped. Blocks it already overlaps are ignored, so it can always get out
 /// of them.
-pub fn move_and_collide(
+pub(crate) fn move_and_collide(
     position: Vec3,
     delta: Vec3,
     aabb: Aabb,
@@ -40,7 +40,7 @@ pub fn move_and_collide(
 /// Like `move_and_collide`, but a box blocked sideways tries again from `step` higher and
 /// settles back down, so it climbs ledges up to `step` tall. It walks `STEP_REACH` into a ledge it can climb before it does.
 /// Pass a `step` of 0 in the air.
-pub fn move_and_step(
+pub(crate) fn move_and_step(
     position: Vec3,
     delta: Vec3,
     aabb: Aabb,

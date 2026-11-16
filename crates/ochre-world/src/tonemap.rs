@@ -78,7 +78,8 @@ fn displayed_rgb(scene: Vec3) -> Vec3 {
 }
 
 /// What a scene colour looks like on screen once exposed and tonemapped.
-pub fn displayed(scene: LinearRgba) -> LinearRgba {
+#[cfg(test)]
+pub(crate) fn displayed(scene: LinearRgba) -> LinearRgba {
     LinearRgba::from_vec3(displayed_rgb(scene.to_vec3())).with_alpha(scene.alpha)
 }
 

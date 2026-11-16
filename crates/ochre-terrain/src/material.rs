@@ -42,7 +42,7 @@ pub fn push_shader_defs(descriptor: &mut RenderPipelineDescriptor, defs: &[Shade
 /// a tile: each mip level halves every tile, so none bleeds into its neighbour. Bevy builds no
 /// mipmaps itself, and without them textures shimmer as the camera moves. Magnified texels
 /// stay crisp.
-pub fn block_atlas(path: &str) -> Image {
+pub(crate) fn block_atlas(path: &str) -> Image {
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("could not read {path}: {e}"));
     let mut image = Image::from_buffer(
         &bytes,
@@ -64,11 +64,11 @@ pub fn block_atlas(path: &str) -> Image {
 }
 
 /// Each painted material's square side in texels, see `material_array`.
-pub const MATERIAL_SIZE: u32 = 512;
+pub(crate) const MATERIAL_SIZE: u32 = 512;
 
 /// The painted materials as a 2D array, one layer per `MATERIAL_FILES` entry read from
 /// `<dir>/<name>.png`, each with its own mips down to one texel. They repeat in both axes.
-pub fn material_array(dir: &str, anisotropy: u16) -> Image {
+pub(crate) fn material_array(dir: &str, anisotropy: u16) -> Image {
     let levels = MATERIAL_SIZE.ilog2() + 1;
     let mut data = Vec::new();
     for name in MATERIAL_FILES {
@@ -323,7 +323,7 @@ fn specialize_shadow(descriptor: &mut RenderPipelineDescriptor, non_cutout: bool
 
 /// The materials terrain draws with, before any fading.
 #[derive(Clone, Default, Resource)]
-pub struct TerrainMaterials {
+pub(crate) struct TerrainMaterials {
     pub chunk: Handle<ChunkMaterial>,
     pub solid_chunk: Handle<ChunkMaterial>,
     pub water: Handle<WaterMaterial>,
@@ -399,9 +399,33 @@ pub struct CloudLayer {
     pub weather: Handle<ShaderBuffer>,
 }
 
+impl CloudLayer {
+    /// A layer with no clouds, for the shaders to sample where nothing draws any.
+    pub fn clear(images: &mut Assets<Image>, buffers: &mut Assets<ShaderBuffer>) -> Self {
+        let black = Image::new_fill(
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            &[0; 4],
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        Self {
+            pattern: images.add(black.clone()),
+            layer: Vec4::new(1000.0, 1000.0, 0.0, 0.0),
+            target: images.add(black.clone()),
+            reflection: images.add(black),
+            weather: buffers.add(ShaderBuffer::new(vec![0.0f32; 8], RenderAssetUsages::default())),
+        }
+    }
+}
+
 /// What the terrain's shaders sample that other systems own. The default is blank, for a headless run.
 #[derive(Clone, Default)]
-pub struct ShaderInputs {
+pub(crate) struct ShaderInputs {
     pub atlas: Option<Handle<Image>>,
     /// The painted materials, see `material_array`.
     pub materials: Option<Handle<Image>>,
@@ -410,7 +434,7 @@ pub struct ShaderInputs {
 }
 
 #[derive(SystemParam)]
-pub struct TerrainAssets<'w> {
+pub(crate) struct TerrainAssets<'w> {
     pub chunk: ResMut<'w, Assets<ChunkMaterial>>,
     pub water: ResMut<'w, Assets<WaterMaterial>>,
     pub spray: ResMut<'w, Assets<SprayMaterial>>,

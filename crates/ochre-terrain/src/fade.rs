@@ -19,7 +19,7 @@ use super::material::{ChunkMaterial, TerrainMaterials, WaterMaterial};
 const FADE_STEPS: usize = 64;
 
 /// The dither window that draws every pixel.
-pub const FULLY_VISIBLE: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
+pub(crate) const FULLY_VISIBLE: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
 
 // A mesh fading out is drawn this fraction farther than it is, so the one replacing it wins where
 // their surfaces coincide, as a LOD node's skirts and flat ground do with full detail.
@@ -63,7 +63,7 @@ fn fade_step(progress: f32, out: bool) -> Option<usize> {
 }
 
 #[derive(Resource)]
-pub struct FadeMaterials {
+pub(crate) struct FadeMaterials {
     seconds: f32,
     chunk: Handle<ChunkMaterial>,
     solid_chunk: Handle<ChunkMaterial>,
@@ -158,10 +158,10 @@ impl FadeMaterials {
 
 /// On a water mesh drawn with the solid material.
 #[derive(Component)]
-pub struct SolidWater;
+pub(crate) struct SolidWater;
 
 #[derive(Component)]
-pub struct Fade {
+pub(crate) struct Fade {
     start: f32,
     out: bool,
     despawn: bool,
@@ -170,7 +170,7 @@ pub struct Fade {
 /// Fades `entity` in or out unless it's already shown or hidden as asked. The two are staggered,
 /// see `FADE_IN_SHARE`, so a mesh and the one replacing it, set going together, never both leave
 /// a pixel undrawn.
-pub fn set_shown(
+pub(crate) fn set_shown(
     commands: &mut Commands,
     entity: Entity,
     visibility: &mut Visibility,
@@ -204,7 +204,7 @@ pub fn set_shown(
     }
 }
 
-pub fn fade_out_and_despawn(commands: &mut Commands, entity: Entity, visible: bool, now: f32) {
+pub(crate) fn fade_out_and_despawn(commands: &mut Commands, entity: Entity, visible: bool, now: f32) {
     if visible {
         commands.entity(entity).insert(Fade {
             start: now,

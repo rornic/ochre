@@ -311,7 +311,7 @@ impl<K: Hash + Eq, V> Recent<K, V> {
 
 /// Coarse LOD nodes' grids, shared by each column's stacked nodes, and their height ranges, and
 /// full-detail chunks' columns, shared by each column's stacked chunks.
-pub struct ColumnCache {
+pub(crate) struct ColumnCache {
     grids: Recent<ColumnKey, ColumnGrid>,
     ranges: RwLock<HashMap<ColumnKey, (f32, f32)>>,
     chunk_columns: Recent<(i64, i64), ChunkColumns>,

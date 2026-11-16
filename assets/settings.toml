@@ -4,16 +4,21 @@ full_detail_distance = 12
 lod_level_scale = 2
 lod_base_distance = 16
 lod_fade_seconds = 1.5
-shadow_distance = 64
-frost = true
-# Light shafts from a low sun, which cost frame time.
-godrays = true
-shadow_cascades = 3
-# low, medium, high or ultra; the cloud target height follows the window's aspect ratio.
-cloud_resolution = "medium"
 # Blocks before a painted material repeats (a power of two up to 64), and its anisotropic filtering taps (1 to 16).
 material_period = 8
 material_anisotropy = 8
+
+[sky]
+# How far the sun casts shadows, in chunks, and in how many slices.
+shadow_distance = 64
+shadow_cascades = 3
+# low, medium, high or ultra; the cloud target height follows the window's aspect ratio.
+cloud_resolution = "medium"
+
+[plugins]
+frost = true
+# Light shafts from a low sun, which cost frame time.
+godrays = true
 
 [debug]
 still_leaves = false

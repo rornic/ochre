@@ -4,13 +4,13 @@ use ochre_base::biome::BiomeId;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_base::terrain_source::{SpringPart, WaterKind};
 
-pub const REGION_SIZE: i64 = 256;
+pub(crate) const REGION_SIZE: i64 = 256;
 // Regions keep the lowest and highest column in each tile this many blocks across.
 const TILE_SIZE: i64 = 16;
 const TILES: i64 = REGION_SIZE / TILE_SIZE;
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct RegionCoord(pub I64Vec2);
+pub(crate) struct RegionCoord(pub I64Vec2);
 
 impl RegionCoord {
     pub fn from_world(world_x: i64, world_z: i64) -> Self {
@@ -26,7 +26,7 @@ impl RegionCoord {
 }
 
 // One region's column heights and biomes, REGION_SIZE x REGION_SIZE, row-major [z][x].
-pub struct Region {
+pub(crate) struct Region {
     heights: Vec<f32>,
     biomes: Vec<BiomeId>,
     // tree density, 0..1 as 0..=255
@@ -95,7 +95,7 @@ impl Region {
 }
 
 // Samples REGION_SIZE^2 columns of noise, so only call from a task.
-pub fn compute_region(noise: &dyn TerrainSource, coord: RegionCoord) -> Region {
+pub(crate) fn compute_region(noise: &dyn TerrainSource, coord: RegionCoord) -> Region {
     let origin = coord.origin();
     let mut heights = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);
     let mut biomes = Vec::with_capacity((REGION_SIZE * REGION_SIZE) as usize);

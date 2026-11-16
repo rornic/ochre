@@ -14,7 +14,7 @@ cargo clippy --workspace --all-targets
 
 Always `--release`: debug generation is unusably slow. Run from the repo root, since assets and shaders load by relative path. Rust 1.97.1+ (Bevy 0.20), plus `libudev-dev` and `pkg-config` on Linux. Wayland is deliberately off (X11 only).
 
-Env vars: `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLYTHROUGH`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
+Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
 
 ## Crates
 
@@ -31,7 +31,13 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 
 ## Assembling a game
 
-`examples/sandbox.rs` is the reference. Plugins: `TerrainPlugin` (loading, headless-safe), `TerrainRenderPlugin` (materials, curvature, mesh buffers, needs a GPU), `SkyPlugin` (clock, sun, moon, atmosphere, clouds, weather), `PlayerPlugin`, plus `AmbiencePlugin`, `MusicPlugin` (needs `AmbiencePlugin`), `CritterPlugin`, `BirdPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`. A Startup system then calls `ochre_world::load_world`, `spawn_player` and `insert_terrain_resources` (fed a `ShaderInputs`; the default is blank, which is what the headless `flight` and `lod_sim` use).
+`examples/sandbox.rs` is the reference: `DefaultPlugins` (with `task_pool_plugin()`), then `OchrePlugins::new(settings, ochre_engine::load_world(&settings))`. `OchrePlugins` is a Bevy `PluginGroup`, so `.disable::<CloudPlugin>()` and `.set(PlayerPlugin { .. })` work as on `DefaultPlugins`. Build the world before the window, since it takes seconds. The plugins:
+
+- `TerrainPlugin` owns the `World`, the loaders and the materials, headless-safe. `TerrainRenderPlugin` (needs a GPU) adds the material plugins, textures and mesh buffers. `CurvaturePlugin` and `FrostPlugin` are separate.
+- `SkyPlugin` (clock, sun, moon, atmosphere), `NightSkyPlugin`, `SunGlarePlugin`, `CloudPlugin`, `WeatherPlugin`, `GodrayPlugin` (equips the camera itself).
+- `PlayerPlugin` (spawns the player and camera), `FootstepPlugin`, `BreakingPlugin`, `CritterPlugin`, `BirdPlugin`, `AmbiencePlugin`, `MusicPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`.
+
+Every plugin but the terrain's can be left out: one that reads another's resource makes a blank of its own (`init_resource`), and `tests/plugin_subsets.rs` runs each combination headless. The plugins assume exactly one `Camera3d` (the loaders and sky systems follow it), so a game without `PlayerPlugin` spawns its own. A headless run (`flight`, `lod_sim`) uses `MinimalPlugins`, `AssetPlugin`, `TerrainPlugin::new(world, renderer, debug)` and registers the `Mesh`, `Image` and material assets with `init_asset`.
 
 ## Where things are
 
@@ -43,7 +49,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 - What the world is made of and why: `docs/world-plan.md` (scope, gates, open defects, glossary), `docs/landforms.md` (the landforms and relief features), `docs/climate.md` (climate, biomes, transitions, trees), `docs/terrain-glossary.md` (what each landform and feature is). A seed draws its own plates, relief, warmth, wind, humidity and landform counts (`worldmap/character.rs`); `OCHRE_CHARACTER=off` keeps the config as given.
 - Weather: a pure function of seed, place and game tick in `ochre-world/src/storms.rs`, read by `weather.rs` at the camera and by the clouds through a grid round it: `docs/designs/weather.md`.
 - Shaders: `assets/shaders/`. The lighting is `painterly.wesl` plus the haze, grade and AO that go with it: `docs/designs/painterly-lighting.md`. Block textures: `assets/textures/blocks.png` (a 16px atlas that only water still draws from) and the painted materials in `assets/textures/materials/` (one 512px PNG per material, RGBA for leaves and flora, see `docs/materials.md`), both built by the `block-textures` skill.
-- Examples double as tools: `worldprobe` (CLI probe of a spot, plus `edges`, `features` and `sites`), `world_map` (PNG), `water_audit`, `seams`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report), `weather_map` (rain per biome and maps of a seed's storms).
+- Examples double as tools: `worldprobe` (CLI probe of a spot, plus `edges`, `features` and `sites`), `water_audit`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report), `weather_map` (rain per biome and maps of a seed's storms).
 
 ## Conventions
 

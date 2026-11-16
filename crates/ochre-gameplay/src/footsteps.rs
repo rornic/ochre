@@ -15,7 +15,7 @@ use bevy::{
 };
 use ochre_base::block::BlockType;
 use ochre_terrain::{
-    frost::{frost_cover, FrostSwitch},
+    frost::{frost_cover, FrostOn},
     world::World,
 };
 
@@ -86,7 +86,7 @@ impl Surface {
 
 /// A foot comes down on `surface`.
 #[derive(Message)]
-pub struct Footstep {
+pub(crate) struct Footstep {
     pub surface: Surface,
     // how hard it lands, 1 for a walking step
     pub loudness: f32,
@@ -96,7 +96,7 @@ pub struct Footstep {
 const VARIANTS: usize = 4;
 // Volume of a walking step before its jitter, and how much louder a sprinting one is. The clips are levelled to -28 LUFS (grass -34), so this plays a step at -52 (grass -58).
 const VOLUME: f32 = 0.06;
-pub const SPRINT_LOUDER: f32 = 1.25;
+pub(crate) const SPRINT_LOUDER: f32 = 1.25;
 const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
 // Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.
@@ -134,18 +134,23 @@ fn load_footsteps(mut commands: Commands, assets: Res<AssetServer>) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The clip variants last played, so none plays twice running.
+#[derive(Default)]
+struct Recent {
+    step: usize,
+    rustle: usize,
+}
+
 fn play_footsteps(
     mut commands: Commands,
     mut steps: MessageReader<Footstep>,
     clips: Res<Footsteps>,
     world: Res<World>,
-    frost: Option<Res<FrostSwitch>>,
+    frost: Option<Res<FrostOn>>,
     player: Query<&Transform, With<Player>>,
-    mut last: Local<usize>,
-    mut last_rustle: Local<usize>,
+    mut recent: Local<Recent>,
 ) {
-    let frost_on = frost.is_some_and(|frost| frost.0);
+    let frost_on = frost.is_some();
     for step in steps.read() {
         let feet = player.single().ok().map(|player| player.translation);
         let icy = frost_on
@@ -153,9 +158,9 @@ fn play_footsteps(
             && feet.is_some_and(|feet| frost_cover(&world, feet) >= ICY_FROST);
         let surface = if icy { Surface::Ice } else { step.surface };
         // never the clip just played, which sounds like a stutter
-        *last = (*last + 1 + rand::random_range(0..VARIANTS - 1)) % VARIANTS;
+        recent.step = (recent.step + 1 + rand::random_range(0..VARIANTS - 1)) % VARIANTS;
         commands.spawn((
-            AudioPlayer(clips.steps[surface as usize][*last].clone()),
+            AudioPlayer(clips.steps[surface as usize][recent.step].clone()),
             PlaybackSettings {
                 volume: Volume::Linear(
                     VOLUME * step.loudness * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
@@ -165,9 +170,9 @@ fn play_footsteps(
             },
         ));
         if feet.is_some_and(|feet| Surface::in_flora(&world, feet)) {
-            *last_rustle = (*last_rustle + 1 + rand::random_range(0..RUSTLES - 1)) % RUSTLES;
+            recent.rustle = (recent.rustle + 1 + rand::random_range(0..RUSTLES - 1)) % RUSTLES;
             commands.spawn((
-                AudioPlayer(clips.rustles[*last_rustle].clone()),
+                AudioPlayer(clips.rustles[recent.rustle].clone()),
                 PlaybackSettings {
                     volume: Volume::Linear(
                         RUSTLE_VOLUME

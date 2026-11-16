@@ -17,18 +17,17 @@ use bevy::light::{
 };
 use bevy::mesh::{Indices, VertexAttributeValues};
 use bevy::pbr::MeshMaterial3d;
+mod common;
+
 use bevy::prelude::*;
 use bevy::shape::ViewFrustum;
 use ochre_base::block::Tile;
-use ochre_engine::settings::{DebugSettings, RendererSettings, Settings};
+use ochre_engine::settings::Settings;
 use ochre_terrain::chunk_loader::{GenerateChunkData, GenerateChunkMesh};
 use ochre_terrain::group::ChunkGroup;
 use ochre_terrain::lod::{GenerateLodMesh, LodNode};
-use ochre_terrain::material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
-};
-use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::worldmap::WorldConfig;
+use ochre_terrain::material::ChunkMaterial;
+use ochre_terrain::world::World;
 
 // The game's camera, see `spawn_player`.
 const FOV_DEGREES: f32 = 90.0;
@@ -42,16 +41,8 @@ const LEVELS: usize = 8;
 #[derive(Component)]
 struct SimCamera;
 
-#[derive(Resource)]
-struct Renderer(RendererSettings, WorldConfig);
-
-fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAssets) {
-    let world_config = renderer.1;
-    let renderer = &renderer.0;
-    let world = ochre_world::load_world(renderer.lod_layout().region_reach() as u32, world_config);
+fn setup(mut commands: Commands, world: Res<World>) {
     let spawn = world.spawn();
-    let height = world.bounds;
-    commands.insert_resource(world);
     // the loaders follow a camera under the player
     let player = commands.spawn(Transform::from_translation(spawn)).id();
     let camera = commands
@@ -62,14 +53,6 @@ fn setup(mut commands: Commands, renderer: Res<Renderer>, mut assets: TerrainAss
         ))
         .id();
     commands.entity(player).add_children(&[camera]);
-    insert_terrain_resources(
-        &mut commands,
-        renderer,
-        DebugSettings::default(),
-        height,
-        &ShaderInputs::default(),
-        &mut assets,
-    );
 }
 
 // A terrain mesh that could be drawn: where it is and what it costs.
@@ -212,35 +195,25 @@ fn classes(tally: &Tally) -> String {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("failed to read settings");
-    let (renderer, world) = (settings.renderer, settings.world);
+    let dev = ochre_engine::DevEnv::from_env();
+    let renderer = settings.renderer;
     let args: Vec<String> = std::env::args().collect();
     let shadow_distance: f32 = args.get(1).map_or(
-        (renderer.shadow_distance as f32 * 16.0).min(renderer.fog_distance()),
+        (settings.sky.shadow_distance as f32 * 16.0).min(renderer.fog_distance()),
         |s| s.parse().unwrap(),
     );
     let cascades: usize = args
         .get(2)
-        .map_or(renderer.shadow_cascades, |s| s.parse().unwrap());
+        .map_or(settings.sky.shadow_cascades, |s| s.parse().unwrap());
     let pitch: f32 = args.get(3).map_or(0.0, |s| s.parse().unwrap());
     let far = renderer.fog_distance();
 
     // the leaves are found by vertex colours, which packing turns to half-floats
     ochre_terrain::pack::set_packed(false);
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins.set(task_pool_plugin()),
-        AssetPlugin::default(),
-        TransformPlugin,
-        TerrainPlugin,
-    ))
-    .insert_resource(Renderer(renderer, world))
-    .init_resource::<DirectionalLightShadowMap>()
-    .init_asset::<Mesh>()
-    .init_asset::<Image>()
-    .init_asset::<ChunkMaterial>()
-    .init_asset::<WaterMaterial>()
-    .init_asset::<SprayMaterial>()
-    .add_systems(Startup, setup);
+    let mut app = common::headless_app(&settings, &dev);
+    app.add_plugins(TransformPlugin)
+        .init_resource::<DirectionalLightShadowMap>();
+    app.add_systems(Startup, setup);
     app.update();
 
     // let the start area load: nothing left to build for a few seconds running

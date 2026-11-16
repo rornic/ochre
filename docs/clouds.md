@@ -1,9 +1,9 @@
 # Cloud resolution
 
-Set `cloud_resolution` in the `[renderer]` section of `assets/settings.toml`:
+Set `cloud_resolution` in the `[sky]` section of `assets/settings.toml`:
 
 ```toml
-[renderer]
+[sky]
 cloud_resolution = "medium"
 ```
 

@@ -71,9 +71,9 @@ impl TreeGround for HeightSampler<'_> {
 // Trees stand on a grid of cells this many blocks across, at most one somewhere in each cell.
 const CELL: i64 = 10;
 /// How far out from its trunk any tree reaches.
-pub const TREE_REACH: i64 = 14;
+pub(crate) const TREE_REACH: i64 = 14;
 /// How far above its ground any tree reaches.
-pub const TREE_HEIGHT: i64 = 48;
+pub(crate) const TREE_HEIGHT: i64 = 48;
 // An emergent giant is this many times as tall and as wide in the crown as the biome's trees.
 const GIANT_HEIGHT: f64 = 2.3;
 const GIANT_SPREAD: f64 = 1.35;
@@ -104,7 +104,7 @@ const COVERAGE_CELL: i64 = 4;
 const COVERAGE_POINTS: usize = 7;
 /// Cells this wide or wider leave out the trunk, which would stand a pillar far thicker than it
 /// is. Meshing draws it as a thin box instead, see `generator::TreeBox`.
-pub const THIN_TRUNK_CELL: i64 = 4;
+pub(crate) const THIN_TRUNK_CELL: i64 = 4;
 // How far in leaves are nibbled from the edge of a crown.
 const NIBBLE: f64 = 0.9;
 // How far each tree's leaves stray from the grass's tint, so a forest isn't one flat green:
@@ -621,7 +621,7 @@ impl Tree {
 }
 
 /// How far a trunk's top may lean from its foot, in blocks, which the drawn trunk keeps within.
-pub const MAX_LEAN: f32 = 0.5;
+pub(crate) const MAX_LEAN: f32 = 0.5;
 
 /// What the mesher knows of the tree a voxel belongs to, found by which trunk is nearest across.
 #[derive(Debug, Clone, Copy)]
@@ -794,7 +794,7 @@ impl TreeTints {
 }
 
 // Whether a tree's `block` may go where `existing` is: into air, and logs through leaves.
-pub fn grows_into(existing: BlockType, block: BlockType) -> bool {
+pub(crate) fn grows_into(existing: BlockType, block: BlockType) -> bool {
     existing == BlockType::Air || (existing == BlockType::Leaves && block == BlockType::Log)
 }
 

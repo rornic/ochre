@@ -27,13 +27,12 @@ use bevy::{
 
 use std::f32::consts::{PI, TAU};
 
-use crate::clouds::CloudPlugin;
-use crate::godrays::{shining, GodrayPlugin};
-use crate::sky_dome::{NightSkyPlugin, SunGlarePlugin};
-use crate::weather::WeatherPlugin;
+use crate::godrays::shining;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
-use ochre_terrain::settings::{CloudResolution, RendererSettings};
+use crate::clouds::CloudResolution;
+use ochre_terrain::settings::RendererSettings;
+use serde::Deserialize;
 
 /// How opaque fog gets at its far end.
 pub const FOG_MAX_OPACITY: f32 = 0.8;
@@ -41,9 +40,9 @@ pub const FOG_MAX_OPACITY: f32 = 0.8;
 /// Where the sun is at noon: its path across the sky is the great circle through this and the horizon, see `path_basis`.
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.45, 0.8, 0.4);
 /// Seconds in a full day/night cycle: six hours, giving three hours of daylight.
-pub const DAY_SECONDS: f32 = 21_600.0;
+pub(crate) const DAY_SECONDS: f32 = 21_600.0;
 /// The clock counts whole ticks, so it stays exact however long the game runs.
-pub const TICKS_PER_SECOND: u64 = 20;
+pub(crate) const TICKS_PER_SECOND: u64 = 20;
 pub const DAY_TICKS: u64 = DAY_SECONDS as u64 * TICKS_PER_SECOND;
 /// Days of the clock the world starts at: 0 is midnight, 0.5 is noon.
 pub const START_TIME: f32 = 0.4;
@@ -74,12 +73,12 @@ const MOON_BOOST: f32 = 400.0;
 const MOON_BRIGHTNESS: f32 = 0.1;
 
 /// The sun's illuminance in clear air, which a storm dims, see `weather.rs`.
-pub fn sun_illuminance() -> f32 {
+pub(crate) fn sun_illuminance() -> f32 {
     SUN_BRIGHTNESS * SKY_GAIN / camera_exposure().exposure()
 }
 
 /// The moon's illuminance in clear air, see `sun_illuminance`.
-pub fn moon_illuminance() -> f32 {
+pub(crate) fn moon_illuminance() -> f32 {
     MOON_BRIGHTNESS * SKY_GAIN / MOON_BOOST / camera_exposure().exposure()
 }
 
@@ -117,7 +116,7 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
 
 /// On the sun, see `move_sky`.
 #[derive(Component)]
-pub struct Sun;
+pub(crate) struct Sun;
 
 /// Which way the sun casts its shadows: turned in steps, see `aim_sun_shadows`.
 #[derive(Component)]
@@ -129,10 +128,10 @@ const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
 /// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun, matching `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl`.
 #[derive(Component)]
-pub struct Moon;
+pub(crate) struct Moon;
 
 /// The moon, too faint to light the sky with the atmosphere but not the land, see `MOON_BOOST`.
-pub fn moon() -> impl Bundle {
+pub(crate) fn moon() -> impl Bundle {
     (
         DirectionalLight {
             color: MOON_COLOR,
@@ -148,6 +147,12 @@ pub fn moon() -> impl Bundle {
 /// The time in ticks since midnight of day 0, see `DAY_TICKS` and `START_TIME`.
 #[derive(Resource)]
 pub struct TimeOfDay(pub u64);
+
+impl Default for TimeOfDay {
+    fn default() -> Self {
+        Self::from_days(START_TIME)
+    }
+}
 
 impl TimeOfDay {
     pub fn from_days(days: f32) -> Self {
@@ -179,7 +184,7 @@ fn on_path(angle: f32) -> Vec3 {
 }
 
 /// Toward the sun `time` of the way through the day.
-pub fn sun_direction(time: f32) -> Vec3 {
+pub(crate) fn sun_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time))
 }
 
@@ -188,22 +193,10 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time) + PI + MOON_LAG)
 }
 
-/// How many game seconds pass each real second, 1 normally: `OCHRE_TIMESCALE` speeds the day
-/// up, to watch the weather come and go as a timelapse.
+/// How many game seconds pass each real second, 1 normally. A bigger one speeds the day up, to watch the weather
+/// come and go as a timelapse.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
-pub struct TimeScale(pub f32);
-
-impl TimeScale {
-    fn from_env() -> Self {
-        Self(
-            std::env::var("OCHRE_TIMESCALE")
-                .ok()
-                .and_then(|s| s.parse::<f32>().ok())
-                .filter(|s| s.is_finite() && *s >= 0.0)
-                .unwrap_or(1.0),
-        )
-    }
-}
+pub(crate) struct TimeScale(pub f32);
 
 /// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
 /// the sky, fog and light all follow them.
@@ -259,7 +252,7 @@ fn shining_from(direction: Vec3) -> Transform {
     Transform::default().looking_to(-direction, Vec3::Y)
 }
 
-pub fn camera_exposure() -> Exposure {
+pub(crate) fn camera_exposure() -> Exposure {
     Exposure {
         ev100: CAMERA_EV100,
     }
@@ -325,57 +318,67 @@ fn match_sky_horizon(
     ));
 }
 
-/// Everything overhead: the clock, sun, moon and atmosphere, the night sky and sun's glare, clouds
-/// and weather. `OCHRE_TIME` starts the clock at that time of day, in days, for looking at the sky
-/// at any hour, and `OCHRE_TIMESCALE` runs it that many times faster, see `TimeScale`.
-pub struct SkyPlugin {
-    /// How far the sun casts shadows, in blocks, and in how many slices.
-    pub shadow_distance: f32,
+/// What `[sky]` in `settings.toml` sets.
+#[derive(Resource, Deserialize, Clone, Copy)]
+#[serde(default)]
+pub struct SkySettings {
+    /// How far the sun casts shadows, in chunks, or as far as the land is drawn if that's nearer.
+    pub shadow_distance: u32,
+    /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
+    /// Cloud march resolution preset. Height follows the window's aspect ratio.
     pub cloud_resolution: CloudResolution,
-    /// Light shafts through the air, see `godrays.rs`.
-    pub godrays: bool,
 }
 
-impl SkyPlugin {
-    pub fn new(renderer: &RendererSettings) -> Self {
+impl Default for SkySettings {
+    fn default() -> Self {
         Self {
-            shadow_distance: (renderer.shadow_distance as f32 * CHUNK_SIZE as f32)
-                .min(renderer.fog_distance()),
-            shadow_cascades: renderer.shadow_cascades,
-            cloud_resolution: renderer.cloud_resolution,
-            godrays: renderer.godrays,
+            shadow_distance: 64,
+            shadow_cascades: 3,
+            cloud_resolution: CloudResolution::default(),
         }
     }
 }
 
+/// The clock, sun, moon and atmosphere. The night sky, clouds, weather and light shafts are plugins of their own.
+pub struct SkyPlugin {
+    pub settings: SkySettings,
+    /// What time of day the clock starts at, in days, see `TimeOfDay`.
+    pub start: f32,
+    /// How many game seconds pass each real second, see `TimeScale`.
+    pub time_scale: f32,
+}
+
+impl SkyPlugin {
+    pub fn new(settings: SkySettings) -> Self {
+        Self {
+            settings,
+            start: START_TIME,
+            time_scale: 1.0,
+        }
+    }
+}
+
+// The sun and moon, the sun's shadows reaching as far as the land is drawn at most.
+fn spawn_sun_and_moon(
+    mut commands: Commands,
+    sky: Res<SkySettings>,
+    renderer: Option<Res<RendererSettings>>,
+) {
+    let fog = renderer.map_or(f32::MAX, |renderer| renderer.fog_distance());
+    let distance = (sky.shadow_distance as f32 * CHUNK_SIZE as f32).min(fog);
+    // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
+    commands.spawn((sun(distance, sky.shadow_cascades), shining()));
+    commands.spawn(moon());
+}
+
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        let start = std::env::var("OCHRE_TIME")
-            .ok()
-            .and_then(|time| time.parse().ok())
-            .unwrap_or(START_TIME);
-        let (distance, cascades, godrays) =
-            (self.shadow_distance, self.shadow_cascades, self.godrays);
-        app.add_plugins((
-            NightSkyPlugin,
-            SunGlarePlugin,
-            CloudPlugin {
-                resolution: self.cloud_resolution,
-            },
-            WeatherPlugin,
-        ))
-        .insert_resource(TimeOfDay::from_days(start))
-        .insert_resource(TimeScale::from_env())
-        .add_systems(
-            Startup,
-            (spawn_atmosphere, move |mut commands: Commands| {
-                // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
-                commands.spawn((sun(distance, cascades), shining()));
-                commands.spawn(moon());
-            }),
-        )
-        .add_systems(Update, move_sky)
+        app.insert_resource(self.settings)
+            .insert_resource(TimeOfDay::from_days(self.start))
+            .insert_resource(TimeScale(self.time_scale))
+            .add_systems(Startup, (spawn_atmosphere, spawn_sun_and_moon))
+            .add_systems(Update, move_sky)
         // once the camera's moved, see `TransformSystems::Propagate`
         .add_systems(
             PostUpdate,
@@ -387,9 +390,6 @@ impl Plugin for SkyPlugin {
                 aim_sun_light.after(SimulationLightSystems::UpdateDirectionalLightCascades),
             ),
         );
-        if godrays {
-            app.add_plugins(GodrayPlugin);
-        }
     }
 }
 
