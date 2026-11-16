@@ -15,7 +15,7 @@ use ochre_base::{block::BlockType, math::ease};
 use ochre_terrain::world::World;
 use ochre_world::{
     sky::{daylight, TimeOfDay},
-    weather::Weather,
+    weather::SkyNow,
 };
 
 pub struct CritterPlugin;
@@ -225,13 +225,11 @@ fn is_meadow(block: BlockType) -> bool {
     block == BlockType::Grass || block.is_flora()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_critters(
     mut commands: Commands,
     assets: Option<Res<CritterAssets>>,
     world: Res<World>,
-    clock: Res<TimeOfDay>,
-    weather: Option<Res<Weather>>,
+    sky: SkyNow,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut critters: Query<(Entity, &mut Critter, &Transform, Has<Butterfly>)>,
 ) {
@@ -240,10 +238,10 @@ fn spawn_critters(
     };
     let eye = camera.translation();
     let ahead = Some(camera.forward().with_y(0.0));
-    let day = daylight(&clock);
+    let day = daylight(&sky.clock);
     // nothing's out in the rain
     let sheltering = world.get_block_at(eye.floor().as_i64vec3()) == BlockType::Water
-        || weather.is_some_and(|weather| weather.sheltering());
+        || sky.weather.is_some_and(|weather| weather.sheltering());
     let (mut butterflies, mut fireflies) = (0, 0);
     for (entity, mut critter, transform, is_butterfly) in &mut critters {
         let wrong_time = if is_butterfly {

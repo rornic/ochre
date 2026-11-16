@@ -127,7 +127,13 @@ pub(crate) const AMBIENCE_TRIM: f32 = 0.32;
 // The temperatures, see `NoiseGenerator::temperature`, between which the cold sets in.
 const FREEZING: (f32, f32) = (0.15, 0.35);
 
-#[allow(clippy::too_many_arguments)]
+/// When the camera was last sensed, and where it was, for its speed.
+#[derive(Default)]
+struct Sensed {
+    since: f32,
+    last: Option<Vec3>,
+}
+
 fn sense_surroundings(
     time: Res<Time>,
     world: Res<World>,
@@ -135,22 +141,21 @@ fn sense_surroundings(
     dials: Res<WindDials>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut around: ResMut<Surroundings>,
-    mut since: Local<f32>,
-    mut last: Local<Option<Vec3>>,
+    mut sensed: Local<Sensed>,
 ) {
     let Ok(camera) = camera.single() else {
         return;
     };
-    *since += time.delta_secs();
-    if last.is_some() && *since < SENSE_SECONDS {
+    sensed.since += time.delta_secs();
+    if sensed.last.is_some() && sensed.since < SENSE_SECONDS {
         return;
     }
     let eye = camera.translation();
-    let speed = match last.replace(eye) {
-        Some(last) if *since > 0.0 => last.distance(eye) / *since,
+    let speed = match sensed.last.replace(eye) {
+        Some(last) if sensed.since > 0.0 => last.distance(eye) / sensed.since,
         _ => 0.0,
     };
-    *since = 0.0;
+    sensed.since = 0.0;
 
     let store = &world.region_store;
     let noise = store.terrain();

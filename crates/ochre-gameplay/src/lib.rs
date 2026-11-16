@@ -9,4 +9,5 @@ pub mod debug;
 pub mod flythrough;
 pub mod footsteps;
 pub mod player;
+mod view;
 mod wings;

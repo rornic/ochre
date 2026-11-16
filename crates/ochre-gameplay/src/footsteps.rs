@@ -134,7 +134,13 @@ fn load_footsteps(mut commands: Commands, assets: Res<AssetServer>) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The clip variants last played, so none plays twice running.
+#[derive(Default)]
+struct Recent {
+    step: usize,
+    rustle: usize,
+}
+
 fn play_footsteps(
     mut commands: Commands,
     mut steps: MessageReader<Footstep>,
@@ -142,8 +148,7 @@ fn play_footsteps(
     world: Res<World>,
     frost: Option<Res<FrostOn>>,
     player: Query<&Transform, With<Player>>,
-    mut last: Local<usize>,
-    mut last_rustle: Local<usize>,
+    mut recent: Local<Recent>,
 ) {
     let frost_on = frost.is_some();
     for step in steps.read() {
@@ -153,9 +158,9 @@ fn play_footsteps(
             && feet.is_some_and(|feet| frost_cover(&world, feet) >= ICY_FROST);
         let surface = if icy { Surface::Ice } else { step.surface };
         // never the clip just played, which sounds like a stutter
-        *last = (*last + 1 + rand::random_range(0..VARIANTS - 1)) % VARIANTS;
+        recent.step = (recent.step + 1 + rand::random_range(0..VARIANTS - 1)) % VARIANTS;
         commands.spawn((
-            AudioPlayer(clips.steps[surface as usize][*last].clone()),
+            AudioPlayer(clips.steps[surface as usize][recent.step].clone()),
             PlaybackSettings {
                 volume: Volume::Linear(
                     VOLUME * step.loudness * rand::random_range(VOLUME_JITTER.0..VOLUME_JITTER.1),
@@ -165,9 +170,9 @@ fn play_footsteps(
             },
         ));
         if feet.is_some_and(|feet| Surface::in_flora(&world, feet)) {
-            *last_rustle = (*last_rustle + 1 + rand::random_range(0..RUSTLES - 1)) % RUSTLES;
+            recent.rustle = (recent.rustle + 1 + rand::random_range(0..RUSTLES - 1)) % RUSTLES;
             commands.spawn((
-                AudioPlayer(clips.rustles[*last_rustle].clone()),
+                AudioPlayer(clips.rustles[recent.rustle].clone()),
                 PlaybackSettings {
                     volume: Volume::Linear(
                         RUSTLE_VOLUME

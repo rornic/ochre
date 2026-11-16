@@ -9,7 +9,7 @@ use ochre_base::{math::ease, WATER_LEVEL};
 use ochre_terrain::world::World;
 use ochre_world::{
     sky::{daylight, TimeOfDay},
-    weather::Weather,
+    weather::SkyNow,
 };
 
 pub struct BirdPlugin;
@@ -114,17 +114,15 @@ fn swept_wing(span: f32, chord: f32) -> Mesh {
     ])
 }
 
-fn birds_about(clock: &TimeOfDay, weather: Option<&Weather>) -> bool {
-    daylight(clock) >= BIRD_DAY && weather.is_none_or(|weather| !weather.sheltering())
+fn birds_about(sky: &SkyNow) -> bool {
+    daylight(&sky.clock) >= BIRD_DAY && sky.weather.as_ref().is_none_or(|weather| !weather.sheltering())
 }
 
 // The flock gathers round the camera by day and leaves at dusk or in the rain.
-#[allow(clippy::too_many_arguments)]
 fn gather_flock(
     mut commands: Commands,
     time: Res<Time>,
-    clock: Res<TimeOfDay>,
-    weather: Option<Res<Weather>>,
+    sky: SkyNow,
     assets: Option<Res<BirdAssets>>,
     mut murmuration: ResMut<Murmuration>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
@@ -133,7 +131,7 @@ fn gather_flock(
     let (Some(assets), Ok(camera)) = (assets, camera.single()) else {
         return;
     };
-    let about = birds_about(&clock, weather.as_deref());
+    let about = birds_about(&sky);
     murmuration.about = about;
     let step = time.delta_secs() / FADE_SECONDS;
     murmuration.gathered =
@@ -271,12 +269,10 @@ const SKEIN_HEIGHT: f32 = 48.0;
 const GOOSE_SPEED: f32 = 11.0;
 const SKEIN_REACH: f32 = 230.0;
 
-#[allow(clippy::too_many_arguments)]
 fn fly_geese(
     mut commands: Commands,
     time: Res<Time>,
-    clock: Res<TimeOfDay>,
-    weather: Option<Res<Weather>>,
+    sky: SkyNow,
     assets: Option<Res<BirdAssets>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut geese: Query<(Entity, &mut Goose, &mut Transform)>,
@@ -306,7 +302,7 @@ fn fly_geese(
         return;
     }
     *due = t + rand::random_range(SKEIN_SECONDS.0..SKEIN_SECONDS.1);
-    if !birds_about(&clock, weather.as_deref()) {
+    if !birds_about(&sky) {
         return;
     }
     // across the camera's view, passing a little to one side of it

@@ -106,18 +106,28 @@ const FOLLOW_SECONDS: f32 = 4.0;
 // A fading track is dropped once it's this quiet, as a linear volume.
 const SILENT: f32 = 1e-3;
 
-#[allow(clippy::too_many_arguments)]
+/// What a track is picked and paced by.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Context<'w> {
+    around: Res<'w, Surroundings>,
+    first_delay: Res<'w, FirstDelay>,
+    weather: Option<Res<'w, Weather>>,
+}
+
 fn play_music(
     mut commands: Commands,
     time: Res<Time>,
     assets: Res<AssetServer>,
-    around: Res<Surroundings>,
-    first_delay: Res<FirstDelay>,
-    weather: Option<Res<Weather>>,
+    context: Context,
     mut tracks: Query<(Entity, &mut Track, Option<&mut AudioSink>)>,
     mut wait: Local<Option<f32>>,
     mut played: Local<bool>,
 ) {
+    let Context {
+        around,
+        first_delay,
+        weather,
+    } = context;
     let dt = time.delta_secs();
     let mood = Mood::of(
         &around,
