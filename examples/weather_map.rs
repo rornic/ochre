@@ -64,7 +64,7 @@ fn find_snow(
     };
     // the longest run of snowing samples: its length, where, in which biome, and its first tick
     let mut best: Option<(u64, f64, f64, BiomeKind, u64)> = None;
-    for k in (0..GRID * GRID).filter(|k| (k % GRID + k / GRID) % 2 == 0) {
+    for k in (0..GRID * GRID).filter(|k| (k % GRID + k / GRID).is_multiple_of(2)) {
         let x = -half + ((k % GRID) as f64 + 0.5) * cell;
         let z = -half + ((k / GRID) as f64 + 0.5) * cell;
         let biome = biome_at(x, z);
