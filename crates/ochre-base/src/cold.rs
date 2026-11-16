@@ -5,20 +5,20 @@ use crate::math::smoothstep;
 /// Height above the sea where snow starts to settle in a temperate climate (temperature 0.5).
 pub const SNOW_LINE: i64 = 950;
 /// How many blocks the snow line climbs per unit of temperature, which is also how many blocks of height cool the ground by one.
-pub const SNOW_LINE_PER_DEGREE: f64 = 2600.0;
+pub(crate) const SNOW_LINE_PER_DEGREE: f64 = 2600.0;
 /// At or above this temperature it's too hot for snow, and the heights are bare rock.
 pub const SNOW_MAX_TEMPERATURE: f32 = 0.62;
 /// The lowest the snow line gets, so even the coldest lowlands are snow-covered.
-pub const COLDEST_SNOW_LINE: i64 = 10;
+pub(crate) const COLDEST_SNOW_LINE: i64 = 10;
 /// Above this height over the sea the ground is snow-capped in any climate, in the tropics too.
 pub const SNOWCAP_ABOVE: i64 = 1700;
 /// Below this temperature even the grass is under a layer of snow.
 pub const SNOWY_GRASS_TEMPERATURE: f32 = 0.25;
 
 /// What the ground's temperature is at the snow line, in any climate: the line climbs as the climate warms at the rate height cools it.
-pub const SNOW_TEMPERATURE: f32 = 0.5 - SNOW_LINE as f32 / SNOW_LINE_PER_DEGREE as f32;
+pub(crate) const SNOW_TEMPERATURE: f32 = 0.5 - SNOW_LINE as f32 / SNOW_LINE_PER_DEGREE as f32;
 /// How far warmer than snow's the ground's temperature may be and still have frost.
-pub const FROST_BAND: f32 = 0.12;
+pub(crate) const FROST_BAND: f32 = 0.12;
 
 /// Height above the sea where snow starts to settle, lower in the cold.
 pub fn snow_line(temperature: f32) -> i64 {
@@ -26,7 +26,7 @@ pub fn snow_line(temperature: f32) -> i64 {
 }
 
 /// The temperature of ground `above_sea` blocks up where the sea level's is `sea_temperature`.
-pub fn ground_temperature(sea_temperature: f32, above_sea: f32) -> f32 {
+pub(crate) fn ground_temperature(sea_temperature: f32, above_sea: f32) -> f32 {
     sea_temperature - above_sea / SNOW_LINE_PER_DEGREE as f32
 }
 

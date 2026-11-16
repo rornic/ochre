@@ -231,7 +231,7 @@ fn update_overlay(
     diagnostics: Res<DiagnosticsStore>,
     world: Option<Res<World>>,
     player: Query<&GlobalTransform, With<Player>>,
-    camera: Query<&GlobalTransform, (With<Camera3d>, With<ChildOf>)>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
     chunks: Query<(), With<Chunk>>,
     lod_nodes: Query<&LodNode>,
     counts: Res<DrawCounts>,

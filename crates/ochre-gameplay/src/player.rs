@@ -73,7 +73,7 @@ use ochre_world::{
 
 /// The player's body, at its feet, with the camera at its eyes.
 #[derive(Component, Default)]
-pub struct Player {
+pub(crate) struct Player {
     pub movement: Movement,
     velocity: Vec3,
     grounded: bool,
@@ -100,7 +100,7 @@ pub struct Player {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum Movement {
+pub(crate) enum Movement {
     /// Flying anywhere, through anything, the way the camera is facing.
     #[default]
     Fly,
@@ -416,7 +416,7 @@ fn walk(
 }
 
 /// Whether the cursor is held in the window, so the mouse turns the player.
-pub fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> bool {
+pub(crate) fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> bool {
     cursor
         .single()
         .is_ok_and(|cursor| cursor.grab_mode != CursorGrabMode::None)
@@ -424,7 +424,7 @@ pub fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> boo
 
 /// Holds the cursor in the window once it's clicked into, and lets it go on Escape or when the
 /// window loses focus.
-pub fn grab_cursor(
+pub(crate) fn grab_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut windows: Query<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
@@ -472,7 +472,7 @@ fn player_look(
     camera.rotation = Quat::from_rotation_x(shown);
 }
 
-pub struct DryDefaults {
+pub(crate) struct DryDefaults {
     fog: DistanceFog,
     dof: DepthOfField,
     color_grading: ColorGrading,
@@ -494,7 +494,7 @@ const FRESH_FOG_END: f32 = 160.0;
 /// every material's shaders were compiled with, which stalled the first dive recompiling
 /// them all.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct MurkMaterial {
+pub(crate) struct MurkMaterial {
     #[uniform(0)]
     color: LinearRgba,
 }
@@ -525,7 +525,7 @@ impl Material for MurkMaterial {
 }
 
 #[derive(Resource)]
-pub struct Murk(Handle<MurkMaterial>);
+pub(crate) struct Murk(Handle<MurkMaterial>);
 
 /// The murk, hidden, to hang from the camera, and the handle `update_underwater_effects`
 /// shows it by.

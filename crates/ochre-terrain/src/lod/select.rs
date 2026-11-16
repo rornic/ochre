@@ -5,7 +5,7 @@ use bevy::math::I64Vec3;
 use bevy::platform::collections::HashSet;
 
 #[derive(Debug, Copy, Clone)]
-pub struct LodBand {
+pub(crate) struct LodBand {
     pub min_y: i64,
     pub max_y: i64,
 }
@@ -18,13 +18,14 @@ impl LodBand {
 }
 
 /// The LOD nodes to draw around `anchor`, leaving out the area drawn at full detail.
-pub fn select_lods(anchor: ChunkCoordinate, layout: LodLayout, band: LodBand) -> HashSet<LodKey> {
+#[cfg(test)]
+pub(crate) fn select_lods(anchor: ChunkCoordinate, layout: LodLayout, band: LodBand) -> HashSet<LodKey> {
     select_lods_and_stand_ins(anchor, layout, band).0
 }
 
 /// The LOD nodes to draw around `anchor`, and the level-1 nodes covering the full-detail
 /// area, which stand in for its chunks until they're ready.
-pub fn select_lods_and_stand_ins(
+pub(crate) fn select_lods_and_stand_ins(
     anchor: ChunkCoordinate,
     layout: LodLayout,
     band: LodBand,

@@ -99,7 +99,7 @@ const TREELINE: (f64, f64) = (1100.0, 1650.0);
 const DEFAULT_WARMTH: f32 = 0.68;
 
 /// Heights over the sea between which conifers thin to nothing, where the regional warmth is `warmth`.
-pub fn treeline(warmth: f32) -> (f64, f64) {
+pub(crate) fn treeline(warmth: f32) -> (f64, f64) {
     let shift = ((warmth - DEFAULT_WARMTH) / LAPSE_PER_BLOCK) as f64;
     let start = (TREELINE.0 + shift).max(50.0);
     (start, (TREELINE.1 + shift).max(start + 100.0))

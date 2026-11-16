@@ -77,7 +77,7 @@ pub fn river_width(area: f32) -> f32 {
 }
 
 /// Blocks deep, at the middle of a river draining `area` square blocks of land.
-pub fn river_depth(area: f32) -> f32 {
+pub(crate) fn river_depth(area: f32) -> f32 {
     (1.2 + 0.00125 * area.sqrt()).min(MAX_RIVER_DEPTH)
 }
 

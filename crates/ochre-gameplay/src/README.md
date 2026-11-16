@@ -1,7 +1,7 @@
 # ochre-gameplay/src
 
 ## Overview
-What moves through the world (`lib.rs`: module doc): the player and its collision, block picking and breaking, birds and critters, a debug overlay and a scripted flythrough. Every module is `pub` in `lib.rs`. Each is a Bevy `Plugin` or a plain function library over `ochre_terrain::world::World`. `ochre-base`, `ochre-terrain` and `ochre-world` are the only sibling dependencies (`../Cargo.toml`). `examples/sandbox.rs` wires `PlayerPlugin`, `BreakingPlugin`, `FlythroughPlugin`, `DebugOverlayPlugin`, `BirdPlugin`, `CritterPlugin` and calls `spawn_player`.
+What moves through the world (`lib.rs`: module doc): the player and its collision, block picking and breaking, birds and critters, a debug overlay and a scripted flythrough. Every module is `pub` in `lib.rs` except `collision` and `wings`. Each is a Bevy `Plugin` or a plain function library over `ochre_terrain::world::World`. `ochre-base`, `ochre-terrain` and `ochre-world` are the only sibling dependencies (`../Cargo.toml`). `examples/sandbox.rs` wires `PlayerPlugin`, `BreakingPlugin`, `FlythroughPlugin`, `DebugOverlayPlugin`, `BirdPlugin`, `CritterPlugin` and calls `spawn_player`.
 
 ## Interface
 - `player.rs`

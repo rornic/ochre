@@ -41,7 +41,7 @@ impl Plugin for MusicPlugin {
 
 /// What a track is for; the first that holds picks the track.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mood {
+pub(crate) enum Mood {
     Storm,
     Desert,
     Cold,

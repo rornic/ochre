@@ -65,9 +65,9 @@ pub struct Plate {
 
 /// The rock a plate is made of, drawn once per plate: a basin of layered sedimentary rock, an old
 /// metamorphic shield, or a volcanic plate. A range takes the rock of one plate of the pair it stands on.
-pub const ROCK_BASIN: u8 = 0;
-pub const ROCK_SHIELD: u8 = 1;
-pub const ROCK_VOLCANIC: u8 = 2;
+pub(crate) const ROCK_BASIN: u8 = 0;
+pub(crate) const ROCK_SHIELD: u8 = 1;
+pub(crate) const ROCK_VOLCANIC: u8 = 2;
 
 // Strength of a plate boundary's belt past which cells belong to it, not to their nearest plate, for rock.
 const BELT_OWNS: f64 = 0.001;
@@ -76,10 +76,10 @@ const BASIN_SHARE: (f64, f64) = (0.45, 0.60);
 const SHIELD_SHARE: f64 = 0.28;
 
 /// Diagnostic codes: quiet, collision, subduction, extension, shear.
-pub const COLLISION: u8 = 1;
-pub const SUBDUCTION: u8 = 2;
-pub const EXTENSION: u8 = 3;
-pub const SHEAR: u8 = 4;
+pub(crate) const COLLISION: u8 = 1;
+pub(crate) const SUBDUCTION: u8 = 2;
+pub(crate) const EXTENSION: u8 = 3;
+pub(crate) const SHEAR: u8 = 4;
 
 #[derive(Clone)]
 pub struct Tectonics {

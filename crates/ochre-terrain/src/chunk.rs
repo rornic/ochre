@@ -52,7 +52,7 @@ impl ChunkCoordinate {
 }
 
 // Maps a unit offset (dx,dy,dz), each in {-1,0,1} and not all zero, to a stable 0..26 index.
-pub fn neighbor_26_index(dx: i32, dy: i32, dz: i32) -> usize {
+pub(crate) fn neighbor_26_index(dx: i32, dy: i32, dz: i32) -> usize {
     let idx3 = ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1)) as usize;
     if idx3 < 13 {
         idx3
@@ -81,7 +81,7 @@ pub struct ChunkData {
 }
 
 pub const CHUNK_SIZE: u16 = 16;
-pub const CELLS: usize = (CHUNK_SIZE as usize).pow(3);
+pub(crate) const CELLS: usize = (CHUNK_SIZE as usize).pow(3);
 
 // x outer, z middle, y inner - matches generate_chunk's loop order, so terrain bands form long runs.
 fn linear_index(coord: U16Vec3) -> usize {

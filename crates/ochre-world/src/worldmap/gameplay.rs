@@ -323,7 +323,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
 /// Joins the lowlands a range walls off from each other by carving a pass at the lowest saddle
 /// between them, one pass at a time until every big region of walkable ground on a landmass can
 /// be walked to from every other.
-pub fn carve_passes(map: &mut WorldMap) {
+pub(crate) fn carve_passes(map: &mut WorldMap) {
     map.features.retain(|f| f.kind != FeatureKind::Pass);
     for _ in 0..MAX_PASSES {
         let Some(split) = find_split(map) else {

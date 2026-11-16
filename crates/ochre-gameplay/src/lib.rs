@@ -3,10 +3,10 @@
 
 pub mod birds;
 pub mod breaking;
-pub mod collision;
+mod collision;
 pub mod critters;
 pub mod debug;
 pub mod flythrough;
 pub mod footsteps;
 pub mod player;
-pub mod wings;
+mod wings;

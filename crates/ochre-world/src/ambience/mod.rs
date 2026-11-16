@@ -67,7 +67,7 @@ impl Plugin for SurroundingsPlugin {
 
 /// The system that updates `Surroundings`, for systems that read it to run after.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SenseSurroundings;
+pub(crate) struct SenseSurroundings;
 
 /// What's round the camera, as far as what it hears goes. The fractions are 0..1.
 #[derive(Resource, Debug, Clone, Copy, PartialEq)]
@@ -208,7 +208,7 @@ fn sense_surroundings(
 
 /// A recorded loop, and how loud it plays at most, as the files are all levelled alike.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Loop {
+pub(crate) enum Loop {
     Forest,
     Crickets,
     Waves,

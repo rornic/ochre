@@ -14,7 +14,7 @@ use ochre_base::WATER_LEVEL;
 // The fewest regions kept, about 400KB each.
 const RESIDENT_REGION_CAP: usize = 64;
 
-pub fn resident_cap_for(radius_blocks: i64) -> usize {
+pub(crate) fn resident_cap_for(radius_blocks: i64) -> usize {
     let across = ((2 * radius_blocks + REGION_SIZE - 1) / REGION_SIZE) as usize + 2;
     (across * across).max(RESIDENT_REGION_CAP)
 }

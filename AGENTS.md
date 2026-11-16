@@ -37,7 +37,7 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 - `SkyPlugin` (clock, sun, moon, atmosphere), `NightSkyPlugin`, `SunGlarePlugin`, `CloudPlugin`, `WeatherPlugin`, `GodrayPlugin` (equips the camera itself).
 - `PlayerPlugin` (spawns the player and camera), `FootstepPlugin`, `BreakingPlugin`, `CritterPlugin`, `BirdPlugin`, `AmbiencePlugin`, `MusicPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`.
 
-Every plugin but the terrain's can be left out: one that reads another's resource makes a blank of its own (`init_resource`), and `tests/plugin_subsets.rs` runs each combination headless. A game without `PlayerPlugin` spawns its own camera, a child of something, which the chunk loader follows. A headless run (`flight`, `lod_sim`) uses `MinimalPlugins`, `AssetPlugin`, `TerrainPlugin::new(world, renderer, debug)` and registers the `Mesh`, `Image` and material assets with `init_asset`.
+Every plugin but the terrain's can be left out: one that reads another's resource makes a blank of its own (`init_resource`), and `tests/plugin_subsets.rs` runs each combination headless. The plugins assume exactly one `Camera3d` (the loaders and sky systems follow it), so a game without `PlayerPlugin` spawns its own. A headless run (`flight`, `lod_sim`) uses `MinimalPlugins`, `AssetPlugin`, `TerrainPlugin::new(world, renderer, debug)` and registers the `Mesh`, `Image` and material assets with `init_asset`.
 
 ## Where things are
 

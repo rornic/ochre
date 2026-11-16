@@ -35,7 +35,7 @@ macro_rules! lod_state {
 pub(super) use lod_state;
 
 /// What the retirement and visibility rules need to know about the current state.
-pub struct LodState<'a> {
+pub(crate) struct LodState<'a> {
     pub anchor: ChunkCoordinate,
     pub layout: LodLayout,
     pub band: LodBand,
@@ -120,7 +120,7 @@ pub(super) type PendingChunk = Or<(Unsettled, With<MeshedChunk>)>;
 
 /// How far along a full-detail chunk is, as far as LODs are concerned.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ChunkState {
+pub(crate) enum ChunkState {
     Missing,
     Loading,
     /// Loaded with nothing to draw.
@@ -135,7 +135,7 @@ impl ChunkState {
 }
 
 #[derive(SystemParam)]
-pub struct ChunkStates<'w, 's> {
+pub(crate) struct ChunkStates<'w, 's> {
     pub(super) loader: Res<'w, ChunkLoader>,
     pending: Query<'w, 's, (), PendingChunk>,
     drawn: Query<'w, 's, (), With<GroupedChunk>>,

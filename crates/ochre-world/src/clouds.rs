@@ -44,7 +44,7 @@ pub use ochre_terrain::material::CloudLayer;
 use ochre_terrain::material::{push_shader_defs, water_level};
 
 /// Height of the clouds' undersides, far above the highest land; matches `BASE` in `cloud_march.wesl`.
-pub const CLOUD_BASE: f32 = 2400.0;
+pub(crate) const CLOUD_BASE: f32 = 2400.0;
 // Height the tallest clouds' tops reach; matches `TOP` in `cloud_march.wesl`.
 const CLOUD_TOP: f32 = 3000.0;
 // The pattern's cells, in blocks, and how many it has each way: it repeats seamlessly.
@@ -137,7 +137,7 @@ impl Plugin for CloudPlugin {
 
 /// The clouds drawn into the target, lit and blended up to the screen, see `cloud_dome.wesl`.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct CloudMaterial {
+pub(crate) struct CloudMaterial {
     #[texture(4)]
     #[sampler(5)]
     pattern: Handle<Image>,

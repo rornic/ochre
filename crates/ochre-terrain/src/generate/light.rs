@@ -7,7 +7,7 @@ use bevy::math::IVec3;
 pub use ochre_base::MAX_LIGHT;
 
 // Sky light over a box of cells, worked out from how much light each lets through.
-pub struct SkyLight {
+pub(crate) struct SkyLight {
     min: IVec3,
     size: IVec3,
     levels: Vec<u8>,

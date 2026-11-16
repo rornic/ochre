@@ -17,9 +17,9 @@ use ochre_base::block::BlockType;
 pub(crate) const SIDES: [I64Vec3; 4] = [I64Vec3::X, I64Vec3::NEG_X, I64Vec3::Z, I64Vec3::NEG_Z];
 
 /// The level of water fed from above.
-pub const FALLING: u8 = 8;
+pub(crate) const FALLING: u8 = 8;
 /// The level still water, and a fall where it lands, spread at, one less each block on.
-pub const SPREAD: u8 = 7;
+pub(crate) const SPREAD: u8 = 7;
 
 /// How far over the bottom of its block flowing water at `level` stands, in blocks, as still
 /// water stands a whole block.

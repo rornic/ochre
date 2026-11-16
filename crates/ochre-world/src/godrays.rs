@@ -42,7 +42,7 @@ const STEPS_LOW_SUN: u32 = 16;
 
 /// The box of air round the camera, see `volume`.
 #[derive(Component)]
-pub struct Shafts;
+pub(crate) struct Shafts;
 
 /// The box, for the camera to carry: a child of it, so the box turns with the view and the beams don't shift as it turns.
 pub fn volume() -> impl bevy::ecs::bundle::Bundle {
@@ -62,7 +62,7 @@ pub fn volume() -> impl bevy::ecs::bundle::Bundle {
 }
 
 /// Marks the sun to scatter light into the air, see `GodrayPlugin`.
-pub fn shining() -> VolumetricLight {
+pub(crate) fn shining() -> VolumetricLight {
     VolumetricLight
 }
 

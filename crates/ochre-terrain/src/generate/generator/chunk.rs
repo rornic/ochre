@@ -335,7 +335,7 @@ pub(super) fn trees_may_reach(bottom: i64, top: i64, lowest: i64, highest: i64) 
     top > lowest - NEARBY_GROUND && bottom < highest + NEARBY_GROUND + TREE_HEIGHT
 }
 
-pub fn generate_chunk_mesh(
+pub(crate) fn generate_chunk_mesh(
     chunk: Arc<ChunkData>,
     adjacent_chunks: Vec<Option<Arc<ChunkData>>>,
     coord: ChunkCoordinate,

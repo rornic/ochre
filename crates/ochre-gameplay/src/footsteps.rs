@@ -86,7 +86,7 @@ impl Surface {
 
 /// A foot comes down on `surface`.
 #[derive(Message)]
-pub struct Footstep {
+pub(crate) struct Footstep {
     pub surface: Surface,
     // how hard it lands, 1 for a walking step
     pub loudness: f32,
@@ -96,7 +96,7 @@ pub struct Footstep {
 const VARIANTS: usize = 4;
 // Volume of a walking step before its jitter, and how much louder a sprinting one is. The clips are levelled to -28 LUFS (grass -34), so this plays a step at -52 (grass -58).
 const VOLUME: f32 = 0.06;
-pub const SPRINT_LOUDER: f32 = 1.25;
+pub(crate) const SPRINT_LOUDER: f32 = 1.25;
 const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
 // Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.

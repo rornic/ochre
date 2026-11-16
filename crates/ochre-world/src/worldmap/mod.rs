@@ -6,19 +6,19 @@
 
 pub mod character;
 pub mod climate;
-pub mod detail;
-pub mod erosion;
-pub mod features;
+mod detail;
+mod erosion;
+mod features;
 pub mod gameplay;
 pub mod geology;
-pub mod hydrology;
+mod hydrology;
 pub mod io;
 pub mod landform;
 mod shapes;
 mod source;
 pub mod tectonics;
 pub mod view;
-pub mod water;
+mod water;
 
 use std::sync::Arc;
 
@@ -173,7 +173,7 @@ pub struct WorldMap {
 
 /// A layer that is only a cache: not saved, and never a difference between two maps.
 #[derive(Debug, Clone, Default)]
-pub struct SoftCache(pub(crate) Vec<f32>);
+pub(crate) struct SoftCache(pub(crate) Vec<f32>);
 
 impl PartialEq for SoftCache {
     fn eq(&self, _: &Self) -> bool {

@@ -1054,7 +1054,7 @@ struct Shock {
     pan: f32,
 }
 
-pub struct ThunderDecoder {
+pub(crate) struct ThunderDecoder {
     rng: u64,
     frame: u32,
     channel: usize,

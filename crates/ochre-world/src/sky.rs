@@ -40,9 +40,9 @@ pub const FOG_MAX_OPACITY: f32 = 0.8;
 /// Where the sun is at noon: its path across the sky is the great circle through this and the horizon, see `path_basis`.
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.45, 0.8, 0.4);
 /// Seconds in a full day/night cycle: six hours, giving three hours of daylight.
-pub const DAY_SECONDS: f32 = 21_600.0;
+pub(crate) const DAY_SECONDS: f32 = 21_600.0;
 /// The clock counts whole ticks, so it stays exact however long the game runs.
-pub const TICKS_PER_SECOND: u64 = 20;
+pub(crate) const TICKS_PER_SECOND: u64 = 20;
 pub const DAY_TICKS: u64 = DAY_SECONDS as u64 * TICKS_PER_SECOND;
 /// Days of the clock the world starts at: 0 is midnight, 0.5 is noon.
 pub const START_TIME: f32 = 0.4;
@@ -73,12 +73,12 @@ const MOON_BOOST: f32 = 400.0;
 const MOON_BRIGHTNESS: f32 = 0.1;
 
 /// The sun's illuminance in clear air, which a storm dims, see `weather.rs`.
-pub fn sun_illuminance() -> f32 {
+pub(crate) fn sun_illuminance() -> f32 {
     SUN_BRIGHTNESS * SKY_GAIN / camera_exposure().exposure()
 }
 
 /// The moon's illuminance in clear air, see `sun_illuminance`.
-pub fn moon_illuminance() -> f32 {
+pub(crate) fn moon_illuminance() -> f32 {
     MOON_BRIGHTNESS * SKY_GAIN / MOON_BOOST / camera_exposure().exposure()
 }
 
@@ -116,7 +116,7 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
 
 /// On the sun, see `move_sky`.
 #[derive(Component)]
-pub struct Sun;
+pub(crate) struct Sun;
 
 /// Which way the sun casts its shadows: turned in steps, see `aim_sun_shadows`.
 #[derive(Component)]
@@ -128,10 +128,10 @@ const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
 /// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun, matching `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl`.
 #[derive(Component)]
-pub struct Moon;
+pub(crate) struct Moon;
 
 /// The moon, too faint to light the sky with the atmosphere but not the land, see `MOON_BOOST`.
-pub fn moon() -> impl Bundle {
+pub(crate) fn moon() -> impl Bundle {
     (
         DirectionalLight {
             color: MOON_COLOR,
@@ -184,7 +184,7 @@ fn on_path(angle: f32) -> Vec3 {
 }
 
 /// Toward the sun `time` of the way through the day.
-pub fn sun_direction(time: f32) -> Vec3 {
+pub(crate) fn sun_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time))
 }
 
@@ -196,7 +196,7 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
 /// How many game seconds pass each real second, 1 normally. A bigger one speeds the day up, to watch the weather
 /// come and go as a timelapse.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
-pub struct TimeScale(pub f32);
+pub(crate) struct TimeScale(pub f32);
 
 /// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
 /// the sky, fog and light all follow them.
@@ -252,7 +252,7 @@ fn shining_from(direction: Vec3) -> Transform {
     Transform::default().looking_to(-direction, Vec3::Y)
 }
 
-pub fn camera_exposure() -> Exposure {
+pub(crate) fn camera_exposure() -> Exposure {
     Exposure {
         ev100: CAMERA_EV100,
     }

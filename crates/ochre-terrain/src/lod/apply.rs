@@ -33,7 +33,7 @@ pub(super) const LOD_APPLY_TIME_BUDGET: Duration = Duration::from_millis(2);
 
 // From this level up, water draws with the opaque meshes. Blended meshes are drawn one at a time,
 // where Bevy batches opaque ones into a few draws, and water this far out is nearly opaque anyway.
-pub const SOLID_WATER_LEVEL: u8 = 2;
+pub(crate) const SOLID_WATER_LEVEL: u8 = 2;
 
 pub(crate) fn load_lods(
     mut commands: Commands,

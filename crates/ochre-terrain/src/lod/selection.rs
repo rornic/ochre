@@ -46,7 +46,7 @@ pub(super) fn spawn_order(
 }
 
 /// The nodes chosen for an anchor, and how they differ from those chosen before.
-pub struct LodSelection {
+pub(crate) struct LodSelection {
     generation: u32,
     anchor: ChunkCoordinate,
     selected: HashSet<LodKey>,
