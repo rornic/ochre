@@ -147,7 +147,10 @@ pub(crate) fn gather_chunks(
 ) {
     let loader = &mut *chunk_loader;
     let mut in_flight = generating_chunks_query.iter().count();
-    let camera = camera_query.single().expect("could not find camera");
+    // a game spawns its camera when it likes
+    let Ok(camera) = camera_query.single() else {
+        return;
+    };
     let camera_chunk = ChunkCoordinate::containing(camera.translation().floor().as_i64vec3());
     let task_pool = AsyncComputeTaskPool::get();
     let start = Instant::now();

@@ -84,6 +84,8 @@ struct CloudTargetResolution(CloudResolution);
 impl Plugin for CloudPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CloudTargetResolution(self.resolution))
+            .init_resource::<TimeOfDay>()
+            .init_resource::<Curvature>()
             .add_plugins((
                 MaterialPlugin::<CloudMaterial>::default(),
                 ExtractResourcePlugin::<CloudMarch>::default(),

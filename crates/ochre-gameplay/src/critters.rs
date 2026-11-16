@@ -25,7 +25,9 @@ impl Plugin for CritterPlugin {
         if !app.is_plugin_added::<WingPlugin>() {
             app.add_plugins(WingPlugin);
         }
-        app.add_systems(Startup, make_assets).add_systems(
+        app.init_resource::<TimeOfDay>()
+            .add_systems(Startup, make_assets)
+            .add_systems(
             Update,
             (spawn_critters, fly_butterflies, fly_fireflies).chain(),
         );

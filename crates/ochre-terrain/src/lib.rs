@@ -18,73 +18,103 @@ pub mod settings;
 mod shadow_mesh;
 pub mod world;
 
+use std::sync::Mutex;
+
 use bevy::{
-    app::{App, Plugin, Update},
+    app::{App, Plugin, PreStartup, Startup, Update},
     app::{TaskPoolOptions, TaskPoolPlugin, TaskPoolThreadAssignmentPolicy},
-    ecs::{schedule::IntoScheduleConfigs, system::Commands},
+    asset::{Assets, Handle},
+    ecs::{
+        resource::Resource,
+        schedule::IntoScheduleConfigs,
+        system::{Commands, Res, ResMut, SystemParam},
+    },
+    image::Image,
     pbr::MaterialPlugin,
-    render::RenderApp,
+    render::{storage::ShaderBuffer, RenderApp},
 };
 
 use crate::settings::{DebugSettings, RendererSettings};
 use chunk_loader::{
     gather_chunks, generate_chunks, load_chunks, mark_chunks, unload_chunks, ChunkLoader,
 };
-use curvature::CurvaturePlugin;
+use curvature::Curvature;
 use fade::{apply_fades, FadeMaterials};
 use flow::flow_water;
-use frost::FrostPlugin;
 use group::{build_groups, load_groups};
 use lod::{
     load_lods, refresh_lod_visibility, retire_lods, spawn_lods, update_lod_selection, LodLoader,
 };
 use material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, TerrainMaterials, WaterMaterial,
+    block_atlas, material_array, ChunkMaterial, CloudLayer, ShaderInputs, SprayMaterial,
+    TerrainAssets, TerrainMaterials, WaterMaterial,
 };
+use world::World;
 use remesh::{apply_remeshes, remesh_edits};
 
-/// Loads, meshes and unloads full-detail chunks and LOD terrain around the camera.
-pub struct TerrainPlugin;
+/// The world's terrain: inserts the `World`, then loads, meshes and unloads full-detail chunks and LOD terrain
+/// around the camera. Headless-safe: with no renderer the materials are blank. Needs the material assets
+/// registered, which `TerrainRenderPlugin` does and a headless run does with `init_asset`.
+pub struct TerrainPlugin {
+    pub renderer: RendererSettings,
+    pub debug: DebugSettings,
+    world: Mutex<Option<World>>,
+}
 
-impl Plugin for TerrainPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                (
-                    gather_chunks,
-                    generate_chunks,
-                    mark_chunks,
-                    load_chunks,
-                    build_groups,
-                    load_groups,
-                )
-                    .before(unload_chunks),
-                (
-                    update_lod_selection,
-                    spawn_lods,
-                    load_lods,
-                    retire_lods,
-                    refresh_lod_visibility,
-                    apply_fades,
-                )
-                    .chain()
-                    .after(gather_chunks)
-                    .before(unload_chunks),
-                // after the groups loading this frame, so one built from meshes made before a
-                // change is meshed again
-                (flow_water, remesh_edits, apply_remeshes)
-                    .chain()
-                    .after(load_groups)
-                    .before(unload_chunks),
-                unload_chunks,
-            ),
-        );
+impl TerrainPlugin {
+    pub fn new(world: World, renderer: RendererSettings, debug: DebugSettings) -> Self {
+        Self {
+            renderer,
+            debug,
+            world: Mutex::new(Some(world)),
+        }
     }
 }
 
-/// Draws the terrain: its materials, the bend of the land away to the horizon, and the renderer's
-/// mesh buffers. Needs a window and GPU, so a headless run goes without.
+impl Plugin for TerrainPlugin {
+    fn build(&self, app: &mut App) {
+        let world = self.world.lock().unwrap().take();
+        app.insert_resource(world.expect("TerrainPlugin was built twice"))
+            .insert_resource(self.renderer)
+            .insert_resource(self.debug)
+            .add_systems(Startup, setup_terrain)
+            .add_systems(
+                Update,
+                (
+                    (
+                        gather_chunks,
+                        generate_chunks,
+                        mark_chunks,
+                        load_chunks,
+                        build_groups,
+                        load_groups,
+                    )
+                        .before(unload_chunks),
+                    (
+                        update_lod_selection,
+                        spawn_lods,
+                        load_lods,
+                        retire_lods,
+                        refresh_lod_visibility,
+                        apply_fades,
+                    )
+                        .chain()
+                        .after(gather_chunks)
+                        .before(unload_chunks),
+                    // after the groups loading this frame, so one built from meshes made before a
+                    // change is meshed again
+                    (flow_water, remesh_edits, apply_remeshes)
+                        .chain()
+                        .after(load_groups)
+                        .before(unload_chunks),
+                    unload_chunks,
+                ),
+            );
+    }
+}
+
+/// Draws the terrain: its textures and materials, and the renderer's mesh buffers. Needs a window and GPU, so a
+/// headless run goes without. `CurvaturePlugin` and `FrostPlugin` are separate.
 pub struct TerrainRenderPlugin {
     pub renderer: RendererSettings,
 }
@@ -96,14 +126,49 @@ impl Plugin for TerrainRenderPlugin {
             MaterialPlugin::<ChunkMaterial>::default(),
             MaterialPlugin::<WaterMaterial>::default(),
             MaterialPlugin::<SprayMaterial>::default(),
-            CurvaturePlugin,
-            FrostPlugin { on: self.renderer.frost },
-        ));
+        ))
+        // before `setup_terrain` builds the materials from them
+        .init_resource::<Curvature>()
+        .add_systems(PreStartup, load_textures)
+        .add_systems(Startup, blank_clouds.before(setup_terrain));
         // the terrain's meshes share a few big buffers, see `RendererSettings::mesh_slab_mb`
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
             render.insert_resource(self.renderer.mesh_allocator());
         }
     }
+}
+
+/// The block atlas and painted materials the terrain's shaders sample, as loaded by `TerrainRenderPlugin`.
+#[derive(Resource)]
+struct TerrainTextures {
+    atlas: Handle<Image>,
+    materials: Handle<Image>,
+}
+
+// A cloudless layer for the shaders to sample when `CloudPlugin` is left out.
+fn blank_clouds(
+    mut commands: Commands,
+    clouds: Option<Res<CloudLayer>>,
+    mut images: ResMut<Assets<Image>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
+) {
+    if clouds.is_none() {
+        commands.insert_resource(CloudLayer::clear(&mut images, &mut buffers));
+    }
+}
+
+fn load_textures(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    renderer: Res<RendererSettings>,
+) {
+    commands.insert_resource(TerrainTextures {
+        atlas: images.add(block_atlas("assets/textures/blocks.png")),
+        materials: images.add(material_array(
+            "assets/textures/materials",
+            renderer.material_anisotropy,
+        )),
+    });
 }
 
 /// Terrain generation runs on the async compute pool, so it gets most of the cores.
@@ -129,17 +194,31 @@ pub fn task_pool_plugin() -> TaskPoolPlugin {
     }
 }
 
-/// Inserts the resources `TerrainPlugin`'s systems run on, drawing with materials built from `inputs`.
-pub fn insert_terrain_resources(
-    commands: &mut Commands,
-    renderer: &RendererSettings,
-    debug: DebugSettings,
-    world_bounds: ochre_base::WorldBounds,
-    inputs: &ShaderInputs,
-    assets: &mut TerrainAssets,
+#[derive(SystemParam)]
+struct ShaderSources<'w> {
+    textures: Option<Res<'w, TerrainTextures>>,
+    clouds: Option<Res<'w, CloudLayer>>,
+    curvature: Option<Res<'w, Curvature>>,
+}
+
+/// Builds the materials and loaders `TerrainPlugin`'s systems run on. The shaders sample the textures, clouds and curvature
+/// of the plugins that provide them, and a blank where one is left out.
+fn setup_terrain(
+    mut commands: Commands,
+    world: Res<World>,
+    renderer: Res<RendererSettings>,
+    debug: Res<DebugSettings>,
+    sources: ShaderSources,
+    mut assets: TerrainAssets,
 ) {
     let layout = renderer.lod_layout();
-    let materials = TerrainMaterials::new(debug, renderer.material_period(), inputs, assets);
+    let inputs = ShaderInputs {
+        atlas: sources.textures.as_ref().map(|t| t.atlas.clone()),
+        materials: sources.textures.as_ref().map(|t| t.materials.clone()),
+        clouds: sources.clouds.map(|c| c.clone()).unwrap_or_default(),
+        curvature: sources.curvature.map(|c| c.buffer.clone()).unwrap_or_default(),
+    };
+    let materials = TerrainMaterials::new(*debug, renderer.material_period(), &inputs, &mut assets);
     commands.insert_resource(materials.clone());
     commands.insert_resource(FadeMaterials::new(
         renderer.lod_fade_seconds,
@@ -149,14 +228,14 @@ pub fn insert_terrain_resources(
     ));
     commands.insert_resource(LodLoader::new(
         layout,
-        world_bounds,
+        world.bounds,
         materials.chunk.clone(),
         materials.water.clone(),
         materials.solid_water,
     ));
     commands.insert_resource(ChunkLoader::new(
         layout,
-        world_bounds,
+        world.bounds,
         materials.chunk,
         materials.water,
         materials.spray,

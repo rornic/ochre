@@ -108,7 +108,7 @@ impl FromWorld for Curvature {
         Self {
             buffer: world.resource_mut::<Assets<ShaderBuffer>>().add(buffer),
             last: [0.0; 4],
-            cold: [0.0; 8],
+            cold: ochre_base::cold::shader_values(0.0, 1.0, false, 0.0),
         }
     }
 }

@@ -17,7 +17,7 @@ use bevy::{
         entity::Entity,
         query::{With, Without},
         resource::Resource,
-        schedule::IntoScheduleConfigs,
+        schedule::{IntoScheduleConfigs, SystemSet},
         system::{Commands, Local, Query, Res, ResMut},
     },
     math::{ops, Vec3},
@@ -33,25 +33,41 @@ use wind::Gust;
 pub(crate) use wind::SAMPLE_RATE;
 pub use wind::{wind_strength, Wind, WindDials};
 
+/// Wind, loops and the odd owl, each as loud as the camera's `Surroundings` call for.
 pub struct AmbiencePlugin;
 
 impl Plugin for AmbiencePlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<SurroundingsPlugin>() {
+            app.add_plugins(SurroundingsPlugin);
+        }
         app.add_audio_source::<Wind>()
-            .init_resource::<WindDials>()
-            .init_resource::<Surroundings>()
             .add_systems(Startup, (wind::play_wind, play_loops))
             .add_systems(
                 Update,
                 (
                     listen_from_camera,
-                    sense_surroundings,
-                    (wind::update_wind, mix_loops, hoot),
-                )
-                    .chain(),
+                    (wind::update_wind, mix_loops, hoot).after(SenseSurroundings),
+                ),
             );
     }
 }
+
+/// Keeps `Surroundings` current. Added by whichever of `AmbiencePlugin` and `MusicPlugin` comes first.
+pub struct SurroundingsPlugin;
+
+impl Plugin for SurroundingsPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<TimeOfDay>()
+            .init_resource::<WindDials>()
+            .init_resource::<Surroundings>()
+            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings));
+    }
+}
+
+/// The system that updates `Surroundings`, for systems that read it to run after.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SenseSurroundings;
 
 /// What's round the camera, as far as what it hears goes. The fractions are 0..1.
 #[derive(Resource, Debug, Clone, Copy, PartialEq)]

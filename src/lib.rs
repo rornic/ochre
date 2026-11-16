@@ -6,7 +6,10 @@
 //! - [`ochre_world`]: world maps with erosion, rivers and climate, and the sky, clouds and weather
 //! - [`ochre_gameplay`]: the player, collision, wildlife and the debug overlay
 
+pub mod plugins;
 pub mod settings;
+
+pub use plugins::{load_world, OchrePlugins};
 
 pub use ochre_base;
 pub use ochre_gameplay;

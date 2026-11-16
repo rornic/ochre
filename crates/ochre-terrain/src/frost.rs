@@ -21,21 +21,20 @@ use ochre_base::{cold, WATER_LEVEL};
 const SENSE_SECONDS: f32 = 0.25;
 const EASE_SECONDS: f32 = 2.0;
 
-/// Gives the land's shaders the cold at the camera, when `on`: frost needs nothing else.
-pub struct FrostPlugin {
-    pub on: bool,
-}
+/// Gives the land's shaders the cold at the camera. Without it the land is never frosted.
+pub struct FrostPlugin;
 
 impl Plugin for FrostPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(FrostSwitch(self.on))
+        app.init_resource::<Curvature>()
+            .insert_resource(FrostOn)
             .add_systems(Update, sense_frost);
     }
 }
 
-/// Whether frost is on, as `FrostPlugin` was given.
+/// Present while `FrostPlugin` is, for systems that sound or look different on frost.
 #[derive(Resource)]
-pub struct FrostSwitch(pub bool);
+pub struct FrostOn;
 
 /// How much of the ground at `feet` the cold frosts, 0 to 1: the shaders' cover before their patchiness, so 0.5 is about half covered.
 pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
@@ -62,16 +61,11 @@ fn eased(now: f32, target: f32, dt: f32) -> f32 {
 
 fn sense_frost(
     time: Res<Time>,
-    switch: Res<FrostSwitch>,
     world: Option<Res<World>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut curvature: ResMut<Curvature>,
     mut seen: Local<Seen>,
 ) {
-    if !switch.0 {
-        curvature.cold = cold::shader_values(0.0, 1.0, false, 0.0);
-        return;
-    }
     let (Some(world), Ok(camera)) = (world, camera.single()) else {
         return;
     };

@@ -5,8 +5,7 @@ What moves through the world (`lib.rs`: module doc): the player and its collisio
 
 ## Interface
 - `player.rs`
-  - `PlayerPlugin`: chains `player_move`, `grab_cursor`, `player_look`, `ochre_terrain::horizon::update_horizon` and `update_underwater_effects` in `Update`, and registers `MaterialPlugin::<MurkMaterial>`.
-  - `spawn_player(&mut Commands, &mut PlayerAssets, &RendererSettings, position, look)`: spawns a `Player` entity with a child HDR `Camera3d` and a `MurkMaterial` sphere child of the camera. It inserts the `Murk` resource.
+  - `PlayerPlugin { look }`: chains `player_move`, `grab_cursor`, `player_look`, `ochre_terrain::horizon::update_horizon` and `update_underwater_effects` in `Update`, registers `MaterialPlugin::<MurkMaterial>` and the `Footstep` message, and adds `SurroundingsPlugin` if missing. Its Startup `spawn_player` spawns a `Player` at the world's spawn with a child HDR `Camera3d` and a `MurkMaterial` sphere child of the camera, and inserts the `Murk` resource. `FootstepPlugin` is separate.
   - `Player { pub movement: Movement, .. }`, `Movement::{Fly, Walk}` (default `Fly`), `EYE_HEIGHT` (1.9), `cursor_grabbed`, `grab_cursor`, `PlayerAssets` (`SystemParam`), `MurkMaterial` (shader `shaders/murk.wesl`), `Murk`, `DryDefaults`.
 - `collision.rs`
   - `Aabb { min, max }`.

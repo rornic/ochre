@@ -15,7 +15,7 @@ use bevy::{
 };
 use ochre_base::block::BlockType;
 use ochre_terrain::{
-    frost::{frost_cover, FrostSwitch},
+    frost::{frost_cover, FrostOn},
     world::World,
 };
 
@@ -140,12 +140,12 @@ fn play_footsteps(
     mut steps: MessageReader<Footstep>,
     clips: Res<Footsteps>,
     world: Res<World>,
-    frost: Option<Res<FrostSwitch>>,
+    frost: Option<Res<FrostOn>>,
     player: Query<&Transform, With<Player>>,
     mut last: Local<usize>,
     mut last_rustle: Local<usize>,
 ) {
-    let frost_on = frost.is_some_and(|frost| frost.0);
+    let frost_on = frost.is_some();
     for step in steps.read() {
         let feet = player.single().ok().map(|player| player.translation);
         let icy = frost_on

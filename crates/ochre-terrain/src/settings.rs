@@ -1,9 +1,10 @@
+use bevy::ecs::resource::Resource;
 use serde::Deserialize;
 
 use crate::chunk::CHUNK_SIZE;
 use crate::lod::LodLayout;
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Resource, Deserialize, Clone, Copy)]
 #[serde(default)]
 pub struct RendererSettings {
     /// How far terrain is drawn, in chunks.
@@ -66,7 +67,7 @@ impl CloudResolution {
 }
 
 /// Switches for testing what the renderer spends its time on, all off by default.
-#[derive(Default, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Resource, Default, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(default)]
 pub struct DebugSettings {
     /// Leaves stay still instead of swaying in the wind.

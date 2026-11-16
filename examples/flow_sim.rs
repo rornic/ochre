@@ -10,24 +10,15 @@ use bevy::prelude::*;
 use ochre_base::block::BlockType;
 use ochre_engine::settings::{DebugSettings, Settings};
 use ochre_terrain::chunk::{ChunkCoordinate, CHUNK_SIZE};
-use ochre_terrain::material::{
-    ChunkMaterial, ShaderInputs, SprayMaterial, TerrainAssets, WaterMaterial,
-};
+use ochre_terrain::material::{ChunkMaterial, SprayMaterial, WaterMaterial};
 use ochre_terrain::world::World;
-use ochre_terrain::{insert_terrain_resources, task_pool_plugin, TerrainPlugin};
-use ochre_world::worldmap::WorldConfig;
+use ochre_terrain::{task_pool_plugin, TerrainPlugin};
 
 #[derive(Component)]
 struct SimCamera;
 
-#[derive(Resource)]
-struct Config(ochre_terrain::settings::RendererSettings, WorldConfig);
-
-fn setup(mut commands: Commands, config: Res<Config>, mut assets: TerrainAssets) {
-    let renderer = &config.0;
-    let world = ochre_world::load_world(renderer.lod_layout().region_reach() as u32, config.1);
-    let (spawn, height) = (world.spawn(), world.bounds);
-    commands.insert_resource(world);
+fn setup(mut commands: Commands, world: Res<World>) {
+    let spawn = world.spawn();
     let player = commands.spawn(Transform::from_translation(spawn)).id();
     let camera = commands
         .spawn((
@@ -37,14 +28,6 @@ fn setup(mut commands: Commands, config: Res<Config>, mut assets: TerrainAssets)
         ))
         .id();
     commands.entity(player).add_children(&[camera]);
-    insert_terrain_resources(
-        &mut commands,
-        renderer,
-        DebugSettings::default(),
-        height,
-        &ShaderInputs::default(),
-        &mut assets,
-    );
 }
 
 const SIDES: [I64Vec3; 4] = [I64Vec3::X, I64Vec3::NEG_X, I64Vec3::Z, I64Vec3::NEG_Z];
@@ -128,9 +111,12 @@ fn main() {
     app.add_plugins((
         MinimalPlugins.set(task_pool_plugin()),
         AssetPlugin::default(),
-        TerrainPlugin,
+        TerrainPlugin::new(
+            ochre_engine::load_world(&settings),
+            settings.renderer,
+            DebugSettings::default(),
+        ),
     ))
-    .insert_resource(Config(settings.renderer, settings.world))
     .init_asset::<Mesh>()
     .init_asset::<Image>()
     .init_asset::<ChunkMaterial>()

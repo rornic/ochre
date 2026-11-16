@@ -1,72 +1,8 @@
 use bevy::prelude::*;
 use ochre_engine::settings::Settings;
-use ochre_gameplay::birds::BirdPlugin;
-use ochre_gameplay::breaking::BreakingPlugin;
-use ochre_gameplay::critters::CritterPlugin;
-use ochre_gameplay::debug::DebugOverlayPlugin;
-use ochre_gameplay::flythrough::FlythroughPlugin;
-use ochre_gameplay::player::{spawn_player, PlayerAssets, PlayerPlugin};
-use ochre_terrain::curvature::Curvature;
-use ochre_terrain::material::{block_atlas, material_array, ShaderInputs, TerrainAssets};
-use ochre_terrain::{
-    insert_terrain_resources, task_pool_plugin, TerrainPlugin, TerrainRenderPlugin,
-};
-use ochre_world::clouds::CloudLayer;
-use ochre_world::sky::SkyPlugin;
-use ochre_world::{ambience::AmbiencePlugin, music::MusicPlugin};
-
-#[derive(Resource)]
-struct SandboxSettings(Settings);
-
-#[allow(clippy::too_many_arguments)]
-fn setup_scene(
-    mut commands: Commands,
-    settings: Res<SandboxSettings>,
-    game_world: Res<ochre_terrain::world::World>,
-    mut images: ResMut<Assets<Image>>,
-    mut terrain: TerrainAssets,
-    mut player_assets: PlayerAssets,
-    clouds: Res<CloudLayer>,
-    curvature: Res<Curvature>,
-) {
-    let settings = settings.0;
-    let renderer = settings.renderer;
-    let layout = renderer.lod_layout();
-    info!(
-        "drawing terrain {} chunks out with {} LOD levels",
-        layout.render_distance() as u32,
-        layout.max_level
-    );
-
-    let world_bounds = game_world.bounds;
-    info!("world seed is {}", game_world.seed());
-    let spawn = game_world.spawn();
-    info!("spawned at {:?}, {:?}, {:?}", spawn.x, spawn.y, spawn.z);
-
-    spawn_player(
-        &mut commands,
-        &mut player_assets,
-        &renderer,
-        spawn,
-        look_direction(),
-    );
-    insert_terrain_resources(
-        &mut commands,
-        &renderer,
-        settings.debug,
-        world_bounds,
-        &ShaderInputs {
-            atlas: Some(images.add(block_atlas("assets/textures/blocks.png"))),
-            materials: Some(images.add(material_array(
-                "assets/textures/materials",
-                renderer.material_anisotropy,
-            ))),
-            clouds: clouds.clone(),
-            curvature: curvature.buffer.clone(),
-        },
-        &mut terrain,
-    );
-}
+use ochre_engine::{load_world, OchrePlugins};
+use ochre_gameplay::player::PlayerPlugin;
+use ochre_terrain::task_pool_plugin;
 
 // `OCHRE_RESOLUTION=WxH`, for reading frame times at a fixed size.
 fn window_size() -> Option<(u32, u32)> {
@@ -77,14 +13,12 @@ fn window_size() -> Option<(u32, u32)> {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("Failed to read settings.toml");
-    let renderer = settings.renderer;
     let flythrough = std::env::var_os("OCHRE_FLYTHROUGH").is_some();
     // a flight is 1080p, and unsynced only when its frames are saved, as its real-time run keeps the desktop's compositor its share of the GPU
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
     // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell
-    let game_world =
-        ochre_world::load_world(renderer.lod_layout().region_reach() as u32, settings.world);
+    let game_world = load_world(&settings);
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
@@ -114,23 +48,12 @@ fn main() {
                 }),
                 ..default()
             }),
-        TerrainPlugin,
-        TerrainRenderPlugin { renderer },
-        SkyPlugin::new(&renderer),
-        PlayerPlugin,
-        BreakingPlugin,
-        FlythroughPlugin,
-        DebugOverlayPlugin,
-        AmbiencePlugin,
-        MusicPlugin,
-        CritterPlugin,
-        BirdPlugin,
     ))
-    .insert_resource(SandboxSettings(settings))
-    .insert_resource(game_world)
+    .add_plugins(OchrePlugins::new(settings, game_world).set(PlayerPlugin {
+        look: look_direction(),
+    }))
     .insert_resource(winit_settings())
     .insert_resource(ClearColor(Color::BLACK))
-    .add_systems(Startup, setup_scene)
     .run();
 }
 

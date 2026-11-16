@@ -1,11 +1,15 @@
 //! Light shafts: Bevy's volumetric fog, a box of thin air round the camera that the sun's shadow map carves into beams.
 
 use bevy::{
-    app::{App, Plugin, Update},
+    app::{App, Plugin, PostStartup, Update},
+    camera::Camera3d,
     color::Color,
     ecs::{
         component::Component,
-        system::{Query, Res},
+        entity::Entity,
+        hierarchy::ChildOf,
+        query::With,
+        system::{Commands, Query, Res},
     },
     light::{FogVolume, VolumetricFog, VolumetricLight},
     math::Vec3,
@@ -62,12 +66,31 @@ pub fn shining() -> VolumetricLight {
     VolumetricLight
 }
 
+/// Light shafts: gives the camera the march and a box of air, which thickens with a low sun. Costs frame time, so
+/// leave it out where that matters.
 pub struct GodrayPlugin;
 
 impl Plugin for GodrayPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, thicken);
+        app.init_resource::<TimeOfDay>()
+            .init_resource::<Weather>()
+            // once the camera's spawned
+            .add_systems(PostStartup, equip_camera)
+            .add_systems(Update, thicken);
     }
+}
+
+fn equip_camera(mut commands: Commands, camera: Query<Entity, With<Camera3d>>) {
+    let Ok(camera) = camera.single() else {
+        return;
+    };
+    // no ambient: it'd veil the whole view, the land has its own
+    commands.entity(camera).insert(VolumetricFog {
+        ambient_intensity: 0.0,
+        jitter: 4.0,
+        ..Default::default()
+    });
+    commands.spawn((volume(), ChildOf(camera)));
 }
 
 /// How thick the air is: shafts are for a low sun, there's none at night, and rain's dark enough without them.

@@ -27,13 +27,10 @@ use bevy::{
 
 use std::f32::consts::{PI, TAU};
 
-use crate::clouds::CloudPlugin;
-use crate::godrays::{shining, GodrayPlugin};
-use crate::sky_dome::{NightSkyPlugin, SunGlarePlugin};
-use crate::weather::WeatherPlugin;
+use crate::godrays::shining;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
-use ochre_terrain::settings::{CloudResolution, RendererSettings};
+use ochre_terrain::settings::RendererSettings;
 
 /// How opaque fog gets at its far end.
 pub const FOG_MAX_OPACITY: f32 = 0.8;
@@ -148,6 +145,12 @@ pub fn moon() -> impl Bundle {
 /// The time in ticks since midnight of day 0, see `DAY_TICKS` and `START_TIME`.
 #[derive(Resource)]
 pub struct TimeOfDay(pub u64);
+
+impl Default for TimeOfDay {
+    fn default() -> Self {
+        Self::from_days(START_TIME)
+    }
+}
 
 impl TimeOfDay {
     pub fn from_days(days: f32) -> Self {
@@ -325,16 +328,13 @@ fn match_sky_horizon(
     ));
 }
 
-/// Everything overhead: the clock, sun, moon and atmosphere, the night sky and sun's glare, clouds
-/// and weather. `OCHRE_TIME` starts the clock at that time of day, in days, for looking at the sky
+/// The clock, sun, moon and atmosphere. The night sky, clouds, weather and light shafts are plugins of their
+/// own. `OCHRE_TIME` starts the clock at that time of day, in days, for looking at the sky
 /// at any hour, and `OCHRE_TIMESCALE` runs it that many times faster, see `TimeScale`.
 pub struct SkyPlugin {
     /// How far the sun casts shadows, in blocks, and in how many slices.
     pub shadow_distance: f32,
     pub shadow_cascades: usize,
-    pub cloud_resolution: CloudResolution,
-    /// Light shafts through the air, see `godrays.rs`.
-    pub godrays: bool,
 }
 
 impl SkyPlugin {
@@ -343,8 +343,6 @@ impl SkyPlugin {
             shadow_distance: (renderer.shadow_distance as f32 * CHUNK_SIZE as f32)
                 .min(renderer.fog_distance()),
             shadow_cascades: renderer.shadow_cascades,
-            cloud_resolution: renderer.cloud_resolution,
-            godrays: renderer.godrays,
         }
     }
 }
@@ -355,17 +353,8 @@ impl Plugin for SkyPlugin {
             .ok()
             .and_then(|time| time.parse().ok())
             .unwrap_or(START_TIME);
-        let (distance, cascades, godrays) =
-            (self.shadow_distance, self.shadow_cascades, self.godrays);
-        app.add_plugins((
-            NightSkyPlugin,
-            SunGlarePlugin,
-            CloudPlugin {
-                resolution: self.cloud_resolution,
-            },
-            WeatherPlugin,
-        ))
-        .insert_resource(TimeOfDay::from_days(start))
+        let (distance, cascades) = (self.shadow_distance, self.shadow_cascades);
+        app.insert_resource(TimeOfDay::from_days(start))
         .insert_resource(TimeScale::from_env())
         .add_systems(
             Startup,
@@ -387,9 +376,6 @@ impl Plugin for SkyPlugin {
                 aim_sun_light.after(SimulationLightSystems::UpdateDirectionalLightCascades),
             ),
         );
-        if godrays {
-            app.add_plugins(GodrayPlugin);
-        }
     }
 }
 

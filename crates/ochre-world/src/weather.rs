@@ -46,6 +46,7 @@ impl Plugin for WeatherPlugin {
             MaterialPlugin::<RainbowMaterial>::default(),
         ))
         .add_audio_source::<Thunder>()
+        .init_resource::<TimeOfDay>()
         .init_resource::<Weather>()
         .add_systems(Startup, spawn_weather)
         .add_systems(
@@ -235,7 +236,7 @@ fn darken_sky(
     weather: Res<Weather>,
     time: Res<Time>,
     mut lights: Query<(&mut DirectionalLight, Has<Sun>), Or<(With<Sun>, With<Moon>)>>,
-    mut clouds: ResMut<Assets<CloudMaterial>>,
+    clouds: Option<ResMut<Assets<CloudMaterial>>>,
     mut cameras: Query<&mut Exposure, With<Camera3d>>,
     mut flashes: Query<(Entity, &mut Flash)>,
     mut commands: Commands,
@@ -253,8 +254,10 @@ fn darken_sky(
     let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * weather.gloom();
     if (cloud_shade - *last_shade).abs() > 0.002 {
         *last_shade = cloud_shade;
-        for (_, cloud) in clouds.iter_mut() {
-            cloud.set_shade(cloud_shade);
+        if let Some(mut clouds) = clouds {
+            for (_, cloud) in clouds.iter_mut() {
+                cloud.set_shade(cloud_shade);
+            }
         }
     }
 

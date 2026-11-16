@@ -31,7 +31,13 @@ ochre-gameplay  player, collision, birds, critters, debug overlay, flythrough (b
 
 ## Assembling a game
 
-`examples/sandbox.rs` is the reference. Plugins: `TerrainPlugin` (loading, headless-safe), `TerrainRenderPlugin` (materials, curvature, mesh buffers, needs a GPU), `SkyPlugin` (clock, sun, moon, atmosphere, clouds, weather), `PlayerPlugin`, plus `AmbiencePlugin`, `MusicPlugin` (needs `AmbiencePlugin`), `CritterPlugin`, `BirdPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`. A Startup system then calls `ochre_world::load_world`, `spawn_player` and `insert_terrain_resources` (fed a `ShaderInputs`; the default is blank, which is what the headless `flight` and `lod_sim` use).
+`examples/sandbox.rs` is the reference: `DefaultPlugins` (with `task_pool_plugin()`), then `OchrePlugins::new(settings, ochre_engine::load_world(&settings))`. `OchrePlugins` is a Bevy `PluginGroup`, so `.disable::<CloudPlugin>()` and `.set(PlayerPlugin { .. })` work as on `DefaultPlugins`. Build the world before the window, since it takes seconds. The plugins:
+
+- `TerrainPlugin` owns the `World`, the loaders and the materials, headless-safe. `TerrainRenderPlugin` (needs a GPU) adds the material plugins, textures and mesh buffers. `CurvaturePlugin` and `FrostPlugin` are separate.
+- `SkyPlugin` (clock, sun, moon, atmosphere), `NightSkyPlugin`, `SunGlarePlugin`, `CloudPlugin`, `WeatherPlugin`, `GodrayPlugin` (equips the camera itself).
+- `PlayerPlugin` (spawns the player and camera), `FootstepPlugin`, `BreakingPlugin`, `CritterPlugin`, `BirdPlugin`, `AmbiencePlugin`, `MusicPlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`.
+
+Every plugin but the terrain's can be left out: one that reads another's resource makes a blank of its own (`init_resource`), and `tests/plugin_subsets.rs` runs each combination headless. A game without `PlayerPlugin` spawns its own camera, a child of something, which the chunk loader follows. A headless run (`flight`, `lod_sim`) uses `MinimalPlugins`, `AssetPlugin`, `TerrainPlugin::new(world, renderer, debug)` and registers the `Mesh`, `Image` and material assets with `init_asset`.
 
 ## Where things are
 

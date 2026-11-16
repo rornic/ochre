@@ -19,7 +19,8 @@ impl Plugin for BirdPlugin {
         if !app.is_plugin_added::<WingPlugin>() {
             app.add_plugins(WingPlugin);
         }
-        app.init_resource::<Murmuration>()
+        app.init_resource::<TimeOfDay>()
+            .init_resource::<Murmuration>()
             .add_systems(Startup, make_bird_assets)
             .add_systems(Update, (gather_flock, flock, fly_geese).chain());
     }

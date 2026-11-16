@@ -399,6 +399,30 @@ pub struct CloudLayer {
     pub weather: Handle<ShaderBuffer>,
 }
 
+impl CloudLayer {
+    /// A layer with no clouds, for the shaders to sample where nothing draws any.
+    pub fn clear(images: &mut Assets<Image>, buffers: &mut Assets<ShaderBuffer>) -> Self {
+        let black = Image::new_fill(
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            &[0; 4],
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        Self {
+            pattern: images.add(black.clone()),
+            layer: Vec4::new(1000.0, 1000.0, 0.0, 0.0),
+            target: images.add(black.clone()),
+            reflection: images.add(black),
+            weather: buffers.add(ShaderBuffer::new(vec![0.0f32; 8], RenderAssetUsages::default())),
+        }
+    }
+}
+
 /// What the terrain's shaders sample that other systems own. The default is blank, for a headless run.
 #[derive(Clone, Default)]
 pub struct ShaderInputs {

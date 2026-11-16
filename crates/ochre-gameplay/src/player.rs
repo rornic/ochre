@@ -43,17 +43,16 @@ use bevy::{
 };
 
 use crate::collision::{move_and_step, Aabb};
-use crate::footsteps::{Footstep, FootstepPlugin, Surface, SPRINT_LOUDER};
+use crate::footsteps::{Footstep, Surface, SPRINT_LOUDER};
 use bevy::{
     anti_alias::taa::TemporalAntiAliasing,
-    app::{App, Plugin, Update},
+    app::{App, Plugin, Startup, Update},
     camera::{Camera3d, Hdr, PerspectiveProjection, Projection},
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     ecs::{
         schedule::IntoScheduleConfigs,
         system::{Commands, SystemParam},
     },
-    light::VolumetricFog,
     pbr::{MaterialPlugin, ScreenSpaceTransmission},
     post_process::{bloom::Bloom, effect_stack::Vignette},
     render::view::Msaa,
@@ -66,9 +65,8 @@ use ochre_terrain::{
     world::World,
 };
 use ochre_world::{
-    ambience::Surroundings,
+    ambience::{Surroundings, SurroundingsPlugin},
     clouds::CloudDome,
-    godrays,
     sky::{atmosphere_camera, FOG_MAX_OPACITY},
     tonemap::{cold_color_grading, dry_color_grading, scene_colour, TONEMAPPING},
 };
@@ -683,13 +681,33 @@ fn show_murk(murk: &Murk, materials: &mut Assets<MurkMaterial>, shown: bool) {
         material.color.alpha = if shown { 1.0 } else { 0.0 };
     }
 }
-/// Walking and flying, looking round, and the view underwater.
-pub struct PlayerPlugin;
+/// Walking and flying, looking round, and the view underwater. Spawns the player at the world's spawn, facing `look`.
+pub struct PlayerPlugin {
+    pub look: Vec3,
+}
+
+impl Default for PlayerPlugin {
+    fn default() -> Self {
+        Self { look: Vec3::Z }
+    }
+}
+
+#[derive(Resource)]
+struct PlayerSpawn {
+    look: Vec3,
+}
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MaterialPlugin::<MurkMaterial>::default(), FootstepPlugin))
+        // the cold grade follows the climate it senses
+        if !app.is_plugin_added::<SurroundingsPlugin>() {
+            app.add_plugins(SurroundingsPlugin);
+        }
+        app.add_plugins(MaterialPlugin::<MurkMaterial>::default())
+            .add_message::<Footstep>()
+            .insert_resource(PlayerSpawn { look: self.look })
             .init_resource::<ColdGrade>()
+            .add_systems(Startup, spawn_player)
             .add_systems(
                 Update,
                 (
@@ -707,20 +725,22 @@ impl Plugin for PlayerPlugin {
 }
 
 #[derive(SystemParam)]
-pub struct PlayerAssets<'w> {
+struct PlayerAssets<'w> {
     meshes: ResMut<'w, Assets<Mesh>>,
     murk: ResMut<'w, Assets<MurkMaterial>>,
 }
 
-/// Spawns the player at `position` facing `look`, with a camera that sees out to the renderer's
-/// fog distance, and the murk the camera sees through underwater.
-pub fn spawn_player(
-    commands: &mut Commands,
-    assets: &mut PlayerAssets,
-    renderer: &RendererSettings,
-    position: Vec3,
-    look: Vec3,
+/// Spawns the player at the world's spawn, with a camera that sees out to the renderer's fog distance, and the murk the
+/// camera sees through underwater.
+fn spawn_player(
+    mut commands: Commands,
+    mut assets: PlayerAssets,
+    renderer: Res<RendererSettings>,
+    world: Res<World>,
+    spawn: Res<PlayerSpawn>,
 ) {
+    let (position, look) = (world.spawn(), spawn.look);
+    info!("spawned at {position:?}");
     let fog_distance = renderer.fog_distance();
     let player = commands
         .spawn((
@@ -790,15 +810,6 @@ pub fn spawn_player(
             ChildOf(player),
         ))
         .id();
-    if renderer.godrays {
-        // no ambient: it'd veil the whole view, the land has its own
-        commands.entity(camera).insert(VolumetricFog {
-            ambient_intensity: 0.0,
-            jitter: 4.0,
-            ..default()
-        });
-        commands.spawn((godrays::volume(), ChildOf(camera)));
-    }
     let (murk, handle) = murk(&mut assets.meshes, &mut assets.murk);
     commands.spawn((murk, ChildOf(camera)));
     commands.insert_resource(handle);

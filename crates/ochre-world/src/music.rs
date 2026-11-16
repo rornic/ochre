@@ -1,6 +1,5 @@
 //! Music that drifts in now and then: one track picked for the camera's biome and the weather,
-//! long silences between, crossfading when the mood changes under a playing track. Needs
-//! `AmbiencePlugin`, which keeps `Surroundings` current.
+//! long silences between, crossfading when the mood changes under a playing track.
 use bevy::{
     app::{App, Plugin, Update},
     asset::AssetServer,
@@ -8,19 +7,26 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        schedule::IntoScheduleConfigs,
         system::{Commands, Local, Query, Res},
     },
     time::Time,
 };
 
-use crate::{ambience::Surroundings, weather::Weather};
+use crate::{
+    ambience::{SenseSurroundings, Surroundings, SurroundingsPlugin},
+    weather::Weather,
+};
 
+/// Plays one track at a time, picked by `Surroundings`.
 pub struct MusicPlugin;
 
 impl Plugin for MusicPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Surroundings>()
-            .add_systems(Update, play_music);
+        if !app.is_plugin_added::<SurroundingsPlugin>() {
+            app.add_plugins(SurroundingsPlugin);
+        }
+        app.add_systems(Update, play_music.after(SenseSurroundings));
     }
 }
 
