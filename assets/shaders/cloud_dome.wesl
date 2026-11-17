@@ -9,6 +9,7 @@ import bevy_pbr::render::{
 import super::clouds::lit_clouds;
 import super::cloud_bindings::{most_precipitation, weather_at};
 import super::cloud_march::{BASE, FAR, HAZE, cloud_entry};
+import super::cloud_paint::{brush, cloud_plane, paint};
 import super::curvature::curvature;
 
 // the share of light they scatter, in x, see `CloudMaterial::set_shade`
@@ -94,21 +95,47 @@ fn rain_shafts(eye: vec3<f32>, direction: vec3<f32>, limit: f32, bend: f32, jitt
     return vec4<f32>(gathered, cover) * min(1.0, SHAFT_MOST / max(cover, 1e-4));
 }
 
+// The march's target at `uv` by cubic B-spline, in four taps of the linear sampler: bilinear's texels show as squares and kinks once edges are cut sharp.
+fn smooth_target(uv: vec2<f32>) -> vec4<f32> {
+    let size = vec2<f32>(textureDimensions(cloud_target));
+    let p = uv * size - 0.5;
+    let f = fract(p);
+    let f2 = f * f;
+    let f3 = f2 * f;
+    let w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
+    let w1 = (3.0 * f3 - 6.0 * f2 + 4.0) / 6.0;
+    let w3 = f3 / 6.0;
+    let w2 = 1.0 - w0 - w1 - w3;
+    let g0 = w0 + w1;
+    let g1 = w2 + w3;
+    let h0 = (floor(p) + 0.5 - 1.0 + w1 / g0) / size;
+    let h1 = (floor(p) + 0.5 + 1.0 + w3 / g1) / size;
+    let a = mix(textureSampleLevel(cloud_target, cloud_target_sampler, vec2<f32>(h0.x, h1.y), 0.0), textureSampleLevel(cloud_target, cloud_target_sampler, vec2<f32>(h1.x, h1.y), 0.0), g1.x / (g0.x + g1.x));
+    let b = mix(textureSampleLevel(cloud_target, cloud_target_sampler, vec2<f32>(h0.x, h0.y), 0.0), textureSampleLevel(cloud_target, cloud_target_sampler, vec2<f32>(h1.x, h0.y), 0.0), g1.x / (g0.x + g1.x));
+    return mix(b, a, g1.y / (g0.y + g1.y));
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let viewport = view_bindings::view.viewport;
-    let marched = textureSampleLevel(cloud_target, cloud_target_sampler, (in.position.xy - viewport.xy) / viewport.zw, 0.0);
     let eye = view_bindings::view.world_position.xyz;
     let direction = normalize(in.world_position.xyz - eye);
+    let sampled = smooth_target((in.position.xy - viewport.xy) / viewport.zw);
+    // derivatives need every pixel of a quad, so before any return
+    let plane = cloud_plane(eye, direction, view_bindings::globals.time);
+    let each = sampled.xyz / max(sampled.w, 1e-3);
+    let change = fwidth(vec3<f32>(sampled.w, each.x, each.y));
+    let footprint = length(fwidth(plane));
     let bend = curvature.now.per_square_block;
     let scene = scene_distance(in.position.xy, direction);
     // interleaved gradient noise, so the shafts' few steps don't band
     let jitter = fract(52.9829189 * fract(dot(in.position.xy, vec2<f32>(0.06711056, 0.00583715))));
     let shafts = rain_shafts(eye, direction, scene, bend, jitter);
     let rain = select(vec4<f32>(0.0), lit_clouds(shafts, eye, direction, cloud_shade.x), shafts.w > 0.0005);
-    if marched.w < 0.002 || scene < cloud_entry(eye, direction, bend) {
+    if sampled.w < 0.002 || scene < cloud_entry(eye, direction, bend) {
         return rain;
     }
+    let marched = paint(sampled, brush(plane, footprint), change, viewport.w);
     // the rain hangs under the clouds, in front of them
     return rain + lit_clouds(marched, eye, direction, cloud_shade.x) * (1.0 - rain.w);
 }

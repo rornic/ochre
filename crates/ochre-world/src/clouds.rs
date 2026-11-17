@@ -19,7 +19,7 @@ use bevy::{
             encase::UniformBuffer,
             AsBindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             BufferInitDescriptor, BufferUsages, CachedRenderPipelineId, ColorTargetState,
-            ColorWrites, CompareFunction, Extent3d, FragmentState, Operations, PipelineCache,
+            ColorWrites, CompareFunction, Extent3d, FragmentState, LoadOp, Operations, PipelineCache,
             RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
             SamplerBindingType, ShaderStages, ShaderType, SpecializedMeshPipelineError,
             TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
@@ -70,43 +70,21 @@ const CLUSTERING: f64 = 0.8;
 const WIND: Vec2 = Vec2::new(SPAN * 2.0 / 3600.0, SPAN / 3600.0);
 // The clouds are marched at this fraction of the screen's width and height, and blended up to it.
 const TARGET_SCALE: u32 = 2;
+// Bands the reflections' map is redrawn in, one a frame, so all of it every second at 60 frames a second.
+const REFLECTION_BANDS: u32 = 64;
+
 // Texels across each half of the reflections' map, matching `REFLECTION_TEXELS` in `cloud_march.wesl`.
 const REFLECTION_SIZE: u32 = 512;
 
-/// Maximum cloud target width; smaller windows still march at half display resolution.
-#[derive(Default, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CloudResolution {
-    Low,
-    #[default]
-    Medium,
-    High,
-    Ultra,
-}
-
-impl CloudResolution {
-    pub const fn width(self) -> u32 {
-        match self {
-            Self::Low => 320,
-            Self::Medium => 640,
-            Self::High => 960,
-            Self::Ultra => 1280,
-        }
-    }
-}
+// The widest the clouds' target gets, in pixels: smaller windows march at half display resolution, and the dome paints it up to the display's.
+const TARGET_WIDTH: u32 = 640;
 
 #[derive(Default)]
-pub struct CloudPlugin {
-    pub resolution: CloudResolution,
-}
-
-#[derive(Resource)]
-struct CloudTargetResolution(CloudResolution);
+pub struct CloudPlugin;
 
 impl Plugin for CloudPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CloudTargetResolution(self.resolution))
-            .init_resource::<TimeOfDay>()
+        app.init_resource::<TimeOfDay>()
             .init_resource::<Curvature>()
             .add_plugins((
                 MaterialPlugin::<CloudMaterial>::default(),
@@ -305,12 +283,8 @@ fn spawn_clouds(
     curvature: Res<Curvature>,
     world: Option<Res<World>>,
     window: Query<&Window, With<PrimaryWindow>>,
-    resolution: Res<CloudTargetResolution>,
 ) {
-    let size = target_size(
-        window.single().map_or(UVec2::ONE, Window::physical_size),
-        resolution.0,
-    );
+    let size = target_size(window.single().map_or(UVec2::ONE, Window::physical_size));
     let mut target = Image::new_target_texture(size.x, size.y, TextureFormat::Rgba16Float, None);
     target.sampler = ImageSampler::linear();
     let history = images.add(target.clone());
@@ -353,9 +327,9 @@ fn spawn_clouds(
 }
 
 // The size of the clouds' target for a window `size` pixels across.
-fn target_size(size: UVec2, resolution: CloudResolution) -> UVec2 {
+fn target_size(size: UVec2) -> UVec2 {
     let target = (size / TARGET_SCALE).max(UVec2::ONE);
-    let width = target.x.min(resolution.width());
+    let width = target.x.min(TARGET_WIDTH);
     let height = (u64::from(target.y) * u64::from(width) / u64::from(target.x)).max(1) as u32;
     UVec2::new(width, height)
 }
@@ -389,16 +363,16 @@ fn spawn_cloud_dome(
 
 // Refits the cloud target on resize and rebinds its readers, whose bind groups would otherwise freeze the old texture on screen.
 fn fit_cloud_target(
-    window: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<&Camera, With<Camera3d>>,
     march: Option<Res<CloudMarch>>,
     mut images: ResMut<Assets<Image>>,
     mut clouds: ResMut<Assets<CloudMaterial>>,
-    resolution: Res<CloudTargetResolution>,
 ) {
-    let (Ok(window), Some(march)) = (window.single(), march) else {
+    let (Ok(Some(view)), Some(march)) = (camera.single().map(Camera::physical_target_size), march)
+    else {
         return;
     };
-    let size = target_size(window.physical_size(), resolution.0);
+    let size = target_size(view);
     if images
         .get(&march.target)
         .is_none_or(|image| image.size() == size)
@@ -599,6 +573,7 @@ fn march_clouds(
     pipeline_cache: Res<PipelineCache>,
     images: Res<RenderAssets<GpuImage>>,
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
+    mut frame: Local<u32>,
     mut ctx: RenderContext,
 ) {
     let (Some(march), Some(pipeline)) = (march, pipeline) else {
@@ -649,10 +624,15 @@ fn march_clouds(
     );
     let diagnostics = ctx.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
+    // the reflections' map drifts slowly, so a band of its rows is redrawn each frame and the rest kept, all of it the first time
+    let first = *frame == 0;
+    let band = (*frame % REFLECTION_BANDS) * (REFLECTION_SIZE / REFLECTION_BANDS);
+    *frame = frame.wrapping_add(1);
     for (label, render_pipeline, image) in [
         ("cloud_march", render_pipeline, target),
         ("cloud_reflection", reflection_pipeline, reflection),
     ] {
+        let reflecting = label == "cloud_reflection";
         let mut pass = ctx
             .command_encoder()
             .begin_render_pass(&RenderPassDescriptor {
@@ -661,7 +641,14 @@ fn march_clouds(
                     view: &image.texture_view,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: Operations::default(),
+                    ops: if reflecting {
+                        Operations {
+                            load: LoadOp::Load,
+                            ..default()
+                        }
+                    } else {
+                        Operations::default()
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -671,6 +658,12 @@ fn march_clouds(
         let span = diagnostics.pass_span(&mut pass, label);
         pass.set_pipeline(render_pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
+        if reflecting && !first {
+            // the first texels hold the clouds toward the sun and moon, which `disc_showing` reads every frame
+            pass.set_scissor_rect(0, 0, 3, 1);
+            pass.draw(0..3, 0..1);
+            pass.set_scissor_rect(0, band, 2 * REFLECTION_SIZE, REFLECTION_SIZE / REFLECTION_BANDS);
+        }
         pass.draw(0..3, 0..1);
         span.end(&mut pass);
     }
@@ -721,7 +714,7 @@ mod tests {
             (UVec2::new(3840, 2160), UVec2::new(640, 360)),
             (UVec2::ZERO, UVec2::ONE),
         ] {
-            assert_eq!(target_size(window, CloudResolution::Medium), expected);
+            assert_eq!(target_size(window), expected);
         }
     }
 
@@ -732,37 +725,23 @@ mod tests {
             UVec2::new(2160, 3840),
             UVec2::new(5120, 1440),
         ] {
-            let target = target_size(window, CloudResolution::Medium);
-            assert!(target.x <= CloudResolution::Medium.width());
+            let target = target_size(window);
+            assert!(target.x <= TARGET_WIDTH);
             let aspect = window.x as f64 / window.y as f64;
             assert!((f64::from(target.x) - f64::from(target.y) * aspect).abs() <= 1.0 + aspect);
         }
         for window in [UVec2::new(u32::MAX, 1), UVec2::new(1, u32::MAX)] {
-            let target = target_size(window, CloudResolution::Medium);
+            let target = target_size(window);
             assert!(target.min_element() >= 1);
-            assert!(target.x <= CloudResolution::Medium.width());
+            assert!(target.x <= TARGET_WIDTH);
         }
     }
 
     #[test]
-    fn cloud_resolution_presets_set_width_and_derive_height() {
-        for (resolution, width) in [
-            (CloudResolution::Low, 320),
-            (CloudResolution::Medium, 640),
-            (CloudResolution::High, 960),
-            (CloudResolution::Ultra, 1280),
-        ] {
-            assert_eq!(
-                target_size(UVec2::new(3840, 2160), resolution),
-                UVec2::new(width, width * 9 / 16)
-            );
-        }
-        assert_eq!(
-            target_size(UVec2::new(800, 600), CloudResolution::Ultra),
-            UVec2::new(400, 300)
-        );
+    fn cloud_target_keeps_the_windows_aspect_ratio_under_the_width_cap() {
+        assert_eq!(target_size(UVec2::new(3840, 2160)), UVec2::new(640, 360));
+        assert_eq!(target_size(UVec2::new(800, 600)), UVec2::new(400, 300));
     }
-
     #[test]
     fn test_pattern_covers_the_share_of_sky_asked() {
         let ranks = cloud_pattern(3);

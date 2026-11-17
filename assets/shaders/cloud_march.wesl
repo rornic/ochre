@@ -44,22 +44,23 @@ const CIRRUS_EDGE_ON: vec2<f32> = vec2<f32>(0.03, 0.25);
 // Standing in for a ray's distance going on forever.
 const FAR: f32 = 1e30;
 
-// `hash3` at `cell`, wrapping every `period` cells along x and z.
-fn lattice(cell: vec3<i32>, period: vec2<i32>) -> f32 {
-    let x = ((cell.x % period.x) + period.x) % period.x;
-    let z = ((cell.z % period.y) + period.y) % period.y;
-    return hash3(vec3<i32>(x, cell.y, z));
+// `c` wrapped into 0..period, and the wrapped cell after it: wrapping once per axis rather than per corner is most of the noise's cost.
+fn wrapped(c: i32, period: i32) -> vec2<i32> {
+    let at = ((c % period) + period) % period;
+    return vec2<i32>(at, select(at + 1, 0, at + 1 == period));
 }
 
-// Smooth 0..1 value noise, one cell a unit, wrapping as `lattice` does.
+// Smooth 0..1 value noise, one cell a unit, wrapping every `period` cells along x and z.
 fn value_noise(p: vec3<f32>, period: vec2<i32>) -> f32 {
     let cell = vec3<i32>(floor(p));
     let f = fract(p);
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-    let x0 = mix(lattice(cell, period), lattice(cell + vec3<i32>(1, 0, 0), period), u.x);
-    let x1 = mix(lattice(cell + vec3<i32>(0, 1, 0), period), lattice(cell + vec3<i32>(1, 1, 0), period), u.x);
-    let x2 = mix(lattice(cell + vec3<i32>(0, 0, 1), period), lattice(cell + vec3<i32>(1, 0, 1), period), u.x);
-    let x3 = mix(lattice(cell + vec3<i32>(0, 1, 1), period), lattice(cell + vec3<i32>(1, 1, 1), period), u.x);
+    let x = wrapped(cell.x, period.x);
+    let z = wrapped(cell.z, period.y);
+    let x0 = mix(hash3(vec3<i32>(x.x, cell.y, z.x)), hash3(vec3<i32>(x.y, cell.y, z.x)), u.x);
+    let x1 = mix(hash3(vec3<i32>(x.x, cell.y + 1, z.x)), hash3(vec3<i32>(x.y, cell.y + 1, z.x)), u.x);
+    let x2 = mix(hash3(vec3<i32>(x.x, cell.y, z.y)), hash3(vec3<i32>(x.y, cell.y, z.y)), u.x);
+    let x3 = mix(hash3(vec3<i32>(x.x, cell.y + 1, z.y)), hash3(vec3<i32>(x.y, cell.y + 1, z.y)), u.x);
     return mix(mix(x0, x1, u.y), mix(x2, x3, u.y), u.z);
 }
 
@@ -68,8 +69,10 @@ fn flat_noise(p: vec2<f32>, period: vec2<i32>) -> f32 {
     let cell = vec2<i32>(floor(p));
     let f = fract(p);
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-    let x0 = mix(lattice(vec3<i32>(cell.x, 0, cell.y), period), lattice(vec3<i32>(cell.x + 1, 0, cell.y), period), u.x);
-    let x1 = mix(lattice(vec3<i32>(cell.x, 0, cell.y + 1), period), lattice(vec3<i32>(cell.x + 1, 0, cell.y + 1), period), u.x);
+    let x = wrapped(cell.x, period.x);
+    let z = wrapped(cell.y, period.y);
+    let x0 = mix(hash3(vec3<i32>(x.x, 0, z.x)), hash3(vec3<i32>(x.y, 0, z.x)), u.x);
+    let x1 = mix(hash3(vec3<i32>(x.x, 0, z.y)), hash3(vec3<i32>(x.y, 0, z.y)), u.x);
     return mix(x0, x1, u.y);
 }
 

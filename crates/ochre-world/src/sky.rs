@@ -30,7 +30,6 @@ use std::f32::consts::{PI, TAU};
 use crate::godrays::shining;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
-use crate::clouds::CloudResolution;
 use ochre_terrain::settings::RendererSettings;
 use serde::Deserialize;
 
@@ -326,8 +325,6 @@ pub struct SkySettings {
     pub shadow_distance: u32,
     /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
-    /// Cloud march resolution preset. Height follows the window's aspect ratio.
-    pub cloud_resolution: CloudResolution,
 }
 
 impl Default for SkySettings {
@@ -335,7 +332,6 @@ impl Default for SkySettings {
         Self {
             shadow_distance: 64,
             shadow_cascades: 3,
-            cloud_resolution: CloudResolution::default(),
         }
     }
 }

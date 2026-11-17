@@ -80,9 +80,7 @@ impl PluginGroup for OchrePlugins {
             })
             .add(NightSkyPlugin)
             .add(SunGlarePlugin)
-            .add(CloudPlugin {
-                resolution: sky.cloud_resolution,
-            })
+            .add(CloudPlugin)
             .add(WeatherPlugin {
                 clear_sky: dev.clear_sky,
             })

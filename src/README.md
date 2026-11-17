@@ -5,15 +5,14 @@ Root crate `ochre-engine` (`Cargo.toml:[package]`). `lib.rs` re-exports the four
 
 ## Interface
 - `lib.rs:pub use` re-exports `ochre_base`, `ochre_terrain`, `ochre_world`, `ochre_gameplay`; `lib.rs` has three local modules, `settings`, `plugins` and `dev`.
-- `settings.rs:Settings` (`Default`, `Deserialize`, `Clone`, `Copy`) holds `renderer: RendererSettings` (required), `sky: SkySettings` (shadows and cloud resolution, owned by `ochre-world`), `plugins: PluginSettings` (`frost` and `godrays`, which start those plugins disabled when false), `debug: DebugSettings` and `world: WorldConfig` (all `#[serde(default)]`).
+- `settings.rs:Settings` (`Default`, `Deserialize`, `Clone`, `Copy`) holds `renderer: RendererSettings` (required), `sky: SkySettings` (shadows, owned by `ochre-world`), `plugins: PluginSettings` (`frost` and `godrays`, which start those plugins disabled when false), `debug: DebugSettings` and `world: WorldConfig` (all `#[serde(default)]`).
 - `settings.rs:Settings::read(file)` reads and parses a TOML file, returning `Result<Self, Box<dyn Error>>`.
 - `plugins.rs:OchrePlugins::new(settings, world).with_dev(dev)` is a `PluginGroup`; `load_world(&settings, &WorldOptions)` builds the world for it.
 - `dev.rs:DevEnv::from_env()` reads `OCHRE_SEED`, `OCHRE_WORLD_DIR`, `OCHRE_CHARACTER`, `OCHRE_SPAWN`, `OCHRE_TIME`, `OCHRE_TIMESCALE`, `OCHRE_CLEAR_SKY`, `OCHRE_MUSIC_DELAY`, `OCHRE_STATS`, and `OCHRE_FLIGHT*` into `WorldOptions` and plugin fields. The plugins read no environment.
-- `settings.rs` re-exports `DebugSettings` and `RendererSettings` from `ochre_terrain::settings`, `CloudResolution` and `SkySettings` from `ochre_world`. `WorldConfig` is imported from `ochre_world::worldmap`.
+- `settings.rs` re-exports `DebugSettings` and `RendererSettings` from `ochre_terrain::settings`, `SkySettings` from `ochre_world`. `WorldConfig` is imported from `ochre_world::worldmap`.
 
 ## Invariants
 - The `[renderer]` table is mandatory, since `Settings.renderer` has no `#[serde(default)]`; `[sky]`, `[plugins]`, `[debug]` and `[world]` may be absent. Keys missing inside `[renderer]` fall back to defaults (`settings.rs:test_missing_renderer_settings_use_defaults`).
-- `cloud_resolution` accepts only `low`, `medium`, `high`, `ultra`; a typo fails to parse (`settings.rs:test_cloud_resolution_presets_parse_and_reject_typos`).
 - `material_period` must be a power of two; `renderer.material_period()` panics otherwise (`settings.rs:test_material_period_must_be_a_power_of_two`).
 - The shipped `assets/settings.toml` must parse, with `full_detail_distance` 12, `lod_base_distance` 16, `lod_level_scale` 2, `mesh_slab_mb` 64 and the debug switches off (`settings.rs:test_settings_file_parses`).
 - `assets/shaders/world.wesl` must import `FAR_VISIBILITY, Painterly, painterly_light, painterly_saturation` from `painterly`, and `painterly.wesl` must define `FAR_VISIBILITY` and `painterly_light` (`settings.rs:test_world_shader_imports_painterly_light`). Renaming either shader symbol breaks `cargo test`.

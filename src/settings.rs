@@ -3,7 +3,6 @@ use std::error::Error;
 use serde::Deserialize;
 
 pub use ochre_terrain::settings::{DebugSettings, RendererSettings};
-pub use ochre_world::clouds::CloudResolution;
 pub use ochre_world::sky::SkySettings;
 use ochre_world::worldmap::WorldConfig;
 
@@ -58,10 +57,6 @@ mod tests {
         assert_eq!(32, settings.renderer.full_detail_distance);
         assert_eq!(8, settings.renderer.material_period());
         assert_eq!(8, settings.renderer.material_anisotropy);
-        assert_eq!(
-            super::CloudResolution::Medium,
-            settings.sky.cloud_resolution
-        );
         assert!(!settings.debug.still_leaves && !settings.debug.solid_leaves);
         assert_eq!(WorldConfig::default(), settings.world);
     }
@@ -98,29 +93,10 @@ mod tests {
     }
 
     #[test]
-    fn test_cloud_resolution_presets_parse_and_reject_typos() {
-        for (name, preset) in [
-            ("low", super::CloudResolution::Low),
-            ("medium", super::CloudResolution::Medium),
-            ("high", super::CloudResolution::High),
-            ("ultra", super::CloudResolution::Ultra),
-        ] {
-            let settings: Settings =
-                toml::from_str(&format!("[renderer]\n[sky]\ncloud_resolution = '{name}'")).unwrap();
-            assert_eq!(preset, settings.sky.cloud_resolution);
-        }
-        assert!(toml::from_str::<Settings>("[renderer]\n[sky]\ncloud_resolution = 'medum'").is_err());
-    }
-
-    #[test]
     fn test_settings_file_parses() {
         let file = std::fs::read_to_string("assets/settings.toml").unwrap();
         let settings: Settings = toml::from_str(&file).unwrap();
         assert_eq!(12, settings.renderer.full_detail_distance);
-        assert_eq!(
-            super::CloudResolution::Medium,
-            settings.sky.cloud_resolution
-        );
         assert_eq!(Some(16), settings.renderer.lod_base_distance);
         assert_eq!(2, settings.renderer.lod_level_scale);
         assert_eq!(64, settings.renderer.mesh_slab_mb);
