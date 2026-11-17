@@ -489,20 +489,6 @@ impl LodBlocks {
         self.surface_tops[Self::index(self.size, coord)]
     }
 
-    // How many cells deep the skirt hangs under the column at (`x`, `z`): more the steeper its ground.
-    fn skirt_cells(&self, x: i32, z: i32) -> i32 {
-        let top = |x: i32, z: i32| {
-            self.tops[Self::column(self.size, x.clamp(-1, self.size), z.clamp(-1, self.size))]
-        };
-        let here = top(x, z);
-        let rise = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            .iter()
-            .map(|&(dx, dz)| (here - top(x + dx, z + dz)).abs())
-            .max()
-            .unwrap_or(0);
-        (SKIRT_CELLS + (2 * rise / self.cell) as i32).min(MAX_SKIRT_CELLS)
-    }
-
     pub(super) fn column(size: i32, cx: i32, cz: i32) -> usize {
         let padded = size + 2;
         ((cx + 1) * padded + cz + 1) as usize
@@ -570,6 +556,20 @@ impl BlockSource for LodBlocks {
 
     fn has_skirts(&self) -> bool {
         true
+    }
+
+    // more the steeper its ground
+    fn skirt_cells(&self, x: i32, z: i32) -> i32 {
+        let top = |x: i32, z: i32| {
+            self.tops[Self::column(self.size, x.clamp(-1, self.size), z.clamp(-1, self.size))]
+        };
+        let here = top(x, z);
+        let rise = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .map(|&(dx, dz)| (here - top(x + dx, z + dz)).abs())
+            .max()
+            .unwrap_or(0);
+        (SKIRT_CELLS + (2 * rise / self.cell) as i32).min(MAX_SKIRT_CELLS)
     }
 
     // the seabed's real depth, not the cells' count, so deep colour shades smoothly however coarse they are

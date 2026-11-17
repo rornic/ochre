@@ -4,11 +4,11 @@ import bevy_pbr::render::{
     mesh_view_bindings as view_bindings,
     mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT,
     shadows::fetch_directional_shadow,
-    view_transformations::{position_world_to_clip, position_world_to_view},
+    view_transformations::{direction_view_to_world, frag_coord_to_ndc, position_ndc_to_view, position_world_to_clip, position_world_to_view},
 };
 import super::block_texture::{
     block_alpha_at, block_footprint, block_mean, block_sample, foliage_level, material_fade, material_footprint, material_layer,
-    material_sample, material_uv,
+    material_sample, material_triplanar, material_uv, triplanar_footprint,
 };
 import super::hash::value_noise;
 import super::foliage::{is_flora, is_leaf, leaf_holes_filled, swayed};
@@ -23,6 +23,11 @@ import super::dither::dither_threshold;
 import super::curvature::{curved, eye, uncurved};
 import super::frost::{frost_at, frost_receives, frosted};
 import super::ice::{ice_albedo, ice_shine, is_ice};
+// `nets::FACET_SPAN`: a sculpted vertex's facet, 0 to 1, is its mode over this.
+const SCULPT_FACET_SPAN: f32 = 0.45;
+// `nets::AO_MID` and `AO_SPREAD`: a sculpted vertex's occlusion, from its cell's fraction.
+const SCULPT_AO_MID: f32 = 0.6;
+const SCULPT_AO_SPREAD: f32 = 1.0;
 // How bright the leaves seen through a solid tree box's holes are, to its surface's.
 const HOLE_SHADE: f32 = 0.55;
 // The same for far full-detail leaves, see `leaf_holes_filled`. Their holes are a texel or so
@@ -147,7 +152,8 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
 }
     // painted faces carry their plane coordinates in uv, see `material_uv`
     var uv = vertex.uv;
-    if !coarse && material_layer(vertex.color.a) >= 0 {
+    // sculpted ground keeps its mark, and projects three ways in the fragment shader
+    if !coarse && material_layer(vertex.color.a) >= 0 && vertex.uv.x > -512.0 {
         uv = material_uv(vertex.position, world_from_local[3].xyz, vertex.normal, vertex.uv);
     }
     let swaying = swayed(out.world_position.xyz, vertex.color.a, vertex.uv, coarse, view_bindings::globals.time);
@@ -181,7 +187,35 @@ fn fragment(
 ) ->  FragmentOutput {
 
     let world_position = in.world_position.xyz;
-    let normal = normalize(in.world_normal);
+    // sculpted ground, see `nets.rs`: projected three ways, blending to a second material, its facets cut here
+    let sculpted = in.uv.x < -512.0;
+    // the triangle's own normal, in the stored normals' terms (z reversed), and how much of it a sculpted vertex takes
+    // from the position relative to the camera, as world positions this far out are too coarse to difference between pixels
+    let view_at = position_ndc_to_view(frag_coord_to_ndc(in.position));
+    let flat_side = normalize(direction_view_to_world(cross(dpdy(view_at), dpdx(view_at))));
+    var facet = 0.0;
+    // coarse cells draw their mean colour, and a coarse sculpted vertex's mode is 1 more, see `nets::FACET_SPAN`
+    var coarse = false;
+@if(VERTEX_UVS_B) {
+    facet = select(0.0, fract(in.uv_b.y) / SCULPT_FACET_SPAN, sculpted);
+    coarse = in.uv_b.y > 0.5;
+}
+    // a sculpted blend: tinted side (1 second, 2 first, 0 both), weight toward the second, frayed cut; facets only on rock
+    let sculpt_side = floor(in.uv.y / 2.0);
+    let sculpt_weight = in.uv.y - sculpt_side * 2.0;
+    let unbent = uncurved(world_position);
+    let fray = value_noise(unbent.xz * 0.45 + vec2<f32>(unbent.y * 0.3)) + 0.5 * value_noise(unbent.xz * 1.6 + vec2<f32>(7.0, unbent.y));
+    // a band between `nets::OWN_SIDE` and its mirror, frayed no further, so each vertex shows its own material alone
+    let toward = smoothstep(0.38, 0.62, sculpt_weight + (fray / 1.5 - 0.5) * 0.16);
+    facet *= select(select(1.0, toward, sculpt_side == 2.0), 1.0 - toward, sculpt_side == 1.0);
+    var normal = normalize(in.world_normal);
+    if sculpted && facet > 0.001 {
+        var cut = vec3<f32>(flat_side.x, flat_side.y, -flat_side.z);
+        if dot(cut, normal) < 0.0 {
+            cut = -cut;
+        }
+        normal = normalize(mix(normal, cut, facet));
+    }
 
     let footprint = block_footprint(in.uv);
     let painted_footprint = material_footprint(in.uv);
@@ -193,7 +227,7 @@ fn fragment(
     var wall_side = vec2<f32>(0.0);
     var has_wall = false;
 @if(VERTEX_UVS_B) {
-    if in.uv_b.y > 0.0 && in.uv_b.y < 0.5 {
+    if in.uv_b.y > 0.0 && in.uv_b.y < 0.5 && !sculpted {
         let band = floor(in.uv_b.y / BLEND_BAND);
         has_wall = true;
         wall_faces_z = band >= 2.0;
@@ -205,6 +239,9 @@ fn fragment(
     // the wall's own coordinates: along it the top's, and down it world up, as `material_uv` has them
     let wall_uv = vec2<f32>(select(in.uv.y, in.uv.x, wall_faces_z), -uncurved(world_position).y);
     let wall_footprint = material_footprint(wall_uv);
+    let flat_position = uncurved(world_position);
+    // how the texture covers the screen, from the position relative to the camera, as world positions are too coarse
+    let sculpted_footprint = triplanar_footprint(direction_view_to_world(view_at));
     // blocks per pixel up the face, worked out here as derivatives need uniform control flow
     let block_rate = length(vec2<f32>(dpdx(in.uv.y), dpdy(in.uv.y)));
     // the painted material layer this face draws, if any: coarse cells and tree boxes draw their mean
@@ -218,7 +255,35 @@ fn fragment(
     // a tile under a pixel across filters to its mean, so skips the lookup; leaves and plants keep
     // theirs for their holes
     var color: vec4<f32>;
-    if painted {
+    if sculpted && (painted || coarse) {
+        // projected along the face's own direction where the smooth normal disagrees, or a wall between tops smears
+        let smooth_facing = vec3<f32>(normal.x, normal.y, -normal.z);
+        let face = flat_side * sign(dot(flat_side, smooth_facing) + 1e-6);
+        let facing = normalize(mix(face, smooth_facing, smoothstep(0.6, 0.9, dot(face, smooth_facing))));
+        let tinted_side = sculpt_side;
+        let tint = in.color.rgb;
+        if coarse {
+            color = block_mean(in.color.a);
+        } else {
+            color = material_triplanar(flat_position, facing, layer, sculpted_footprint);
+        }
+        color = vec4<f32>(color.rgb * select(tint, vec3<f32>(1.0), tinted_side == 1.0), color.a);
+        // toward the vertices of the triangle's second material, along a ragged edge
+        let other_cell = floor(-1024.0 - in.uv.x + 0.5);
+        let other = material_layer(other_cell);
+        if toward > 0.001 && (other >= 0 || coarse) {
+            var second: vec4<f32>;
+            if coarse {
+                second = block_mean(other_cell);
+            } else {
+                second = material_triplanar(flat_position, facing, other, sculpted_footprint);
+            }
+            color = mix(color, vec4<f32>(second.rgb * select(tint, vec3<f32>(1.0), tinted_side == 2.0), second.a), toward);
+        }
+        // occlusion rides in the cell's fraction, see `nets::AO_MID`
+        let occlusion = (in.color.a - floor(in.color.a + 0.5)) * SCULPT_AO_SPREAD + SCULPT_AO_MID;
+        color = vec4<f32>(color.rgb * occlusion, color.a);
+    } else if painted {
         if block_rate < MEAN_BLOCK_RATE {
             color = material_sample(in.uv, layer, painted_footprint);
             // a ramp (stored flat) keeps its own projection: it rises only 0.3, so the wall's `-y` barely moves across it and streaks
@@ -239,7 +304,11 @@ fn fragment(
     // tree boxes, which keep it: leaves come out solid, and their shadows match, see
     // `world_prepass.wesl`. How a face draws is `generator::TEXTURED` and so on.
 @if(VERTEX_UVS_B) {
-    if in.uv_b.y > 0.875 {
+    if sculpted {
+        if coarse {
+            color = vec4<f32>(color.rgb * patch_tint(world_position), color.a);
+        }
+    } else if in.uv_b.y > 0.875 {
         let mean = block_mean(in.color.a);
         color = vec4<f32>(mean.rgb * patch_tint(world_position), mean.a);
     } else if in.uv_b.y > 0.5 {
@@ -264,8 +333,8 @@ fn fragment(
         color = block_mean(in.color.a);
     }
 }
-    // ambient occlusion and grass/leaf tint
-    var tinted = color.rgb * in.color.rgb;
+    // ambient occlusion and grass/leaf tint, which sculpted ground applied itself above
+    var tinted = select(color.rgb * in.color.rgb, color.rgb, sculpted);
     if painted {
         tinted = tinted * drift(world_position.xz);
     }

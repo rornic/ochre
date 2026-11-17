@@ -17,13 +17,14 @@ use bevy::{
         ButtonInput,
     },
     log::info,
-    math::{Dir3, EulerRot, I64Vec3, Quat, Vec3, Vec3Swizzles},
+    math::{BVec3, Dir3, EulerRot, I64Vec3, Quat, Vec3, Vec3Swizzles},
     prelude::Transform,
     time::Time,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 
-use crate::collision::{move_and_step, Aabb};
+use crate::collision::{move_and_collide, move_and_step, Aabb};
+use crate::contact::{Body, Walker};
 use crate::footsteps::{Footstep, Surface, SPRINT_LOUDER};
 use crate::view::{
     apply_cold_grade, lift_cold_grade, spawn_camera, update_underwater_effects, ColdGrade,
@@ -41,6 +42,9 @@ use bevy::{
 use ochre_base::block::BlockType;
 use ochre_terrain::{
     chunk::ChunkCoordinate,
+    floor::Floor,
+    group::ChunkGroup,
+    lod::LodKey,
     horizon::update_horizon,
     settings::RendererSettings,
     world::World,
@@ -137,6 +141,16 @@ const SWIM_CHEST: f32 = 0.6;
 const BLOCK_CORNER: Vec3 = Vec3::splat(0.5);
 // The tallest ledge a grounded player walks up without jumping.
 const STEP_HEIGHT: f32 = 1.0;
+// How far down sculpted ground a standing player follows it rather than falling.
+const SETTLE_SNAP: f32 = 0.6;
+// The body against sculpted ground, rounded over its bumps, see `contact`.
+const SPHERES: Body = Body { radius: 0.3, heights: [0.3, 1.0, 1.7] };
+// The tallest rise the body steps up onto sculpted ground without jumping, in blocks.
+const SCULPT_STEP: f32 = 1.0;
+// How far up a sculpted face must face to stand on, about 66 degrees from level; steeper is a wall.
+const GROUND_FACING: f32 = 0.4;
+// A rise onto sculpted ground taller than this in a frame eases the eyes up, as a step does.
+const SCULPT_RISE_EASE: f32 = 0.25;
 // Seconds between steps up.
 const STEP_COOLDOWN: f32 = 0.1;
 // How fast, a share a second, the eyes catch up with the body after a step up.
@@ -162,7 +176,7 @@ const LAND_LOUDNESS: (f32, f32) = (0.8, 2.0);
 
 type PlayerCamera<'a> = (&'a ChildOf, &'a mut Transform);
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn player_move(
     time: Res<Time>,
     world: Res<World>,
@@ -171,6 +185,7 @@ fn player_move(
     keys: Res<ButtonInput<KeyCode>>,
     mut steps: MessageWriter<Footstep>,
     mut projection: Query<&mut Projection, With<Camera>>,
+    floors: Query<(&ChunkGroup, &Transform, &Floor), (Without<Player>, Without<Camera>)>,
 ) {
     let (parent, mut camera) = camera_query.single_mut().expect("camera does not exist");
     let (mut transform, mut player) = player_query
@@ -201,6 +216,25 @@ fn player_move(
     );
     let sprinting = keys.pressed(KeyCode::ShiftLeft);
 
+    // the sculpted ground of the groups round the player, in world units: the highest surface from `below` to `above` a point
+    let home = LodKey::containing(ChunkCoordinate::containing((transform.translation + BLOCK_CORNER).floor().as_i64vec3()), 1);
+    let near: Vec<(Vec3, &Floor)> = floors
+        .iter()
+        .filter(|(group, _, _)| group.key.level == home.level && (group.key.coord - home.coord).abs().max_element() <= 1)
+        .map(|(_, at, floor)| (at.translation, floor))
+        .collect();
+    // and its triangles between two corners, in world units
+    let sculpted = |min: Vec3, max: Vec3| {
+        near.iter()
+            .flat_map(|&(at, floor)| floor.near(min - at, max - at).into_iter().map(move |t| t.map(|p| p + at)))
+            .collect::<Vec<_>>()
+    };
+    let floor_at = |p: Vec3, below: f32, above: f32, up: f32| {
+        near.iter()
+            .filter_map(|&(at, floor)| floor.surface_facing(p - at, below, above, up).map(|(y, _)| y + at.y))
+            .max_by(f32::total_cmp)
+    };
+
     match player.movement {
         Movement::Fly => {
             let speed = MOVE_SPEED * dt * if sprinting { SPRINT_MULTIPLIER } else { 1.0 };
@@ -216,6 +250,8 @@ fn player_move(
             sprinting,
             &keys,
             dt,
+            &floor_at,
+            &sculpted,
         ),
     }
 
@@ -289,6 +325,7 @@ fn footfall(before: f32, after: f32) -> bool {
     side(before) != side(after)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk(
     world: &World,
     transform: &mut Transform,
@@ -297,6 +334,8 @@ fn walk(
     sprinting: bool,
     keys: &ButtonInput<KeyCode>,
     dt: f32,
+    floor_at: &dyn Fn(Vec3, f32, f32, f32) -> Option<f32>,
+    sculpted: &dyn Fn(Vec3, Vec3) -> Vec<[Vec3; 3]>,
 ) {
     // swimming until the chest is out, so the head bobs well clear of the water
     let chest = transform.translation + Vec3::Y * SWIM_CHEST;
@@ -352,23 +391,55 @@ fn walk(
 
     // Chunks not generated yet are solid, so the player waits where it is for the ground to
     // load rather than falling through it.
-    let solid = |block: I64Vec3| {
-        !world.is_chunk_generated(ChunkCoordinate::containing(block))
-            || world.get_block_at(block).is_solid()
-    };
     player.step_cooldown = (player.step_cooldown - dt).max(0.0);
     let ready = player.grounded && !swimming && player.step_cooldown == 0.0;
     let step = if ready { STEP_HEIGHT } else { 0.0 };
-    let (position, hit) = move_and_step(
-        transform.translation + BLOCK_CORNER,
-        player.velocity * dt,
-        BODY,
-        step,
-        solid,
-    );
+    let start = transform.translation;
+    let delta = player.velocity * dt;
+    let reach = Vec3::new(1.5, 1.5, 1.5);
+    let ground_near = sculpted(start - reach + delta.min(Vec3::ZERO), start + reach + Vec3::Y * 2.0 + delta.max(Vec3::ZERO));
+    let generated = |block: I64Vec3| world.is_chunk_generated(ChunkCoordinate::containing(block));
+    let mut walled = false;
+    let (position, hit) = if ground_near.is_empty() {
+        // Chunks not generated yet are solid, so the player waits where it is for the ground to load rather than falling through it.
+        let solid = |block: I64Vec3| !generated(block) || world.get_block_at(block).is_solid();
+        move_and_step(start + BLOCK_CORNER, delta, BODY, step, solid)
+    } else {
+        // sculpted ground collides as its surface, walls and ground apart, see `Walker`; trees and unloaded chunks as blocks
+        let solid = |block: I64Vec3| !generated(block) || matches!(world.get_block_at(block), BlockType::Leaves | BlockType::Log);
+        let across_blocks = |feet: Vec3, delta: Vec3| move_and_collide(feet + BLOCK_CORNER, delta, BODY, solid).0 - BLOCK_CORNER;
+        let ground = |p: Vec3, below: f32, above: f32| floor_at(p, below, above, GROUND_FACING);
+        let support = |p: Vec3, below: f32, above: f32| floor_at(p, below, above, 1e-3);
+        let walker = Walker {
+            body: &SPHERES,
+            triangles: &ground_near,
+            walkable: GROUND_FACING,
+            step: SCULPT_STEP,
+            snap: SETTLE_SNAP,
+            ground: &ground,
+            support: &support,
+        };
+        let standing = !swimming && player.velocity.y <= 0.0 && player.grounded;
+        // over a chunk not generated yet the player waits rather than falling into it
+        let under = (start + BLOCK_CORNER - Vec3::Y).floor().as_i64vec3();
+        let delta = if generated(under) { delta } else { delta.with_y(delta.y.max(0.0)) };
+        let moved = walker.walk(start, delta, standing, &across_blocks);
+        let hit = BVec3::new(false, moved.grounded || moved.bumped, false);
+        // a wall takes away only the way in to it, so the body slides along it whichever way it faces
+        let wall = moved.wall.normalize_or_zero();
+        let into_wall = player.velocity.dot(wall);
+        if into_wall < 0.0 {
+            player.velocity -= wall * into_wall;
+        }
+        walled = wall != Vec3::ZERO;
+        let feet = moved.feet;
+        (feet + BLOCK_CORNER, hit)
+    };
     // a step up moves the body a block in one frame, so the eyes start where they were and ease up
     let rose = position.y - BLOCK_CORNER.y - transform.translation.y;
-    if step > 0.0 && rose > 0.0 {
+    // on sculpted ground only a rise sharper than walking up its slopes counts
+    let least = if ground_near.is_empty() { 0.0 } else { SCULPT_RISE_EASE };
+    if step > 0.0 && rose > least {
         player.eye_lag = (player.eye_lag + rose).min(STEP_HEIGHT);
         player.step_cooldown = STEP_COOLDOWN;
     }
@@ -388,7 +459,7 @@ fn walk(
     if hit.z {
         player.velocity.z = 0.0;
     }
-    player.against_wall = (hit.x || hit.z) && across != Vec3::ZERO;
+    player.against_wall = (hit.x || hit.z || walled) && across != Vec3::ZERO;
 }
 
 /// Whether the cursor is held in the window, so the mouse turns the player.

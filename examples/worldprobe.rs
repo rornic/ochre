@@ -9,6 +9,7 @@
 //   ... <seed> slice <x> <z> <x|z> <len> <y0> <y1> [flags]   a vertical cross-section, one letter a block
 //   ... <seed> top <x> <z> <half> <out.png> [flags]           top-down surface blocks, 1 pixel a block
 //   ... <seed> passes <x> <z> <half>                         blocks each pass changes in the area, and where
+//   ... <seed> render <x> <z> <half> <out.png> [azimuth]       the meshes as the game builds them, sun-shaded in mean colours
 // flags: --no-cliffs --no-trees --no-flora
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -501,6 +502,11 @@ fn main() {
                 println!("{row}");
             }
         }
+        "render" => {
+            let half: i64 = args[4].parse().unwrap();
+            let azimuth: f32 = args.get(6).map_or(225.0, |a| a.parse().unwrap());
+            render(&regions, x, z, half, azimuth, &args[5]);
+        }
         "top" => {
             let half: i64 = args[4].parse().unwrap();
             let out = &args[5];
@@ -583,4 +589,206 @@ fn main() {
             std::process::exit(2);
         }
     }
+}
+
+// The chunks round (`x`, `z`) meshed as the game meshes them, drawn from above at `azimuth` degrees with an orthographic
+// camera, each face its tile's mean colour times its vertex colour, lit by one sun. Plants and leaves are left out, as
+// their cards would draw solid.
+fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, out: &str) {
+    use bevy::math::Vec3;
+    use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
+    use ochre_terrain::chunk::CHUNK_SIZE;
+    use ochre_terrain::generate::generator::{generate_chunk, generate_chunk_mesh_with};
+    let size = CHUNK_SIZE as i64;
+    let shader = std::fs::read_to_string("assets/shaders/block_texture.wesl").unwrap();
+    let means: Vec<Vec3> = shader
+        .split("fn block_mean")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("vec3<f32>(")?.split(')').next())
+        .map(|args| {
+            let v: Vec<f32> = args.split(',').map(|a| a.trim().parse().unwrap()).collect();
+            Vec3::new(v[0], v[1], v[2])
+        })
+        .collect();
+    let mut sampler = regions.sampler();
+    let (mut low, mut high) = (i64::MAX, i64::MIN);
+    for pz in (z - half..=z + half).step_by(4) {
+        for px in (x - half..=x + half).step_by(4) {
+            let top = sampler.ground_top(px, pz);
+            low = low.min(top);
+            high = high.max(top.max(sampler.water_top(px, pz)));
+        }
+    }
+    let chunk_of = |v: i64| v.div_euclid(size);
+    let (cx0, cx1, cz0, cz1) = (chunk_of(x - half), chunk_of(x + half), chunk_of(z - half), chunk_of(z + half));
+    let (cy0, cy1) = (chunk_of(low - 4), chunk_of(high + 12));
+    let mut chunks: HashMap<(i64, i64, i64), Arc<ChunkData>> = HashMap::new();
+    let mut chunk_at = |c: (i64, i64, i64)| {
+        chunks
+            .entry(c)
+            .or_insert_with(|| Arc::new(generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2)))))
+            .clone()
+    };
+    // (position, normal, colour) triangles in world blocks
+    let mut triangles: Vec<[(Vec3, Vec3, Vec3); 3]> = Vec::new();
+    let mut vertices = 0usize;
+    // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
+    let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
+        let (
+            Some(VertexAttributeValues::Float32x3(positions)),
+            Some(VertexAttributeValues::Float32x3(normals)),
+            Some(VertexAttributeValues::Float32x4(colours)),
+            Some(Indices::U32(indices)),
+        ) = (
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+            mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+            mesh.attribute(Mesh::ATTRIBUTE_COLOR),
+            mesh.indices(),
+        )
+        else {
+            return;
+        };
+        if !water {
+            vertices += positions.len();
+        }
+        // OCHRE_RENDER_FLAT=1 shades each triangle by its own normal, as the game cuts sculpted rock's facets
+        let flat = std::env::var("OCHRE_RENDER_FLAT").is_ok();
+        for tri in indices.chunks(3) {
+            let cell = colours[tri[0] as usize][3].round() as usize;
+            let corners: [Vec3; 3] = std::array::from_fn(|k| Vec3::from(positions[tri[k] as usize]));
+            let face = (corners[2] - corners[0]).cross(corners[1] - corners[0]).normalize_or_zero();
+            // leaves and the plants after the steppe's top in the atlas
+            if !water && (cell == 6 || cell >= 30) {
+                continue;
+            }
+            triangles.push(std::array::from_fn(|k| {
+                let i = tri[k] as usize;
+                let n = normals[i];
+                // the cube's faces along z store their normals reversed
+                let normal = if flat { face } else { Vec3::new(n[0], n[1], -n[2]) };
+                let c = colours[i];
+                let colour = if water {
+                    Vec3::new(0.16, 0.36, 0.55)
+                } else {
+                    means.get(cell).copied().unwrap_or(Vec3::ONE) * Vec3::new(c[0], c[1], c[2])
+                };
+                (Vec3::from(positions[i]) * scale + origin, normal, colour)
+            }));
+        }
+    };
+    // OCHRE_RENDER_LOD=<level> draws the coarse nodes of that level over the area instead of the chunks
+    let lod: u8 = std::env::var("OCHRE_RENDER_LOD").ok().and_then(|l| l.parse().ok()).unwrap_or(0);
+    // OCHRE_RENDER_HANDOVER=1 draws chunks in the node holding (`x`, `z`) instead, to look at the seam round it
+    let centre_node = ochre_terrain::lod::LodKey::containing(ChunkCoordinate(I64Vec3::new(chunk_of(x), 0, chunk_of(z))), lod.max(1)).coord;
+    let handover = lod > 0 && std::env::var("OCHRE_RENDER_HANDOVER").is_ok();
+    let in_centre = |cx: i64, cz: i64| (cx >> lod, cz >> lod) == (centre_node.x, centre_node.z);
+    if lod > 0 {
+        let mut keys = std::collections::BTreeSet::new();
+        for cx in cx0..=cx1 {
+            for cz in cz0..=cz1 {
+                for cy in cy0..=cy1 {
+                    let key = ochre_terrain::lod::LodKey::containing(ChunkCoordinate(I64Vec3::new(cx, cy, cz)), lod);
+                    keys.insert((key.coord.x, key.coord.y, key.coord.z));
+                }
+            }
+        }
+        for (x, y, z) in keys.into_iter().filter(|&(x, _, z)| !handover || (x, z) != (centre_node.x, centre_node.z)) {
+            let key = ochre_terrain::lod::LodKey { level: lod, coord: I64Vec3::new(x, y, z) };
+            let cell = key.cell_size() as f32;
+            let origin = key.min_block().as_vec3() + Vec3::splat(0.5 * cell - 0.5);
+            if let Some(meshes) = ochre_terrain::generate::generator::generate_lod_mesh(regions.clone(), key) {
+                add(&meshes.opaque, origin, cell, false);
+                if let Some(water) = &meshes.water {
+                    add(water, origin, cell, true);
+                }
+            }
+        }
+    }
+    for cx in cx0..=cx1 {
+        for cz in (cz0..=cz1).filter(|&cz| lod == 0 || (handover && in_centre(cx, cz))) {
+            for cy in cy0..=cy1 {
+                let chunk = chunk_at((cx, cy, cz));
+                let mut neighbours = vec![None; 26];
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        for dz in -1..=1 {
+                            let at = ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1)) as usize;
+                            if at == 13 {
+                                continue;
+                            }
+                            neighbours[if at < 13 { at } else { at - 1 }] =
+                                Some(chunk_at((cx + dx as i64, cy + dy as i64, cz + dz as i64)));
+                        }
+                    }
+                }
+                let coord = ChunkCoordinate(I64Vec3::new(cx, cy, cz));
+                let meshes = generate_chunk_mesh_with(chunk, neighbours, coord, regions, true);
+                let origin = Vec3::new((cx * size) as f32, (cy * size) as f32, (cz * size) as f32);
+                add(&meshes.opaque, origin, 1.0, false);
+                if let Some(water) = &meshes.water {
+                    add(water, origin, 1.0, true);
+                }
+            }
+        }
+    }
+    let (w, h) = (1600u32, 1000u32);
+    let centre = Vec3::new(x as f32, sampler.ground_top(x, z) as f32, z as f32);
+    let (yaw, pitch) = (azimuth.to_radians(), 35f32.to_radians());
+    let forward = Vec3::new(yaw.cos() * pitch.cos(), -pitch.sin(), yaw.sin() * pitch.cos());
+    let right = forward.cross(Vec3::Y).normalize();
+    let up = right.cross(forward);
+    let scale = w as f32 / (2.5 * half as f32);
+    let sun = Vec3::new(-0.45, 0.75, -0.3).normalize();
+    let mut depth = vec![f32::INFINITY; (w * h) as usize];
+    let mut img = RgbImage::from_pixel(w, h, Rgb([170, 196, 222]));
+    for tri in &triangles {
+        let screen = tri.map(|(p, _, _)| {
+            let d = p - centre;
+            (w as f32 / 2.0 + d.dot(right) * scale, h as f32 / 2.0 - d.dot(up) * scale, d.dot(forward))
+        });
+        let area = (screen[1].0 - screen[0].0) * (screen[2].1 - screen[0].1)
+            - (screen[2].0 - screen[0].0) * (screen[1].1 - screen[0].1);
+        if area.abs() < 1e-6 {
+            continue;
+        }
+        let (min_x, max_x) = (
+            screen.iter().map(|s| s.0).fold(f32::MAX, f32::min).floor().max(0.0) as u32,
+            screen.iter().map(|s| s.0).fold(f32::MIN, f32::max).ceil().min(w as f32 - 1.0) as u32,
+        );
+        let (min_y, max_y) = (
+            screen.iter().map(|s| s.1).fold(f32::MAX, f32::min).floor().max(0.0) as u32,
+            screen.iter().map(|s| s.1).fold(f32::MIN, f32::max).ceil().min(h as f32 - 1.0) as u32,
+        );
+        if min_x > max_x || min_y > max_y {
+            continue;
+        }
+        for py in min_y..=max_y {
+            for px in min_x..=max_x {
+                let (fx, fy) = (px as f32 + 0.5, py as f32 + 0.5);
+                let edge = |a: usize, b: usize| {
+                    (screen[b].0 - screen[a].0) * (fy - screen[a].1) - (screen[b].1 - screen[a].1) * (fx - screen[a].0)
+                };
+                let weights = [edge(1, 2) / area, edge(2, 0) / area, edge(0, 1) / area];
+                if weights.iter().any(|&b| b < 0.0) {
+                    continue;
+                }
+                let d = weights[0] * screen[0].2 + weights[1] * screen[1].2 + weights[2] * screen[2].2;
+                let at = (py * w + px) as usize;
+                if d >= depth[at] {
+                    continue;
+                }
+                depth[at] = d;
+                let normal = (tri[0].1 * weights[0] + tri[1].1 * weights[1] + tri[2].1 * weights[2]).normalize_or_zero();
+                let colour = tri[0].2 * weights[0] + tri[1].2 * weights[1] + tri[2].2 * weights[2];
+                let lit = colour * (0.35 + 0.9 * normal.dot(sun).max(0.0));
+                // a rough sRGB, so mid colours aren't crushed
+                let rgb = lit.map(|c| c.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0);
+                img.put_pixel(px, py, Rgb([rgb.x as u8, rgb.y as u8, rgb.z as u8]));
+            }
+        }
+    }
+    img.save(out).unwrap();
+    println!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len());
 }

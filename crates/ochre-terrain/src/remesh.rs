@@ -57,10 +57,16 @@ pub(crate) fn chunks_reading(block: I64Vec3) -> impl Iterator<Item = ChunkCoordi
     let size = CHUNK_SIZE as i64;
     let margin = LIGHT_MARGIN as i64;
     // the box's extent from a chunk's lowest corner, from its first block to past its last
-    let (low, high) = (
+    let (mut low, mut high) = (
         I64Vec3::new(-margin, -1, -margin),
         I64Vec3::new(size + margin, 2 * size, size + margin),
     );
+    // a sculpted chunk's surface reads blocks further off, every way, so an edit moves the edges its neighbours share
+    if crate::generate::generator::nets_on() {
+        let reach = crate::generate::generator::EDIT_REACH;
+        low = low.min(I64Vec3::splat(-reach));
+        high = high.max(I64Vec3::splat(size + reach));
+    }
     // the chunks c with `low <= block - c * size < high`
     let first = (block - high).div_euclid(I64Vec3::splat(size)) + 1;
     let last = (block - low).div_euclid(I64Vec3::splat(size));
@@ -222,13 +228,17 @@ pub(crate) fn apply_remeshes(
     mut remeshing: Query<(Entity, &mut RemeshGroup, Has<BuiltGroup>)>,
 ) {
     for (entity, mut remesh, built) in &mut remeshing {
-        let Some(remeshed) = futures::check_ready(&mut remesh.task) else {
+        let Some(mut remeshed) = futures::check_ready(&mut remesh.task) else {
             continue;
         };
+        let floor = crate::floor::Floor::new(std::mem::take(&mut remeshed.meshes.floor));
         let mut group = commands.entity(entity);
         group
-            .remove::<(RemeshGroup, Mesh3d)>()
+            .remove::<(RemeshGroup, Mesh3d, crate::floor::Floor)>()
             .despawn_related::<Children>();
+        if !floor.is_empty() {
+            group.insert(floor);
+        }
         if !built {
             group.insert((BuiltGroup, group_aabb()));
         }

@@ -420,6 +420,8 @@ pub(super) fn mesh_trees<S: BlockSource>(
     buffers: &mut MeshBuffers,
     grass_tint: &GrassTint,
     light: &impl Deref<Target = SkyLight>,
+    // how far a grounded trunk reaches below its block
+    sink: f32,
 ) {
     let mut drawing = Drawing {
         buffers,
@@ -445,7 +447,7 @@ pub(super) fn mesh_trees<S: BlockSource>(
             };
             drawing.segment(
                 &Segment {
-                    from: ring(at(centre.y - 0.5), Vec3::Y, foot),
+                    from: ring(at(centre.y - 0.5 - if grounded { sink } else { 0.0 }), Vec3::Y, foot),
                     to: ring(at(centre.y + 0.5), Vec3::Y, radius),
                     axis: Vec3::Y,
                     radius,

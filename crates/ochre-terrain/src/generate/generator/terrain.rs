@@ -103,8 +103,7 @@ pub(super) fn terrain_block(
             || (above_water >= 2 && combined_gradient >= 3.5)
         {
             BlockType::Rock
-        } else if above_water >= 2 || water_top > WATER_LEVEL {
-            // only the sea has beaches: ground by a river or lake is grass
+        } else if above_water >= 2 {
             if temperature < SNOWY_GRASS_TEMPERATURE && world_y == column_height - 1 {
                 BlockType::Snow
             } else {

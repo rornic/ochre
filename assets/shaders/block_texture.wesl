@@ -241,6 +241,33 @@ fn material_footprint(uv: vec2<f32>) -> MaterialFootprint {
     return MaterialFootprint(dpdx(uv) / period, dpdy(uv) / period);
 }
 
+// Sculpted ground's three projections, along x, y and z, sides with world up as the painting's up, see `nets.rs`.
+fn triplanar_uvs(world: vec3<f32>) -> array<vec2<f32>, 3> {
+    return array<vec2<f32>, 3>(vec2<f32>(world.z, -world.y), world.xz, vec2<f32>(world.x, -world.y));
+}
+
+// How each of the three projections covers the screen, from unwrapped world space so the period's seam doesn't show.
+struct TriplanarFootprint {
+    x: MaterialFootprint,
+    y: MaterialFootprint,
+    z: MaterialFootprint,
+}
+
+fn triplanar_footprint(world: vec3<f32>) -> TriplanarFootprint {
+    let uvs = triplanar_uvs(world);
+    return TriplanarFootprint(material_footprint(uvs[0]), material_footprint(uvs[1]), material_footprint(uvs[2]));
+}
+
+// Sculpted ground's painting, projected along each axis and blended by how much the surface faces that way.
+fn material_triplanar(world: vec3<f32>, normal: vec3<f32>, layer: i32, footprint: TriplanarFootprint) -> vec4<f32> {
+    let period = f32(constants::MATERIAL_PERIOD);
+    let uvs = triplanar_uvs(world - floor(world / period) * period);
+    let sharp = pow(abs(normal), vec3<f32>(4.0));
+    let w = sharp / (sharp.x + sharp.y + sharp.z);
+    return material_sample(uvs[0], layer, footprint.x) * w.x + material_sample(uvs[1], layer, footprint.y) * w.y
+        + material_sample(uvs[2], layer, footprint.z) * w.z;
+}
+
 fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> vec4<f32> {
     let texel = textureSampleGrad(materials, materials_sampler, uv / f32(constants::MATERIAL_PERIOD), layer, footprint.dx, footprint.dy);
     return material_color * vec4<f32>(texel.rgb, 1.0);
