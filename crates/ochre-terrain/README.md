@@ -15,7 +15,7 @@ The crate has no source files at its root; all code is under [`src`](./src/READM
 - Dependencies point down only: this crate may use `ochre-base`, never `ochre-world` or `ochre-gameplay` outside dev-dependencies (`Cargo.toml`).
 - Terrain is deterministic per seed: no thread-order or hash-order dependence in generation, guarded by `src/generate/generator/determinism.rs`; transcendental maths in generation goes through `libm`.
 - Full-detail chunks and LOD nodes meet at level 1: a `ChunkGroup` is wholly shown or hidden, and a node retires only after its replacement is ready (`src/group.rs`, `src/lod/state.rs:LodState::can_retire`).
-- Changing a mesh cut (chamfer, ramp, seam) or water must keep meshes closed and vertex counts as intended: read `docs/bevels.md` and `docs/water.md`; check with `cargo run --release --example bench`.
+- Changing the ground's mesh or water must keep meshes closed and vertex counts as intended: read `docs/sculpted-ground.md` and `docs/water.md`; check with `cargo run --release --example bench`.
 - Always run `--release`: debug generation is unusably slow (`AGENTS.md`).
 
 ## Global Side Effects

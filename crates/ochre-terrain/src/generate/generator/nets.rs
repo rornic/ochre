@@ -7,26 +7,6 @@ use crate::generate::light::SkyLight;
 use bevy::math::{IVec3, Mat3, Vec3};
 use ochre_base::block::{BlockType, Face, Tile};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static SCULPTED: AtomicBool = AtomicBool::new(true);
-
-// Whether the ground is sculpted, see `RendererSettings::sculpted_ground`; off it's drawn as cubes.
-pub fn set_sculpted(on: bool) {
-    SCULPTED.store(on, Ordering::Relaxed);
-}
-
-pub(crate) fn nets_on() -> bool {
-    #[cfg(test)]
-    return FORCE_NETS.get();
-    #[allow(unreachable_code)]
-    SCULPTED.load(Ordering::Relaxed)
-}
-
-#[cfg(test)]
-thread_local! {
-    pub(super) static FORCE_NETS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
 
 // What the surface wraps: logs and leaves are drawn as they were.
 pub(super) fn ground(block: BlockType) -> bool {

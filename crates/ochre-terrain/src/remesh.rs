@@ -57,16 +57,13 @@ pub(crate) fn chunks_reading(block: I64Vec3) -> impl Iterator<Item = ChunkCoordi
     let size = CHUNK_SIZE as i64;
     let margin = LIGHT_MARGIN as i64;
     // the box's extent from a chunk's lowest corner, from its first block to past its last
-    let (mut low, mut high) = (
+    let (low, high) = (
         I64Vec3::new(-margin, -1, -margin),
         I64Vec3::new(size + margin, 2 * size, size + margin),
     );
-    // a sculpted chunk's surface reads blocks further off, every way, so an edit moves the edges its neighbours share
-    if crate::generate::generator::nets_on() {
-        let reach = crate::generate::generator::EDIT_REACH;
-        low = low.min(I64Vec3::splat(-reach));
-        high = high.max(I64Vec3::splat(size + reach));
-    }
+    // the surface reads blocks further off, every way, so an edit moves the edges its neighbours share
+    let reach = crate::generate::generator::EDIT_REACH;
+    let (low, high) = (low.min(I64Vec3::splat(-reach)), high.max(I64Vec3::splat(size + reach)));
     // the chunks c with `low <= block - c * size < high`
     let first = (block - high).div_euclid(I64Vec3::splat(size)) + 1;
     let last = (block - low).div_euclid(I64Vec3::splat(size));
@@ -357,9 +354,12 @@ mod tests {
                             block.div_euclid(I64Vec3::splat(size)) + I64Vec3::new(x, y, z),
                         );
                         let local = block - chunk.0 * size;
-                        let held = (-margin..size + margin).contains(&local.x)
-                            && (-1..2 * size).contains(&local.y)
-                            && (-margin..size + margin).contains(&local.z);
+                        // the light box, and the sculpted surface's reach every way
+                        let reach = crate::generate::generator::EDIT_REACH;
+                        let (low, high) = (margin.max(reach), (size + margin).max(size + reach));
+                        let held = (-low..high).contains(&local.x)
+                            && (-reach.max(1)..(2 * size).max(size + reach)).contains(&local.y)
+                            && (-low..high).contains(&local.z);
                         assert_eq!(held, reading.contains(&chunk), "{block:?} in {chunk:?}");
                     }
                 }
