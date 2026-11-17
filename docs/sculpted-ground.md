@@ -1,6 +1,6 @@
 # Sculpted ground
 
-The ground is drawn as one sculpted surface, in full-detail chunks and coarse LOD nodes alike: grass and loose ground lumpy and smooth, rock chiselled into broad facets, sharing vertices so one runs into the other with no wall between. Leaves, logs and water draw as cubes. The code is `generate/generator/nets.rs`, and the shader side is in `world.wesl` and `block_texture.wesl`. `sculpted_ground = false` under `[renderer]` in `assets/settings.toml` draws the ground as cubes again, see `docs/bevels.md`.
+The ground is drawn as one sculpted surface, in full-detail chunks and coarse LOD nodes alike: grass and loose ground lumpy and smooth, rock chiselled into broad facets, sharing vertices so one runs into the other with no wall between. Leaves, logs and water draw as cubes. The code is `generate/generator/nets.rs`, and the shader side is in `world.wesl` and `block_texture.wesl`. The cube ground it replaced, with its bevels, ramps and seams, is in the history before this was made the only ground.
 
 ## The mesh
 

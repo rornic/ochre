@@ -697,7 +697,6 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<Chunk
         MeshStyle {
             ambient_occlusion: true,
             textured,
-            bevel: false,
             // lone trees are drawn from their boxes, and the cells they are planted in only shade the ground
             tree_shapes: true,
         },

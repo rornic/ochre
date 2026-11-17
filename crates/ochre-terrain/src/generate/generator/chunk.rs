@@ -383,7 +383,6 @@ pub fn generate_chunk_mesh_with(
         MeshStyle {
             ambient_occlusion: true,
             textured: true,
-            bevel: bevel_on(),
             tree_shapes,
         },
         &tint,
@@ -442,11 +441,3 @@ fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> S
     SkyLight::new(min, span, sky_above(top, 1), opacity)
 }
 
-// Whether full-detail chunks carry bevel distances, which tests of merging switch off.
-fn bevel_on() -> bool {
-    #[cfg(test)]
-    if super::greedy::NO_BEVELS.get() {
-        return false;
-    }
-    true
-}

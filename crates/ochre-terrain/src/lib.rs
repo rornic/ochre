@@ -75,7 +75,6 @@ impl TerrainPlugin {
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         let world = self.world.lock().unwrap().take();
-        generate::generator::set_sculpted(self.renderer.sculpted_ground);
         app.insert_resource(world.expect("TerrainPlugin was built twice"))
             .insert_resource(self.renderer)
             .insert_resource(self.debug)

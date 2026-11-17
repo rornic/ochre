@@ -1,6 +1,6 @@
 use crate::chunk::CHUNK_SIZE;
 use bevy::asset::RenderAssetUsages;
-use bevy::math::{IVec3, Vec2, Vec3};
+use bevy::math::{IVec3, Vec3};
 use bevy::render::mesh::Indices;
 use bevy::render::mesh::Mesh;
 use bevy::render::mesh::VertexAttributeValues;
@@ -24,61 +24,12 @@ pub(super) struct MeshBuffers {
     pub(super) untextured: bool,
     // where tree boxes start and how they draw, which is on their own terms
     pub(super) boxes: Option<(usize, f32)>,
-    // per vertex, how far a painted top is drawn in the wall's projection, see `set_blend`, for the vertices that have one
+    // per vertex, what the sculpted ground packs in its mode (`uv_b.y`), for the vertices that have one, see `nets`
     pub(super) blends: Vec<f32>,
 }
 
-// A painted top meeting a wall is drawn partly in the wall's projection so the texture runs on into the wall, and lit
-// partly as the wall. Each of its vertices carries how much, 0 to 1, in its mode (`uv_b.y`) as `BLEND_BASE` plus
-// `BLEND_SPAN` times it, in the band for which way the wall faces: x+, x-, z+ or z-, each `BLEND_BAND` wide, so the
-// largest mode stays under the 0.5 that marks coarse cells. See `world.wesl`.
-// How far up a ramp, as a share of its rise, the wall's light starts to show (its texture stays the ground's).
-const RAMP_BLEND_FROM: f32 = 0.6;
-
-const BLEND_BAND: f32 = 0.125;
-
-// Keeps a marked vertex off its band's edge, where interpolation could tip it into the next, and above 0, which is unmarked.
-const BLEND_BASE: f32 = 0.0125;
-
-const BLEND_SPAN: f32 = 0.1;
-
-// How far a bevelled edge is cut back along each face that meets there, in blocks: the chamfer is
-// a 45 degree strip across the corner this big on each side.
-pub(super) const BEVEL: f32 = 0.2;
-
-// How far up a wall the ground against it climbs, in blocks, over the one cell of floor that meets it,
-// and its foot is raised to meet: the crease is a slope, not a right angle.
-pub(super) const RAMP: f32 = 0.3;
-
-// How much of a crease's ambient occlusion goes where a ramp fills it, at the top of the ramp: the geometry
-// does the shading there, and the darkening would count it twice.
-const AO_RELIEF: f32 = 0.3;
-
-// Where a point `(i, j)` cells along a quad's tangents ends up, `size` cells wide and tall, with the
-// quad's edge pulled in on each side, -ta, +ta, -tb, +tb, by `inset` blocks.
-pub(super) fn bevelled_ij(inset: [f32; 4], (i, j): (f32, f32), size: (usize, usize)) -> (f32, f32) {
-    let pull = |near: f32, far: f32, at: f32, end: f32| {
-        (if at == 0.0 { near } else { 0.0 }) - (if at == end { far } else { 0.0 })
-    };
-    (
-        i + pull(inset[0], inset[1], i, size.0 as f32),
-        j + pull(inset[2], inset[3], j, size.1 as f32),
-    )
-}
-
-// How far up a quad rises at `(i, j)` cells along it, from the rise at each corner, (-ta, -tb), (+ta, -tb),
-// (-ta, +tb), (+ta, +tb): the ground that climbs a wall, or the foot of a wall that meets it. Neighbours that
-// agree on a corner's rise agree on every point of the edge between, so ramps join.
-pub(super) fn lift_at(corners: [f32; 4], (i, j): (f32, f32), size: (usize, usize)) -> f32 {
-    let (u, v) = (
-        (i / size.0 as f32).clamp(0.0, 1.0),
-        (j / size.1 as f32).clamp(0.0, 1.0),
-    );
-    blend_corners([[corners[0], corners[2]], [corners[1], corners[3]]], u, v)
-}
-
 // The value at `(u, v)` across a quad from its values at the four corners, [along ta][along tb].
-pub(super) fn blend_corners(corners: [[f32; 2]; 2], u: f32, v: f32) -> f32 {
+fn blend_corners(corners: [[f32; 2]; 2], u: f32, v: f32) -> f32 {
     let along = |c: [f32; 2]| c[0] + (c[1] - c[0]) * v;
     along(corners[0]) + (along(corners[1]) - along(corners[0])) * u
 }
@@ -94,49 +45,6 @@ pub(super) const UNTEXTURED: f32 = 1.0;
 // Added to the `x` of a painted face's texture coordinates that the mesh worked out itself, so `material_uv` in
 // `block_texture.wesl` takes them as they are, in blocks along the face's plane from the chunk's corner.
 pub(super) const UNFOLDED: f32 = 1024.0;
-
-// Texture coordinates for a triangle lying `facet` way, in the axes of the plane `face` is projected onto (x and z for
-// a top, z and down y for a side along x, x and down y for one along z), with its tilt from that plane spread out so it
-// covers as much of the texture as a flat one does. The points are spread about `anchor`, which keeps the
-// texture where it is, so it's the same map across all of them.
-pub(super) fn unfolded_uv<const N: usize>(
-    points: [Vec3; N],
-    face: Vec3,
-    facet: Vec3,
-    anchor: Vec3,
-) -> [[f32; 2]; N] {
-    let n = face.abs();
-    let top = n.y >= n.x && n.y >= n.z;
-    let side_x = !top && n.x >= n.z;
-    let plane = |p: Vec3| -> Vec2 {
-        if top {
-            Vec2::new(p.x, p.z)
-        } else if side_x {
-            Vec2::new(p.z, -p.y)
-        } else {
-            Vec2::new(p.x, -p.y)
-        }
-    };
-    let tilt = if top {
-        Vec2::new(facet.x, facet.z) / facet.y.abs().max(1e-3)
-    } else if side_x {
-        Vec2::new(facet.z, -facet.y) / facet.x.abs().max(1e-3)
-    } else {
-        Vec2::new(facet.x, -facet.y) / facet.z.abs().max(1e-3)
-    };
-    let anchor = plane(anchor);
-    let steep = tilt.length();
-    points.map(|p| {
-        let across = plane(p) - anchor;
-        let uv = if steep < 1e-4 {
-            anchor + across
-        } else {
-            let along = tilt / steep;
-            anchor + across + along * across.dot(along) * ((1.0 + steep * steep).sqrt() - 1.0)
-        };
-        [uv.x + UNFOLDED, uv.y]
-    })
-}
 
 impl MeshBuffers {
     pub(super) fn push_face(
@@ -185,22 +93,6 @@ impl MeshBuffers {
         self.push_quad_indices(start);
     }
 
-    // Draws the vertex `vertex` of a painted top `amount` in the projection and light of a wall facing `facing`, which
-    // is horizontal along one axis, in the mesh's own axes.
-    pub(super) fn set_blend(&mut self, vertex: usize, facing: Vec3, amount: f32) {
-        if self.blends.len() < self.vertices.len() {
-            self.blends.resize(self.vertices.len(), 0.0);
-        }
-        // the cube's faces along z store their normals reversed, and the shader reads the band as they are stored
-        let band = if facing.x.abs() >= facing.z.abs() {
-            (facing.x < 0.0) as u32
-        } else {
-            2 + (facing.z > 0.0) as u32
-        };
-        self.blends[vertex] =
-            band as f32 * BLEND_BAND + BLEND_BASE + amount.clamp(0.0, 1.0) * BLEND_SPAN;
-    }
-
     fn push_quad_indices(&mut self, start: u32) {
         self.indices.extend([0, 1, 2, 2, 1, 3].map(|i| start + i));
     }
@@ -225,28 +117,6 @@ impl MeshBuffers {
             self.lights.push(lights[j]);
         }
         self.push_quad_indices(triangle_start);
-    }
-
-    // One triangle with a vertex set of its own, so its normal is its facet's.
-    pub(super) fn push_tiled_triangle(
-        &mut self,
-        positions: [[f32; 3]; 3],
-        normal: [f32; 3],
-        uvs: [[f32; 2]; 3],
-        colors: [[f32; 4]; 3],
-        lights: [f32; 3],
-    ) {
-        let start = self.vertices.len() as u32;
-        for j in 0..3 {
-            self.vertices.push(Vertex {
-                position: positions[j],
-                normal,
-                uv: uvs[j],
-            });
-            self.colors.push(colors[j]);
-            self.lights.push(lights[j]);
-        }
-        self.indices.extend([start, start + 1, start + 2]);
     }
 
     // As `push_tiled_quad`, drawn from both sides: the one set of vertices, with the indices of
@@ -324,102 +194,22 @@ impl MeshBuffers {
         ring.extend((0..h).map(|j| (w, j)));
         ring.extend((1..=w).rev().map(|i| (i, h)));
         ring.extend((1..=h).rev().map(|j| (0, j)));
-        // each point of the ring, and the corner it's a bevel's width from, if it's one of those
-        let mut ring: Vec<(f32, f32, Option<usize>)> = ring
-            .into_iter()
-            .map(|(i, j)| (i as f32, j as f32, None))
-            .collect();
-        // the corners, in the order of `dip`
-        let corners = [
-            (0.0, 0.0),
-            (w as f32, 0.0),
-            (0.0, h as f32),
-            (w as f32, h as f32),
-        ];
-        // a wall's feet are cut down along the foot, and its sides run straight
-        let wall = quad.normal[1] == 0.0;
-        for (k, corner) in corners.into_iter().enumerate() {
-            if quad.dip[k] <= 0.0 {
-                continue;
-            }
-            let at = ring
-                .iter()
-                .position(|p| (p.0, p.1) == corner)
-                .expect("a corner is on the ring");
-            let (before, after) = (
-                ring[(at + ring.len() - 1) % ring.len()],
-                ring[(at + 1) % ring.len()],
-            );
-            // a bevel's width from the corner along an edge, toward the ring's next point
-            let along = |to: (f32, f32, Option<usize>)| {
-                let (di, dj) = (to.0 - corner.0, to.1 - corner.1);
-                if wall && di == 0.0 {
-                    return None;
-                }
-                // the ring runs along the quad's axes, so one of these is none
-                let length = di.abs().max(dj.abs());
-                Some((
-                    corner.0 + di / length * BEVEL,
-                    corner.1 + dj / length * BEVEL,
-                    Some(k),
-                ))
-            };
-            let (near_before, near_after) = (along(before), along(after));
-            if let Some(near) = near_after {
-                ring.insert(at + 1, near);
-            }
-            if let Some(near) = near_before {
-                ring.insert(at, near);
-            }
-        }
-
-        // a painted top that climbs a wall is drawn partly in the wall's projection at its foot, so the texture runs on
-        // into the wall: the wall is on the side whose corners rise, and faces away from it
-        let [c0, c1, c2, c3] = quad.corner_lift;
-        let (rise_a, rise_b) = (c1 + c3 - c0 - c2, c2 + c3 - c0 - c1);
-        let wall_facing = -if rise_b.abs() >= rise_a.abs() {
-            quad.tb * rise_b.signum()
-        } else {
-            quad.ta * rise_a.signum()
-        };
-        let blended = quad.painted && !wall && quad.corner_lift.iter().any(|&l| l > 0.0);
-        let blend = blend_corners;
-        let mut push = |i: f32, j: f32, near: Option<usize>| {
-            let (at_i, at_j) = bevelled_ij(quad.inset, (i, j), quad.size);
-            let dip = corners
-                .iter()
-                .zip(quad.dip)
-                .find(|(&c, _)| c == (i, j))
-                .map_or(0.0, |(_, dip)| dip);
-            // a point a bevel's width from a cut corner is as high as the corner is raised, as the chamfer's end beside it
-            let raised = match near {
-                Some(k) => quad.corner_lift[k],
-                None => lift_at(quad.corner_lift, (i, j), quad.size),
-            };
-            let lift = raised - dip;
-            let position = quad.corner + quad.ta * at_i + quad.tb * at_j + Vec3::Y * lift;
-            // the texture follows the point to where it's moved to
+        let mut push = |i: f32, j: f32| {
+            let position = quad.corner + quad.ta * i + quad.tb * j;
             self.vertices.push(Vertex {
                 position: position.into(),
                 normal: quad.normal,
-                uv: (quad.uv_at)(at_i, at_j),
+                uv: (quad.uv_at)(i, j),
             });
             let (u, v) = (i / w as f32, j / h as f32);
-            let ao = blend(quad.ao, u, v);
-            let ao = ao + (1.0 - ao) * AO_RELIEF * (lift / RAMP).clamp(0.0, 1.0);
-            self.colors.push((quad.color)(ao, position));
-            self.lights.push(blend(quad.light, u, v));
-            if blended {
-                // the last part of the ramp up to the wall: further out the ground's own projection is the better fit
-                let amount = (raised / RAMP - RAMP_BLEND_FROM) / (1.0 - RAMP_BLEND_FROM);
-                self.set_blend(self.vertices.len() - 1, wall_facing, amount);
-            }
+            self.colors.push((quad.color)(blend_corners(quad.ao, u, v), position));
+            self.lights.push(blend_corners(quad.light, u, v));
             self.vertices.len() as u32 - 1
         };
-        let centre = push(w as f32 / 2.0, h as f32 / 2.0, None);
+        let centre = push(w as f32 / 2.0, h as f32 / 2.0);
         let first = centre + 1;
-        for &(i, j, near) in &ring {
-            push(i, j, near);
+        for &(i, j) in &ring {
+            push(i as f32, j as f32);
         }
         for k in 0..ring.len() as u32 {
             let (from, to) = (first + k, first + (k + 1) % ring.len() as u32);
@@ -492,16 +282,7 @@ pub(super) struct FanQuad<'a> {
     pub(super) ao: [[f32; 2]; 2],
     pub(super) light: [[f32; 2]; 2],
     pub(super) uv_at: &'a dyn Fn(f32, f32) -> [f32; 2],
-    // how far each side, -ta, +ta, -tb, +tb, is pulled in for a bevel, see `bevelled_ij`
-    pub(super) inset: [f32; 4],
-    // how far each corner rises, see `lift_at`
-    pub(super) corner_lift: [f32; 4],
-    // how far down each corner is cut, (-ta, -tb), (+ta, -tb), (-ta, +tb), (+ta, +tb), with a vertex a bevel's width
-    // along each of its two edges, so the chamfers beside it run into the cut
-    pub(super) dip: [f32; 4],
     pub(super) reversed: bool,
-    // whether it draws a painted material, see `material_uv`
-    pub(super) painted: bool,
 }
 
 // `textured` is whether faces draw their own tile, not the one their block's colour is read from.
@@ -509,8 +290,6 @@ pub(super) struct FanQuad<'a> {
 pub(super) struct MeshStyle {
     pub(super) ambient_occlusion: bool,
     pub(super) textured: bool,
-    // whether faces are cut back along convex edges and chamfered, see `bevelled_position`
-    pub(super) bevel: bool,
     // trees drawn as low-poly shapes, see `trees_mesh`
     pub(super) tree_shapes: bool,
 }

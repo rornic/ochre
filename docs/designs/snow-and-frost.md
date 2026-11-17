@@ -186,7 +186,7 @@ colour       = mix(colour, snow_material_colour, amount) + rim + glitter
 ### Additional Resources
 
 *   `./concepts_brief.md`, the brainstorm and the six-reviewer analysis that this design follows.
-*   `./docs/materials.md`, `./docs/climate.md`, `./docs/bevels.md`, `./docs/designs/painterly-lighting.md`.
+*   `./docs/materials.md`, `./docs/climate.md`, `./docs/designs/painterly-lighting.md`.
 *   `./crates/ochre-terrain/src/curvature.rs` and `./assets/shaders/curvature.wesl`, the shared buffer this design extends.
 *   `./crates/ochre-terrain/src/generate/generator/terrain.rs`, where `snow_line` and the snow block rule live today.
 

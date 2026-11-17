@@ -2,7 +2,7 @@ use super::buffers::{
     tiled_uvs, ChunkMeshes, GrassTint, MeshBuffers, MeshStyle, BOX_TEXTURE_MAX_CELL, CUBE,
     OXBLOOD_TINT, TEXTURED, TEXTURED_SOLID,
 };
-use super::greedy::{convex_sides, mesh_opaque_greedy, Shapes};
+use super::greedy::mesh_opaque_greedy;
 use super::shading::{
     corner_signs, vertex_shore_distance, vertex_shore_factor, vertex_water_depth, water_corner,
     WaterCorner, FACE_NORMAL_OFFSET, WATER_BANK_MARGIN, WATER_BED_MARGIN, WATER_DROP,
@@ -150,22 +150,19 @@ pub(super) fn mesh_blocks(
         corner
     };
 
-    // sculpted ground first, as the water's shore is cut along it
-    let sculpted = super::nets::nets_on();
+    // the ground first, as the water's shore is cut along it
     let mut floor = Floor::default();
-    if sculpted {
-        let from = opaque.indices.len();
-        let mut beside = Vec::new();
-        super::nets::mesh_nets(source, &mut opaque, grass_tint, light, cell_size, &mut beside);
-        // only full-detail ground carries plants, the player and a cut shore, which stand on its neighbours' edges too
-        if cell_size == 1 {
-            let mut triangles: Vec<[Vec3; 3]> = (from..opaque.indices.len())
-                .step_by(3)
-                .map(|i| std::array::from_fn(|k| Vec3::from(opaque.vertices[opaque.indices[i + k] as usize].position)))
-                .collect();
-            triangles.extend(beside);
-            floor = Floor::new(triangles);
-        }
+    let from = opaque.indices.len();
+    let mut beside = Vec::new();
+    super::nets::mesh_nets(source, &mut opaque, grass_tint, light, cell_size, &mut beside);
+    // only full-detail ground carries plants, the player and a cut shore, which stand on its neighbours' edges too
+    if cell_size == 1 {
+        let mut triangles: Vec<[Vec3; 3]> = (from..opaque.indices.len())
+            .step_by(3)
+            .map(|i| std::array::from_fn(|k| Vec3::from(opaque.vertices[opaque.indices[i + k] as usize].position)))
+            .collect();
+        triangles.extend(beside);
+        floor = Floor::new(triangles);
     }
 
     for &(block_coord, block) in &non_air {
@@ -237,7 +234,7 @@ pub(super) fn mesh_blocks(
             let mut face = water_face_at(i);
             // the surface reaches out over a sculpted bank to meet it, each corner toward the dry columns round it, alike for all
             let mut shore = false;
-            if i == 4 && top_block && cell_size == 1 && sculpted {
+            if i == 4 && top_block && cell_size == 1 {
                 for v in face.iter_mut() {
                     let corner = block_coord.as_vec3() + Vec3::new(v.position[0], 0.0, v.position[2]);
                     let toward: Vec3 = [(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)]
@@ -341,10 +338,8 @@ pub(super) fn mesh_blocks(
         }
     }
 
-    let shapes = Shapes::new(style.bevel);
-    // sculpted, the cubes left are leaves and the like, and most chunks have none
-    let any_cubes = !sculpted || non_air.iter().any(|&(_, block)| block.is_opaque() && !super::nets::ground(block));
-    if any_cubes {
+    // the only cubes left are trees' when they're drawn as cubes, see `MeshStyle::tree_shapes`, and most chunks have none
+    if non_air.iter().any(|&(_, block)| matches!(block, BlockType::Leaves | BlockType::Log)) {
         mesh_opaque_greedy(
             &GridView {
                 size,
@@ -357,23 +352,14 @@ pub(super) fn mesh_blocks(
             if textured { cell_size as f32 } else { 1.0 },
             grass_tint,
             light,
-            &shapes,
-            sculpted,
         );
-    }
-    if style.bevel && !sculpted {
-        super::seam::mesh_seams(&non_air, &mut opaque, grass_tint, source, light, &shapes);
     }
     // flora only grows at full detail, so coarser cells have none to look for
     if cell_size == 1 {
         mesh_flora(&non_air, &mut opaque, grass_tint, source, light, &floor);
         if style.tree_shapes {
             // a trunk reaches a block down into sculpted ground, which can lie below its block's top
-            mesh_trees(&faces, &mut opaque, grass_tint, light, if sculpted { 1.0 } else { 0.0 });
-        }
-        // with the bevels, which they cover the edges of
-        if style.bevel && !sculpted {
-            mesh_grass_fringe(&non_air, &mut opaque, grass_tint, source, light);
+            mesh_trees(&faces, &mut opaque, grass_tint, light, 1.0);
         }
     }
     // sky light there is rarely bright under a canopy, and these boxes are too small to shade smoothly
@@ -579,28 +565,6 @@ const SHRUB_HEIGHT: (f32, f32) = (1.8, 2.5);
 const SHRUB_HALF_WIDTH: (f32, f32) = (1.3, 1.8);
 const HEATH_HEIGHT: (f32, f32) = (1.6, 2.2);
 const HEATH_HALF_WIDTH: (f32, f32) = (1.2, 1.6);
-// How likely the grass at the edge of a grass top is to have tufts hanging over it, and how likely it has a
-// further one.
-const FRINGE_CHANCE: f32 = 0.95;
-const FRINGE_EXTRA_CHANCE: f32 = 0.5;
-
-fn smoothstep(from: f32, to: f32, x: f32) -> f32 {
-    let t = ((x - from) / (to - from)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-// 0 to 1, smooth across the world in patches a few blocks wide, for where the meadow is thick.
-fn patchiness(world: IVec3) -> f32 {
-    const PATCH: f32 = 5.0;
-    let (x, z) = (world.x as f32 / PATCH, world.z as f32 / PATCH);
-    let (cx, cz) = (x.floor(), z.floor());
-    let (fx, fz) = (smoothstep(0.0, 1.0, x - cx), smoothstep(0.0, 1.0, z - cz));
-    let corner = |dx: f32, dz: f32| hash01(IVec3::new((cx + dx) as i32, 0, (cz + dz) as i32), 900);
-    let bottom = corner(0.0, 0.0) + (corner(1.0, 0.0) - corner(0.0, 0.0)) * fx;
-    let top = corner(0.0, 1.0) + (corner(1.0, 1.0) - corner(0.0, 1.0)) * fx;
-    bottom + (top - bottom) * fz
-}
-
 // Between 0 and 1 for the block at `coord`, the same every time it's meshed, so what grows where
 // doesn't change when the chunk is meshed again.
 pub(super) fn hash01(coord: IVec3, salt: u32) -> f32 {
@@ -865,121 +829,6 @@ fn mesh_flora(
                 tint,
                 lit,
             );
-        }
-    }
-}
-
-// Tufts of grass on the tops of grass blocks, with no block of flora there: along the edges they
-// hang over, and down the side, and a few in the middle. Meshing only, so the world has none.
-fn mesh_grass_fringe(
-    non_air: &[(IVec3, BlockType)],
-    buffers: &mut MeshBuffers,
-    grass_tint: &GrassTint,
-    source: &impl BlockSource,
-    light: &impl Deref<Target = SkyLight>,
-) {
-    let opaque = |c: IVec3| source.block(c).is_opaque();
-    for &(coord, block) in non_air {
-        // under flora the edges are as bare, so they grow tufts too, but the middle has its plant
-        let above = source.block(coord + IVec3::Y);
-        let open_top = above == BlockType::Air;
-        if block != BlockType::Grass || !(open_top || above.is_flora()) {
-            continue;
-        }
-        // by where it is in the world, so every chunk's tufts aren't the same
-        let world = coord + grass_tint.origin;
-        let hash = |salt: u32| hash01(world, salt);
-        let sides = convex_sides(opaque, coord, IVec3::Y, IVec3::X, IVec3::Z);
-        let top = coord.as_vec3() + Vec3::Y * 0.5;
-        let lit = light.level(coord + IVec3::Y) as f32 / MAX_LIGHT as f32;
-        let mut plant = |salt: u32,
-                         at: Vec3,
-                         lean: Vec3,
-                         angle: Option<f32>,
-                         height: (f32, f32),
-                         width: (f32, f32)| {
-            let jitter = |s: u32| hash(salt + s);
-            let tile = match jitter(1) {
-                u if u < 0.55 => Tile::ShortGrass,
-                u if u < 0.85 => Tile::TallGrass,
-                _ => Tile::SeedGrass,
-            };
-            let ground = grass_tint.ground_at(top);
-            let ground = if tile == Tile::SeedGrass { grass_tint.cotton(ground, top) } else { ground };
-            let tint = ground * source.forest_shade(top);
-            push_tuft(
-                buffers,
-                &Tuft {
-                    root: top + at,
-                    ground: Vec3::Y,
-                    height: between(height, jitter(2)),
-                    half_width: between(width, jitter(3)),
-                    angle: angle.unwrap_or(jitter(4) * std::f32::consts::PI),
-                    lean,
-                },
-                tile.atlas_cell(),
-                tint,
-                lit,
-            );
-        };
-        for (k, side) in [-IVec3::X, IVec3::X, -IVec3::Z, IVec3::Z]
-            .into_iter()
-            .enumerate()
-        {
-            if !sides[k] || hash(100 + k as u32) >= FRINGE_CHANCE {
-                continue;
-            }
-            let out = side.as_vec3();
-            let along = Vec3::new(out.z, 0.0, out.x);
-            let count = 3 + (hash(110 + k as u32) < FRINGE_EXTRA_CHANCE) as u32;
-            for t in 0..count {
-                let salt = 200 + 40 * k as u32 + 10 * t;
-                let slide = (hash(salt + 5) - 0.5) * 0.9;
-                // Rooted at the edge itself, so all of it is outside the block and none behind the
-                // side, hanging out and down the side as a curtain facing out. The tip is the far
-                // end, so it sways there.
-                let reach = between((0.1, 0.32), hash(salt + 7));
-                let drop = between((0.33, 0.73), hash(salt + 8));
-                let facing = libm::atan2f(along.z, along.x) + (hash(salt + 9) - 0.5) * 0.7;
-                plant(
-                    salt,
-                    out * 0.5 + along * slide,
-                    out * reach - Vec3::Y * drop,
-                    Some(facing),
-                    (0.0, 0.0),
-                    (0.28, 0.5),
-                );
-            }
-            // short and upright just inside the edge, so the curtain grows out of grass
-            let band = 2 + (hash(120 + k as u32) < FRINGE_EXTRA_CHANCE) as u32;
-            for t in 0..band {
-                let salt = 600 + 40 * k as u32 + 10 * t;
-                let slide = (hash(salt + 5) - 0.5) * 0.95;
-                let inside = between((0.1, 0.35), hash(salt + 6));
-                let lean = out * between((0.03, 0.12), hash(salt + 7));
-                plant(
-                    salt,
-                    out * (0.5 - inside) + along * slide,
-                    lean,
-                    None,
-                    (0.15, 0.4),
-                    (0.15, 0.3),
-                );
-            }
-        }
-        if !open_top {
-            continue;
-        }
-        // thick in patches and bare between them, like a meadow
-        let patch = patchiness(world);
-        let chance = 0.04 + 0.6 * smoothstep(0.4, 0.7, patch);
-        if hash(400) < chance {
-            let count = 1 + (patch > 0.65 && hash(403) < 0.5) as u32;
-            for t in 0..count {
-                let salt = 410 + 10 * t;
-                let at = Vec3::new(hash(salt + 5) - 0.5, 0.0, hash(salt + 6) - 0.5) * 0.8;
-                plant(salt, at, Vec3::ZERO, None, (0.15, 0.5), (0.16, 0.32));
-            }
         }
     }
 }
