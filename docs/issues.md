@@ -71,3 +71,33 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** the sprite is bold strokes with a painting's tone over them, looked at only over flat colours; the drifts are about a seventh of grassland's by count (`flora.rs`, `STEPPE_FLOWERS`); the butterfly share is a guess.
 - **Not known:** how it reads in the game against the steppe ground, or whether one species of flower is too few.
 - **To check:** walk a steppe hollow, and count the butterflies there against grassland's.
+
+## LOD shores ignore the generated sand and the water cut, and trees root on shore sand
+
+- **Seen:** 2026-11-17, reading the sculpted-ground change. Full-detail chunks give any bank within 2 blocks of water and a block of its level sand (`ColumnGrid::shore_top`, `columns.rs`) and cut the water surface along the sculpted ground (`push_shore`, `mesh.rs`). LOD nodes choose surface blocks through `column_block` with the column's own water top, and `trees.rs` does the same, and the water of a node uses the old block edges.
+- **Known:** by reading the code, not by looking. The two paths pass the column's own water top where chunks pass the shore's.
+- **Not known:** how visible the change is at the hand-over from chunk to node: a lake's bank may turn from sand to grass, and trees may stand on sand. Not checked.
+- **To fix:** pass the shore top into the LOD columns and the tree ground rule, then bump `GENERATOR_VERSION`.
+
+## Near-flat banks leave a saw-tooth waterline
+
+- **Seen:** 2026-11-17, in play, lake edges where the sculpted ground lies just under the water. The waterline follows the ground's triangles, so it zigzags instead of running smooth.
+- **Known:** it is the ground's shape meeting the shore cut, not the water mesh alone.
+- **Not known:** the fix. Raising `SHORE_CUTS` (`mesh.rs`) gives a finer cut and was not tried against it, and smoothing the ground there would change the look.
+
+## Rare holes in the sculpted ground, found in play
+
+- **Seen:** 2026-11-17, in play, rarely. Where was not recorded. The tests (`test_sculpted_ground_leaves_no_hole`, `test_sculpted_lod_nodes_leave_no_hole`) find no open edge on the spots they mesh.
+- **Known:** earlier holes were a winding flip, a chunk-edge float mismatch, a remesh range too short after a dig, and plants cut at a chunk's vertical edge, all fixed.
+- **Not known:** the cause of these. Record the seed and the place when one is seen, and mesh it with `worldprobe <seed> render <x> <z> <half> <out.png>` (`docs/sculpted-ground.md`, Checking it).
+
+## A chunk's edge lower than the LOD node beside it opens a gap from outside
+
+- **Seen:** 2026-11-17, found while building the sculpted LODs, never seen in play. A full-detail chunk whose edge lies lower or further in than the node next to it leaves a gap, visible only from outside the full-detail area, where the eye is not.
+- **Known:** skirts hang from the node's open edges to close the usual cases (`hang_skirts`), and the test allows open edges where a skirt ends.
+- **Not known:** how often it shows from a mountain or the air.
+
+## Rock's facets turn at every vertex in 8-block cells
+
+- **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
+- **Not known:** whether anyone sees it at that distance. Not looked at.
