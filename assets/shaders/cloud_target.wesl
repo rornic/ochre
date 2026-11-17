@@ -26,6 +26,8 @@ struct CloudView {
 // The share of each frame kept over the history, and more for each target pixel moving shifted the clouds by, as their depth that reprojects the history is only an average.
 const BLEND: f32 = 0.12;
 const BLEND_PER_PIXEL: f32 = 0.03;
+// A still camera takes this little of each frame, so the clouds' edges settle instead of flickering, rising to `BLEND` as it turns or moves.
+const BLEND_STILL: f32 = 0.05;
 // A ray that met no cloud at all is sure of it, so takes far more, or moving trails the history's clouds over what they uncover.
 const CLEAR_PER_PIXEL: f32 = 0.5;
 // A clear ray reprojects the history from no nearer than this. Where the camera is in the slab the slab is entered at the
@@ -34,7 +36,7 @@ const CLEAR_DEPTH: f32 = 2500.0;
 
 // Few samples a pixel, offset per pixel and frame and blended into the history so they add up to many. Fewer leave
 // the clouds' edges noisy even with the history, and inside the slab, where it's mostly discarded, every frame shows them.
-const STEPS: i32 = 16;
+const STEPS: i32 = 12;
 // Steps and octaves for the reflections' sky map: few, as waves blur them.
 const REFLECTED_STEPS: i32 = 4;
 const REFLECTED_OCTAVES: i32 = 2;
@@ -49,6 +51,28 @@ fn last_seen(direction: vec3<f32>) -> vec3<f32> {
     let clip = vec2<f32>(dot(direction, right) / dot(right, right), dot(direction, up) / dot(up, up)) / max(ahead, 1e-4);
     let seen = ahead > 0.0 && all(abs(clip) < vec2<f32>(1.0));
     return vec3<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5, select(0.0, 1.0, seen));
+}
+
+// The history at `uv` by Catmull-Rom in five taps of the linear sampler: bilinear's blur, taken again every frame the view turns, thins small clouds until they shrink.
+fn sharp_history(uv: vec2<f32>) -> vec4<f32> {
+    let size = vec2<f32>(textureDimensions(cloud_history));
+    let pos = uv * size;
+    let centre = floor(pos - 0.5) + 0.5;
+    let f = pos - centre;
+    let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    let w3 = f * f * (-0.5 + 0.5 * f);
+    let w12 = w1 + w2;
+    let t0 = (centre - 1.0) / size;
+    let t3 = (centre + 2.0) / size;
+    let t12 = (centre + w2 / w12) / size;
+    let taps = textureSampleLevel(cloud_history, cloud_history_sampler, vec2<f32>(t12.x, t0.y), 0.0) * (w12.x * w0.y)
+        + textureSampleLevel(cloud_history, cloud_history_sampler, vec2<f32>(t0.x, t12.y), 0.0) * (w0.x * w12.y)
+        + textureSampleLevel(cloud_history, cloud_history_sampler, t12, 0.0) * (w12.x * w12.y)
+        + textureSampleLevel(cloud_history, cloud_history_sampler, vec2<f32>(t3.x, t12.y), 0.0) * (w3.x * w12.y)
+        + textureSampleLevel(cloud_history, cloud_history_sampler, vec2<f32>(t12.x, t3.y), 0.0) * (w12.x * w3.y);
+    return max(taps, vec4<f32>(0.0));
 }
 
 @fragment
@@ -71,8 +95,10 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return marched;
     }
     let parallax = length((last.xy - sky.xy) * vec2<f32>(textureDimensions(cloud_history)));
-    let blend = saturate(BLEND + select(BLEND_PER_PIXEL, CLEAR_PER_PIXEL, cover < 0.01) * parallax);
-    return mix(textureSampleLevel(cloud_history, cloud_history_sampler, last.xy, 0.0), marched, blend);
+    let turned = length(normalize(cloud_view.forward.xyz) - normalize(cloud_view.last_forward.xyz));
+    let moving = smoothstep(0.0, 0.0006, turned + 0.002 * distance(eye, cloud_view.last_eye.xyz));
+    let blend = saturate(mix(BLEND_STILL, BLEND, moving) + select(BLEND_PER_PIXEL, CLEAR_PER_PIXEL, cover < 0.01) * parallax);
+    return mix(sharp_history(last.xy), marched, blend);
 }
 
 // How cold the ground under the camera is for the aurora, 0..1: none with frost off, half at the snow line's temperature, full a frost band below it.

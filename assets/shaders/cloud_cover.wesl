@@ -1,5 +1,7 @@
 // The clouds marched for water to reflect, and how much of the sun's and moon's discs they leave showing, see `CloudLayer::reflection`.
 
+import super::cloud_edge::body;
+
 @group(constants::MATERIAL_BIND_GROUP) @binding(9) var cloud_reflection: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(10) var cloud_reflection_sampler: sampler;
 
@@ -15,6 +17,8 @@ fn aurora_chill() -> f32 {
 
 // How much of the sun's disc, or the moon's, shows past the clouds, 0..1, from the march toward each in the map's first two texels, see `reflection` in `cloud_target.wesl`.
 fn disc_showing(moon: bool) -> f32 {
-    let cover = textureLoad(cloud_reflection, vec2<i32>(select(0, 1, moon), 0), 0).a;
+    let marched = textureLoad(cloud_reflection, vec2<i32>(select(0, 1, moon), 0), 0).a;
+    // the clouds are painted opaque past their edge, so a disc behind that is hidden however thin the march says it is
+    let cover = max(marched, body(marched));
     return pow(1.0 - cover, select(DISC_HIDING, MOON_HIDING, moon));
 }

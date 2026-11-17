@@ -12,8 +12,6 @@ material_anisotropy = 8
 # How far the sun casts shadows, in chunks, and in how many slices.
 shadow_distance = 64
 shadow_cascades = 3
-# low, medium, high or ultra; the cloud target height follows the window's aspect ratio.
-cloud_resolution = "medium"
 
 [plugins]
 frost = true
