@@ -505,6 +505,8 @@ pub(super) fn mesh_opaque_greedy(
     grass_tint: &GrassTint,
     light: &impl Deref<Target = SkyLight>,
     shapes: &Shapes,
+    // the ground is sculpted instead, see `nets`, so its faces are left out
+    sculpted: bool,
 ) {
     let MeshStyle {
         ambient_occlusion,
@@ -589,7 +591,7 @@ pub(super) fn mesh_opaque_greedy(
             let between_leaves = inside
                 && block == BlockType::Leaves
                 && source.block(coord + normal) == BlockType::Leaves;
-            if between_leaves {
+            if between_leaves || (sculpted && super::nets::ground(block)) {
                 return None;
             }
             let span = face_span(source, coord, normal, block)?;

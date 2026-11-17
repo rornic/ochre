@@ -158,6 +158,9 @@ impl ColumnGrid {
 
 /// What generating a full-detail chunk takes from each of its columns, the same for every chunk
 /// stacked over them, see `generator::generate_chunk`.
+// How far, in blocks, a dry column looks for the river or lake it's a bank of.
+const SHORE_REACH: i64 = 2;
+
 pub struct ChunkColumns {
     heights: Vec<i64>,
     gradients: Vec<f64>,
@@ -169,6 +172,8 @@ pub struct ChunkColumns {
     biomes: Vec<BiomeId>,
     temperatures: Vec<f32>,
     water_tops: Vec<i64>,
+    // the water a column's ground is chosen by: a river or lake beside a dry column at about its height, so it's a beach
+    shore_tops: Vec<i64>,
     springs: Vec<SpringPart>,
     rocky: Vec<bool>,
     /// The lowest and highest ground under the chunks.
@@ -190,15 +195,32 @@ impl ChunkColumns {
             biomes: Vec::with_capacity(cells),
             temperatures: Vec::with_capacity(cells),
             water_tops: Vec::with_capacity(cells),
+            shore_tops: Vec::with_capacity(cells),
             springs: Vec::with_capacity(cells),
             rocky: Vec::with_capacity(cells),
             lowest: i64::MAX,
             highest: i64::MIN,
         };
+        // the water over the columns round the chunk too, as far as a bank looks for it, where it stands over its ground
+        let span = size + 2 * SHORE_REACH;
+        let wet: Vec<Option<i64>> = (0..span * span)
+            .map(|n| {
+                let (world_x, world_z) = (x * size + n / span - SHORE_REACH, z * size + n % span - SHORE_REACH);
+                let top = heights.water_top(world_x, world_z);
+                (top > heights.ground_top(world_x, world_z)).then_some(top)
+            })
+            .collect();
         for cx in 0..size {
             for cz in 0..size {
                 let (world_x, world_z) = (x * size + cx, z * size + cz);
                 let height = heights.ground_top(world_x, world_z);
+                let own = heights.water_top(world_x, world_z);
+                let shore = (-SHORE_REACH..=SHORE_REACH)
+                    .flat_map(|dx| (-SHORE_REACH..=SHORE_REACH).map(move |dz| (dx, dz)))
+                    .filter_map(|(dx, dz)| wet[((cx + SHORE_REACH + dx) * span + cz + SHORE_REACH + dz) as usize])
+                    .filter(|&top| top >= height - 1 && top <= height + 1)
+                    .max();
+                columns.shore_tops.push(if own > height { own } else { shore.unwrap_or(own) });
                 let (gradient_x, gradient_z) = heights.gradient(world_x, world_z);
                 columns.heights.push(height);
                 columns.gradients.push(gradient_x.abs() + gradient_z.abs());
@@ -271,6 +293,11 @@ impl ChunkColumns {
     /// The height of the water's surface over the column, or the sea's where it's dry.
     pub fn water_top(&self, cx: i64, cz: i64) -> i64 {
         self.water_tops[Self::index(cx, cz)]
+    }
+
+    /// The water the column's ground is chosen by, which on a bank is the river's or lake's beside it.
+    pub fn shore_top(&self, cx: i64, cz: i64) -> i64 {
+        self.shore_tops[Self::index(cx, cz)]
     }
 
     /// Whether the column is bare rock on top of a relief feature.

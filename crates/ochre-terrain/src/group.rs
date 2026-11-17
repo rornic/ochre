@@ -127,9 +127,13 @@ pub(crate) fn load_groups(
     mut building: Query<(Entity, &mut BuildChunkGroup)>,
 ) {
     for (entity, mut build) in building.iter_mut() {
-        let Some(merged) = futures::check_ready(&mut build.task) else {
+        let Some(mut merged) = futures::check_ready(&mut build.task) else {
             continue;
         };
+        let floor = crate::floor::Floor::new(std::mem::take(&mut merged.floor));
+        if !floor.is_empty() {
+            commands.entity(entity).insert(floor);
+        }
         if merged.has_geometry() {
             commands.entity(entity).insert((BuiltGroup, group_aabb()));
             draw_group(
@@ -288,7 +292,9 @@ pub(crate) fn merge_chunk_meshes(parts: Vec<(Vec3, ChunkMeshes)>) -> ChunkMeshes
     let mut cutout = Vec::new();
     let mut water = Vec::new();
     let mut spray = Vec::new();
+    let mut floor = Vec::new();
     for (offset, meshes) in parts {
+        floor.extend(meshes.floor.iter().map(|t| t.map(|p| p + offset)));
         spray.extend(meshes.spray.map(|mesh| (offset, mesh)));
         opaque.push((offset, meshes.opaque));
         cutout.extend(meshes.cutout.map(|mesh| (offset, mesh)));
@@ -305,6 +311,7 @@ pub(crate) fn merge_chunk_meshes(parts: Vec<(Vec3, ChunkMeshes)>) -> ChunkMeshes
         water: merge_meshes(water),
         cutout: merge_meshes(cutout),
         spray: merge_meshes(spray),
+        floor,
     }
 }
 

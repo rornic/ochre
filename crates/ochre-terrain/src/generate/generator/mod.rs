@@ -7,6 +7,8 @@ mod flora;
 mod greedy;
 mod lod;
 mod mesh;
+mod nets;
+pub(crate) use nets::{nets_on, set_sculpted, EDIT_REACH};
 mod seam;
 mod shading;
 mod source;

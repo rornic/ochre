@@ -28,6 +28,8 @@ pub struct RendererSettings {
     /// Pack terrain meshes' vertices into about half the bytes, see `crate::pack`. On unless a
     /// test of the two needs it off.
     pub pack_meshes: bool,
+    /// Draw the ground as one sculpted surface, see `docs/sculpted-ground.md`. Off draws it as cubes.
+    pub sculpted_ground: bool,
     /// Blocks before a painted material repeats, a power of two from 1 to 64.
     pub material_period: u32,
     /// Anisotropic filtering taps on painted materials, 1 to 16.
@@ -93,6 +95,7 @@ impl Default for RendererSettings {
             mesh_slab_mb: 64,
             mesh_slab_growth: 1.25,
             pack_meshes: true,
+            sculpted_ground: true,
             material_period: 8,
             material_anisotropy: 8,
         }

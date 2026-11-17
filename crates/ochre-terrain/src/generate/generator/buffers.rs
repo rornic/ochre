@@ -467,11 +467,7 @@ impl MeshBuffers {
                     Some((start, flag)) if i >= start => [l, flag],
                     _ => [
                         l,
-                        if self.untextured {
-                            UNTEXTURED
-                        } else {
-                            TEXTURED + self.blends.get(i).copied().unwrap_or(0.0)
-                        },
+                        (if self.untextured { UNTEXTURED } else { TEXTURED }) + self.blends.get(i).copied().unwrap_or(0.0),
                     ],
                 })
                 .collect();
@@ -526,6 +522,8 @@ pub struct ChunkMeshes {
     pub water: Option<Mesh>,
     /// Fresh water's spray, see `SprayMaterial`.
     pub spray: Option<Mesh>,
+    /// Sculpted ground's triangles in mesh units, for what stands on it, see `crate::floor`.
+    pub floor: Vec<[Vec3; 3]>,
 }
 
 impl ChunkMeshes {

@@ -15,15 +15,20 @@ use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
 use crate::generate::region_store::water_block_top;
 use bevy::math::IVec3;
-use bevy::math::Vec3;
+use bevy::math::{Vec3, Vec4};
+use super::buffers::Vertex;
 use bevy::math::{Vec2, Vec3Swizzles};
 use ochre_base::block::BlockType;
 use ochre_base::block::Face;
 use ochre_base::block::Tile;
 use ochre_base::noise::unit;
+use crate::floor::Floor;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
+
+// How far, in blocks, a water surface reaches out over a sculpted bank to meet it.
+const SHORE_REACH: f32 = 1.5;
 
 // `cell_size` is how many blocks wide each cell of `source` is.
 pub(super) fn mesh_blocks(
@@ -145,6 +150,24 @@ pub(super) fn mesh_blocks(
         corner
     };
 
+    // sculpted ground first, as the water's shore is cut along it
+    let sculpted = super::nets::nets_on();
+    let mut floor = Floor::default();
+    if sculpted {
+        let from = opaque.indices.len();
+        let mut beside = Vec::new();
+        super::nets::mesh_nets(source, &mut opaque, grass_tint, light, cell_size, &mut beside);
+        // only full-detail ground carries plants, the player and a cut shore, which stand on its neighbours' edges too
+        if cell_size == 1 {
+            let mut triangles: Vec<[Vec3; 3]> = (from..opaque.indices.len())
+                .step_by(3)
+                .map(|i| std::array::from_fn(|k| Vec3::from(opaque.vertices[opaque.indices[i + k] as usize].position)))
+                .collect();
+            triangles.extend(beside);
+            floor = Floor::new(triangles);
+        }
+    }
+
     for &(block_coord, block) in &non_air {
         if block != BlockType::Water {
             continue;
@@ -212,6 +235,25 @@ pub(super) fn mesh_blocks(
                 continue;
             }
             let mut face = water_face_at(i);
+            // the surface reaches out over a sculpted bank to meet it, each corner toward the dry columns round it, alike for all
+            let mut shore = false;
+            if i == 4 && top_block && cell_size == 1 && sculpted {
+                for v in face.iter_mut() {
+                    let corner = block_coord.as_vec3() + Vec3::new(v.position[0], 0.0, v.position[2]);
+                    let toward: Vec3 = [(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)]
+                        .into_iter()
+                        .map(|(dx, dz)| Vec3::new(dx, 0.0, dz))
+                        .filter(|d| {
+                            let column = (corner + *d).round().as_ivec3().with_y(block_coord.y);
+                            source.water_level(column.x, column.z).is_none() && super::nets::ground(source.block(column))
+                        })
+                        .sum();
+                    let reach = toward.normalize_or_zero() * SHORE_REACH;
+                    shore |= reach != Vec3::ZERO;
+                    v.position[0] += reach.x;
+                    v.position[2] += reach.z;
+                }
+            }
             // a sheet's sides face straight out, whatever the slope of the corner their top edge follows
             if i < 4 && sheet {
                 for (v, flat) in face.iter_mut().zip(CUBE[i]) {
@@ -284,12 +326,11 @@ pub(super) fn mesh_blocks(
                     },
                 ]
             });
-            water.push_face(
-                &face,
-                block_coord.as_vec3(),
-                Tile::Water.atlas_cell(),
-                &colors,
-            );
+            if shore {
+                push_shore(&mut water, &face, &colors, block_coord.as_vec3(), Tile::Water.atlas_cell(), &floor);
+            } else {
+                water.push_face(&face, block_coord.as_vec3(), Tile::Water.atlas_cell(), &colors);
+            }
             if let Some(own) = level.filter(|_| top_block) {
                 let height = face.iter().map(|v| v.position[1]).sum::<f32>() / 4.0;
                 if i == 4 && source.spring_pool(block_coord.x, block_coord.z) {
@@ -301,31 +342,37 @@ pub(super) fn mesh_blocks(
     }
 
     let shapes = Shapes::new(style.bevel);
-    mesh_opaque_greedy(
-        &GridView {
-            size,
-            blocks: &blocks,
-            source,
-        },
-        &CUBE,
-        &mut opaque,
-        style,
-        if textured { cell_size as f32 } else { 1.0 },
-        grass_tint,
-        light,
-        &shapes,
-    );
-    if style.bevel {
+    // sculpted, the cubes left are leaves and the like, and most chunks have none
+    let any_cubes = !sculpted || non_air.iter().any(|&(_, block)| block.is_opaque() && !super::nets::ground(block));
+    if any_cubes {
+        mesh_opaque_greedy(
+            &GridView {
+                size,
+                blocks: &blocks,
+                source,
+            },
+            &CUBE,
+            &mut opaque,
+            style,
+            if textured { cell_size as f32 } else { 1.0 },
+            grass_tint,
+            light,
+            &shapes,
+            sculpted,
+        );
+    }
+    if style.bevel && !sculpted {
         super::seam::mesh_seams(&non_air, &mut opaque, grass_tint, source, light, &shapes);
     }
     // flora only grows at full detail, so coarser cells have none to look for
     if cell_size == 1 {
-        mesh_flora(&non_air, &mut opaque, grass_tint, source, light);
+        mesh_flora(&non_air, &mut opaque, grass_tint, source, light, &floor);
         if style.tree_shapes {
-            mesh_trees(&faces, &mut opaque, grass_tint, light);
+            // a trunk reaches a block down into sculpted ground, which can lie below its block's top
+            mesh_trees(&faces, &mut opaque, grass_tint, light, if sculpted { 1.0 } else { 0.0 });
         }
         // with the bevels, which they cover the edges of
-        if style.bevel {
+        if style.bevel && !sculpted {
             mesh_grass_fringe(&non_air, &mut opaque, grass_tint, source, light);
         }
     }
@@ -387,6 +434,7 @@ pub(super) fn mesh_blocks(
     };
 
     ChunkMeshes {
+        floor: floor.into_triangles(),
         opaque: opaque.build_mesh(),
         cutout: None,
         water: water_mesh,
@@ -573,6 +621,8 @@ pub(super) fn between(range: (f32, f32), unit: f32) -> f32 {
 // tips leaning by `lean`.
 struct Tuft {
     root: Vec3,
+    // which way the ground under it faces: its foot follows that slope and it leans partway with it
+    ground: Vec3,
     height: f32,
     half_width: f32,
     angle: f32,
@@ -588,10 +638,14 @@ fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, atlas_cell: f32, tint: Vec3
     );
     let (sin, cos) = libm::sincosf(tuft.angle);
     for across in [Vec3::new(cos, 0.0, sin), Vec3::new(-sin, 0.0, cos)] {
+        let ground = tuft.ground;
+        let slope = |d: Vec3| if ground.y > 0.1 { -(ground.x * d.x + ground.z * d.z) / ground.y } else { 0.0 };
+        let tilt = Vec3::new(ground.x, 0.0, ground.z) * (SLOPE_LEAN * tuft.height);
         let corner = |side: f32, up: bool| {
-            let leaning = if up { tuft.lean } else { Vec3::ZERO };
+            let out = across * (side * tuft.half_width);
+            let leaning = if up { tuft.lean + tilt } else { Vec3::ZERO };
             let height = if up { tuft.height } else { 0.0 };
-            (tuft.root + across * (side * tuft.half_width) + Vec3::Y * height + leaning).to_array()
+            (tuft.root + out + Vec3::Y * (height + slope(out)) + leaning).to_array()
         };
         let (top_a, bottom_a, top_b, bottom_b) = (
             corner(-1.0, true),
@@ -611,13 +665,91 @@ fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, atlas_cell: f32, tint: Vec3
 
 // The plants in flora blocks: a first of the block's kind, as tall and wide as it varies, and
 // more beside it, so a block is a clump, not one sprite.
+// How finely a shore's water surface is cut along the ground, in cuts a block.
+const SHORE_CUTS: usize = 4;
+
+// A water top `face` (corners -x +z, -x -z, +x +z, +x -z, as the cube's) cut along where the sculpted ground rises through
+// it, so the shore follows the ground: kept where the water lies over the ground, or over none in reach.
+fn push_shore(water: &mut MeshBuffers, face: &[Vertex; 4], colors: &[[f32; 4]; 4], at: Vec3, cell: f32, floor: &Floor) {
+    // the face's corners by where they lie across it, (s, t) = (0, 0), (1, 0), (0, 1), (1, 1)
+    let [c00, c10, c01, c11] = [1, 3, 0, 2];
+    let blend = |get: &dyn Fn(usize) -> Vec4, s: f32, t: f32| {
+        get(c00).lerp(get(c10), s).lerp(get(c01).lerp(get(c11), s), t)
+    };
+    let point = |s: f32, t: f32| {
+        let position = blend(&|c| Vec3::from(face[c].position).extend(0.0), s, t).truncate();
+        let normal = blend(&|c| Vec3::from(face[c].normal).extend(0.0), s, t).truncate().normalize_or_zero();
+        let uv = blend(&|c| Vec4::new(face[c].uv[0], face[c].uv[1], 0.0, 0.0), s, t);
+        let color = blend(&|c| Vec4::from(colors[c]), s, t);
+        // how far the water lies over the ground here: the highest face under it, or a bank up to a block and a half over it
+        let world = position + at;
+        let over = floor.surface(world, 3.0, 1.5).map_or(1.0, |(ground, _)| world.y - ground);
+        (Vertex { position: position.to_array(), normal: normal.to_array(), uv: [uv.x, uv.y] }, color.to_array(), over)
+    };
+    let n = SHORE_CUTS;
+    let grid: Vec<_> = (0..=n).flat_map(|j| (0..=n).map(move |i| (i, j))).map(|(i, j)| point(i as f32 / n as f32, j as f32 / n as f32)).collect();
+    let at_grid = |i: usize, j: usize| &grid[j * (n + 1) + i];
+    let mix = |a: &(Vertex, [f32; 4], f32), b: &(Vertex, [f32; 4], f32)| {
+        let k = a.2 / (a.2 - b.2);
+        let lerp3 = |p: [f32; 3], q: [f32; 3]| Vec3::from(p).lerp(Vec3::from(q), k).to_array();
+        (
+            Vertex { position: lerp3(a.0.position, b.0.position), normal: lerp3(a.0.normal, b.0.normal), uv: [a.0.uv[0] + (b.0.uv[0] - a.0.uv[0]) * k, a.0.uv[1] + (b.0.uv[1] - a.0.uv[1]) * k] },
+            Vec4::from(a.1).lerp(Vec4::from(b.1), k).to_array(),
+        )
+    };
+    let uv_scale = 1.0 / ochre_base::block::TILE_COUNT as f32;
+    for j in 0..n {
+        for i in 0..n {
+            // round the cell as the face winds, keeping its corners over ground and the points between where the ground rises through
+            let ring = [at_grid(i, j), at_grid(i + 1, j), at_grid(i + 1, j + 1), at_grid(i, j + 1)];
+            let mut kept: Vec<(Vertex, [f32; 4])> = Vec::new();
+            for k in 0..4 {
+                let (a, b) = (ring[k], ring[(k + 1) % 4]);
+                if a.2 > 0.0 {
+                    kept.push((a.0, a.1));
+                }
+                if (a.2 > 0.0) != (b.2 > 0.0) {
+                    kept.push(mix(a, b));
+                }
+            }
+            if kept.len() < 3 {
+                continue;
+            }
+            let first = water.vertices.len() as u32;
+            for (v, color) in &kept {
+                water.vertices.push(Vertex {
+                    position: (Vec3::from(v.position) + at).into(),
+                    normal: v.normal,
+                    uv: [uv_scale * (v.uv[0] + cell), v.uv[1]],
+                });
+                water.colors.push(*color);
+            }
+            for k in 1..kept.len() as u32 - 1 {
+                water.indices.extend([first, first + k, first + k + 1]);
+            }
+        }
+    }
+}
+
+// How far a plant's root sinks into sculpted ground, so a slope doesn't show daylight under one side.
+const ROOT_SINK: f32 = 0.08;
+// How far down and up from its block's foot a plant looks for sculpted ground, which smoothing can carry a block or more away.
+const ROOT_REACH: (f32, f32) = (2.0, 0.6);
+// How much of the slope it stands on a plant leans with.
+const SLOPE_LEAN: f32 = 0.5;
+
 fn mesh_flora(
     non_air: &[(IVec3, BlockType)],
     buffers: &mut MeshBuffers,
     grass_tint: &GrassTint,
     source: &impl BlockSource,
     light: &impl Deref<Target = SkyLight>,
+    floor: &Floor,
 ) {
+    // a root on sculpted ground, and which way the ground there faces
+    let rooted = |root: Vec3| {
+        floor.surface(root, ROOT_REACH.0, ROOT_REACH.1).map_or((root, Vec3::Y), |(y, facing)| (root.with_y(y - ROOT_SINK), facing))
+    };
     for &(coord, block) in non_air {
         if !block.is_flora() {
             continue;
@@ -668,14 +800,16 @@ fn mesh_flora(
             // under a roof or a branch it stays within its block
             let height = between(heights, jitter(3)).min(if room { f32::MAX } else { 1.0 });
             let angle = jitter(5) * std::f32::consts::FRAC_PI_2;
+            let big_root = rooted(
+                coord.as_vec3() - Vec3::Y * 0.5 + Vec3::new((jitter(1) - 0.5) * FLORA_JITTER, 0.0, (jitter(2) - 0.5) * FLORA_JITTER),
+            );
             // three crossed pairs, 30 degrees apart, so it fills in seen from above and not a star of arms
             for turn in [0.0, std::f32::consts::FRAC_PI_6, std::f32::consts::FRAC_PI_3] {
                 push_tuft(
                     buffers,
                     &Tuft {
-                        root: coord.as_vec3()
-                            - Vec3::Y * 0.5
-                            + Vec3::new((jitter(1) - 0.5) * FLORA_JITTER, 0.0, (jitter(2) - 0.5) * FLORA_JITTER),
+                        root: big_root.0,
+                        ground: big_root.1,
                         height,
                         half_width: between(widths, jitter(4)),
                         angle: angle + turn,
@@ -712,10 +846,12 @@ fn mesh_flora(
             } else {
                 base_height * between((0.5, 0.95), jitter(salt + 3))
             };
+            let (root, ground) = rooted(coord.as_vec3() - Vec3::Y * 0.5 + Vec3::new(x, 0.0, z));
             push_tuft(
                 buffers,
                 &Tuft {
-                    root: coord.as_vec3() - Vec3::Y * 0.5 + Vec3::new(x, 0.0, z),
+                    root,
+                    ground,
                     height,
                     half_width: reach * between(WIDTH_RANGE, jitter(salt + 4)),
                     angle: if k == 0 {
@@ -775,6 +911,7 @@ fn mesh_grass_fringe(
                 buffers,
                 &Tuft {
                     root: top + at,
+                    ground: Vec3::Y,
                     height: between(height, jitter(2)),
                     half_width: between(width, jitter(3)),
                     angle: angle.unwrap_or(jitter(4) * std::f32::consts::PI),
@@ -846,3 +983,4 @@ fn mesh_grass_fringe(
         }
     }
 }
+

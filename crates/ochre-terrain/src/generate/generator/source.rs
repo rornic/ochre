@@ -92,6 +92,12 @@ pub(super) trait BlockSource {
         false
     }
 
+    /// The blocks from a chunk below and behind to a chunk above and ahead, x then z then y, raw (trees not hidden),
+    /// for a reader that wants them all at once, see `nets`.
+    fn neighbourhood(&self) -> Option<&[BlockType]> {
+        None
+    }
+
     /// The tint of the tree whose leaves are at `coord`, see `Tree::tint`.
     fn leaf_tint(&self, _coord: IVec3) -> Vec3 {
         Vec3::ONE
@@ -110,6 +116,11 @@ pub(super) trait BlockSource {
     /// Whether faces on its edge are skirt walls hanging from its own ground, over what's beyond.
     fn has_skirts(&self) -> bool {
         false
+    }
+
+    /// How many cells deep a skirt hangs under the column at (`x`, `z`), 0 for a source without skirts.
+    fn skirt_cells(&self, _x: i32, _z: i32) -> i32 {
+        0
     }
 
     /// The water over the column at `coord`, in blocks, 0 for land.
@@ -391,6 +402,10 @@ impl BlockSource for ChunkNeighbourhood<'_> {
         self.fresh_at(x, z).is_some_and(|fresh| fresh.pool)
     }
 
+    fn neighbourhood(&self) -> Option<&[BlockType]> {
+        Some(&self.blocks)
+    }
+
     fn steppe(&self, x: i32, z: i32) -> bool {
         let size = CHUNK_SIZE as i32;
         let Some((regions, origin)) = self.water else {
@@ -526,6 +541,10 @@ impl<S: BlockSource> BlockSource for GridView<'_, S> {
     fn has_skirts(&self) -> bool {
         self.source.has_skirts()
     }
+
+    fn skirt_cells(&self, x: i32, z: i32) -> i32 {
+        self.source.skirt_cells(x, z)
+    }
 }
 
 /// `source` with tree logs and leaves read as air, so the mesher neither draws them as cubes nor lets them hide
@@ -650,6 +669,10 @@ impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
         self.source.steppe(x, z)
     }
 
+    fn neighbourhood(&self) -> Option<&[BlockType]> {
+        self.source.neighbourhood()
+    }
+
     fn leaf_tint(&self, coord: IVec3) -> Vec3 {
         self.source.leaf_tint(coord)
     }
@@ -664,5 +687,9 @@ impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
 
     fn has_skirts(&self) -> bool {
         self.source.has_skirts()
+    }
+
+    fn skirt_cells(&self, x: i32, z: i32) -> i32 {
+        self.source.skirt_cells(x, z)
     }
 }

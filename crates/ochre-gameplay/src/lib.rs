@@ -4,6 +4,7 @@
 pub mod birds;
 pub mod breaking;
 mod collision;
+mod contact;
 pub mod critters;
 pub mod debug;
 pub mod flythrough;

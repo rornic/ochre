@@ -4895,3 +4895,276 @@ fn test_steppe_grass_draws_its_own_ground_and_other_grass_does_not() {
     let grass_cells = cells_at(&on_grassland.expect("no grassland on the test worlds"));
     assert!(!grass_cells.contains(&steppe) && grass_cells.contains(&grass), "grassland's grass should draw the grass layer");
 }
+
+
+// Sculpted ground over real terrain, as generated and with a pit dug, closes up across chunks, wound consistently.
+#[test]
+fn test_sculpted_ground_leaves_no_hole() {
+    let regions = test_regions();
+    let size = CHUNK_SIZE as i64;
+    let mut sampler = regions.sampler();
+    let land: Vec<(i64, i64)> = (0..400i64)
+        .map(|i| ((i % 20) * 700 - 7000, (i / 20) * 700 - 7000))
+        .filter(|&(x, z)| sampler.ground_top(x, z) > WATER_LEVEL + 3)
+        .take(8)
+        .collect();
+    assert!(land.len() >= 6, "too few land spots");
+    super::nets::FORCE_NETS.set(true);
+    let mut holes = Vec::new();
+    for ((sx, sz), dug) in land.into_iter().flat_map(|spot| [(spot, false), (spot, true)]) {
+        let (cx, cz) = (sx.div_euclid(size), sz.div_euclid(size));
+        let cy = (sampler.ground_top(sx, sz) - 1).div_euclid(size) - 1;
+        let digs: Vec<I64Vec3> = if dug {
+            [(0, 0, 1), (1, 0, 2), (1, 1, 1), (4, 2, 1)]
+                .into_iter()
+                .flat_map(|(x, z, depth)| {
+                    let top = sampler.ground_top(sx + x, sz + z) - 1;
+                    (0..depth).map(move |d| I64Vec3::new(sx + x, top - d, sz + z))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut chunks = HashMap::new();
+        let mut chunk_at = |c: (i64, i64, i64)| {
+            chunks
+                .entry(c)
+                .or_insert_with(|| {
+                    let origin = I64Vec3::new(c.0, c.1, c.2) * size;
+                    let mut chunk = generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2)));
+                    for &block in &digs {
+                        let local = block - origin;
+                        if local.min_element() >= 0 && local.max_element() < size {
+                            chunk.set_block_at(local.as_u16vec3(), BlockType::Air);
+                        }
+                    }
+                    Arc::new(chunk)
+                })
+                .clone()
+        };
+        let (mut positions, mut indices) = (Vec::<[f32; 3]>::new(), Vec::<u32>::new());
+        let (mut low, mut high) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        let mut floor = Vec::new();
+        for dx in 0..3 {
+            for dz in 0..3 {
+                for dy in 0..3 {
+                    let c = (cx + dx, cy + dy, cz + dz);
+                    let mut adjacent = vec![None; 26];
+                    for ax in -1..=1 {
+                        for ay in -1..=1 {
+                            for az in -1..=1 {
+                                if (ax, ay, az) != (0, 0, 0) {
+                                    adjacent[neighbor_26_index(ax, ay, az)] =
+                                        Some(chunk_at((c.0 + ax as i64, c.1 + ay as i64, c.2 + az as i64)));
+                                }
+                            }
+                        }
+                    }
+                    let coord = ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2));
+                    let meshes = generate_chunk_mesh_with(chunk_at(c), adjacent, coord, &regions, false);
+                    let offset = Vec3::new((dx * size) as f32, (dy * size) as f32, (dz * size) as f32);
+                    floor.extend(meshes.floor.iter().map(|t| t.map(|p| p + offset)));
+                    let mesh = meshes.opaque;
+                    let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) =
+                        (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.indices())
+                    else {
+                        continue;
+                    };
+                    let base = positions.len() as u32;
+                    positions.extend(p.iter().map(|&p| (Vec3::from(p) + offset).to_array()));
+                    indices.extend(i.iter().map(|&i| i + base));
+                    low = low.min(offset - 0.5);
+                    high = high.max(offset + Vec3::splat(size as f32) - 0.5);
+                }
+            }
+        }
+        // what stands on the ground finds it within a block of its top block
+        if !dug {
+            let mut block_at = |y: i64| chunk_at((sx.div_euclid(size), y.div_euclid(size), sz.div_euclid(size))).get_block_at(I64Vec3::new(sx, y, sz).rem_euclid(I64Vec3::splat(size)).as_u16vec3());
+            let guess = sampler.ground_top(sx, sz);
+            let top_block = (guess - 4..guess + 8).rev().find(|&y| {
+                let block = block_at(y);
+                block.is_opaque() && !matches!(block, BlockType::Leaves | BlockType::Log)
+            });
+            if let Some(y) = top_block {
+                let top = (y - cy * size) as f32 + 0.5;
+                let at = Vec3::new((sx - cx * size) as f32, top, (sz - cz * size) as f32);
+                let found = crate::floor::Floor::new(floor).surface(at, 1.0, 1.0).map(|(h, _)| h);
+                assert!(found.is_some_and(|f| (f - top).abs() <= 1.0), "{sx},{sz}: no floor near {top}, found {found:?}");
+            }
+        }
+        let mut joined =
+            Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::all());
+        joined.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions));
+        joined.insert_indices(Indices::U32(indices));
+        // the outside of the chunks meshed is cut through the ground, open there and a couple of blocks in
+        let inside = |line: &str| {
+            let numbers: Vec<f32> = line
+                .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                .filter_map(|t| t.parse().ok())
+                .take(6)
+                .collect();
+            numbers.len() == 6
+                && (0..3).all(|axis| {
+                    [low[axis], high[axis]].iter().all(|&wall| {
+                        (numbers[axis] - wall).abs() > 2.6 && (numbers[3 + axis] - wall).abs() > 2.6
+                    })
+                })
+        };
+        for line in open_edges(&joined).into_iter().filter(|line| inside(line)) {
+            let numbers: Vec<f32> = line
+                .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                .filter_map(|t| t.parse().ok())
+                .take(6)
+                .collect();
+            let mid = (Vec3::new(numbers[0], numbers[1], numbers[2]) + Vec3::new(numbers[3], numbers[4], numbers[5])) / 2.0;
+            let mut near = std::collections::BTreeSet::new();
+            for o in [-0.3f32, 0.3] {
+                for p in [-0.3f32, 0.3] {
+                    for q in [-0.3f32, 0.3] {
+                        let b = (mid + Vec3::new(o, p, q)).round().as_i64vec3() + I64Vec3::new(cx, cy, cz) * size;
+                        let c = (b.x.div_euclid(size), b.y.div_euclid(size), b.z.div_euclid(size));
+                        near.insert(format!("{:?}", chunk_at(c).get_block_at(b.rem_euclid(I64Vec3::splat(size)).as_u16vec3())));
+                    }
+                }
+            }
+            // trees are drawn by their own mesher, open where they meet what they stand in
+            if !near.iter().any(|b| b == "Log" || b == "Leaves") {
+                holes.push(format!("{sx},{sz} dug {dug}: {line} near {near:?}"));
+            }
+        }
+    }
+    super::nets::FORCE_NETS.set(false);
+    assert!(holes.is_empty(), "{} open edges, first: {:?}", holes.len(), &holes[..holes.len().min(8)]);
+}
+
+// Sculpted LOD nodes over real terrain close up, skirts included, but where the node's sides, top and bottom cut the ground.
+#[test]
+fn test_sculpted_lod_nodes_leave_no_hole() {
+    let regions = test_regions();
+    let mut sampler = regions.sampler();
+    let land: Vec<(i64, i64)> = (0..400i64)
+        .map(|i| ((i % 20) * 700 - 7000, (i / 20) * 700 - 7000))
+        .filter(|&(x, z)| sampler.ground_top(x, z) > WATER_LEVEL + 3)
+        .take(4)
+        .collect();
+    assert!(land.len() >= 3, "too few land spots");
+    super::nets::FORCE_NETS.set(true);
+    let mut holes = Vec::new();
+    let mut nodes = 0;
+    for (sx, sz) in land {
+        let chunk = I64Vec3::new(sx, sampler.ground_top(sx, sz) - 1, sz).div_euclid(I64Vec3::splat(CHUNK_SIZE as i64));
+        for level in 1..=4u8 {
+            let key = LodKey::containing(ChunkCoordinate(chunk), level);
+            let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key) else { continue };
+            let mesh = meshes.opaque;
+            let (Some(VertexAttributeValues::Float32x3(positions)), Some(VertexAttributeValues::Float32x2(uvs)), Some(Indices::U32(indices))) =
+                (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_UV_0), mesh.indices())
+            else {
+                continue;
+            };
+            // the sculpted ground alone: cubes, water and trees are drawn open where they meet it
+            let sculpted: Vec<u32> = indices.chunks(3).filter(|t| t.iter().all(|&i| uvs[i as usize][0] < -512.0)).flatten().copied().collect();
+            if sculpted.is_empty() {
+                continue;
+            }
+            nodes += 1;
+            let mut ground = Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::all());
+            ground.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions.clone()));
+            ground.insert_indices(Indices::U32(sculpted.clone()));
+            let last = CHUNK_SIZE as f32 - 0.5;
+            let in_side = |ps: &[[f32; 3]]| [0, 2].iter().any(|&axis| [-0.5, last].iter().any(|&wall| ps.iter().all(|p| p[axis] == wall)));
+            for line in open_edges(&ground) {
+                let n: Vec<f32> = line
+                    .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                    .filter_map(|t| t.parse().ok())
+                    .collect();
+                let (a, b) = ([n[0], n[1], n[2]], [n[3], n[4], n[5]]);
+                let owner: Vec<[f32; 3]> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| positions[i as usize]).collect();
+                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it
+                let skirt_end = n.len() == 7 && in_side(&[a, b]) && in_side(&owner);
+                let past_top_or_bottom = [a[1], b[1]].iter().any(|&y| !(0.5..=last - 1.0).contains(&y));
+                if !skirt_end && !past_top_or_bottom {
+                    holes.push(format!("level {level} at {sx},{sz}: {line}"));
+                }
+            }
+        }
+    }
+    super::nets::FORCE_NETS.set(false);
+    assert!(nodes >= 8, "only {nodes} nodes had sculpted ground");
+    assert!(holes.is_empty(), "{} open edges, first: {:?}", holes.len(), &holes[..holes.len().min(8)]);
+}
+
+// A dig under sculpted ground changes no chunk's mesh beyond those the game meshes again for it.
+#[test]
+fn test_a_dig_changes_only_the_sculpted_chunks_meshed_again() {
+    let regions = test_regions();
+    let size = CHUNK_SIZE as i64;
+    let mut sampler = regions.sampler();
+    super::nets::FORCE_NETS.set(true);
+    let spots: Vec<(i64, i64)> = (0..400i64)
+        .map(|i| ((i % 20) * 700 - 7000, (i / 20) * 700 - 7000))
+        // on land, where the dig lands in its chunk's top rows, just under the chunk over it, as digging under a ledge does
+        .filter(|&(x, z)| {
+            let top = sampler.ground_top(x, z);
+            top > WATER_LEVEL + 3 && (top - 3).rem_euclid(size) >= 12
+        })
+        .take(4)
+        .collect();
+    assert!(spots.len() == 4, "too few spots");
+    for (sx, sz) in spots {
+        // the dig two blocks under the ground, as under a ledge, and further into its chunk than a cube's reach
+        let dig = I64Vec3::new(sx.div_euclid(size) * size + 10, sampler.ground_top(sx, sz) - 3, sz.div_euclid(size) * size + 10);
+        let centre = (dig.x.div_euclid(size), dig.y.div_euclid(size), dig.z.div_euclid(size));
+        let meshes_with = |dug: bool| {
+            let mut chunks = HashMap::new();
+            let mut chunk_at = |c: (i64, i64, i64)| {
+                chunks
+                    .entry(c)
+                    .or_insert_with(|| {
+                        let mut chunk = generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2)));
+                        let local = dig - I64Vec3::new(c.0, c.1, c.2) * size;
+                        if dug && local.min_element() >= 0 && local.max_element() < size {
+                            chunk.set_block_at(local.as_u16vec3(), BlockType::Air);
+                        }
+                        Arc::new(chunk)
+                    })
+                    .clone()
+            };
+            let mut out = HashMap::new();
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let c = (centre.0 + dx, centre.1 + dy, centre.2 + dz);
+                        let mut adjacent = vec![None; 26];
+                        for ax in -1..=1 {
+                            for ay in -1..=1 {
+                                for az in -1..=1 {
+                                    if (ax, ay, az) != (0, 0, 0) {
+                                        adjacent[neighbor_26_index(ax, ay, az)] = Some(chunk_at((c.0 + ax as i64, c.1 + ay as i64, c.2 + az as i64)));
+                                    }
+                                }
+                            }
+                        }
+                        let mesh = generate_chunk_mesh_with(chunk_at(c), adjacent, ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2)), &regions, false).opaque;
+                        let mut positions: Vec<[i64; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+                            Some(VertexAttributeValues::Float32x3(p)) => p.iter().map(|p| p.map(|v| (v * 1000.0).round() as i64)).collect(),
+                            _ => Vec::new(),
+                        };
+                        positions.sort_unstable();
+                        out.insert(c, positions);
+                    }
+                }
+            }
+            out
+        };
+        let (before, after) = (meshes_with(false), meshes_with(true));
+        let meshed_again: Vec<(i64, i64, i64)> = crate::remesh::chunks_reading(dig).map(|c| (c.0.x, c.0.y, c.0.z)).collect();
+        for (c, positions) in &before {
+            if after[c] != *positions {
+                assert!(meshed_again.contains(c), "{sx},{sz}: dig at {dig} changed chunk {c:?}, which isn't meshed again");
+            }
+        }
+    }
+    super::nets::FORCE_NETS.set(false);
+}

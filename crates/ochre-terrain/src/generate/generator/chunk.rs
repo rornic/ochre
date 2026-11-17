@@ -134,6 +134,8 @@ pub fn generate_chunk_with(
                 slope
             };
             // snow lies deep, in full blocks, with the packed stone only beneath it
+            // a bank's ground is chosen by the river or lake beside it, so it's a beach
+            let shore_top = columns.shore_top(x, z);
             let snowy = column_block(
                 biomes,
                 biome,
@@ -141,7 +143,7 @@ pub fn generate_chunk_with(
                 column_height,
                 slope,
                 temperature,
-                water_top,
+                shore_top,
             ) == BlockType::Snow;
             let (world_x, world_z) = (chunk_pos.0.x * size + x, chunk_pos.0.z * size + z);
             // a spring's rim and the bed of its pool are the biome's own block
@@ -162,7 +164,7 @@ pub fn generate_chunk_with(
                         column_height,
                         slope,
                         temperature,
-                        water_top,
+                        shore_top,
                     ),
                     y,
                     column_height,
@@ -285,7 +287,7 @@ pub fn generate_chunk_with(
                 column_height,
                 gradient,
                 temperature,
-                columns.water_top(x, z),
+                columns.shore_top(x, z),
             );
             let coord = bevy::math::U16Vec3::new(x as u16, local_y as u16, z as u16);
             if ground != BlockType::Grass || chunk_data.get_block_at(coord) != BlockType::Air {
