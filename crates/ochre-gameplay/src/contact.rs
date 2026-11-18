@@ -354,4 +354,74 @@ mod tests {
         }
         assert!(feet.x < 1.0, "{feet}");
     }
+
+    // ---- spike: which staircase faces a jumping player can climb (docs/meso-spike.md) ----
+
+    // `n` ledges from x = 1, each `rise` high with a flat top `tread` deep and a vertical face, over ground at 0. Its triangles and its height at x.
+    #[allow(clippy::type_complexity)]
+    fn stairs(rise: f32, tread: f32, n: usize) -> (Vec<[Vec3; 3]>, impl Fn(Vec3, f32, f32) -> Option<f32>) {
+        let quad = |a: Vec3, b: Vec3, c: Vec3, d: Vec3| [[a, b, c], [a, c, d]];
+        let mut t = Vec::new();
+        t.extend(quad(Vec3::new(-4.0, 0.0, -4.0), Vec3::new(1.0, 0.0, -4.0), Vec3::new(1.0, 0.0, 4.0), Vec3::new(-4.0, 0.0, 4.0)));
+        for i in 0..n {
+            let (x, y0, y1) = (1.0 + i as f32 * tread, i as f32 * rise, (i + 1) as f32 * rise);
+            t.extend(quad(Vec3::new(x, y0, -4.0), Vec3::new(x, y0, 4.0), Vec3::new(x, y1, 4.0), Vec3::new(x, y1, -4.0)));
+            let end = if i + 1 == n { x + 6.0 } else { x + tread };
+            t.extend(quad(Vec3::new(x, y1, -4.0), Vec3::new(end, y1, -4.0), Vec3::new(end, y1, 4.0), Vec3::new(x, y1, 4.0)));
+        }
+        let height = move |x: f32| if x < 1.0 { 0.0 } else { ((((x - 1.0) / tread).floor() as usize + 1).min(n)) as f32 * rise };
+        (t, move |p: Vec3, below: f32, above: f32| {
+            let y = height(p.x);
+            (y >= p.y - below && y <= p.y + above).then_some(y)
+        })
+    }
+
+    // How high a player reaches in 12 s walking at +x at 4 blocks a second and jumping at every chance, with the game's jump speed and gravity (`player.rs`).
+    fn climb(rise: f32, tread: f32, n: usize) -> f32 {
+        let (triangles, ground) = stairs(rise, tread, n);
+        let w = walker(&triangles, &ground);
+        let (mut feet, mut vy, mut grounded, mut best) = (Vec3::ZERO, 0.0f32, true, 0.0f32);
+        for _ in 0..720 {
+            let dt = 1.0 / 60.0;
+            if grounded {
+                vy = 9.0;
+            }
+            vy -= 32.0 * dt;
+            let moved = w.walk(feet, Vec3::new(4.0 * dt, vy * dt, 0.0), false, &|f, d| f + d);
+            feet = moved.feet;
+            grounded = moved.grounded;
+            if grounded && vy <= 0.0 {
+                vy = 0.0;
+            }
+            if moved.bumped {
+                vy = vy.min(0.0);
+            }
+            best = best.max(feet.y);
+        }
+        best
+    }
+
+    #[test]
+    fn spike_which_ledge_heights_a_jumping_player_climbs() {
+        eprintln!("rise  tread  top reached of 6 ledges");
+        for rise in [1.0f32, 1.5, 2.0, 2.3, 2.6, 3.0, 4.0] {
+            let row: Vec<String> = [0.6f32, 1.0, 2.0].iter().map(|&tread| format!("{:5.1}", climb(rise, tread, 6))).collect();
+            eprintln!("{rise:4.1}  tread 0.6 / 1 / 2:  {}", row.join(" "));
+        }
+        eprintln!("the limit: rise 2.05 .. 2.30, tread 1");
+        for rise in [2.05f32, 2.1, 2.15, 2.2, 2.25, 2.3] {
+            eprintln!("  rise {rise:.2}: {:.1}", climb(rise, 1.0, 6));
+        }
+        eprintln!("how shallow a tread still gives footing, rise 1.5, 6 ledges (top 9)");
+        for tread in [0.05f32, 0.1, 0.2, 0.3, 0.4, 0.5] {
+            eprintln!("  tread {tread:.2}: {:.1}", climb(1.5, tread, 6));
+        }
+        // a rise of a step or a jump is climbed, one past both is a wall whatever the tread
+        assert!(climb(1.0, 1.0, 6) > 5.9, "a step-high stair is climbed");
+        assert!(climb(4.0, 1.0, 6) < 4.0, "a four-block face is not");
+        // the measured limits, with the game's jump speed 9, gravity 32 and step 1: a ledge of 2.15 is climbed and 2.2 is a wall, and a ledge 0.2 deep gives
+        // footing where 0.1 does not
+        assert!(climb(2.15, 1.0, 6) > 12.9 && climb(2.2, 1.0, 6) < 2.0);
+        assert!(climb(1.5, 0.2, 6) > 8.9 && climb(1.5, 0.1, 6) < 2.0);
+    }
 }
