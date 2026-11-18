@@ -163,6 +163,20 @@ pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
     (placed, keep)
 }
 
+/// The cells in the middle of each bowl, whose basin holds a lake however small, see `hydrology::run_keeping`.
+pub(crate) fn bowl_cells(dim: usize, placed: &[Landmark]) -> Vec<bool> {
+    let mut bowls = vec![false; dim * dim];
+    for l in placed.iter().filter(|l| l.primitive == Primitive::Bowl) {
+        let reach = (l.radius * 0.5).ceil() as i64;
+        for z in (l.z as i64 - reach).max(0)..=(l.z as i64 + reach).min(dim as i64 - 1) {
+            for x in (l.x as i64 - reach).max(0)..=(l.x as i64 + reach).min(dim as i64 - 1) {
+                bowls[z as usize * dim + x as usize] = true;
+            }
+        }
+    }
+    bowls
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

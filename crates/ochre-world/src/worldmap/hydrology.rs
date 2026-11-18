@@ -646,7 +646,14 @@ pub fn scatter(map: &mut WorldMap) {
 /// hold lakes as high as the water running into them keeps them against what they lose to the air,
 /// and with `carve`, the rivers' beds are cut into the ground.
 pub fn run(map: &mut WorldMap, carve: bool) {
+    run_keeping(map, carve, &[]);
+}
+
+/// `run`, but a basin reaching a cell `bowls` marks holds its lake however few cells it has: a landmark's bowl, smaller than the
+/// lakes the world otherwise keeps.
+pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
     let dim = map.dim();
+    let in_bowl = |cells: &[usize]| !bowls.is_empty() && cells.iter().any(|&i| bowls[i]);
     let sea = WATER_LEVEL as f32;
     let ties = flood_ties(map);
     // draining only fills basins and cuts channels to over the sea, so the open sea is the same all through
@@ -656,7 +663,7 @@ pub fn run(map: &mut WorldMap, carve: bool) {
     for _ in 0..DRAIN_ROUNDS {
         let mut cut = false;
         for (id, basin) in lakes.iter().enumerate() {
-            if basin.cells.len() < MIN_LAKE_CELLS || basin.depth < MIN_LAKE_DEPTH {
+            if (basin.cells.len() < MIN_LAKE_CELLS && !in_bowl(&basin.cells)) || basin.depth < MIN_LAKE_DEPTH {
                 cut |= drain(&mut map.height, &flood, &basin_of, id as u32, basin);
             }
         }

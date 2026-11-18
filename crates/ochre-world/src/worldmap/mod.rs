@@ -526,7 +526,8 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     shapes::karst(&mut map, knobs.karst_groups);
     shapes::cirques(&mut map, knobs.cirques);
     // with the other shapes, so the passes connect round them; the steppe's flattening leaves them alone
-    let (_, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    let (placed, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    let bowls = meso::landmarks::bowl_cells(map.dim(), &placed);
     lap("landmarks");
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
@@ -544,7 +545,7 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     }
     hydrology::scatter(&mut map);
     lap("scatter");
-    hydrology::run(&mut map, true);
+    hydrology::run_keeping(&mut map, true, &bowls);
     lap("hydrology 2");
     for h in &mut map.height {
         *h = h.max(floor);
