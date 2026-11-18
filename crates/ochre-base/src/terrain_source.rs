@@ -122,6 +122,11 @@ pub trait TerrainSource: Send + Sync {
         1.0
     }
 
+    /// How much of the ground round (x, z) is mountain, 0..1 and smooth across its edge.
+    fn mountain_cover(&self, _x: f64, _z: f64) -> f32 {
+        0.0
+    }
+
     /// How close the column at (x, z) is to a river, lake or pond, 0..1: 1 on the water, falling to 0 within about 100 blocks.
     fn water_closeness(&self, _x: f64, _z: f64) -> f32 {
         0.0
@@ -233,6 +238,10 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn tree_lie(&self, x: f64, z: f64) -> f64 {
         (**self).tree_lie(x, z)
+    }
+
+    fn mountain_cover(&self, x: f64, z: f64) -> f32 {
+        (**self).mountain_cover(x, z)
     }
 
     fn steppe(&self, x: f64, z: f64) -> bool {

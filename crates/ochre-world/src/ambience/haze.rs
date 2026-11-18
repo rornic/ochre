@@ -52,8 +52,7 @@ pub(super) fn sense_haze(
             let angle = (point as f32 / POINTS as f32 - 0.5) * TAU;
             for (ring, distance) in RINGS.into_iter().enumerate() {
                 let (x, z) = ((eye.x + angle.cos() * distance) as f64, (eye.z + angle.sin() * distance) as f64);
-                let feel = Feel::of(terrain.climate(x, z), terrain.temperature(x, z));
-                rings.target[point][ring] = haze_of(&Atmosphere::of(&feel));
+                rings.target[point][ring] = haze_of(&Atmosphere::of(&Feel::at(terrain, x, z)));
             }
         }
         if !rings.started {
@@ -62,7 +61,11 @@ pub(super) fn sense_haze(
         }
     }
     let step = 1.0 - (-time.delta_secs() / EASE_SECONDS).exp();
-    let here = haze_of(&Atmosphere::of(&eased.0));
+    let atmosphere = Atmosphere::of(&eased.0);
+    let here = haze_of(&atmosphere);
+    // the camera's own country sets the colour of the shadows
+    let [r, g, b] = atmosphere.shadow_tint;
+    curvature.shadow = [r, g, b, atmosphere.shadow_amount];
     for point in 0..POINTS {
         for ring in 0..3 {
             let target = rings.target[point][ring];

@@ -218,7 +218,6 @@ fn sense_surroundings(
     let here = noise.sample(eye.x as f64, eye.z as f64);
     let temperature = noise.temperature(eye.x as f64, eye.z as f64);
     let biome = noise.biomes().name(here.biome);
-    let climate = noise.climate(eye.x as f64, eye.z as f64);
 
     *around = Surroundings {
         altitude: eye.y - ground,
@@ -228,7 +227,7 @@ fn sense_surroundings(
         trees: trees / total,
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
-        feel: Feel::of(climate, temperature),
+        feel: Feel::at(noise, eye.x as f64, eye.z as f64),
         desert: (biome == Some("desert")) as u8 as f32,
         steppe: steppe / total,
         exposure: noise.exposure(eye.x as f64, eye.z as f64),

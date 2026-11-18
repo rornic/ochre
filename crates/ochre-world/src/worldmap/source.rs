@@ -1238,6 +1238,10 @@ impl TerrainSource for WorldTerrain {
         self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0 * self.tree_lie(x, z).max(1.0)
     }
 
+    fn mountain_cover(&self, x: f64, z: f64) -> f32 {
+        self.landform_cover(x, z) as f32
+    }
+
     fn tree_lie(&self, x: f64, z: f64) -> f64 {
         (1.0 + TREE_VIGOUR * self.vigour(x, z) as f64).clamp(MIN_LIE, MAX_LIE)
     }
