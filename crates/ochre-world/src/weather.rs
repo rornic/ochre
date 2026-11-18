@@ -25,11 +25,11 @@ use bevy::{
 };
 
 use crate::{
-    ambience::AMBIENCE_TRIM,
+    ambience::{Heat, AMBIENCE_TRIM},
     clouds::CloudMaterial,
     sky::{
         camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
-        TICKS_PER_SECOND,
+        SUN_COLOR, TICKS_PER_SECOND,
     },
     storms::{seconds, Forecast},
 };
@@ -215,6 +215,9 @@ fn run_weather(
 // How much of the sun's and moon's light gets through the storm's clouds, and how dark the
 // clouds themselves get, at the heaviest rain.
 const STORM_LIGHT: f32 = 0.3;
+// How much brighter the sun is over fully hot country, and the colour it goes there.
+const HOT_SUN: f32 = 0.18;
+const HOT_SUN_COLOR: Color = Color::srgb(1.0, 0.86, 0.62);
 const STORM_CLOUD: f32 = 0.42;
 // Lightning's flash, in stops brighter: held, then dying away, in seconds, with a fainter
 // flicker after.
@@ -255,15 +258,20 @@ fn darken_sky(
     mut flashes: Query<(Entity, &mut Flash)>,
     mut commands: Commands,
     mut last_shade: Local<f32>,
+    heat: Option<Res<Heat>>,
 ) {
+    let heat = heat.map_or(0.0, |heat| heat.0);
     let shade = 1.0 - (1.0 - STORM_LIGHT) * weather.gloom();
     for (mut light, is_sun) in &mut lights {
         light.illuminance = shade
             * if is_sun {
-                sun_illuminance()
+                sun_illuminance() * (1.0 + HOT_SUN * heat)
             } else {
                 moon_illuminance()
             };
+        if is_sun {
+            light.color = SUN_COLOR.mix(&HOT_SUN_COLOR, heat);
+        }
     }
     let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * weather.gloom();
     if (cloud_shade - *last_shade).abs() > 0.002 {

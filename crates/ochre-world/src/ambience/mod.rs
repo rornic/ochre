@@ -61,7 +61,25 @@ impl Plugin for SurroundingsPlugin {
         app.init_resource::<TimeOfDay>()
             .init_resource::<WindDials>()
             .init_resource::<Surroundings>()
-            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings));
+            .init_resource::<Heat>()
+            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings))
+            .add_systems(Update, ease_heat.after(SenseSurroundings));
+    }
+}
+
+/// `Surroundings::heat` eased over a few seconds, since it is sensed in steps, for the grade and the sun to follow.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
+pub struct Heat(pub f32);
+
+// Seconds for the heat to cover most of the way to the country the camera is in.
+const HEAT_EASE: f32 = 2.0;
+
+fn ease_heat(around: Res<Surroundings>, time: Res<Time>, mut heat: ResMut<Heat>) {
+    let step = 1.0 - (-time.delta_secs() / HEAT_EASE).exp();
+    heat.0 += (around.heat - heat.0) * step;
+    // an exact zero in mild country, rather than a vanishing remainder
+    if around.heat == 0.0 && heat.0 < 1e-3 {
+        heat.0 = 0.0;
     }
 }
 
@@ -84,6 +102,8 @@ pub struct Surroundings {
     pub trees_overhead: f32,
     // 0 where it's cold enough to freeze, up to 1 where it's mild
     pub warmth: f32,
+    // 0 in mild or cold country, up to 1 where it's hot and dry enough for a hard, hot sun: savanna and desert
+    pub heat: f32,
     // 1 over desert
     pub desert: f32,
     // how much of what's round it is steppe, 0..1
@@ -108,6 +128,7 @@ impl Default for Surroundings {
             trees: 0.0,
             trees_overhead: 0.0,
             warmth: 1.0,
+            heat: 0.0,
             desert: 0.0,
             steppe: 0.0,
             exposure: 0.5,
@@ -132,6 +153,9 @@ const DENSE_FOREST: f64 = 0.4;
 pub(crate) const AMBIENCE_TRIM: f32 = 0.32;
 // The temperatures, see `NoiseGenerator::temperature`, between which the cold sets in.
 const FREEZING: (f32, f32) = (0.15, 0.35);
+// The temperatures between which the country turns hot, and the humidities between which it turns too wet to feel dry-hot: jungle is humid, not scorching.
+const HOT: (f32, f32) = (0.55, 0.75);
+const HUMID: (f32, f32) = (0.45, 0.75);
 
 /// When the camera was last sensed, and where it was, for its speed.
 #[derive(Default)]
@@ -202,6 +226,7 @@ fn sense_surroundings(
     let here = noise.sample(eye.x as f64, eye.z as f64);
     let temperature = noise.temperature(eye.x as f64, eye.z as f64);
     let biome = noise.biomes().name(here.biome);
+    let climate = noise.climate(eye.x as f64, eye.z as f64);
 
     *around = Surroundings {
         altitude: eye.y - ground,
@@ -211,6 +236,7 @@ fn sense_surroundings(
         trees: trees / total,
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
+        heat: smoothstep(HOT.0, HOT.1, climate.temperature) * (1.0 - smoothstep(HUMID.0, HUMID.1, climate.humidity)),
         desert: (biome == Some("desert")) as u8 as f32,
         steppe: steppe / total,
         exposure: noise.exposure(eye.x as f64, eye.z as f64),

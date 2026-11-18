@@ -44,6 +44,20 @@ pub fn cold_color_grading(grading: &ColorGrading, cold: f32) -> ColorGrading {
     cooled
 }
 
+// What the hot, dry country adds to a grade, fully hot: a white balance toward yellow, more colour, and a harder midtone.
+const HOT_TEMPERATURE: f32 = 0.02;
+const HOT_SATURATION: f32 = 1.06;
+const HOT_CONTRAST: f32 = 1.06;
+
+/// `grading` as the hot country shows it, `heat` from 0 (as it was, exactly) to 1.
+pub fn hot_color_grading(grading: &ColorGrading, heat: f32) -> ColorGrading {
+    let mut warmed = grading.clone();
+    warmed.global.temperature += HOT_TEMPERATURE * heat;
+    warmed.global.post_saturation *= 1.0 + (HOT_SATURATION - 1.0) * heat;
+    warmed.midtones.contrast *= 1.0 + (HOT_CONTRAST - 1.0) * heat;
+    warmed
+}
+
 // rows: luma, then the two chroma channels
 const RGB_TO_YCBCR: Mat3 = Mat3::from_cols(
     Vec3::new(0.2126, -0.1146, 0.5),
@@ -101,7 +115,7 @@ pub fn scene_colour(display: Color) -> LinearRgba {
 mod tests {
     use bevy::color::{Color, ColorToComponents, LinearRgba};
 
-    use super::{cold_color_grading, displayed, dry_color_grading, scene_colour, COLD_TEMPERATURE};
+    use super::{cold_color_grading, displayed, dry_color_grading, hot_color_grading, scene_colour, COLD_TEMPERATURE};
 
     fn assert_close(expected: LinearRgba, actual: LinearRgba) {
         for (e, a) in expected.to_f32_array().iter().zip(actual.to_f32_array()) {
@@ -143,6 +157,17 @@ mod tests {
         assert!(cold.global.post_saturation > 0.9 * dry.global.post_saturation);
         let half = cold_color_grading(&dry, 0.5);
         assert!((half.global.temperature - (dry.global.temperature + cold.global.temperature) / 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_the_hot_grade_is_exactly_neutral_at_zero_and_a_warm_richer_push_at_one() {
+        let dry = dry_color_grading();
+        assert_eq!(dry, hot_color_grading(&dry, 0.0));
+        let hot = hot_color_grading(&dry, 1.0);
+        assert!(hot.global.temperature > dry.global.temperature && hot.global.post_saturation > dry.global.post_saturation);
+        assert!(hot.midtones.contrast > dry.midtones.contrast);
+        // the cold's grade and the hot's are both exact at zero, so one over the other leaves warm, mild country as it was
+        assert_eq!(dry, hot_color_grading(&cold_color_grading(&dry, 0.0), 0.0));
     }
 
     #[test]
