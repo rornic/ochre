@@ -259,6 +259,8 @@ impl Material for ChunkMaterial {
         descriptor.primitive.cull_mode = Some(Face::Front);
         // the main and shadow passes both sway leaves, see `foliage.wesl`
         let leaf_cell = ShaderDefVal::UInt("LEAF_CELL".into(), Tile::Leaves.atlas_cell() as u32);
+        // steep vegetated ground bares to dirt, see `world.wesl`
+        let dirt_cell = ShaderDefVal::UInt("DIRT_CELL".into(), Tile::Dirt.atlas_cell() as u32);
         // flora's sprites are cut out and sway at their tips, see `foliage.wesl`
         let first_flora_cell = ShaderDefVal::UInt(
             "FIRST_FLORA_CELL".into(),
@@ -287,6 +289,7 @@ impl Material for ChunkMaterial {
             leaves_layer,
             first_flora_layer,
             leaf_cell,
+            dirt_cell,
             inner_leaves_reach,
             inner_leaves_band,
             first_flora_cell,

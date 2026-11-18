@@ -384,6 +384,8 @@ pub(super) struct GrassTint {
     cold: Vec<f32>,
     // and over a warmer ramp, how far grass on the ground goes brown, see `cold_at`
     brown: Vec<f32>,
+    // what the hollows' macro occlusion leaves of the light at the same samples, 0..1, see `shade_at`
+    shade: Vec<f32>,
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
     // how many blocks one local unit is, to find where a local position is in the world
@@ -397,14 +399,24 @@ impl GrassTint {
         // a coarse node is sampled every `TINT_SPACING` blocks or so, so a valley or a river's corridor in it shows; a chunk keeps its four corners
         let side = ((size * scale / TINT_SPACING).round() as usize + 1).clamp(2, TINT_MAX_SIDE);
         let step = size / (side - 1) as f32;
+        let world_at = |i: usize| {
+            let (x, z) = ((i % side) as f32 * step, (i / side) as f32 * step);
+            origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale
+        };
         let climates: Vec<_> = (0..side * side)
             .map(|i| {
-                let (x, z) = ((i % side) as f32 * step, (i / side) as f32 * step);
-                let world = origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale;
+                let world = world_at(i);
                 noise.tint_climate(world.x as f64, world.z as f64)
             })
             .collect();
         Self {
+            shade: (0..side * side)
+                .map(|i| {
+                    let world = world_at(i);
+                    let hollow = 1.0 - smoothstep(HOLLOW_FROM, HOLLOW_TO, noise.exposure(world.x as f64, world.z as f64));
+                    1.0 - MACRO_AO * hollow
+                })
+                .collect(),
             corners: climates.iter().map(|&c| grass_tint(c)).collect(),
             // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
             cold: climates.iter().map(|c| 1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, c.temperature)).collect(),
@@ -512,7 +524,17 @@ impl GrassTint {
     pub(super) fn at(&self, local: Vec3) -> Vec3 {
         grid_blend(&self.corners, |a, b, t| a.lerp(b, t), local)
     }
+
+    // What the light is multiplied by at `local` for the lie of the land: hollows and valley floors are darker than the ground round them.
+    pub(super) fn shade_at(&self, local: Vec3) -> f32 {
+        self.across(&self.shade, local)
+    }
 }
+
+// Exposures, see `TerrainSource::exposure`, that read as the deepest hollow and as level ground, and how much light the deepest hollow loses.
+const HOLLOW_FROM: f32 = 0.15;
+const HOLLOW_TO: f32 = 0.55;
+const MACRO_AO: f32 = 0.3;
 
 // Blocks between samples across a coarse node, and the most samples along a side of one.
 const TINT_SPACING: f32 = 32.0;
@@ -636,6 +658,7 @@ mod russet_tests {
             corners: vec![Vec3::ONE; 4],
             cold: vec![cold; 4],
             brown: vec![cold; 4],
+            shade: vec![1.0; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         }
@@ -650,6 +673,7 @@ mod russet_tests {
             corners: vec![grass_tint(Climate { temperature, humidity }); 4],
             cold: vec![1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, temperature); 4],
             brown: vec![1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, temperature); 4],
+            shade: vec![1.0; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         };

@@ -17,6 +17,9 @@ const EDGE_FADE_START: f32 = 0.9;
 // last stretch looking crisp.
 const FOG_SCALE: f32 = 0.16;
 
+// The haze's own colour is a pale grey at the horizon, so over the land it is given more colour, easing back to the sky's own by the fog's end, where the land fades into it.
+const HAZE_SATURATION: f32 = 1.6;
+
 // Over hot country the haze warms and thickens: the tint it is multiplied by, and how much denser it goes, fully hot.
 const HOT_HAZE_TINT: vec3<f32> = vec3<f32>(1.0, 0.92, 0.76);
 const HOT_HAZE_DENSITY: f32 = 0.5;
@@ -78,6 +81,8 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     var sky = horizon_haze(across);
     let hot = heat_toward(across, distance);
     sky = sky * mix(vec3<f32>(1.0), HOT_HAZE_TINT, hot);
+    let haze_grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
+    sky = mix(vec3<f32>(haze_grey), sky, mix(HAZE_SATURATION, 1.0, smoothstep(0.6, 0.95, distance / end)));
     let scale = end * FOG_SCALE / (1.0 + HOT_HAZE_DENSITY * hot);
     if view_bindings::lights.n_directional_lights > 0u {
         let to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;

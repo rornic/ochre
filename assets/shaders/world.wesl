@@ -104,11 +104,9 @@ const FLATTEN_MAX: f32 = 0.85;
 // is the coarsest mip, which `block_mean` holds.
 const MEAN_BLOCK_RATE: f32 = 1.0;
 
-// Steep ground under vegetation goes toward a dry earth of the same brightness: none above `STEEP_FROM` up (1 is flat), all below `STEEP_TO`, to `STEEP_EARTH` of the way.
+// Steep ground under vegetation bares to dirt along a ragged edge: none above `STEEP_FROM` up (1 is flat), all below `STEEP_TO`.
 const STEEP_FROM: f32 = 0.8;
 const STEEP_TO: f32 = 0.45;
-const STEEP_EARTH: f32 = 0.55;
-const EARTH: vec3<f32> = vec3<f32>(1.30, 0.95, 0.60);
 
 // How far the land's brightness and warmth drift from a painted material, across patches tens of blocks wide.
 const DRIFT_BRIGHTNESS: f32 = 0.10;
@@ -286,11 +284,19 @@ fn fragment(
             }
             color = mix(color, vec4<f32>(second.rgb * select(tint, vec3<f32>(1.0), tinted_side == 2.0), second.a), toward);
         }
-        // steep ground bares, but only the side that carries the tint: rock and scree keep their own colour
+        // steep ground bares to dirt, but only the side that carries the tint: rock and scree keep their own colour
         let vegetated = mix(select(1.0, 0.0, tinted_side == 1.0), select(1.0, 0.0, tinted_side == 2.0), toward);
-        let steep = (1.0 - smoothstep(STEEP_TO, STEEP_FROM, normal.y)) * STEEP_EARTH * vegetated;
-        let grey = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-        color = vec4<f32>(mix(color.rgb, grey * EARTH, steep), color.a);
+        let steepness = 1.0 - smoothstep(STEEP_TO, STEEP_FROM, normal.y);
+        let bare = smoothstep(0.3, 0.7, steepness + (fray / 1.5 - 0.5) * 0.3) * vegetated;
+        if bare > 0.001 {
+            var dirt: vec4<f32>;
+            if coarse {
+                dirt = block_mean(f32(constants::DIRT_CELL));
+            } else {
+                dirt = material_triplanar(flat_position, facing, 0, sculpted_footprint);
+            }
+            color = vec4<f32>(mix(color.rgb, dirt.rgb, bare), color.a);
+        }
         // occlusion rides in the cell's fraction, see `nets::AO_MID`
         let occlusion = (in.color.a - floor(in.color.a + 0.5)) * SCULPT_AO_SPREAD + SCULPT_AO_MID;
         color = vec4<f32>(color.rgb * occlusion, color.a);

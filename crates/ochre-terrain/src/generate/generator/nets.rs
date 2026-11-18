@@ -658,7 +658,8 @@ fn sculpt<const MARGIN: i32>(
                 let sunk = if lod { Vec3::Y * (LOD_SINK / cell_blocks) } else { Vec3::ZERO };
                 let position = (homes[v] + local(0, 0, 0)).as_vec3() + snapped - sunk;
                 let open = sample(homes[v].as_vec3() + offsets[v] + normal * AO_OUT);
-                let ao = (1.0 - (open - 0.25).max(0.0) * k.ao).clamp(0.2, 1.0);
+                // the blocks round it, and the lie of the land over hundreds of blocks
+                let ao = ((1.0 - (open - 0.25).max(0.0) * k.ao) * grass_tint.shade_at(position)).clamp(0.2, 1.0);
                 // weight toward the second material, plus 2 if the second takes the tint or 4 if the first does
                 let toward_other = match (soft(main), soft(other)) {
                     (true, false) => rockiness[v],
