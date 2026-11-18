@@ -164,7 +164,7 @@ rapid climbing more than a block a column is a ramp, not stairs. Bigger drops ar
   reporting height gaps and edges where the rounded dry ground lies below the water block.
   This samples the existing windows rather than every river column. Walls left on rivers are
   mostly waterfalls.
-- The `worldview` skill to look, and `worldprobe <seed> info x z` for one column's ground, dry
+- The `worldview` skill to look, and `worldview <seed> info x z` for one column's ground, dry
   ground, smooth ground, water and map cell.
 
 Before this model (seeds 368871838, 5, 2198630850, the default 65 km world): lake walls over 1.5

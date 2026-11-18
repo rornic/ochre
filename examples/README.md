@@ -1,7 +1,7 @@
 # examples
 
 ## Overview
-Flat directory of Cargo examples (auto-discovered, none declared in `Cargo.toml`) of package `ochre-engine`. One is the game (`sandbox.rs`). The rest are tools: headless simulations of the loading systems, a stage timer, world-generation probes and a browser world viewer. `worldview.html` is the viewer's page, a non-source asset embedded by `include_bytes!` in `worldview.rs:handle`. It is not documented as code. Dev-dependencies come from `Cargo.toml:[dev-dependencies]` (`bevy`, `criterion`, `image`). Shell clients for the viewer live in [../scripts/README.md](../scripts/README.md). The criterion benchmark is in [../benches/README.md](../benches/README.md).
+Directory of Cargo examples (auto-discovered, none declared in `Cargo.toml`) of package `ochre-engine`. One is the game (`sandbox.rs`). The rest are tools: headless simulations of the loading systems, a stage timer, world-generation probes and a browser world viewer. `worldview/worldview.html` is the viewer's page, a non-source asset embedded by `include_bytes!` in `worldview/main.rs:handle`. It is not documented as code. Dev-dependencies come from `Cargo.toml:[dev-dependencies]` (`bevy`, `criterion`, `image`). Shell clients for the viewer live in [../scripts/README.md](../scripts/README.md). The criterion benchmark is in [../benches/README.md](../benches/README.md).
 
 ## Interface
 Run all from the repo root, with `cargo run --release --example <name> -- <args>`. Assets, shaders and `assets/settings.toml` load by relative path.
@@ -18,11 +18,11 @@ Headless simulations (`MinimalPlugins` + `TerrainPlugin::new`, no window or GPU,
 
 Stage timers and probes (no Bevy app)
 - `bench.rs` `[seed=1] [lod]`: single-thread timings of map, terrain, regions, chunk generation, chunk meshing and LOD meshing (levels 1 to 8, best of 3), with vertex counts. Env `BENCH_MOUNTAIN` (find mountain 150+ blocks over sea) or `BENCH_AT=x,z` moves the site.
-- `worldprobe.rs` `<seed> <cmd> <x> <z> ...`: `info`, `line`, `grid`, `png`, `route`, `edges`, `sites`, `falls`, `features`, `valley`, `slice`, `top`, `passes`. `slice`, `top`, `passes` generate real chunks through `generate_chunk_with`. `--no-cliffs`, `--no-trees`, `--no-flora` (`ChunkPasses`) switch passes off.
+- `worldview/probe.rs` (run as `worldview <seed> <cmd> <x> <z> ...`, or `/probe?seed=&cmd=` on the viewer): `info`, `line`, `grid`, `png`, `route`, `edges`, `sites`, `falls`, `features`, `valley`, `slice`, `top`, `passes`, `render`. `slice`, `top`, `passes` generate real chunks through `generate_chunk_with`. `--no-cliffs`, `--no-trees`, `--no-flora` (`ChunkPasses`) switch passes off.
 - `water_audit.rs` `<seed> [--fine]`: samples rivers, lake shores and coasts. Prints `AUDIT seed=...` lines (walls, tall walls, steps, raised banks, uncontained cells, deep river cuts) for before/after diffs. See `docs/water.md`.
 
 Viewer
-- `worldview.rs` `[seed=42] [port=8777]`: `TcpListener` on 127.0.0.1 with a thread per connection. Routes: `/` (the html), `/tile` (`size` clamped 1..1024), `/export` (`w`,`h` clamped 1..4096), `/info`, `/summary`, `/seed`, else 404. Query keys `seed x z scale layers` (`layers=name:alpha,...`, `scale` floored at 0.25). Layer names are the match arms of `layer_pixel`, plus `hillshade`, `features`, `rivers`, `motion` in `render`.
+- `worldview/main.rs` `[seed=42] [port=8777]`, or `<seed> <cmd> ...` to run one probe command and exit: `TcpListener` on 127.0.0.1 with a thread per connection. Routes: `/` (the html), `/tile` (`size` clamped 1..1024), `/export` (`w`,`h` clamped 1..4096), `/info`, `/summary`, `/seed`, `/probe` (`cmd` is the probe's arguments after the seed, 400 with the error on a bad one), else 404. Query keys `seed x z scale layers` (`layers=name:alpha,...`, `scale` floored at 0.25). Layer names are the match arms of `layer_pixel`, plus `hillshade`, `features`, `rivers`, `motion` in `render`.
 
 ## Invariants
 - Always `--release` and run from the repo root (`AGENTS.md`). Relative paths: `assets/settings.toml` (`Settings::read` in every Bevy example and `worldview`), `assets/textures/*` (`sandbox.rs:setup_scene`).
@@ -31,18 +31,18 @@ Viewer
 - Headless examples init the `Mesh`, `Image`, `ChunkMaterial`, `WaterMaterial`, `SprayMaterial` assets by hand. A new asset type read by `TerrainPlugin` needs `init_asset` in `examples/common/mod.rs:headless_app`, which `flight`, `flow_sim`, `lod_sim` and `shadow_cull` share.
 - `shadow_cull.rs` calls `ochre_terrain::pack::set_packed(false)` before the app starts. It reads vertex colours as `Float32x4`, which packing would turn to half-floats.
 - `shadow_cull.rs:FIRST_CASCADE` (20.0), `FOV_DEGREES` (90) and `ASPECT` (16/9) mirror `sky.rs` and `player.rs:spawn_player`. They are not read from them, so a change there must be copied here.
-- `bench.rs`, `water_audit.rs`, `worldprobe.rs` and `worldview.rs` build the map with `worldmap::character::world_config(seed, ...)`. Reuse that call so a seed gives the same world as in the game.
+- `bench.rs`, `water_audit.rs` and `worldview` build the map with `worldmap::character::world_config(seed, ...)`. Reuse that call so a seed gives the same world as in the game.
 - `bench.rs` is the refactor check: vertex counts must match exactly before and after (`AGENTS.md`).
-- `worldprobe.rs:main` demands at least four args, so `falls`, `features` and `sites` still need dummy `<x> <z>`. Its usage line lists only some commands, and its `grid` output subtracts a hard-coded 400.
-- `worldview.rs` is localhost only, one world in memory at a time (`Server.world`, replaced on a new seed, loaded through the game's map cache in `OCHRE_WORLD_DIR`), and the 4096-byte request buffer in `handle` caps URL length (many `layers` can truncate).
-- `worldview.html` calls `/tile`, `/info`, `/export`, `/seed` with the same query keys `worldview.rs:handle` parses, and reads the `X-Path` response header set by `/export`.
+- `worldview/probe.rs:run` demands `<x> <z>`, so `falls`, `features` and `sites` still need dummies. Its `grid` output subtracts a hard-coded 400.
+- `worldview` is localhost only, one world in memory at a time (`Server.world`, replaced on a new seed, loaded through the game's map cache in `OCHRE_WORLD_DIR`), and the 4096-byte request buffer in `handle` caps URL length (many `layers` can truncate).
+- `worldview/worldview.html` calls `/tile`, `/info`, `/export`, `/seed` with the same query keys `worldview/main.rs:handle` parses, and reads the `X-Path` response header set by `/export`.
 
 ## Side Effects
 - `sandbox.rs` opens a window, reads and writes saved maps through `load_world` (`OCHRE_WORLD_DIR`, default `worlds/`), and plays audio. Do not launch it on a shared desktop uninvited.
 - `flight.rs` sets `OCHRE_SEED` in the process env (`std::env::set_var`) and can write the file at `--out`.
 - `flow_sim.rs` mutates the loaded world (`break_block`) in memory only.
 - `lod_sim.rs`, `flow_sim.rs`, `flight.rs`, `shadow_cull.rs` use `load_world`, which may read saved maps from `OCHRE_WORLD_DIR`, and spawn Bevy task pools sized by `task_pool_plugin`. They poll in real time (sleeps; `shadow_cull` gives up after 300 s).
-- `worldview.rs` binds a TCP port (panics with "port in use"), and `/export` writes `target/worldview/<seed>-<x>_<z>-<w>x<h>-s<scale>-<layers>.png` and prints its absolute path. `worldview.rs` spawns a thread per request and per-row render threads.
+- `worldview` binds a TCP port (when serving) (panics with "port in use"), and `/export` writes `target/worldview/<seed>-<x>_<z>-<w>x<h>-s<scale>-<layers>.png` and prints its absolute path. `worldview.rs` spawns a thread per request and per-row render threads.
 - `bench.rs`, `water_audit.rs` generate full world maps in memory and print to stdout.
 
 ## Verification

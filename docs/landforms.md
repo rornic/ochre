@@ -39,7 +39,7 @@ Each is a pure function of the seed and position returning blocks to add to the 
 | Steppe | none of its own: its shape is the valleys below (the gullies it had went unseen on its flat ground, and the kind remains for the foothills) |
 | Swamp | hummocks |
 
-`worldprobe features <seed> <x> <z> <half>` counts them.
+`worldview <seed> features <x> <z> <half>` counts them.
 
 ## Valleys
 
@@ -53,7 +53,7 @@ About a third of a slope is cliff, in stretches a few hundred blocks long: a fac
 
 The cut is `depth * soft_mask * share`, so every LOD sees the trough. Block-level ground adds `depth * share * cliff * (soft_mask - sharp_mask)` (`WorldTerrain::valley_sharpening`), so the face steepens into a cliff while floor and plateau stay where the map put them. It is calmed near water like the tableland's beds, and fades out in cells wider than 16 blocks (none from 32). `TerrainSource::valley_wall` is 0..1 where a cliff face is: it extends `cliff_boost` and adds a gradient of 1 at full wall to the one blocks are chosen by (`terrain.rs::block_gradient`), so mid-steep faces show rock. LOD cells take the same bias so colours do not change at a swap.
 
-`worldprobe`'s `valley` and worldview's `hillshade` layer show them. `generate_with(seed, config, false)` makes the same world without valleys, to compare.
+worldview's `valley` probe and worldview's `hillshade` layer show them. `generate_with(seed, config, false)` makes the same world without valleys, to compare.
 
 ## Not built
 

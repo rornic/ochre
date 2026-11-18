@@ -10,7 +10,7 @@ One criterion benchmark, `terrain.rs`, registered in `Cargo.toml:[[bench]]` as `
 - `terrain.rs:classify` and `chunks_of` pick surface chunks on a 192-block lattice over 80% of `WORLD_HALF_SIZE`.
 
 ## Invariants
-- `terrain.rs:SEED` is 1 and the world is `WorldConfig::default()` passed straight to `worldmap::generate`, without `worldmap::character::world_config`. Examples such as `bench`, `worldprobe` and `seams` do apply it, so their worlds differ from this one for the same seed.
+- `terrain.rs:SEED` is 1 and the world is `WorldConfig::default()` passed straight to `worldmap::generate`, without `worldmap::character::world_config`. Examples such as `bench`, `worldview` and `seams` do apply it, so their worlds differ from this one for the same seed.
 - `terrain.rs:WORLD_HALF_SIZE` (32_768) is hard-coded and matches the default `size` of 65536. A different default size makes `chunks_of` sample off the map.
 - `terrain.rs:chunks_of` asserts that every `Kind` finds at least one chunk.
 - The cold chunk benchmark builds a new `RegionStore` per iteration (`BatchSize::PerIteration`), so it includes region setup. The warm percentile run uses `with_resident_cap(100_000)`.

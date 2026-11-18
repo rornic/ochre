@@ -1,6 +1,6 @@
 ---
 name: game-remote
-description: Drive a running Ochre game over the Bevy Remote Protocol, to teleport the camera, set the time of day, read the game's state and take screenshots of what it renders. Use to see in the game a spot found with worldview or worldprobe, or to check a rendering change at a coordinate, instead of asking the user to fly there.
+description: Drive a running Ochre game over the Bevy Remote Protocol, to teleport the camera, set the time of day, read the game's state and take screenshots of what it renders. Use to see in the game a spot found with worldview, or to check a rendering change at a coordinate, instead of asking the user to fly there.
 ---
 
 # Game remote
