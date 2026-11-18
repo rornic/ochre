@@ -20,24 +20,27 @@ What this means for the mountain design:
 - **The existing bed risers are probably already tall enough** (a hard bed's face is of order 16 blocks or more by `geology.rs`), so the climbable cliffs the owner has met are more likely mesh softening and cliff noise producing sub-2-block ledges than the beds themselves. That is a guess, to check in the mesher half.
 - **No contact change is needed to "slide off".** A face over 66 degrees that is also over 2.2 blocks tall already walls the player out. What lets them climb is ledges, so the fix is in the ground shape, as the design review said.
 
-## 2. The mesher: answered for full detail, open for LOD hand-over
+## 2. The mesher: holes are folded rock triangles, not open edges
 
-`worldprobe <seed> render <x> <z> <half> <out> [azimuth]` prints, for the area it draws, the share of triangle area by slope (walkable over 0.4 of up, steep, wall under 0.1) and the open edges in the middle 80% of the area. The count leaves out water (an open sheet along its shore) and edges beside tree blocks (trunks sink up to 2 blocks into the ground and are drawn open by their own mesher), and splits off those lying in a chunk plane. `OCHRE_RENDER_EDGES=1` lists them. Run on seed 1 around the steppe peak, (13408, -4704), half 400, `OCHRE_RENDER_FLAT=1`:
+`worldprobe <seed> render <x> <z> <half> <out> [azimuth]` prints slope bands and checks the ground mesh. It leaves out water and edges beside tree blocks (trunks sink up to 2 blocks and are drawn open). `OCHRE_RENDER_EDGES=1` lists open edges, `OCHRE_RENDER_CULL=out` draws only triangles whose winding faces the camera as a backface cull would, and `OCHRE_RENDER_PITCH=<degrees>` sets the camera pitch (35 by default), so a near-level view can be diffed against the uncullled one.
 
-| Detail | Triangles | Walkable / steep / wall by area | Open edges in the ground | Of them in a node's or chunk's plane |
-| --- | --- | --- | --- | --- |
-| Full chunks | 4.4 M | 57% / 16% / 27% | 0 | 0 |
-| LOD 3 (8-block cells) | 74 k | 37% / 8% / 56% | 4,961 | 3,586 |
-| LOD 4 (16-block cells) | 22 k | 38% / 7% / 55% | 942 | 642 |
-| LOD 5 (32-block cells) | 5 k | 40% / 5% / 56% | 154 | 137 |
+**What the owner saw is not an open edge.** The owner confirmed the holes are in full-detail ground. A first reading of this section said the mesh was closed, because it counted open edges only, and a folded or inverted triangle has a neighbour on every edge. The checks that find it:
 
-- **Full-detail ground is closed on a sheer peak.** Its walls, 50 blocks and more, are drawn as flat faces with no open edge, and the same holds at (11393, -20193), where a hole was seen earlier. This was first misread: 3,724 of 3,796 edges near the peak's lake were the lake's own surface, and 160 more were 20 trunk bases.
-- **The surface-net construction explains it.** Each crossing between a solid and an open block makes a quad of the four cells round it, and each of those cells holds a vertex, so the interior is closed whatever the faces do to the vertices after (relax, spike cap, wobble, chisel only move them). The chunk edges are exact by the reach rule in `docs/sculpted-ground.md`. So pulling vertices off their cells, the usual cause of surface-net and dual-contouring cracks, cannot open a hole here, only fold or thin one.
-- **LOD nodes are open by design.** They stitch to a neighbour with skirts, not shared vertices, so their sides, tops and bottoms are open, and the counts above are mostly that. What is left (LOD 3: 1,375, LOD 4: 300, LOD 5: 17) is where skirts end and the node's top and bottom, per the docs, which was not separated further.
-- **So where are the holes the owner saw?** Not in full-detail ground. The likely place is the hand-over between a chunk and a node on a sheer face, which `docs/sculpted-ground.md` lists as open: a node's coarse surface can stand lower or further in than the chunk's, and a skirt only hangs down. That is a guess, not checked in the game.
+| Check | Seed 1 peak, (13408, -4704), half 400 | Seed 4 marble arch, (11393, -20193), half 40 |
+| --- | --- | --- |
+| Open edges in the ground | 0 | 0 |
+| Edges wound the same way by exactly two triangles | 14, all beside trees | 0 |
+| Edges with three or more triangles | 3,948 | 0 |
+| Triangles wound against their own vertices' normals | 15,347 of 4.3 M (0.1% of area), 99% in rock tiles | 23 of 26,586, all in the two chunks that hold the reported hole, (11376, 112, -20192) and (11392, 112, -20192) |
 
-Not yet done: the walkable-fraction histogram over several seeds, an ALPINE valley wall, and a look at the hand-over on a sheer face.
+- **At the arch the only anomaly in an 80-block area is 23 folded triangles, in the chunks holding the hole.** Culling them in a near-level render (pitch 4, half 14) removes a sliver of rock at the arch's base. It does not reproduce the sky window in the pillar from the owner's screenshot, so the arch hole is consistent with this cause and not proven to be it.
+- **The folds are rock's.** Measured with a temporary count inside `nets.rs` (since removed) against the outward direction the placement itself reads (the gradient of the blurred blocks): 41,378 of 1.57 M triangles over the peak at half 250 (2.6%) wind more than about 100 degrees against it, 41,306 in rock and 72 in soft ground. That test also flags thin rock features where the direction is ambiguous, so 41,000 is an upper bound.
+- **They exist before the chisel.** 15,312 before it and 17,348 after, so the chisel adds about 13% and is not the origin.
+- **Rock has no relax and no wobble, so placement and the spike cap are what move its vertices before the chisel.** Clamping the plane solve inside its cell (`PAST` 0.0, 0.3 and 1.0) changes nothing. Removing the spike cap doubles the folds (0.43% to 0.81% of triangles), so the cap helps. That points at the plane solve itself (planes from the blurred gradient, pulled by `PULL` 0.05 toward the crossings' mean) on cells with few solid corners or seven of eight, which are most of the bad triangles, mostly on near-flat tops and not sheer walls.
+- **A render box shows false holes.** The renderer cuts the world at the area's sides, so the inside of the mountain's far wall shows through the open cut and looks like missing or inverted slabs when culled. Judge only near the middle.
+
+Not yet done: a close render of the arch pillar from the screenshot's angle, which cell patterns fold and why (the plane solve on thin or 7-corner cells is the suspect), the LOD hand-over on a sheer face (still a possible second cause), the walkable-fraction histogram over several seeds, and an ALPINE valley wall.
 
 ## Decision rule so far
 
-For slice 3: aim risers at 2.2 blocks or more with no ledge of 0.2 or more on faces over 66 degrees, and check by this test. The mesher draws sheer faces without holes at full detail, so steeper faces are not blocked by it. The place to check before steepening is the chunk-to-node hand-over on a sheer face.
+For slice 3: aim risers at 2.2 blocks or more with no ledge of 0.2 or more on faces over 66 degrees, and check by this test. Steeper rock multiplies the cells that fold (thin or nearly solid corners), so the folded-triangle count in `worldprobe` has to be near zero on the target ranges before slice 3 steepens them.

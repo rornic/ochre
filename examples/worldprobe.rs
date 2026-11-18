@@ -638,6 +638,8 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     // (position, normal, colour) triangles in world blocks
     let mut triangles: Vec<[(Vec3, Vec3, Vec3); 3]> = Vec::new();
     let mut vertices = 0usize;
+    // each ground triangle's centroid, area and its winding's normal against its vertices' stored normals, to find folded triangles
+    let mut folds: Vec<(Vec3, f32, f32, usize)> = Vec::new();
     // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
     let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
         let (
@@ -663,6 +665,11 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             let cell = colours[tri[0] as usize][3].round() as usize;
             let corners: [Vec3; 3] = std::array::from_fn(|k| Vec3::from(positions[tri[k] as usize]));
             let face = (corners[2] - corners[0]).cross(corners[1] - corners[0]).normalize_or_zero();
+            if !water {
+                let stored: Vec3 = (0..3).map(|k| { let n = normals[tri[k] as usize]; Vec3::new(n[0], n[1], -n[2]) }).sum();
+                let area = (corners[2] - corners[0]).cross(corners[1] - corners[0]).length() / 2.0;
+                folds.push(((corners[0] + corners[1] + corners[2]) / 3.0 * scale + origin, area * scale * scale, face.dot(stored.normalize_or_zero()), cell));
+            }
             // leaves and the plants after the steppe's top in the atlas
             if !water && (cell == 6 || cell >= 30) {
                 continue;
@@ -739,7 +746,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     }
     let (w, h) = (1600u32, 1000u32);
     let centre = Vec3::new(x as f32, sampler.ground_top(x, z) as f32, z as f32);
-    let (yaw, pitch) = (azimuth.to_radians(), 35f32.to_radians());
+    let (yaw, pitch) = (azimuth.to_radians(), std::env::var("OCHRE_RENDER_PITCH").ok().and_then(|p| p.parse::<f32>().ok()).unwrap_or(35.0).to_radians());
     let forward = Vec3::new(yaw.cos() * pitch.cos(), -pitch.sin(), yaw.sin() * pitch.cos());
     let right = forward.cross(Vec3::Y).normalize();
     let up = right.cross(forward);
@@ -756,6 +763,14 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             - (screen[2].0 - screen[0].0) * (screen[1].1 - screen[0].1);
         if area.abs() < 1e-6 {
             continue;
+        }
+        // OCHRE_RENDER_CULL=out draws only triangles whose winding faces the camera (the outward side the mesher winds toward), `in` the others, as a backface cull would
+        if let Ok(mode) = std::env::var("OCHRE_RENDER_CULL") {
+            let outward = (tri[2].0 - tri[0].0).cross(tri[1].0 - tri[0].0);
+            let facing_camera = outward.dot(forward) < 0.0;
+            if facing_camera != (mode == "out") {
+                continue;
+            }
         }
         let (min_x, max_x) = (
             screen.iter().map(|s| s.0).fold(f32::MAX, f32::min).floor().max(0.0) as u32,
@@ -853,6 +868,75 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             plane(p.0, q.0) || plane(p.1, q.1) || plane(p.2, q.2)
         }).count();
         println!("  of those {on_plane} lie in a chunk plane");
+        // a triangle whose winding faces against its vertices' normals is folded over and culled in the game
+        let leaf_or_plant = |cell: usize| cell == 6 || cell >= 30;
+        let mut near_trunk = |c: Vec3| near_tree(((c.x * 16.0) as i64, (c.y * 16.0) as i64, (c.z * 16.0) as i64), ((c.x * 16.0) as i64, (c.y * 16.0) as i64, (c.z * 16.0) as i64));
+        let ground: Vec<&(Vec3, f32, f32, usize)> = folds.iter().filter(|f| !leaf_or_plant(f.3) && f.1 > 1e-6).collect();
+        let mut flipped: Vec<&(Vec3, f32, f32, usize)> = ground.iter().copied().filter(|f| f.2 < -0.05).collect();
+        flipped.retain(|f| inside(((f.0.x * 16.0) as i64, (f.0.y * 16.0) as i64, (f.0.z * 16.0) as i64)) && !near_trunk(f.0));
+        // which material tile (the atlas cell) the folds are in, against all ground, and how steep the stored normals say the place is
+        {
+            let mut by_cell: HashMap<usize, (usize, usize)> = HashMap::new();
+            for f in &ground { by_cell.entry(f.3).or_default().0 += 1; }
+            for f in &flipped { by_cell.entry(f.3).or_default().1 += 1; }
+            let mut rows: Vec<_> = by_cell.into_iter().collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1 .1));
+            for (cell, (all, bad)) in rows.iter().take(6) {
+                println!("  cell {cell}: {bad} folded of {all} ({:.2}%)", 100.0 * *bad as f32 / (*all).max(1) as f32);
+            }
+        }
+        let area_all: f32 = ground.iter().map(|f| f.1).sum();
+        let area_flipped: f32 = flipped.iter().map(|f| f.1).sum();
+        println!("folded triangles (winding against the vertices' normals): {} of {} ground triangles, {:.3}% of area", flipped.len(), ground.len(), 100.0 * area_flipped / area_all.max(1e-6));
+        let mut fold_bins: HashMap<(i64, i64, i64), (u32, f32)> = HashMap::new();
+        for f in &flipped {
+            let e = fold_bins.entry(((f.0.x / 16.0).floor() as i64, (f.0.y / 16.0).floor() as i64, (f.0.z / 16.0).floor() as i64)).or_default();
+            e.0 += 1;
+            e.1 += f.1;
+        }
+        let mut fold_worst: Vec<_> = fold_bins.into_iter().collect();
+        fold_worst.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+        for ((bx, by, bz), (n, a)) in fold_worst.iter().take(10) {
+            println!("  {n} folded ({a:.1} blocks of area) in the 16-block chunk at x {} y {} z {}", bx * 16, by * 16, bz * 16);
+        }
+        // the winding checked by edges too: an edge walked the same way by two triangles means one of them is wound the wrong way
+        let mut directed: HashMap<(Point, Point), u32> = HashMap::new();
+        for tri in triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
+            let k = [tri[0].0, tri[1].0, tri[2].0].map(key);
+            for e in 0..3 {
+                *directed.entry((k[e], k[(e + 1) % 3])).or_default() += 1;
+            }
+        }
+        let same_way = directed.iter().filter(|(&(p, q), &n)| n >= 2 && inside(p) && inside(q)).count();
+        println!("edges walked the same way twice: {same_way}");
+        // of those, edges with exactly two triangles (a pair wound against each other's sense) and not three or more meeting (a non-manifold join)
+        let (mut pair_bad, mut multi) = (0usize, 0usize);
+        let mut pair_where: Vec<(Point, Point)> = Vec::new();
+        for (&(p, q), &n) in directed.iter() {
+            if !(inside(p) && inside(q)) || p > q {
+                continue;
+            }
+            let (fwd, back) = (n, directed.get(&(q, p)).copied().unwrap_or(0));
+            let total = fwd + back;
+            if total == 2 && (fwd == 2 || back == 2) {
+                pair_bad += 1;
+                pair_where.push((p, q));
+            } else if total >= 3 {
+                multi += 1;
+            }
+        }
+        println!("  undirected edges with exactly two triangles wound the same way: {pair_bad}; with three or more triangles: {multi}");
+        let trees = pair_where.iter().filter(|&&(p, q)| near_tree(p, q)).count();
+        println!("  of the two-triangle ones, beside tree blocks: {trees}");
+        let mut pair_bins: HashMap<(i64, i64, i64), u32> = HashMap::new();
+        for &(p, _) in &pair_where {
+            *pair_bins.entry((p.0 / 256, p.1 / 256, p.2 / 256)).or_default() += 1;
+        }
+        let mut pb: Vec<_> = pair_bins.into_iter().collect();
+        pb.sort_by_key(|r| std::cmp::Reverse(r.1));
+        for ((bx, by, bz), n) in pb.iter().take(6) {
+            println!("    {n} near x {} y {} z {}", bx * 16, by * 16, bz * 16);
+        }
         println!("open edges inside the middle 80% of the area, off the rows the drawing starts and stops at: {open}");
         // where they cluster, in 32-block bins: a hole is a few edges in one place, a seam or a tree a long line of them
         let mut bins: HashMap<(i64, i64, i64), (u32, i64)> = HashMap::new();
