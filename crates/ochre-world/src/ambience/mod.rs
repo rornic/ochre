@@ -1,5 +1,6 @@
 //! What the world sounds like where the camera is: wind, and loops of forest, crickets, waves
 //! and so on, each as loud as the camera's surroundings call for, and the odd owl.
+mod haze;
 mod wind;
 
 use std::f32::consts::TAU;
@@ -27,7 +28,7 @@ use bevy::{
 
 use crate::sky::{sun_direction, TimeOfDay};
 pub(crate) use ochre_base::math::smoothstep;
-use ochre_base::{block::BlockType, WATER_LEVEL};
+use ochre_base::{biome::Climate, block::BlockType, WATER_LEVEL};
 use ochre_terrain::world::World;
 use wind::Gust;
 pub(crate) use wind::SAMPLE_RATE;
@@ -63,8 +64,14 @@ impl Plugin for SurroundingsPlugin {
             .init_resource::<Surroundings>()
             .init_resource::<Heat>()
             .add_systems(Update, sense_surroundings.in_set(SenseSurroundings))
-            .add_systems(Update, ease_heat.after(SenseSurroundings));
+            .add_systems(Update, ease_heat.after(SenseSurroundings))
+            .add_systems(Update, haze::sense_haze.after(ease_heat));
     }
+}
+
+/// How hot and dry `climate` is, 0 to 1, see `Surroundings::heat`.
+pub(crate) fn heat_of(climate: Climate) -> f32 {
+    smoothstep(HOT.0, HOT.1, climate.temperature) * (1.0 - smoothstep(HUMID.0, HUMID.1, climate.humidity))
 }
 
 /// `Surroundings::heat` eased over a few seconds, since it is sensed in steps, for the grade and the sun to follow.
@@ -236,7 +243,7 @@ fn sense_surroundings(
         trees: trees / total,
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
-        heat: smoothstep(HOT.0, HOT.1, climate.temperature) * (1.0 - smoothstep(HUMID.0, HUMID.1, climate.humidity)),
+        heat: heat_of(climate),
         desert: (biome == Some("desert")) as u8 as f32,
         steppe: steppe / total,
         exposure: noise.exposure(eye.x as f64, eye.z as f64),

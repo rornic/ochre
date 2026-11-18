@@ -95,15 +95,18 @@ pub struct Curvature {
     last: [f32; 4],
     /// What the shaders are told about the cold, see `ochre_base::cold::shader_values`: written after the two bends.
     pub(crate) cold: [f32; 8],
+    /// How hot the country is toward each of 16 compass points, as 4 floats each: the camera's, then 3 rings out, see `ochre_world::haze`.
+    pub heat: [f32; 64],
 }
 
 impl FromWorld for Curvature {
     fn from_world(world: &mut World) -> Self {
-        let buffer = ShaderBuffer::new(vec![0.0f32; 16], RenderAssetUsages::default());
+        let buffer = ShaderBuffer::new(vec![0.0f32; 80], RenderAssetUsages::default());
         Self {
             buffer: world.resource_mut::<Assets<ShaderBuffer>>().add(buffer),
             last: [0.0; 4],
             cold: ochre_base::cold::shader_values(0.0, 1.0, false, 0.0),
+            heat: [0.0; 64],
         }
     }
 }
@@ -126,6 +129,7 @@ fn update_curvature(
         buffer.extend_from_slice(&now);
         buffer.extend_from_slice(&curvature.last);
         buffer.extend_from_slice(&curvature.cold);
+        buffer.extend_from_slice(&curvature.heat);
     }
     curvature.last = now;
 }

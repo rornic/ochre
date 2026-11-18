@@ -2,7 +2,7 @@
 // stage and so must fog themselves. Each carries the curvature buffer, see `horizon.wesl`.
 
 import bevy_pbr::render::{mesh_view_bindings as view_bindings, pbr_functions::apply_fog};
-import super::curvature::{cold, uncurved};
+import super::curvature::{cold, heat_toward, uncurved};
 import super::horizon::horizon_haze;
 import super::sky::SUN_LIGHT;
 
@@ -16,6 +16,10 @@ const EDGE_FADE_START: f32 = 0.9;
 // reach full at the end. A quadratic ramp to half at the farthest LOD level's start left all but the
 // last stretch looking crisp.
 const FOG_SCALE: f32 = 0.16;
+
+// Over hot country the haze warms and thickens: the tint it is multiplied by, and how much denser it goes, fully hot.
+const HOT_HAZE_TINT: vec3<f32> = vec3<f32>(1.0, 0.92, 0.76);
+const HOT_HAZE_DENSITY: f32 = 0.5;
 
 // The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
 const SUN_HAZE: f32 = 0.08;
@@ -72,7 +76,9 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     let across = world_position.xz - view_position.xz;
     let distance = length(across);
     var sky = horizon_haze(across);
-    let scale = end * FOG_SCALE;
+    let hot = heat_toward(across, distance);
+    sky = sky * mix(vec3<f32>(1.0), HOT_HAZE_TINT, hot);
+    let scale = end * FOG_SCALE / (1.0 + HOT_HAZE_DENSITY * hot);
     if view_bindings::lights.n_directional_lights > 0u {
         let to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         let toward = max(dot(normalize(across), normalize(to_sun.xz + vec2<f32>(1e-5))), 0.0);
