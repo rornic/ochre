@@ -25,11 +25,12 @@ use bevy::{
 };
 
 use crate::{
-    ambience::{Heat, AMBIENCE_TRIM},
+    ambience::AMBIENCE_TRIM,
+    atmosphere::{Atmosphere, EasedFeel},
     clouds::CloudMaterial,
     sky::{
         camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
-        SUN_COLOR, TICKS_PER_SECOND,
+        TICKS_PER_SECOND,
     },
     storms::{seconds, Forecast},
 };
@@ -215,9 +216,6 @@ fn run_weather(
 // How much of the sun's and moon's light gets through the storm's clouds, and how dark the
 // clouds themselves get, at the heaviest rain.
 const STORM_LIGHT: f32 = 0.3;
-// How much brighter the sun is over fully hot country, and the colour it goes there.
-const HOT_SUN: f32 = 0.5;
-const HOT_SUN_COLOR: Color = Color::srgb(1.0, 0.86, 0.66);
 const STORM_CLOUD: f32 = 0.42;
 // Lightning's flash, in stops brighter: held, then dying away, in seconds, with a fainter
 // flicker after.
@@ -258,22 +256,24 @@ fn darken_sky(
     mut flashes: Query<(Entity, &mut Flash)>,
     mut commands: Commands,
     mut last_shade: Local<f32>,
-    heat: Option<Res<Heat>>,
+    feel: Option<Res<EasedFeel>>,
 ) {
-    let heat = heat.map_or(0.0, |heat| heat.0);
-    let shade = 1.0 - (1.0 - STORM_LIGHT) * weather.gloom();
+    let atmosphere = Atmosphere::of(&feel.map_or_else(Default::default, |feel| feel.0));
+    // a storm dims the light deeper in the country that is exposed to it
+    let gloom = (weather.gloom() * atmosphere.storm).min(1.0);
+    let shade = 1.0 - (1.0 - STORM_LIGHT) * gloom;
     for (mut light, is_sun) in &mut lights {
         light.illuminance = shade
             * if is_sun {
-                sun_illuminance() * (1.0 + HOT_SUN * heat)
+                sun_illuminance() * atmosphere.sun
             } else {
                 moon_illuminance()
             };
         if is_sun {
-            light.color = SUN_COLOR.mix(&HOT_SUN_COLOR, heat);
+            light.color = atmosphere.sun_color();
         }
     }
-    let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * weather.gloom();
+    let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * gloom;
     if (cloud_shade - *last_shade).abs() > 0.002 {
         *last_shade = cloud_shade;
         if let Some(mut clouds) = clouds {

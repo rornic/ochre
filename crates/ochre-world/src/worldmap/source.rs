@@ -53,6 +53,8 @@ const VOLCANIC_FROM: f64 = 120.0;
 // and a gully is never cut off at a cell's edge.
 // How far the lie of the land moves the humidity grass is tinted by: at the water's edge, on the most exposed crest (the same, negated, in the
 // deepest hollow), and the most the height thins it, between `THIN_FROM` and `THIN_TO` blocks over the sea.
+// The humidity the lie of the land can green grass up to, under the palette's lush end.
+const LUSH_CAP: f32 = 0.6;
 const BANK_WETTING: f32 = 0.25;
 const EXPOSURE_DRYING: f32 = 0.2;
 const ELEVATION_THINNING: f32 = 0.3;
@@ -1206,7 +1208,14 @@ impl TerrainSource for WorldTerrain {
 
     fn tint_climate(&self, x: f64, z: f64) -> Climate {
         let mut climate = self.climate(x, z);
-        climate.humidity = (climate.humidity + self.vigour(x, z)).clamp(0.0, 1.0);
+        let shift = self.vigour(x, z);
+        // banks and hollows green up only so far, the palette's lush green being the jungle's own
+        climate.humidity = if shift > 0.0 {
+            climate.humidity.max((climate.humidity + shift).min(LUSH_CAP))
+        } else {
+            climate.humidity + shift
+        }
+        .clamp(0.0, 1.0);
         climate
     }
 

@@ -1,31 +1,40 @@
-//! Hands the land's shaders how hot the country is round the camera, on 16 compass points and 3 rings out, so hot country far off shows in the haze.
+//! Hands the land's shaders the haze of the country round the camera, on 16 compass points and 3 rings out, so a far biome shows in the haze.
 
 use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 use ochre_terrain::{curvature::Curvature, world::World};
 
-use super::{heat_of, Heat};
+use super::EasedFeel;
+use crate::atmosphere::{Atmosphere, Feel};
 
 const POINTS: usize = 16;
-// Blocks out to each ring, matching `HEAT_RINGS` in `curvature.wesl`.
+// Blocks out to each ring, matching `HAZE_RINGS` in `curvature.wesl`.
 const RINGS: [f32; 3] = [1000.0, 3000.0, 8000.0];
 // Seconds between senses, and for the rings to glide to what they last sensed.
 const SENSE_SECONDS: f32 = 0.5;
 const EASE_SECONDS: f32 = 2.0;
 
+// A haze's tint and how much more or less of it there is: what a ring point hands the shader.
+type Haze = [f32; 4];
+
+fn haze_of(atmosphere: &Atmosphere) -> Haze {
+    let [r, g, b] = atmosphere.haze_tint;
+    [r, g, b, atmosphere.haze_density]
+}
+
 #[derive(Default)]
 pub(super) struct Rings {
     since: f32,
     started: bool,
-    target: [[f32; 3]; POINTS],
-    now: [[f32; 3]; POINTS],
+    target: [[Haze; 3]; POINTS],
+    now: [[Haze; 3]; POINTS],
 }
 
 pub(super) fn sense_haze(
     time: Res<Time>,
     world: Res<World>,
-    heat: Res<Heat>,
+    eased: Res<EasedFeel>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     curvature: Option<ResMut<Curvature>>,
     mut rings: Local<Rings>,
@@ -39,11 +48,12 @@ pub(super) fn sense_haze(
         let eye = camera.translation();
         let terrain = world.region_store.terrain();
         for point in 0..POINTS {
-            // the shader's turn is 0 at -pi round to 16 at pi, see `heat_toward`
+            // the shader's turn is 0 at -pi round to 16 at pi, see `haze_toward`
             let angle = (point as f32 / POINTS as f32 - 0.5) * TAU;
             for (ring, distance) in RINGS.into_iter().enumerate() {
-                let (x, z) = (eye.x + angle.cos() * distance, eye.z + angle.sin() * distance);
-                rings.target[point][ring] = heat_of(terrain.climate(x as f64, z as f64));
+                let (x, z) = ((eye.x + angle.cos() * distance) as f64, (eye.z + angle.sin() * distance) as f64);
+                let feel = Feel::of(terrain.climate(x, z), terrain.temperature(x, z));
+                rings.target[point][ring] = haze_of(&Atmosphere::of(&feel));
             }
         }
         if !rings.started {
@@ -52,12 +62,17 @@ pub(super) fn sense_haze(
         }
     }
     let step = 1.0 - (-time.delta_secs() / EASE_SECONDS).exp();
+    let here = haze_of(&Atmosphere::of(&eased.0));
     for point in 0..POINTS {
         for ring in 0..3 {
-            let (target, now) = (rings.target[point][ring], &mut rings.now[point][ring]);
-            *now += (target - *now) * step;
+            let target = rings.target[point][ring];
+            for (now, to) in rings.now[point][ring].iter_mut().zip(target) {
+                *now += (to - *now) * step;
+            }
         }
-        curvature.heat[point * 4] = heat.0;
-        curvature.heat[point * 4 + 1..point * 4 + 4].copy_from_slice(&rings.now[point]);
+        let (first, hazes) = (point * 16, [here, rings.now[point][0], rings.now[point][1], rings.now[point][2]]);
+        for (i, haze) in hazes.into_iter().enumerate() {
+            curvature.haze[first + i * 4..first + i * 4 + 4].copy_from_slice(&haze);
+        }
     }
 }

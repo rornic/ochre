@@ -2,7 +2,7 @@
 // stage and so must fog themselves. Each carries the curvature buffer, see `horizon.wesl`.
 
 import bevy_pbr::render::{mesh_view_bindings as view_bindings, pbr_functions::apply_fog};
-import super::curvature::{cold, heat_toward, uncurved};
+import super::curvature::{cold, haze_toward, uncurved};
 import super::horizon::horizon_haze;
 import super::sky::SUN_LIGHT;
 
@@ -19,10 +19,6 @@ const FOG_SCALE: f32 = 0.16;
 
 // The haze's own colour is a pale grey at the horizon, so over the land it is given more colour, easing back to the sky's own by the fog's end, where the land fades into it.
 const HAZE_SATURATION: f32 = 1.6;
-
-// Over hot country the haze warms and thickens: the tint it is multiplied by, and how much denser it goes, fully hot.
-const HOT_HAZE_TINT: vec3<f32> = vec3<f32>(1.0, 0.86, 0.64);
-const HOT_HAZE_DENSITY: f32 = 1.2;
 
 // The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
 const SUN_HAZE: f32 = 0.08;
@@ -79,11 +75,12 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     let across = world_position.xz - view_position.xz;
     let distance = length(across);
     var sky = horizon_haze(across);
-    let hot = heat_toward(across, distance);
-    sky = sky * mix(vec3<f32>(1.0), HOT_HAZE_TINT, hot);
+    // each country's own haze, from `ochre_world::atmosphere`: tinted, and thicker or thinner
+    let country = haze_toward(across, distance);
+    sky = sky * country.rgb;
     let haze_grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
     sky = mix(vec3<f32>(haze_grey), sky, mix(HAZE_SATURATION, 1.0, smoothstep(0.6, 0.95, distance / end)));
-    let scale = end * FOG_SCALE / (1.0 + HOT_HAZE_DENSITY * hot);
+    let scale = end * FOG_SCALE / country.w;
     if view_bindings::lights.n_directional_lights > 0u {
         let to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         let toward = max(dot(normalize(across), normalize(to_sun.xz + vec2<f32>(1e-5))), 0.0);
