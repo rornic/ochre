@@ -795,4 +795,46 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     }
     img.save(out).unwrap();
     println!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len());
+    // by slope, each triangle's own face: walkable (normal.y over 0.4, as `GROUND_FACING`), steep (up to a wall), and a wall or overhang (normal.y under 0.1),
+    // with the share of the ground area each holds; and the interior's open edges, which a sealed surface has none of, the plants and leaves left out
+    {
+        let (mut area, mut count) = ([0.0f32; 3], [0usize; 3]);
+        let key = |p: Vec3| ((p.x * 16.0).round() as i64, (p.y * 16.0).round() as i64, (p.z * 16.0).round() as i64);
+        type Point = (i64, i64, i64);
+        let mut edges: HashMap<(Point, Point), u32> = HashMap::new();
+        for tri in &triangles {
+            let [a, b, c] = [tri[0].0, tri[1].0, tri[2].0];
+            let cross = (c - a).cross(b - a);
+            let up = cross.normalize_or_zero().y;
+            let band = if up > 0.4 { 0 } else if up > 0.1 { 1 } else { 2 };
+            area[band] += cross.length() / 2.0;
+            count[band] += 1;
+            for (p, q) in [(a, b), (b, c), (c, a)] {
+                let (kp, kq) = (key(p), key(q));
+                *edges.entry(if kp < kq { (kp, kq) } else { (kq, kp) }).or_default() += 1;
+            }
+        }
+        let total: f32 = area.iter().sum::<f32>().max(1e-6);
+        println!(
+            "slope bands by area: walkable {:.1}%, steep {:.1}%, wall {:.1}% ({} / {} / {} triangles)",
+            100.0 * area[0] / total, 100.0 * area[1] / total, 100.0 * area[2] / total, count[0], count[1], count[2]
+        );
+        let inside = |p: (i64, i64, i64)| (p.0 as f32 / 16.0 - x as f32).abs() < half as f32 * 0.8 && (p.2 as f32 / 16.0 - z as f32).abs() < half as f32 * 0.8;
+        let open = edges.iter().filter(|(&(p, q), &n)| n == 1 && inside(p) && inside(q)).count();
+        println!("open edges inside the middle 80% of the area: {open}");
+        // where they cluster, in 32-block bins: a hole is a few edges in one place, a seam or a tree a long line of them
+        let mut bins: HashMap<(i64, i64, i64), (u32, i64)> = HashMap::new();
+        for (&(p, q), &n) in &edges {
+            if n == 1 && inside(p) && inside(q) {
+                let entry = bins.entry((p.0 / 512, p.1 / 512, p.2 / 512)).or_default();
+                entry.0 += 1;
+                entry.1 += (p.0 + q.0) / 2 / 16 * 1000 + (p.2 + q.2) / 2 / 16;
+            }
+        }
+        let mut worst: Vec<_> = bins.into_iter().collect();
+        worst.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+        for ((bx, by, bz), (n, _)) in worst.iter().take(8) {
+            println!("  {n} open edges near x {} y {} z {} (32-block bin)", bx * 32, by * 32, bz * 32);
+        }
+    }
 }

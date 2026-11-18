@@ -6,10 +6,10 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 ## Holes in the mesh on a steep steppe mountain's cliffs, seed 1
 
-- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The exact spots were not recorded, so the place is rough: within a few hundred blocks of (13408, -4704).
+- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The owner did not record the exact spots. **Located 2026-11-18** by `worldprobe`'s open-edge report: about 3,600 open mesh edges in one area, x 13088 to 13152, y 448 to 480, z -4992 to -4864, along a sheer wall of more than 50 blocks (`docs/meso-spike.md`).
 - **Known:** the place is the scorer's best steppe place on seed 1 (`docs/meso-baseline.csv`, relief 110, 235 and 315 blocks at the three windows). The build includes the ranges' valleys from `exp/meso-geography`, so seed 1's mountains differ from `main`'s.
 - **Not known:** the cause, and whether it is the same defect as the mesh hole at the marble arch on seed 4 or the thin rock-edge strip below. A guess only: steep faces from the valley walls and bed risers are where the mesher's chisel and the rule that no vertex stands far over its neighbours' mean are pushed hardest. Not looked into, and not checked on `main`.
-- **To check:** `worldprobe 1 render 13408 -4704 400 out.png` with `OCHRE_RENDER_FLAT=1` for open edges, then the checker in `test_sculpted_ground_leaves_no_hole` over the chunks there. This is also an input to the slice 1 spike on what the mesher can hold.
+- **To check:** `OCHRE_RENDER_FLAT=1 worldprobe 1 render 13120 -4930 56 out.png`, then the checker in `test_sculpted_ground_leaves_no_hole` over the chunks there, and what in the mesher (vertex cap, chisel, chunk edges) opens a sheer wall. This is also an input to the slice 1 spike on what the mesher can hold.
 
 ## A thin strip of grass or dirt inset from a rock's edge
 
