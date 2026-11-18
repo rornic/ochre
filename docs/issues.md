@@ -4,6 +4,13 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
+## A thin strip of grass or dirt inset from a rock's edge
+
+- **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
+- **Known:** the owner says it happens sometimes, and that it comes from the dual contouring, the way rock's vertices are placed where its planes meet (`docs/sculpted-ground.md`, The mesh). Not checked on `main`, so not known to be new.
+- **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
+- **To check:** find one and note the seed and place. Render it with `worldprobe <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
+
 ## A hole in the mesh at a marble arch on seed 4
 
 - **Seen:** 2026-11-18, seed 4, at (11393, 110, -20193), a block outline on the ground beside a giant marble arch in the tundra, on the `feat/geography-colour` build. The screenshot is `docs/issues/mesh-hole-seed4-11393-110--20193.jpg`: sky shows through a gap in the arch's pillar just over the outlined block.
