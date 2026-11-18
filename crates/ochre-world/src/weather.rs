@@ -26,6 +26,7 @@ use bevy::{
 
 use crate::{
     ambience::AMBIENCE_TRIM,
+    atmosphere::{Atmosphere, EasedFeel},
     clouds::CloudMaterial,
     sky::{
         camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
@@ -129,7 +130,7 @@ impl Weather {
 
     /// Whether rain or snow falls hard enough that what's out and about takes shelter.
     pub fn sheltering(&self) -> bool {
-        self.precipitation() > SHELTER_RAIN
+        self.precipitation() > SHELTER_RAIN || self.gloom() > SHELTER_GLOOM
     }
 
     /// How much the storm overhead darkens the day, 0..1: its cloud before the rain or snow
@@ -146,6 +147,8 @@ fn rain_and_snow(sky: &crate::storms::Sky) -> (f32, f32) {
 
 // How hard rain or snow falls, see `Weather::precipitation`, before birds and insects take shelter.
 const SHELTER_RAIN: f32 = 0.2;
+// ... or when a storm's dark cloud has come over, before its rain or without any.
+const SHELTER_GLOOM: f32 = 0.3;
 // How dark a storm's cloud makes the day before its rain arrives, as a share of the rain's gloom.
 const GLOOM_BEFORE_RAIN: f32 = 0.8;
 // A rainbow shows after rain: looking back this many game seconds at this many moments, how
@@ -255,17 +258,24 @@ fn darken_sky(
     mut flashes: Query<(Entity, &mut Flash)>,
     mut commands: Commands,
     mut last_shade: Local<f32>,
+    feel: Option<Res<EasedFeel>>,
 ) {
-    let shade = 1.0 - (1.0 - STORM_LIGHT) * weather.gloom();
+    let atmosphere = Atmosphere::of(&feel.map_or_else(Default::default, |feel| feel.0));
+    // a storm dims the light deeper in the country that is exposed to it
+    let gloom = (weather.gloom() * atmosphere.storm).min(1.0);
+    let shade = 1.0 - (1.0 - STORM_LIGHT) * gloom;
     for (mut light, is_sun) in &mut lights {
         light.illuminance = shade
             * if is_sun {
-                sun_illuminance()
+                sun_illuminance() * atmosphere.sun
             } else {
                 moon_illuminance()
             };
+        if is_sun {
+            light.color = atmosphere.sun_color();
+        }
     }
-    let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * weather.gloom();
+    let cloud_shade = 1.0 - (1.0 - STORM_CLOUD) * gloom;
     if (cloud_shade - *last_shade).abs() > 0.002 {
         *last_shade = cloud_shade;
         if let Some(mut clouds) = clouds {
@@ -646,6 +656,8 @@ fn fall_rain(
 // Lightning strikes this often in the heaviest rain, at the least and most, in seconds, from
 // this far off, in blocks (a metre each), and its thunder rolls in at the speed of sound.
 const STRIKE_SECONDS: (f32, f32) = (7.0, 22.0);
+// How many times faster lightning strikes in the heart of a storm, thunder at 1, than at the edge of one, thunder at 0.4.
+const STRIKE_FRENZY: f32 = 3.0;
 const STRIKE_DISTANCE: (f32, f32) = (30.0, 520.0);
 const THUNDER_SPEED: f32 = 343.0;
 // Now and then a strike lands close, within this many blocks; the rest are farther off.
@@ -761,7 +773,9 @@ fn strike_lightning(
     } else {
         FAR_STRIKE_SECONDS
     };
-    weather.strike_in = rand::random_range(soonest..latest);
+    // the harder the storm, the sooner the next bolt
+    let pace = if near { 1.0 + STRIKE_FRENZY * ((weather.thunder - 0.4) / 0.6).clamp(0.0, 1.0) } else { 1.0 };
+    weather.strike_in = rand::random_range(soonest..latest) / pace;
 
     let eye = camera.translation();
     let strike = match forecast {
@@ -1042,5 +1056,8 @@ mod tests {
         weather.rain = 1.0;
         assert_eq!(1.0, weather.gloom());
         assert!(!Weather::default().sheltering() && weather.sheltering());
+        // what is out takes shelter from a dry storm's dark cloud as it comes, and not from a far, thin one
+        assert!(Weather { storm: 0.5, ..default() }.sheltering());
+        assert!(!Weather { storm: 0.2, ..default() }.sheltering());
     }
 }

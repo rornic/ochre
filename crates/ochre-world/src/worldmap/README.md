@@ -20,6 +20,7 @@ Pipeline, in the order of `mod.rs:generate`:
 | landform again | `landform.rs:run` | `landform` |
 | climate | `climate.rs:run` | `precipitation`, `temperature`, `moisture`, `biome`, `biome_alt`, `biome_margin`, `trees` |
 | exposure | `exposure.rs:run` | `exposure` |
+| water closeness | `water_closeness.rs:run` | `water_closeness` |
 | roughness | `detail.rs:roughness_layer` | `roughness`, `range` |
 | label | `gameplay.rs:label` | `features`, `ford` |
 

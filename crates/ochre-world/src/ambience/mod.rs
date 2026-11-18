@@ -1,5 +1,6 @@
 //! What the world sounds like where the camera is: wind, and loops of forest, crickets, waves
 //! and so on, each as loud as the camera's surroundings call for, and the odd owl.
+mod haze;
 mod wind;
 
 use std::f32::consts::TAU;
@@ -25,6 +26,7 @@ use bevy::{
     transform::components::{GlobalTransform, Transform},
 };
 
+use crate::atmosphere::{EasedFeel, Feel};
 use crate::sky::{sun_direction, TimeOfDay};
 pub(crate) use ochre_base::math::smoothstep;
 use ochre_base::{block::BlockType, WATER_LEVEL};
@@ -61,8 +63,19 @@ impl Plugin for SurroundingsPlugin {
         app.init_resource::<TimeOfDay>()
             .init_resource::<WindDials>()
             .init_resource::<Surroundings>()
-            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings));
+            .init_resource::<EasedFeel>()
+            .add_systems(Update, sense_surroundings.in_set(SenseSurroundings))
+            .add_systems(Update, ease_feel.after(SenseSurroundings))
+            .add_systems(Update, haze::sense_haze.after(ease_feel));
     }
+}
+
+// Seconds for the feel to cover most of the way to the country the camera is in.
+const FEEL_EASE: f32 = 2.0;
+
+fn ease_feel(around: Res<Surroundings>, time: Res<Time>, mut eased: ResMut<EasedFeel>) {
+    let step = 1.0 - (-time.delta_secs() / FEEL_EASE).exp();
+    eased.0.ease_towards(around.feel, step);
 }
 
 /// The system that updates `Surroundings`, for systems that read it to run after.
@@ -84,6 +97,8 @@ pub struct Surroundings {
     pub trees_overhead: f32,
     // 0 where it's cold enough to freeze, up to 1 where it's mild
     pub warmth: f32,
+    // how much of each kind of country it is round the camera, see `atmosphere::Feel`
+    pub feel: Feel,
     // 1 over desert
     pub desert: f32,
     // how much of what's round it is steppe, 0..1
@@ -108,6 +123,7 @@ impl Default for Surroundings {
             trees: 0.0,
             trees_overhead: 0.0,
             warmth: 1.0,
+            feel: Feel::default(),
             desert: 0.0,
             steppe: 0.0,
             exposure: 0.5,
@@ -211,6 +227,7 @@ fn sense_surroundings(
         trees: trees / total,
         trees_overhead: overhead / overhead_total,
         warmth: smoothstep(FREEZING.0, FREEZING.1, temperature),
+        feel: Feel::at(noise, eye.x as f64, eye.z as f64),
         desert: (biome == Some("desert")) as u8 as f32,
         steppe: steppe / total,
         exposure: noise.exposure(eye.x as f64, eye.z as f64),
@@ -345,8 +362,8 @@ fn mix_loops(
     weather: Option<Res<crate::weather::Weather>>,
     mut loops: Query<(&Loop, &mut Activity, &mut AudioSink)>,
 ) {
-    // birds and crickets fall silent in the rain
-    let rain = weather.map_or(0.0, |weather| weather.precipitation());
+    // birds and crickets fall silent in the rain, and before a storm's rain, or without it
+    let rain = weather.map_or(0.0, |weather| weather.gloom());
     let follow = 1.0 - (-time.delta_secs() / LOOP_FOLLOW_SECONDS).exp();
     for (kind, mut activity, mut sink) in &mut loops {
         let active = kind.coming_and_going().map_or(1.0, |bursts| {

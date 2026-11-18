@@ -48,6 +48,7 @@ impl Plugin for MusicPlugin {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mood {
     Storm,
+    SteppeFury,
     Desert,
     Cold,
     Forest,
@@ -58,9 +59,13 @@ pub(crate) enum Mood {
 }
 
 impl Mood {
-    pub fn of(around: &Surroundings, rain: f32) -> Mood {
+    // `gloom` is how dark the storm overhead makes the day, see `Weather::gloom`: rain or none.
+    pub fn of(around: &Surroundings, rain: f32, gloom: f32) -> Mood {
         if rain > 0.4 {
             Mood::Storm
+        } else if gloom > FURY_GLOOM && around.steppe > 0.5 {
+            // the steppe's dry storms
+            Mood::SteppeFury
         } else if around.desert > 0.5 {
             Mood::Desert
         } else {
@@ -79,6 +84,7 @@ impl Mood {
     fn files(self) -> &'static [&'static str] {
         match self {
             Mood::Storm => &["sounds/music/storm.ogg"],
+            Mood::SteppeFury => &["sounds/music/steppe-fury.ogg"],
             Mood::Desert => &["sounds/music/desert.ogg"],
             Mood::Cold => &["sounds/music/cold.ogg"],
             Mood::Forest => &["sounds/music/forest.ogg"],
@@ -115,6 +121,8 @@ struct Track {
     fading: bool,
 }
 
+// How dark a storm over the steppe must make the day for its own music to come in.
+const FURY_GLOOM: f32 = 0.5;
 // The files are levelled to -20 LUFS with their fades baked in; this sits them under the ambience.
 const MUSIC_VOLUME: f32 = 0.15;
 // Seconds of silence between tracks, at the least and most, skewed short by squaring the draw.
@@ -162,7 +170,8 @@ fn play_music(
     let dt = time.delta_secs();
     let mood = Mood::of(
         &around,
-        weather.map_or(0.0, |weather| weather.precipitation()),
+        weather.as_ref().map_or(0.0, |weather| weather.precipitation()),
+        weather.as_ref().map_or(0.0, |weather| weather.gloom()),
     );
     let (mut live, mut handover) = (false, false);
     for (entity, mut track, sink) in &mut tracks {
@@ -271,28 +280,34 @@ mod tests {
     #[test]
     fn test_mood_follows_the_weather_then_the_place_then_the_biome() {
         let temperate = Surroundings::default();
-        assert_eq!(Mood::Grassland, Mood::of(&temperate, 0.0));
+        assert_eq!(Mood::Grassland, Mood::of(&temperate, 0.0, 0.0));
         let biome = |name| Surroundings {
             biome: Some(name),
             ..temperate
         };
-        assert_eq!(Mood::Forest, Mood::of(&biome("forest"), 0.0));
-        assert_eq!(Mood::Rainforest, Mood::of(&biome("jungle"), 0.0));
-        assert_eq!(Mood::Savanna, Mood::of(&biome("savanna"), 0.0));
-        assert_eq!(Mood::Steppe, Mood::of(&biome("steppe"), 0.0));
+        assert_eq!(Mood::Forest, Mood::of(&biome("forest"), 0.0, 0.0));
+        assert_eq!(Mood::Rainforest, Mood::of(&biome("jungle"), 0.0, 0.0));
+        assert_eq!(Mood::Savanna, Mood::of(&biome("savanna"), 0.0, 0.0));
+        assert_eq!(Mood::Steppe, Mood::of(&biome("steppe"), 0.0, 0.0));
         for name in ["tundra", "taiga", "glacier"] {
-            assert_eq!(Mood::Cold, Mood::of(&biome(name), 0.0));
+            assert_eq!(Mood::Cold, Mood::of(&biome(name), 0.0, 0.0));
         }
         let cold_forest = Surroundings {
             warmth: 0.0,
             ..biome("forest")
         };
-        assert_eq!(Mood::Forest, Mood::of(&cold_forest, 0.0));
+        assert_eq!(Mood::Forest, Mood::of(&cold_forest, 0.0, 0.0));
         let desert = Surroundings {
             desert: 1.0,
             ..cold_forest
         };
-        assert_eq!(Mood::Desert, Mood::of(&desert, 0.0));
-        assert_eq!(Mood::Storm, Mood::of(&desert, 0.8));
+        assert_eq!(Mood::Desert, Mood::of(&desert, 0.0, 0.0));
+        assert_eq!(Mood::Storm, Mood::of(&desert, 0.8, 0.8));
+        // a dry storm over the steppe has the steppe's fury, a wet one the storm's music, and a dark sky elsewhere neither
+        let steppe = Surroundings { steppe: 1.0, ..biome("steppe") };
+        assert_eq!(Mood::SteppeFury, Mood::of(&steppe, 0.0, 0.7));
+        assert_eq!(Mood::Steppe, Mood::of(&steppe, 0.0, 0.3));
+        assert_eq!(Mood::Storm, Mood::of(&steppe, 0.8, 0.8));
+        assert_eq!(Mood::Savanna, Mood::of(&biome("savanna"), 0.0, 0.7));
     }
 }

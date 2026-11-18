@@ -48,6 +48,7 @@ use ochre_terrain::{
 };
 use ochre_world::{
     ambience::Surroundings,
+    atmosphere::{Atmosphere, EasedFeel},
     clouds::CloudDome,
     sky::{atmosphere_camera, FOG_MAX_OPACITY},
     tonemap::{cold_color_grading, dry_color_grading, scene_colour, TONEMAPPING},
@@ -319,9 +320,10 @@ pub(crate) fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mu
     }
 }
 
-// Lays the cold's grade over whatever grade the camera has now, easing in and out of it by how warm the surroundings are.
+// Lays the cold's grade, and the hot country's, over whatever grade the camera has now, easing in and out of the cold by how warm the surroundings are.
 pub(crate) fn apply_cold_grade(
     around: Option<Res<Surroundings>>,
+    feel: Option<Res<EasedFeel>>,
     time: Res<Time>,
     mut cold: ResMut<ColdGrade>,
     mut camera: Query<&mut ColorGrading, With<Camera>>,
@@ -333,12 +335,13 @@ pub(crate) fn apply_cold_grade(
     if target == 0.0 && cold.eased < 1e-3 {
         cold.eased = 0.0;
     }
-    if cold.eased == 0.0 {
+    let atmosphere = Atmosphere::of(&feel.map_or_else(Default::default, |feel| feel.0));
+    if cold.eased == 0.0 && atmosphere == Atmosphere::of(&Default::default()) {
         return;
     }
     if let Ok(mut grading) = camera.single_mut() {
         cold.clean = Some(grading.clone());
-        *grading = cold_color_grading(&grading, cold.eased);
+        *grading = atmosphere.grade(&cold_color_grading(&grading, cold.eased));
     }
 }
 

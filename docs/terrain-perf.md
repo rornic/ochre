@@ -1001,3 +1001,13 @@ Valley fill and steppe banks (GENERATOR_VERSION 101): shallow valley basins (12 
 ## Sculpted ground (GENERATOR_VERSION 102)
 
 Ground is meshed as one sculpted surface (`docs/sculpted-ground.md`) instead of bevelled cubes. Bench, default seed, cubes to sculpted: chunk meshing 174 to 444 ms, 1,249,120 to 547,972 vertices (56% fewer); LOD meshing 99 to 98 ms, 164,809 to 76,537 vertices. The regression is accepted for the look: every chunk works over a 48³ neighbourhood so its edge vertices match its neighbours' exactly, and the remaining speedups tried (local placement, bit-packed counts, shared tiles) changed the look or added complexity. A first version took 1.0 s. Not measured: frame times in play, where fewer vertices should help the GPU.
+
+## Geography colour and hot country (GENERATOR_VERSION 103)
+
+Ground colour follows the lie of the land, and hot country has its own sun, grade and haze (`docs/climate.md`, Geography colour and heat). Map moisture's river wetting is cut from 14 to 8 cells (`MOISTURE_REACH`), a new `water_closeness` byte layer is added, `GENERATOR_VERSION` goes 102 to 103 and `MAP_HASH` is re-pinned. Cached maps from 102 regenerate and stored edits against them are refused.
+
+Bench, default seed, 102 to 103: chunk meshing 441 to 552 ms with 547,972 to 537,445 vertices, LOD meshing 97 to 108 ms with 76,537 to 68,250 vertices. Set `MOISTURE_REACH` back to 14 and chunk meshing is 443 ms with the 547,972 vertices exact, so the tint grid costs chunks nothing and the rest is the world: wetting less moves rivers' banks, and the bench's spot holds different ground and trees (generation 207 to 440 ms there). The grid costs LOD meshing about 8% (97 to 105 ms with the old map). Not measured: frame times in play, the fragment shader's cost with the slope term, and `fogged`'s heat lookup (two more vec4 reads and an `atan2` per fragment).
+
+Below a reach of 7 the biome tidy-up leaves slivers: `test_biomes_have_no_specks` counts 63 at 6 and passes at 7 and 8.
+
+Trees read the lie of the land (GENERATOR_VERSION 104): a tree cell's chance is multiplied by `tree_lie` (0.2 to 2.2). The bench spot's vertex counts do not move (537,445 chunk, 68,250 LOD). LOD meshing goes 108 to 122 ms, since `tree_bound` can no longer be tighter than the map's density where the lie is over 1. `MAP_HASH` is re-pinned only for the version stamp, as the map is unchanged. `test_pines_grow_on_a_mountains_lower_slopes` is loosened from over half to 45%, as the window's pine share moved from over half to 47% with the thinned cells. Not looked at: whether the change reads on a real forest's density, a taiga's view showed no difference by eye.

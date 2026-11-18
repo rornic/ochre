@@ -855,7 +855,9 @@ fn tree_in_cell(
     let x = cx * CELL + ((seed >> 16) % CELL as u64) as i64;
     let z = cz * CELL + ((seed >> 24) % CELL as u64) as i64;
     let chance = (seed & 0xffff) as f64 / 65536.0;
-    if heights.rules_out(x, z, chance) || chance >= heights.trees(x, z) {
+    // banks and hollows grow more trees, crests and high ground fewer
+    let lie = noise.tree_lie(x as f64, z as f64);
+    if heights.rules_out(x, z, chance) || chance >= heights.trees(x, z) * lie {
         return None;
     }
 

@@ -51,6 +51,20 @@ const VOLCANIC_FROM: f64 = 120.0;
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
 // and a gully is never cut off at a cell's edge.
+// How far the lie of the land moves the humidity grass is tinted by: at the water's edge, on the most exposed crest (the same, negated, in the
+// deepest hollow), and the most the height thins it, between `THIN_FROM` and `THIN_TO` blocks over the sea.
+// The humidity the lie of the land can green grass up to, under the palette's lush end.
+const LUSH_CAP: f32 = 0.6;
+const BANK_WETTING: f32 = 0.25;
+const EXPOSURE_DRYING: f32 = 0.2;
+const ELEVATION_THINNING: f32 = 0.3;
+const THIN_FROM: f64 = 60.0;
+const THIN_TO: f64 = 500.0;
+// How many times over `vigour` moves a tree cell's chance, and the least and most it can make of it.
+const TREE_VIGOUR: f64 = 2.0;
+const MIN_LIE: f64 = 0.2;
+const MAX_LIE: f64 = 2.2;
+
 const LAKE_NEAR: f64 = 32.0;
 const LAKE_FADE: f64 = 96.0;
 
@@ -1192,6 +1206,27 @@ impl TerrainSource for WorldTerrain {
         }
     }
 
+    fn tint_climate(&self, x: f64, z: f64) -> Climate {
+        let mut climate = self.climate(x, z);
+        let shift = self.vigour(x, z);
+        // banks and hollows green up only so far, the palette's lush green being the jungle's own
+        climate.humidity = if shift > 0.0 {
+            climate.humidity.max((climate.humidity + shift).min(LUSH_CAP))
+        } else {
+            climate.humidity + shift
+        }
+        .clamp(0.0, 1.0);
+        climate
+    }
+
+    fn vigour(&self, x: f64, z: f64) -> f32 {
+        let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0) as f64;
+        // crests dry, hollows richer, banks wetter, and the high ground thin of cover
+        BANK_WETTING * self.water_closeness(x, z)
+            + EXPOSURE_DRYING * (0.5 - self.exposure(x, z)) * 2.0
+            - ELEVATION_THINNING * smoothstep(THIN_FROM, THIN_TO, above_sea) as f32
+    }
+
     fn temperature(&self, x: f64, z: f64) -> f32 {
         self.map
             .bilinear(&self.map.temperature, x, z)
@@ -1199,7 +1234,16 @@ impl TerrainSource for WorldTerrain {
     }
 
     fn tree_bound(&self, x: f64, z: f64) -> f64 {
-        self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0
+        // the lie of the land can raise a cell's chance over the map's density, never lower the bound
+        self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0 * self.tree_lie(x, z).max(1.0)
+    }
+
+    fn mountain_cover(&self, x: f64, z: f64) -> f32 {
+        self.landform_cover(x, z) as f32
+    }
+
+    fn tree_lie(&self, x: f64, z: f64) -> f64 {
+        (1.0 + TREE_VIGOUR * self.vigour(x, z) as f64).clamp(MIN_LIE, MAX_LIE)
     }
 
     // The seed's cliff boost, where there is mountain, tableland or a valley wall to carry it: 0 on other ground.
@@ -1212,6 +1256,10 @@ impl TerrainSource for WorldTerrain {
 
     fn exposure(&self, x: f64, z: f64) -> f32 {
         self.map.bilinear_bytes(&self.map.exposure, x, z) / 255.0
+    }
+
+    fn water_closeness(&self, x: f64, z: f64) -> f32 {
+        self.map.bilinear_bytes(&self.map.water_closeness, x, z) / 255.0
     }
 
     fn steppe(&self, x: f64, z: f64) -> bool {

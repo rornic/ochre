@@ -4,6 +4,20 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
+## A thin strip of grass or dirt inset from a rock's edge
+
+- **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
+- **Known:** the owner says it happens sometimes, and that it comes from the dual contouring, the way rock's vertices are placed where its planes meet (`docs/sculpted-ground.md`, The mesh). Not checked on `main`, so not known to be new.
+- **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
+- **To check:** find one and note the seed and place. Render it with `worldprobe <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
+
+## A hole in the mesh at a marble arch on seed 4
+
+- **Seen:** 2026-11-18, seed 4, at (11393, 110, -20193), a block outline on the ground beside a giant marble arch in the tundra, on the `feat/geography-colour` build. The screenshot is `docs/issues/mesh-hole-seed4-11393-110--20193.jpg`: sky shows through a gap in the arch's pillar just over the outlined block.
+- **Known:** the owner says it is not from the geography colour change. Not checked on `main`.
+- **Not known:** the cause, or whether the gap is the arch's designed opening (3.5 to 4.5 blocks between pillars) and not a hole. From one frame it reads as a hole in the pillar's face. Not reproduced. A guess only: it is where the arch's pillar meets its capstone, which `generate/rocks.rs` builds block by block.
+- **To check:** `worldprobe 4 render 11393 -20193 32 out.png` with `OCHRE_RENDER_FLAT=1` for open edges, then `test_sculpted_ground_leaves_no_hole`'s checker over this chunk. See Open in `docs/sculpted-ground.md`, which already lists rare holes seen in play and not found by the tests.
+
 ## A river through the steppe is a chain of round dips, not a carved valley
 
 - **Seen:** 2026-11-16, in the steppe, playing the steppe branch. The seed and place were not recorded. A river's bed shows as a dried-up line of stepped, circular dips one after another, where a river should lie in a carved valley.

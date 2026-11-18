@@ -1,5 +1,7 @@
 // Painterly lighting for painted faces, see docs/designs/painterly-lighting.md. Every number to tune is a const here.
 
+import super::curvature::shadow_tint;
+
 // How far past 90 degrees from the sun a face still gets light, as a share of its range.
 const WRAP: f32 = 0.35;
 // The shadow's visibility, 0..1, is remapped over this range so shadow edges read as soft shapes.
@@ -8,9 +10,8 @@ const SHADOW_TO: f32 = 0.9;
 // Faces turned this far from the sun, as a cosine, go from ignoring the shadow map, which shadows them by themselves, to trusting it.
 const SHADOW_TRUST_FROM: f32 = -0.05;
 const SHADOW_TRUST_TO: f32 = 0.1;
-// What the sky's light is pushed toward in shadow, and how far, keeping its brightness.
-const SHADOW_TINT: vec3<f32> = vec3<f32>(0.55, 0.63, 1.0);
-const SHADOW_TINT_AMOUNT: f32 = 0.3;
+// What the sky's light is pushed toward in shadow, and how far, keeping its brightness, comes from the camera's country, see `ochre_world::atmosphere`:
+// (0.55, 0.63, 1.0) and 0.3 with no feel.
 // The least shadow is lit to, as a share of a fully lit face's brightness, and leaves', which light passes through.
 const SHADOW_FLOOR: f32 = 0.35;
 const LEAF_SHADOW_FLOOR: f32 = 0.55;
@@ -42,7 +43,8 @@ fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibil
     let shadow = smoothstep(SHADOW_FROM, SHADOW_TO, visibility);
     let lit = wrap * mix(1.0, shadow, smoothstep(SHADOW_TRUST_FROM, SHADOW_TRUST_TO, along));
     let full = sun + ambient;
-    let tinted = mix(ambient, SHADOW_TINT * luma(ambient) / luma(SHADOW_TINT), SHADOW_TINT_AMOUNT);
+    let country = shadow_tint();
+    let tinted = mix(ambient, country.rgb * luma(ambient) / luma(country.rgb), country.w);
     let low_sun = smoothstep(-0.1, 0.0, to_sun.y) * (1.0 - smoothstep(0.0, 0.5, to_sun.y));
     let floor = min(select(SHADOW_FLOOR, LEAF_SHADOW_FLOOR, leaf) * (1.0 + LOW_SUN_FLOOR * low_sun), MAX_SHADOW_FLOOR);
     let fill = tinted * max(1.0, floor * luma(full) / max(luma(tinted), 1e-4));

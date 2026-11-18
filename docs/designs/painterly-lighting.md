@@ -108,7 +108,7 @@ Painterly is the lighting. The setting and the old path were deleted once the ow
 *   **Atmosphere and grade** were not in the plan. The haze thickens sooner (`FOG_SCALE` 0.16 against 0.25) and warms toward a low sun (`SUN_HAZE`), and the grade (`dry_color_grading`) is a touch warmer and richer (warmth 0.015, saturation 1.04) with bloom at 0.08. Bevy's grade is sensitive: warmth 0.08 turned noon into sunset, and lifted blacks showed the cloud dome's edge.
 *   **Cost** is about 0.3 ms in the opaque pass on the RTX 2060 and 60 fps holds, see `docs/terrain-perf.md`.
 
-Not built, and noted for later: per-biome tuning (the shaders have no biome, so it needs a world-space biome texture or a table per material), shadows past the cascades (a horizon map precomputed from the world heightmap, one sample per far fragment), chamfered vertical wall corners, and trees, which are still cubes.
+Not built, and noted for later: per-biome tuning beyond the cold and hot country (done through the camera's climate and a heat table in the curvature buffer, see `docs/climate.md`, and not a biome texture), shadows past the cascades (a horizon map precomputed from the world heightmap, one sample per far fragment), chamfered vertical wall corners, and trees, which are still cubes.
 
 ## Open questions for the owner
 

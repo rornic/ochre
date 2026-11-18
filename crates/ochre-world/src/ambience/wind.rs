@@ -129,7 +129,8 @@ pub(crate) fn update_wind(
         let push = gust_at(Vec2::new(eye.x, eye.z), time.elapsed_secs_wrapped(), direction);
         dials.gust.set((push / (2.0 * GUST_RANGE) + 0.5).clamp(0.0, 1.0));
     }
-    let storm = weather.map_or(0.0, |weather| weather.precipitation()) * STORM_WIND;
+    // a storm blows before and without its rain
+    let storm = weather.map_or(0.0, |weather| weather.gloom()) * STORM_WIND;
     let follow = 1.0 - (-time.delta_secs() / WIND_FOLLOW_SECONDS).exp();
     let steppe = dials.steppe.get();
     dials.steppe.set(steppe + (if around.underwater { 0.0 } else { around.steppe } - steppe) * follow);

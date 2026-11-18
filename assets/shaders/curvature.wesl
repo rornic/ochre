@@ -21,6 +21,10 @@ struct Bends {
     // last frame's, for motion vectors
     last: Bend,
     cold: Cold,
+    // the colour the sky's light is pushed toward in shadow, and how far, see `painterly.wesl`
+    shadow: vec4<f32>,
+    // the haze toward 16 compass points, for each four vec4s of a tint and a density: the camera's and three rings out, see `haze_toward`
+    haze: array<vec4<f32>, 64>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(8) var<storage, read> curvature: Bends;
@@ -51,7 +55,35 @@ fn eye() -> vec3<f32> {
     return curvature.now.eye;
 }
 
+// The colour of the shadows where the camera is, and how far the sky's light is pushed to it.
+fn shadow_tint() -> vec4<f32> {
+    return curvature.shadow;
+}
+
 // What the camera's climate does to the land, see `frost.wesl`.
 fn cold() -> Cold {
     return curvature.cold;
+}
+
+// Distances of the rings `haze` is sensed at, in blocks.
+const HAZE_RINGS: vec3<f32> = vec3<f32>(1000.0, 3000.0, 8000.0);
+
+// The haze `distance` blocks off along `across`, between the ring points sensed round the camera: the tint to multiply the haze's colour by, and a density to divide its length by.
+fn haze_toward(across: vec2<f32>, distance: f32) -> vec4<f32> {
+    let turn = (atan2(across.y, across.x) / 6.2831853 + 0.5) * 16.0;
+    let first = u32(floor(turn)) % 16u;
+    let second = (first + 1u) % 16u;
+    var ring = 3.0;
+    if distance < HAZE_RINGS.x {
+        ring = distance / HAZE_RINGS.x;
+    } else if distance < HAZE_RINGS.y {
+        ring = 1.0 + (distance - HAZE_RINGS.x) / (HAZE_RINGS.y - HAZE_RINGS.x);
+    } else {
+        ring = 2.0 + min((distance - HAZE_RINGS.y) / (HAZE_RINGS.z - HAZE_RINGS.y), 1.0);
+    }
+    let low = min(u32(floor(ring)), 2u);
+    let along = ring - f32(low);
+    let a = mix(curvature.haze[first * 4u + low], curvature.haze[first * 4u + low + 1u], along);
+    let b = mix(curvature.haze[second * 4u + low], curvature.haze[second * 4u + low + 1u], along);
+    return mix(a, b, fract(turn));
 }

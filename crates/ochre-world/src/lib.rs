@@ -2,6 +2,7 @@
 //! and the sky, clouds, weather and ambient sound over it.
 
 pub mod ambience;
+pub mod atmosphere;
 pub mod clouds;
 pub mod godrays;
 pub mod music;
