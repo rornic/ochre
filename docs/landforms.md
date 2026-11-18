@@ -4,7 +4,7 @@ How the ground gets its shapes beyond what tectonics and erosion make. Water is 
 
 ## The pipeline
 
-`worldmap::generate`: tectonics, geology, hydrology, erosion, the floor, then in order fjords, cones, inselbergs, cold uplands, tower karst and cirques (`shapes.rs`), the mountain passes, the tableland terraces (`landform::terrace`), the valleys (`valleys.rs`), scatter, the last hydrology run, landform, climate, roughness and labels. Everything a shape or terrace does to `map.height` is therefore in place before the last water is routed.
+`worldmap::generate`: tectonics, geology, hydrology, erosion, the floor, then in order fjords, cones, inselbergs, cold uplands, tower karst and cirques (`shapes.rs`), the steppe and tundra landmarks (`meso/landmarks.rs`), the mountain passes, the tableland terraces (`landform::terrace`), the valleys (`valleys.rs`), scatter, the last hydrology run, landform, climate, roughness and labels. Everything a shape or terrace does to `map.height` is therefore in place before the last water is routed.
 
 ## Map-scale shapes (`shapes.rs`)
 
@@ -14,6 +14,7 @@ Counts come from `LandformKnobs::from_seed`, not stored in the map, and the conf
 - **Cones:** a share of the sites volcanic ground has room for, 90 cells apart. Radius 16 to 36 cells, height 150 to 400 blocks, a crater a quarter as wide and a quarter of the height deep under the rim.
 - **Inselbergs:** up to 8 rounded domes, 20 to 45 blocks high and 4 to 10 cells in radius, on dry and warm sedimentary lowland.
 - **Cold uplands:** occasional flat-topped, steep-sided landmarks on cold lowland, 55 to 95 blocks high and 4 to 7 map cells in radius. Sites use regional warmth derived from config and height, before climate classification; their tops are broad enough for building.
+- **Landmarks:** on steppe and tundra ground, flat and between 20 and 700 blocks over the sea, one landmark every 70 to 110 cells (a seed's draw), each a row of a rule table: a butte (140 to 260 blocks high, 2.5 to 4 cells in radius), a massif (220 to 380 high, 6 to 11 cells), a ridge three times as long as wide (150 to 260 high), or a bowl (50 to 120 deep, sited but not counted among the landmarks a ridge shows). Steppe is told by the same warmth and moisture the flattening reads, tundra by the warmth band cold uplands read. The flattening leaves them alone, and the passes are carved round them. Sized from `docs/meso-slice1-decision.md`. Tundra keeps about 95% of the height laid, steppe buttes and ridges about 70%.
 - **Tower karst:** up to 4 fields of 10 to 40 steep towers, 30 to 70 blocks high, on wet sedimentary lowland.
 - **Cirques:** up to 6 bowls 40 to 100 blocks deep with a headwall, cut into cold mountains on the cold half of the config's temperature gradient.
 

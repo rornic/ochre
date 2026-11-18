@@ -277,7 +277,7 @@ pub fn wall(cut: &Cut, weight: f64) -> f64 {
 }
 
 // How steppe-like ground this warm (at its height) and this wet is: 1 inside classify's steppe band, easing off outside it.
-fn steppe_likeness(warmth: f64, moisture: f64) -> f64 {
+pub(super) fn steppe_likeness(warmth: f64, moisture: f64) -> f64 {
     smoothstep(0.22, 0.30, warmth)
         * (1.0 - smoothstep(0.54, 0.62, warmth))
         * (1.0 - smoothstep(0.25, 0.35, moisture))
@@ -371,13 +371,14 @@ fn siting(map: &WorldMap, share: f64, ties: &[u32], favoured: &[f32]) -> (Vec<u8
     (weights, held)
 }
 
-/// Flattens steppe ground, then cuts the valleys into `map.height` and stores their siting weight in `map.valley`. A `share` of 0 changes nothing.
-pub fn run(map: &mut WorldMap, share: f64) {
+/// Flattens steppe ground but where `keep` holds a landmark, then cuts the valleys into `map.height` and stores their siting weight in
+/// `map.valley`. A `share` of 0 changes nothing.
+pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     if share <= 0.0 {
         return;
     }
     let dim = map.dim();
-    let favoured = favoured_layer(map);
+    let favoured: Vec<f32> = favoured_layer(map).iter().zip(keep).map(|(f, k)| f * (1.0 - k)).collect();
     flatten(map, &favoured);
     let ties = flood_ties(map);
     let (weights, held) = siting(map, share, &ties, &favoured);
@@ -566,10 +567,12 @@ mod tests {
     fn a_share_of_zero_changes_nothing_and_a_cut_never_nears_the_sea() {
         let mut map = tiny(120.0);
         let before = map.height.clone();
-        run(&mut map, 0.0);
+        let none = vec![0.0; map.height.len()];
+        run(&mut map, 0.0, &none);
         assert_eq!(before, map.height);
         assert!(map.valley.iter().all(|&w| w == 0));
-        run(&mut map, 1.0);
+        let none = vec![0.0; map.height.len()];
+        run(&mut map, 1.0, &none);
         assert!(
             map.height.iter().zip(&before).any(|(a, b)| a < b),
             "some ground was cut"
@@ -615,7 +618,8 @@ mod tests {
     fn no_valley_is_cut_into_ground_within_the_sea_margin() {
         let mut map = tiny(4.0);
         let before = map.height.clone();
-        run(&mut map, 1.0);
+        let none = vec![0.0; map.height.len()];
+        run(&mut map, 1.0, &none);
         assert_eq!(before, map.height);
     }
 }

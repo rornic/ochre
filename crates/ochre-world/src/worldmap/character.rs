@@ -28,10 +28,13 @@ const SALT_INSELBERGS: u32 = 0xC4A0_000E;
 const SALT_KARST: u32 = 0xC4A0_000F;
 const SALT_CIRQUES: u32 = 0xC4A0_0010;
 const SALT_VALLEYS: u32 = 0xC4A0_0011;
+const SALT_LANDMARKS: u32 = 0xC4A0_0012;
 const INSELBERGS: (f64, f64) = (0.0, 9.0);
 const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
 const CIRQUES: (f64, f64) = (0.0, 7.0);
 const VALLEY_SHARE: (f64, f64) = (0.5, 1.0);
+// Cells between steppe and tundra landmarks: about 2.2 to 3.5 km, so two or three stand in view from most places.
+const LANDMARK_APART: (f64, f64) = (70.0, 110.0);
 const CONE_SHARE: (f64, f64) = (0.0, 0.25);
 const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
@@ -71,6 +74,8 @@ pub(crate) struct LandformKnobs {
     pub cirques: u32,
     /// How much of the weight the valleys' siting gives it, 0.5 to 1.
     pub valley_share: f64,
+    /// Cells between steppe and tundra landmarks, 70 to 110.
+    pub landmark_apart: f64,
 }
 
 impl LandformKnobs {
@@ -85,6 +90,7 @@ impl LandformKnobs {
             karst_groups: draw(seed, SALT_KARST, KARST_GROUPS).floor() as u32,
             cirques: draw(seed, SALT_CIRQUES, CIRQUES).floor() as u32,
             valley_share: round(draw(seed, SALT_VALLEYS, VALLEY_SHARE), 3),
+            landmark_apart: draw(seed, SALT_LANDMARKS, LANDMARK_APART).floor(),
         }
     }
 }

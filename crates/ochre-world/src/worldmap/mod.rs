@@ -31,7 +31,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 105;
+pub const GENERATOR_VERSION: u32 = 106;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -525,6 +525,9 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     shapes::cold_uplands(&mut map);
     shapes::karst(&mut map, knobs.karst_groups);
     shapes::cirques(&mut map, knobs.cirques);
+    // with the other shapes, so the passes connect round them; the steppe's flattening leaves them alone
+    let (_, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    lap("landmarks");
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");
@@ -533,7 +536,7 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     landform::terrace(&mut map, knobs.tableland_share);
     lap("terrace");
     // after the terraces, which make lakes of their own that no valley is cut through, and before the water
-    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 });
+    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 }, &landmarks);
     lap("valleys");
     if valleys {
         valleys::run_alpine(&mut map);

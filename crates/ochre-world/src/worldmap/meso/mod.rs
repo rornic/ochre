@@ -3,6 +3,7 @@
 //!
 //! Every number here is a first pass, provisional until the baseline (`docs/meso-baseline.csv`) shows what the world gives.
 
+pub mod landmarks;
 mod rank;
 mod terms;
 
