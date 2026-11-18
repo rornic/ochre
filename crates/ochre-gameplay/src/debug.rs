@@ -368,7 +368,7 @@ fn update_overlay(
 }
 
 // Every 2 s, logs ground near the camera that nothing draws: a built group hidden with no visible LOD node over it, or a chunk marked as drawn by a group that isn't there.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn check_holes(
     time: Res<Time>,
     mut last: Local<f32>,

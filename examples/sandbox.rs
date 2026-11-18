@@ -96,5 +96,5 @@ fn timed_shot(mut commands: Commands, time: Res<Time>, mut taken: Local<bool>) {
         return;
     }
     *taken = true;
-    commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path.to_string()));
+    commands.spawn(Screenshot::primary_window()).observe(save_to_disk(String::from(path)));
 }

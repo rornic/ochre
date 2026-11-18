@@ -75,9 +75,9 @@ fn probe_mesh(app: &mut App, p: Vec3) {
                     let Some(held) = game.get_chunk_data(c) else { continue };
                     let fresh = ochre_terrain::generate::generator::generate_chunk(regions.clone(), c);
                     let mut diff = 0;
-                    for x in 0..CHUNK_SIZE as u16 {
-                        for y in 0..CHUNK_SIZE as u16 {
-                            for z in 0..CHUNK_SIZE as u16 {
+                    for x in 0..CHUNK_SIZE {
+                        for y in 0..CHUNK_SIZE {
+                            for z in 0..CHUNK_SIZE {
                                 let at = bevy::math::U16Vec3::new(x, y, z);
                                 diff += (held.get_block_at(at) != fresh.get_block_at(at)) as usize;
                             }
@@ -105,7 +105,7 @@ fn probe_mesh(app: &mut App, p: Vec3) {
                 let (centre, half) = ((aabb.min + aabb.max) * 0.5, (aabb.max - aabb.min) * 0.5);
                 v.iter().map(|v| {
                     let at = |i: usize| (v[i] as f32 / 32767.0).max(-1.0);
-                    Vec3::new(centre.x + half.x * at(0), centre.y + half.y * at(1), centre.z + half.z * at(2)).into()
+                    Vec3::new(centre.x + half.x * at(0), centre.y + half.y * at(1), centre.z + half.z * at(2))
                 }).collect()
             }
             other => { println!("  {key:?} positions are {:?}", other.map(|o| o.enum_variant_name())); continue }
