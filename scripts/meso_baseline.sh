@@ -11,7 +11,7 @@ version=$(sed -n 's/^pub const GENERATOR_VERSION: u32 = \([0-9]*\);.*/\1/p' crat
 {
   echo "# meso scorer baseline: git $(git rev-parse --short HEAD), GENERATOR_VERSION $version, top $top per biome, tail $tail, null $null, grid step 64 blocks, ground as far LOD draws it (cell 32)"
   echo "# provisional first-pass terms, see docs/designs/meso-scale-geography.md. Lines starting # are comments."
-  echo "seed,biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,above_sea,weakest"
+  echo "seed,biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,water,above_sea,weakest"
   for seed in "${seeds[@]}"; do
     curl -sf "http://127.0.0.1:$port/places?seed=$seed&top=$top&tail=$tail&null=$null" | tail -n +2 | sed "s/^/$seed,/"
   done

@@ -19,6 +19,10 @@ First pass of `worldmap/meso` (see `docs/designs/meso-scale-geography.md`) over 
 
 The null run shares the grid and the rank rules, so it measures this scorer's discrimination and not the world's. Rock, water and the angular salience term are not in yet. The CSV is one scorer version, so the numbers move when the terms change.
 
+## After the water term and the independence rule
+
+Falls (`WorldTerrain::falls`, 10 blocks or more within 512 blocks) and lakes (a share of a 256-block window) are a fourth cause, and a place now needs the mass or the water among its causes, since shape and steepness come from the same bump. Run on the same 11 seeds: 354 places. With the mass-scale relief shifted, only 12 of the 319 real places also appear (it was 291 of 570), so the scorer now tells a real conjunction from chance. 211 places have water. The owner's good places are both picked: seed 3's waterfall valley as steppe (score 1.0000, a 55-block fall) and grassland, and seed 1's steppe peak over the lake. Near the spot of the bad glacier spike the scorer now picks wider places, one with a 111-block fall, not the spike.
+
 ## Places the owner judged
 
 Seen in the game, 2026-11-18, and the scorer's verdict on each. This is the only calibration data so far, so a better scorer should rank the good ones high and the bad one low.

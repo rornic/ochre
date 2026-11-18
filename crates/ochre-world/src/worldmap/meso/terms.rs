@@ -37,3 +37,41 @@ pub(super) fn from_heights(raw: &[f32], dim: usize, step: f64) -> Terms {
     }
     Terms { ground: heights.to_vec(), relief, steep }
 }
+
+/// Half-width, in grid cells, within which a fall counts for a cell (512 blocks at the default step), and the half-width the lake share is taken over.
+const FALL_REACH: i64 = 8;
+const LAKE_WINDOW: usize = 4;
+/// What a lake filling a whole window counts for, in blocks of fall.
+const LAKE_WORTH: f32 = 40.0;
+/// Falls under this many blocks are not worth a place.
+const MIN_FALL: f32 = 10.0;
+
+/// The water near each cell: the tallest fall within `FALL_REACH` cells, in blocks, plus up to `LAKE_WORTH` for a lake covering its window.
+pub(super) fn water(terrain: &super::super::WorldTerrain, dim: usize, step: f64, at: impl Fn(usize) -> (f64, f64)) -> Vec<f32> {
+    use super::super::WaterCell;
+    let map = terrain.map();
+    let (origin_x, origin_z) = at(0);
+    let mut falls = vec![0.0f32; dim * dim];
+    for (x, z, drop, _) in terrain.falls().into_iter().filter(|f| f.2 >= MIN_FALL) {
+        let (gx, gz) = (((x - origin_x) / step).round() as i64, ((z - origin_z) / step).round() as i64);
+        for dz in -FALL_REACH..=FALL_REACH {
+            for dx in -FALL_REACH..=FALL_REACH {
+                let (cx, cz) = (gx + dx, gz + dz);
+                if (0..dim as i64).contains(&cx) && (0..dim as i64).contains(&cz) {
+                    let i = (cz as usize) * dim + cx as usize;
+                    falls[i] = falls[i].max(drop);
+                }
+            }
+        }
+    }
+    let lake: Vec<f32> = (0..dim * dim)
+        .map(|i| {
+            let (x, z) = at(i);
+            let (u, v) = map.to_cell(x, z);
+            let max = (map.dim() - 1) as f64;
+            (map.water_kind[map.index(u.round().clamp(0.0, max) as usize, v.round().clamp(0.0, max) as usize)] == WaterCell::Lake as u8) as u8 as f32
+        })
+        .collect();
+    let share = blur_box(&lake, dim, LAKE_WINDOW);
+    falls.iter().zip(&share).map(|(f, l)| f + LAKE_WORTH * l).collect()
+}

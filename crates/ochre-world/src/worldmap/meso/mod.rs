@@ -37,5 +37,6 @@ pub fn score(terrain: &WorldTerrain, params: &Params) -> Vec<Place> {
         *b = map.biome[map.index(u.round().clamp(0.0, max) as usize, v.round().clamp(0.0, max) as usize)];
     }
     let terms = terms::from_heights(&heights, dim, params.step);
-    rank::pick(&terms, &biome, dim, params, at)
+    let water = terms::water(terrain, dim, params.step, at);
+    rank::pick(&terms, &water, &biome, dim, params, at)
 }

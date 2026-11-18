@@ -46,16 +46,18 @@ pub struct Place {
     /// Relief at the three windows in blocks (landmark, mass, range) and the steepness, rise over run.
     pub relief: [f32; 3],
     pub steep: f32,
+    /// The tallest fall near it in blocks, plus up to 40 for a lake over its window: 0 with no water.
+    pub water: f32,
     /// The smoothed ground's height over the sea, in blocks.
     pub above_sea: f32,
     /// The weakest of the three causes, by name.
     pub weakest: &'static str,
 }
 
-const CAUSES: [&str; 3] = ["shape", "mass", "steepness"];
+const CAUSES: [&str; 4] = ["shape", "mass", "steepness", "water"];
 
-// A cell that qualifies: its score, its index in the grid and its rank in each of the three causes.
-type Candidate = (f32, usize, [f32; 3]);
+// A cell that qualifies: its score, its index in the grid and its rank in each of the four causes.
+type Candidate = (f32, usize, [f32; 4]);
 
 // The rank of each value among `values`, 0 to 1, ties sharing the middle of their span so a flat field ranks 0.5 everywhere.
 fn ranks(values: &[f32]) -> Vec<f32> {
@@ -72,7 +74,7 @@ fn ranks(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at: impl Fn(usize) -> (f64, f64)) -> Vec<Place> {
+pub(super) fn pick(terms: &Terms, water: &[f32], biome: &[u8], dim: usize, params: &Params, at: impl Fn(usize) -> (f64, f64)) -> Vec<Place> {
     let mass: Vec<f32> = match params.null_shift {
         Some(shift) => (0..dim * dim).map(|i| terms.relief[1][(i / dim) * dim + (i % dim + shift) % dim]).collect(),
         None => terms.relief[1].clone(),
@@ -88,15 +90,18 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
         let shape = pick(&|i| terms.relief[0][i].abs());
         let massive = pick(&|i| mass[i].abs());
         let steep = pick(&|i| terms.steep[i]);
+        let wet = pick(&|i| water[i]);
         // in the tail in at least two ways, best first, ties broken by position
         let mut found: Vec<Candidate> = (0..cells.len())
             .filter_map(|n| {
-                let r = [shape[n], massive[n], steep[n]];
+                let r = [shape[n], massive[n], steep[n], wet[n]];
                 let big_enough = terms.relief[0][cells[n]].abs() >= params.floor[0] && mass[cells[n]].abs() >= params.floor[1];
-                (big_enough && r.iter().filter(|&&v| v >= params.tail).count() >= 2).then(|| {
+                // shape and steepness both come from the same bump, so they do not count as two causes on their own: the mass or the water has to be one of them
+                let independent = r[1] >= params.tail || r[3] >= params.tail;
+                (big_enough && independent && r.iter().filter(|&&v| v >= params.tail).count() >= 2).then(|| {
                     let mut sorted = r;
                     sorted.sort_by(f32::total_cmp);
-                    ((sorted[2] + sorted[1]) / 2.0, cells[n], r)
+                    ((sorted[3] + sorted[2]) / 2.0, cells[n], r)
                 })
             })
             .collect();
@@ -114,7 +119,7 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
             }
         }
         // varied: take the best of each kind in turn
-        let kind_of = |i: usize, r: &[f32; 3]| match (terms.relief[1][i] >= 0.0, r[2] >= params.tail) {
+        let kind_of = |i: usize, r: &[f32; 4]| match (terms.relief[1][i] >= 0.0, r[2] >= params.tail) {
             (true, true) => Kind::RaisedSteep,
             (true, false) => Kind::RaisedSoft,
             (false, true) => Kind::DipSteep,
@@ -135,7 +140,8 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
             for (kind, list) in &by_kind {
                 if let (Some(&(score, i, r)), true) = (list.get(round), taken < params.top) {
                     let (x, z) = at(i);
-                    let weakest = (0..3).min_by(|&a, &b| r[a].total_cmp(&r[b])).unwrap_or(0);
+                    // the weakest of the causes that put it in the tail
+                    let weakest = (0..4).filter(|&c| r[c] >= params.tail).min_by(|&a, &b| r[a].total_cmp(&r[b])).unwrap_or(0);
                     places.push(Place {
                         x,
                         z,
@@ -144,6 +150,7 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
                         kind: *kind,
                         relief: [terms.relief[0][i], terms.relief[1][i], terms.relief[2][i]],
                         steep: terms.steep[i],
+                        water: water[i],
                         above_sea: terms.ground[i] - ochre_base::WATER_LEVEL as f32,
                         weakest: CAUSES[weakest],
                     });
@@ -158,15 +165,15 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
 
 /// The places as CSV: biome, rank within the biome, position, kind, score, the terms and the weakest cause. Fixed precision, so equal runs give equal text.
 pub fn csv(places: &[Place]) -> String {
-    let mut out = String::from("biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,above_sea,weakest\n");
+    let mut out = String::from("biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,water,above_sea,weakest\n");
     let mut rank = 0usize;
     let mut last: Option<BiomeKind> = None;
     for p in places {
         rank = if last == Some(p.biome) { rank + 1 } else { 1 };
         last = Some(p.biome);
         out.push_str(&format!(
-            "{:?},{},{:.0},{:.0},{:?},{:.4},{:.1},{:.1},{:.1},{:.3},{:.0},{}\n",
-            p.biome, rank, p.x, p.z, p.kind, p.score, p.relief[0], p.relief[1], p.relief[2], p.steep, p.above_sea, p.weakest
+            "{:?},{},{:.0},{:.0},{:?},{:.4},{:.1},{:.1},{:.1},{:.3},{:.1},{:.0},{}\n",
+            p.biome, rank, p.x, p.z, p.kind, p.score, p.relief[0], p.relief[1], p.relief[2], p.steep, p.water, p.above_sea, p.weakest
         ));
     }
     out
@@ -202,7 +209,7 @@ mod tests {
         let (heights, biome) = world();
         let terms = from_heights(&heights, DIM, params.step);
         let at = |i: usize| ((i % DIM) as f64 * params.step, (i / DIM) as f64 * params.step);
-        pick(&terms, &biome, DIM, params, at)
+        pick(&terms, &vec![0.0; DIM * DIM], &biome, DIM, params, at)
     }
 
     #[test]
@@ -236,8 +243,30 @@ mod tests {
         let terms = from_heights(&heights, DIM, 64.0);
         let at = |i: usize| ((i % DIM) as f64 * 64.0, (i / DIM) as f64 * 64.0);
         let biome = vec![BiomeKind::Steppe as u8; DIM * DIM];
-        let places = pick(&terms, &biome, DIM, &Params::default(), at);
+        let places = pick(&terms, &vec![0.0; DIM * DIM], &biome, DIM, &Params::default(), at);
         assert!(places.is_empty(), "{places:?}");
+    }
+
+    #[test]
+    fn shape_and_steepness_alone_are_not_two_causes_but_mass_or_water_with_one_is() {
+        // a steep, narrow-ish bump: shape and steepness are in the tail, the mass is not, so it is one cause counted twice
+        let mut heights = vec![100.0f32; DIM * DIM];
+        for z in 78..=82 {
+            for x in 78..=82 {
+                heights[z * DIM + x] += 150.0;
+            }
+        }
+        let terms = from_heights(&heights, DIM, 64.0);
+        let at = |i: usize| ((i % DIM) as f64 * 64.0, (i / DIM) as f64 * 64.0);
+        let biome = vec![BiomeKind::Steppe as u8; DIM * DIM];
+        let params = Params { floor: [0.0, 0.0], ..Params::default() };
+        let none = vec![0.0f32; DIM * DIM];
+        let dry = pick(&terms, &none, &biome, DIM, &params, at);
+        // the same bump with a fall beside it: water is an independent cause, so it now qualifies
+        let mut wet = none.clone();
+        wet[80 * DIM + 80] = 60.0;
+        let with_water = pick(&terms, &wet, &biome, DIM, &params, at);
+        assert!(with_water.len() >= dry.len() && with_water.iter().any(|p| p.water > 0.0), "{dry:?} {with_water:?}");
     }
 
     #[test]
@@ -246,7 +275,7 @@ mod tests {
         let terms = from_heights(&flat, DIM, 64.0);
         let at = |i: usize| ((i % DIM) as f64, (i / DIM) as f64);
         let biome = vec![BiomeKind::Steppe as u8; DIM * DIM];
-        assert!(pick(&terms, &biome, DIM, &Params::default(), at).is_empty());
+        assert!(pick(&terms, &vec![0.0; DIM * DIM], &biome, DIM, &Params::default(), at).is_empty());
     }
 
     #[test]
