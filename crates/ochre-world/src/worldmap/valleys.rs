@@ -19,6 +19,11 @@ const SALT_STEEP: u32 = 0xA11E_0008;
 const SALT_CLIFF: u32 = 0xA11E_0009;
 const SALT_LEDGE: u32 = 0xA11E_000A;
 const SALT_MEANDER: u32 = 0xA11E_000B;
+const SALT_ALPINE: u32 = 0xA11E_00A1;
+// Cells each way the ranges' edge is softened over, so the valleys fade out toward the foothills.
+const ALPINE_EDGE: usize = 5;
+// A basin the ranges' valleys made this many blocks deep or less is filled; a deeper one is left a mountain lake.
+const ALPINE_SHALLOW_BASIN: f32 = 45.0;
 
 // Cells each way steppe is smoothed over, how far toward that it is pulled, the heights over the sea it is pulled between,
 // the cells each way a mountain keeps it off, and the cells each way the zone's edge is softened over.
@@ -85,6 +90,24 @@ pub const STEPPE: ValleyProfile = ValleyProfile {
     base: 0.25,
 };
 
+/// The valleys cut through ranges: long, deep, wide-floored troughs a few kilometres apart, a meadow and a river on the floor to rest and cross by, walls that
+/// rise over several hundred blocks with cliff bands, and the ridges between left standing.
+pub const ALPINE: ValleyProfile = ValleyProfile {
+    period: 5200.0,
+    stretch: 2.5,
+    floor: 220.0,
+    soft_edge: 700.0,
+    sharp_edge: (20.0, 90.0),
+    coarse: [(1400.0, 160.0), (600.0, 70.0)],
+    fine: [(160.0, 24.0), (60.0, 10.0)],
+    depth: (140.0, 260.0),
+    fade_wavelength: 6000.0,
+    fade_min: 0.5,
+    sea_margin: 20.0,
+    upper: 1400.0,
+    base: 0.0,
+};
+
 /// A valley's depth in blocks and its wall's rise, 0..1, as the map (`soft`) and a block (`sharp`) see it; `cliff` is how much of the slope is a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cut {
@@ -140,6 +163,11 @@ impl Valley {
     /// The steppe valleys of `map`, running along the world's ridge angle.
     pub fn of(map: &WorldMap) -> Self {
         Self::new(map.seed, map.config.climate.gradient_angle as f64, STEPPE)
+    }
+
+    /// The valleys of `map`'s ranges, across the world's ridge angle and from a field of their own.
+    pub fn alpine(map: &WorldMap) -> Self {
+        Self::new(map.seed ^ SALT_ALPINE, map.config.climate.gradient_angle as f64 + 1.1, ALPINE)
     }
 
     pub fn at(&self, x: f64, z: f64) -> Cut {
@@ -374,6 +402,55 @@ pub fn run(map: &mut WorldMap, share: f64) {
         let inside = basin.cells.iter().filter(|&&i| map.valley[i] > 0).count();
         let valley_basin = (new >= NEW_CELLS && new * 3 >= basin.cells.len()) || (inside >= VALLEY_BASIN_CELLS && inside * 3 >= basin.cells.len() * 2);
         valley_basin && (basin.depth <= SHALLOW_BASIN || basin.cells.len() <= TINY_BASIN)
+    });
+    map.height = heights;
+}
+
+/// Cuts the ranges' valleys into `map.height` and stores their siting weight in `map.alpine`: mountain ground only, fading toward the foothills, never
+/// deep enough to leave less than the profile's margin over the sea.
+pub fn run_alpine(map: &mut WorldMap) {
+    let dim = map.dim();
+    let p = ALPINE;
+    let sea = WATER_LEVEL as f64;
+    let mountain: Vec<f32> = map.landform.iter().map(|&l| (l == MOUNTAIN) as u8 as f32).collect();
+    if mountain.len() != dim * dim {
+        return;
+    }
+    let soft = blur_box(&mountain, dim, ALPINE_EDGE);
+    let mut weights = vec![0u8; dim * dim];
+    par_rows(dim, &mut weights, |row, out| {
+        for (col, byte) in out.iter_mut().enumerate() {
+            let i = row * dim + col;
+            let above = map.height[i] as f64 - sea;
+            let window = ((above - p.sea_margin) / p.depth.1).clamp(0.0, 1.0) * (1.0 - smoothstep(p.upper, p.upper + 40.0, above));
+            let weight = soft[i] as f64 * window;
+            *byte = (weight.clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+    });
+    map.alpine = weights;
+    let valley = Valley::alpine(map);
+    let ties = flood_ties(map);
+    // the cells a basin holds before the valleys are cut
+    let flood = priority_flood(&map.height, dim, &ties);
+    let held: Vec<bool> = (0..dim * dim).map(|i| flood.filled[i] - map.height[i] > 0.25).collect();
+    let mut heights = std::mem::take(&mut map.height);
+    par_rows(dim, &mut heights, |row, cells| {
+        for (col, cell) in cells.iter_mut().enumerate() {
+            let weight = map.alpine[row * dim + col] as f64 / 255.0;
+            if weight <= 0.0 {
+                continue;
+            }
+            let (x, z) = map.cell_centre(col, row);
+            let cut = valley.at(x, z);
+            *cell -= (cut.depth * cut.soft * weight) as f32;
+        }
+    });
+    // Fill each shallow basin the cut made up to its dam, so the water runs down the floor and does not stand in a chain of lakes; a deep one is left as a tarn.
+    fill_where(&mut heights, dim, &ties, |basin| {
+        let new = basin.cells.iter().filter(|&&i| !held[i]).count();
+        let inside = basin.cells.iter().filter(|&&i| map.alpine[i] > 0).count();
+        let valley_basin = (new >= NEW_CELLS && new * 3 >= basin.cells.len()) || (inside >= VALLEY_BASIN_CELLS && inside * 3 >= basin.cells.len() * 2);
+        valley_basin && (basin.depth <= ALPINE_SHALLOW_BASIN || basin.cells.len() <= TINY_BASIN)
     });
     map.height = heights;
 }
