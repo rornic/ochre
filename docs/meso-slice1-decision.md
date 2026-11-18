@@ -28,3 +28,16 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 1. **The landmark stage runs before `carve_passes`,** with the other stamped shapes and their site helpers, so connectivity is checked round the landmarks.
 2. **Dips are sited and scored but do not count** toward the landmarks visible from a ridge, which counts raised ones only.
 3. **New primitives serve steppe and tundra alike** from one rule table. `cold_uplands` stays as the smaller relief between them.
+
+## Slice 2, first part: built
+
+- **Landmarks** on steppe and tundra from a rule table (`worldmap/meso/landmarks.rs`), every 70 to 110 cells, before `carve_passes`. See `docs/landforms.md`.
+- **The flattening and the valleys leave them whole:** about 98% of the height laid survives on steppe, 95% on tundra.
+- **Bowls hold lakes** however small (`hydrology::run_keeping`): 23 of 26 on seeds 3, 4 and 20.
+- **The mass-scale relief** the scorer finds on steppe and tundra rises to 270 to 317 blocks on seven seeds.
+
+## Deferred to the next part
+
+- **Shelter:** exposure over wider windows feeding temperature and humidity (design item 14).
+- **Geology picks the form.** A site's row is drawn at random by weight. Realism wants rock to choose it: buttes on sedimentary ground under a hard bed, massifs on granite, ridges along dipping beds, and on tundra smaller glacial forms (eskers, kettles) at their real proportions.
+- **A seam check** at the flattening's edge round each landmark (design item 12).

@@ -211,7 +211,22 @@ mod tests {
             .collect();
         assert!(cones.iter().all(|&c| (0.0..=CONE_SHARE.1).contains(&c)));
         assert!(cones.iter().any(|&c| c < 0.01) && cones.iter().any(|&c| c > 0.24));
+        let apart: Vec<f64> = (0..1000).map(|s| LandformKnobs::from_seed(s).landmark_apart).collect();
+        assert!(apart.iter().all(|&a| (LANDMARK_APART.0..LANDMARK_APART.1).contains(&a)));
+        assert!(apart.iter().any(|&a| a < 72.0) && apart.iter().any(|&a| a > 107.0));
         assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
+    }
+
+    // two knobs on one salt would draw the same, so a seed's knobs would move together
+    #[test]
+    fn test_every_knob_has_its_own_salt() {
+        let salts = [
+            SALT_PLATES, SALT_RELIEF, SALT_WARMTH, SALT_GRADIENT, SALT_GRADIENT_ANGLE, SALT_CONTINENTALITY, SALT_WIND, SALT_TABLELAND,
+            SALT_DUNES, SALT_CLIFFS, SALT_FJORDS, SALT_CONES, SALT_INSELBERGS, SALT_KARST, SALT_CIRQUES, SALT_VALLEYS, SALT_LANDMARKS,
+            SALT_HUMIDITY,
+        ];
+        let unique: std::collections::BTreeSet<u32> = salts.iter().copied().collect();
+        assert_eq!(salts.len(), unique.len());
     }
 
     #[test]

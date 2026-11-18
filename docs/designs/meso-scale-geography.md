@@ -6,7 +6,7 @@
 
 --------------------------------------------------------------------------------
 
-**Status, 2026-11-18:** slice 1 is built (scorer, baseline, viewer layers, spike). What it found and the decision for slice 2 are in `docs/meso-slice1-decision.md`, which supersedes this document where they differ.
+**Status, 2026-11-18:** slice 1 is built (scorer, baseline, viewer layers, spike), and the first part of slice 2 (steppe and tundra landmarks, bowl lakes). What it found and the decision for slice 2 are in `docs/meso-slice1-decision.md`, which supersedes this document where they differ.
 
 ## Overview
 
