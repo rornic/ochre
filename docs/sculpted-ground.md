@@ -25,6 +25,7 @@ A chunk owns the quads from its own blocks to the next along each axis, and its 
 - Every step that reads a vertex's neighbours takes any error from where the data runs out a cell further in. `NEIGHBOUR_STEPS` counts them. Vertices exist only within `VERTEX_REACH` cells of the chunk, and each step works only as far out as the chunk's own vertices still need. A const assertion keeps the reach within the 16 blocks `ChunkNeighbourhood` holds, so adding a pass fails to compile until something else gives.
 - A vertex is kept as its cell plus an offset, and neighbour sums are taken relative to the vertex, so both chunks add the same numbers in the same order. Block counts are whole numbers. Offsets snap to 1/4096 before the cell is added, so the sum is exact.
 - Trig in the chisel comes from `libm`, so a chunk meshed on another machine still meets its neighbour.
+- A face belongs to the chunk on its low side, so an all-air chunk owns the faces against its +x, +y and +z neighbours: walls facing -x or -z and the undersides of overhangs, on its boundary. The loader meshes an empty chunk unless those three are empty too (`World::is_chunk_bare`). Skipping every empty chunk, as the cube mesher could, left those faces undrawn: holes in big cliffs with chunk-straight edges, which a dig filled, as a remesh meshes every chunk (`test_an_empty_chunk_draws_the_wall_against_its_high_side`).
 - An edit reaches `EDIT_REACH` blocks of mesh each way, so `remesh` meshes every chunk that far from a changed block again, not only its neighbours.
 
 ## LOD nodes
@@ -76,5 +77,5 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - In a blend, the untinted side loses its weathering tint.
 - LOD nodes don't read the shore's sand or cut water along the ground, so a shore can change at the hand-over, and trees can grow on shore sand.
 - Near-flat banks leave a saw-tooth waterline where the ground lies just under the water.
-- Holes seen in play were folded rock triangles, which the cell constraint removes by construction. Not yet confirmed gone in the game (the seed 4 marble arch, `docs/issues.md`), and a probe stepping out along each triangle's normal still finds 0.4% of rock triangles facing into the blocks, not understood (`docs/meso-spike.md`). The chunk-to-node hand-over on a sheer face is a second possible cause, not checked.
-- The constraint trims the sharpest corners, which could stand 0.3 past their cell. Not judged by eye.
+- The constraint's corner trim was not judged by eye.
+- The constraint trims the sharpest corners, which could stand 0.3 past their cell.

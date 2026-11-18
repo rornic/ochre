@@ -4,15 +4,6 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
-## Holes in the mesh on a steep steppe mountain's cliffs, seed 1
-
-- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The owner did not record the exact spots.
-- **Known:** the place is the scorer's best steppe place on seed 1 (`docs/meso-baseline.csv`, relief 110, 235 and 315 blocks at the three windows). The build includes the ranges' valleys from `exp/meso-geography`, so seed 1's mountains differ from `main`'s.
-- **Known:** the owner confirmed the holes are in full-detail ground. `worldprobe 1 render 13408 -4704 400` finds no open edge there but 15,347 folded triangles (winding against their own vertices' normals), 99% in rock, scattered through the peak's chunks. The same count at the seed 4 marble arch finds 23 folded triangles, all in the two chunks holding that hole. They exist before the chisel and are not made by the plane solve's overshoot clamp (`docs/meso-spike.md`). An earlier version of this entry said the ground was closed: it counted open edges only, and a folded triangle has neighbours on every edge.
-- **Fixed locally, not confirmed in the game:** the mesher now holds every vertex inside its cell across its crossing axes and splits each quad from the final positions, so no triangle folds (`docs/sculpted-ground.md`). Delete this entry once the owner sees the arch and the peak's cliffs without holes.
-- **Not known:** whether folded triangles are the whole cause (culling them in a level render shows a sliver at the arch's base but not the pillar's window), which cell patterns fold, and whether the chunk-to-node hand-over on a sheer face adds a second cause. A guess only: the dual-contoured plane solve (`nets.rs`, planes from the blurred gradient with `PULL` 0.05) on cells with few solid corners or seven of eight.
-- **To check:** `OCHRE_RENDER_CULL=out OCHRE_RENDER_PITCH=4 OCHRE_RENDER_FLAT=1 worldprobe 4 render 11393 -20180 14 out.png <azimuth>` against the same without the cull, from the screenshot's angle, and a count of folded triangles by cell pattern.
-
 ## A thin strip of grass or dirt inset from a rock's edge
 
 - **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
@@ -26,6 +17,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** the owner says it is not from the geography colour change. Not checked on `main`.
 - **Not known:** the cause, or whether the gap is the arch's designed opening (3.5 to 4.5 blocks between pillars) and not a hole. From one frame it reads as a hole in the pillar's face. Not reproduced. A guess only: it is where the arch's pillar meets its capstone, which `generate/rocks.rs` builds block by block.
 - **Since:** `worldprobe 4 render 11393 -20193 40` finds no open edge but 23 folded triangles in the chunks (11376, 112, -20192) and (11392, 112, -20192), the only anomaly in the area (see the seed 1 entry above). **To check:** `test_sculpted_ground_leaves_no_hole`'s checker looks for open edges only, so it cannot see this. See Open in `docs/sculpted-ground.md`, which already lists rare holes seen in play and not found by the tests.
+- **Likely cause, fixed 2026-11-18, not confirmed here:** the outlined block sits on a chunk corner (x 11392, z -20192). Holes on seed 1's cliffs had one cause: a sculpted face belongs to the chunk on its low side, and the loader never meshed all-air chunks, so a face toward -x, -y or -z on a chunk boundary with an empty chunk on its air side was never drawn. The loader now meshes such chunks (`World::is_chunk_bare`). Delete this entry once the arch is seen whole.
 
 ## A river through the steppe is a chain of round dips, not a carved valley
 

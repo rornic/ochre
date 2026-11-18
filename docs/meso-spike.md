@@ -20,7 +20,11 @@ What this means for the mountain design:
 - **The existing bed risers are probably already tall enough** (a hard bed's face is of order 16 blocks or more by `geology.rs`), so the climbable cliffs the owner has met are more likely mesh softening and cliff noise producing sub-2-block ledges than the beds themselves. That is a guess, to check in the mesher half.
 - **No contact change is needed to "slide off".** A face over 66 degrees that is also over 2.2 blocks tall already walls the player out. What lets them climb is ledges, so the fix is in the ground shape, as the design review said.
 
-## 2. The mesher: holes are folded rock triangles, not open edges
+## 2. The mesher: what the holes were
+
+**Found 2026-11-18: the holes the owner saw were faces no chunk drew.** A sculpted face belongs to the chunk on its low side, and the chunk loader never meshed an all-air chunk, so a face toward -x, -y or -z lying on a chunk boundary, with a wholly empty chunk on its air side, was never drawn. Big sheer cliffs have exactly that: 16 blocks of open air against a west- or north-facing wall. The hole's edges were chunk planes, a dig filled it (a remesh meshes every chunk), and offline renders never showed it, as they mesh every chunk. Reproduced in the game from the owner's F1 position, (13288, 849.9, -4526) facing east, `OCHRE_FLY=1 OCHRE_LOOK=1,0,0 OCHRE_SHOT=35,out.png`: a hole before the fix, a whole wall after. The fix and its tests are in `docs/sculpted-ground.md` (Chunk edges).
+
+Wrong turns, kept as a record of what was ruled out: the earlier sections below blamed folded triangles, the LOD hand-over and the air layer behind the sandstone skin. None was the cause. Folded triangles were real and are now held at zero, but fixing them did not remove a hole. Mesh packing, group merging, the loader's visibility and the camera's near plane were all checked and cleared.
 
 `worldprobe <seed> render <x> <z> <half> <out> [azimuth]` prints slope bands and checks the ground mesh. It leaves out water and edges beside tree blocks (trunks sink up to 2 blocks and are drawn open). `OCHRE_RENDER_EDGES=1` lists open edges, `OCHRE_RENDER_CULL=out` draws only triangles whose winding faces the camera as a backface cull would, and `OCHRE_RENDER_PITCH=<degrees>` sets the camera pitch (35 by default), so a near-level view can be diffed against the uncullled one.
 

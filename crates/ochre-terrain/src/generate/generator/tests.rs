@@ -3963,3 +3963,20 @@ fn test_sculpted_ground_never_folds_a_triangle() {
     let unsound = super::nets::UNSOUND_QUADS.load(std::sync::atomic::Ordering::Relaxed);
     assert_eq!(unsound, 0, "{unsound} quads have no diagonal whose triangles face from solid to air");
 }
+
+// A sculpted face belongs to the chunk on its low side, so an all-air chunk with rock against its +x face draws that wall: the loader must mesh it.
+#[test]
+fn test_an_empty_chunk_draws_the_wall_against_its_high_side() {
+    let regions = test_regions();
+    let mut rock = ChunkData::default();
+    for y in 0..CHUNK_SIZE as u16 {
+        for z in 0..CHUNK_SIZE as u16 {
+            rock.set_block_at(U16Vec3::new(0, y, z), BlockType::Rock);
+        }
+    }
+    let mut adjacent = vec![None; 26];
+    adjacent[neighbor_26_index(1, 0, 0)] = Some(Arc::new(rock));
+    let meshes = generate_chunk_mesh_with(Arc::new(ChunkData::default()), adjacent, ChunkCoordinate(I64Vec3::new(0, 40, 0)), &regions, false);
+    let triangles = meshes.opaque.indices().map_or(0, |i| i.len() / 3);
+    assert!(triangles > 100, "an empty chunk against a wall drew {triangles} triangles");
+}

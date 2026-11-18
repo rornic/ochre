@@ -122,6 +122,19 @@ impl World {
         self.chunk(coord).is_some()
     }
 
+    /// Whether the chunk is all air with all air against its +x, +y and +z faces, so it owns no sculpted face (a chunk owns the
+    /// faces from its own blocks to the next along each axis), or None until those three are generated.
+    pub fn is_chunk_bare(&self, coord: ChunkCoordinate) -> Option<bool> {
+        if !self.chunk(coord)?.empty() {
+            return Some(false);
+        }
+        let mut bare = true;
+        for offset in [I64Vec3::X, I64Vec3::Y, I64Vec3::Z] {
+            bare &= self.chunk(ChunkCoordinate(coord.0 + offset))?.empty();
+        }
+        Some(bare)
+    }
+
     /// Whether the chunk and the chunks against its faces are all opaque, so it has no faces to draw.
     pub fn is_chunk_buried(&self, coord: ChunkCoordinate) -> bool {
         let opaque = |c| self.chunk(c).is_some_and(|data| data.opaque());
@@ -251,6 +264,30 @@ mod tests {
         // nor is a chunk buried by one not generated yet
         world.clear_chunk(ChunkCoordinate(I64Vec3::Y));
         assert!(!world.is_chunk_buried(centre));
+    }
+
+    #[test]
+    fn test_an_empty_chunk_with_ground_on_its_high_side_is_not_bare() {
+        let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
+        let centre = ChunkCoordinate(I64Vec3::new(0, 4, 0));
+        world.insert_chunk(centre, ChunkData::default());
+        // waits for the three chunks it owns faces against
+        assert_eq!(None, world.is_chunk_bare(centre));
+        for offset in [I64Vec3::X, I64Vec3::Y, I64Vec3::Z] {
+            world.insert_chunk(ChunkCoordinate(centre.0 + offset), ChunkData::default());
+        }
+        assert_eq!(Some(true), world.is_chunk_bare(centre));
+        // ground against its +x face is a wall facing -x, whose face the empty chunk owns
+        let mut wall = ChunkData::default();
+        wall.set_block_at(bevy::math::U16Vec3::new(0, 3, 3), BlockType::Rock);
+        world.insert_chunk(ChunkCoordinate(centre.0 + I64Vec3::X), wall);
+        assert_eq!(Some(false), world.is_chunk_bare(centre));
+        // ground on its low side is drawn by that chunk
+        world.insert_chunk(ChunkCoordinate(centre.0 + I64Vec3::X), ChunkData::default());
+        let mut floor = ChunkData::default();
+        floor.set_block_at(bevy::math::U16Vec3::new(3, 15, 3), BlockType::Rock);
+        world.insert_chunk(ChunkCoordinate(centre.0 - I64Vec3::Y), floor);
+        assert_eq!(Some(true), world.is_chunk_bare(centre));
     }
 
     #[test]
