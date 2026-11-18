@@ -51,6 +51,14 @@ What this means for the mountain design:
 
 **Not settled by the fix.** `OCHRE_RENDER_INVERTED=1` steps 0.75 blocks out along each triangle's normal and in against it, and counts triangles with solid outside and air inside. Over the peak it went from 6,966 (0.61%) to 4,433 (0.39%) and at the arch from 15 to 9. The remainder is 0.4 to 0.6% of rock tiles and 0.01% of steppe grass, so it is rock-specific and not the corner-cutting any smoothed surface shows. These triangles do face along their crossing, so they are not folded by the exact definition. A guess only: chiselled 45 degree facets tilt a triangle so far that the step lands in the neighbouring step. A culled render diff was tried and dropped, as the render box's open cut shows back faces for other reasons.
 
+**Seed 1 peak, the hole at (13374, 915, -4672), found by the owner in play after the fix.** The owner reads this as the block under the crosshair (F1's `looking at`), standing on the face's top. The game's real loading shows the surface is there:
+
+- `OCHRE_PROBE=13373.5,915,-4672 lod_sim -- 0 1` (with `OCHRE_SEED=1 OCHRE_SPAWN=13374,-4672,6`) decodes the packed group meshes the game builds. The group holding the block has 4,200 triangles, 42 within 3 blocks of it and the nearest 0.2 away, and all 12 groups round it are visible. `lod_sim` reports no surface chunk without something drawing it.
+- The ignored test `diag_group_pipeline_keeps_every_triangle` runs the game's merge, cutout split and 16-bit pack over the groups round the spot and finds every triangle kept, to rounding.
+- `worldprobe 1 render 13374 -4672 32` finds no open edge and no exact fold. The blocks there are a thin sandstone skin with a 1 to 2 block air layer behind it before the compacted core.
+
+So it is not a missing patch of mesh. It is either a face drawn but culled or discarded in the render, or terrain, and a game frame with the F1 readout (position and looked-at block) is needed to say which. A flythrough of the spot from a fixed camera shows the face solid, with small dark dimples.
+
 Not yet done: a close render of the arch pillar from the screenshot's angle, which cell patterns fold and why (the plane solve on thin or 7-corner cells is the suspect), the LOD hand-over on a sheer face (still a possible second cause), the walkable-fraction histogram over several seeds, and an ALPINE valley wall.
 
 ## Decision rule so far

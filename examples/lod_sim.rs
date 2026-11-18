@@ -26,6 +26,48 @@ use ochre_terrain::world::World;
 #[derive(Component)]
 struct SimCamera;
 
+// OCHRE_PROBE=x,y,z: after loading, decodes the packed meshes of the groups round the point and says how many triangles each has within 3 blocks of it
+fn probe_mesh(app: &mut App, p: Vec3) {
+    use bevy::mesh::{Indices, VertexAttributeValues};
+    let world = app.world_mut();
+    let mut query = world.query::<(&ChunkGroup, &Transform, &Visibility, &Mesh3d)>();
+    let groups: Vec<(LodKey, Vec3, bool, Handle<Mesh>)> = query
+        .iter(world)
+        .filter(|(_, t, ..)| (t.translation + Vec3::splat(16.0) - p).abs().max_element() < 48.0)
+        .map(|(g, t, v, m)| (g.key, t.translation, *v != Visibility::Hidden, m.0.clone()))
+        .collect();
+    let meshes = world.resource::<Assets<Mesh>>();
+    println!("probe at {p}: {} groups with an opaque mesh round it", groups.len());
+    for (key, origin, shown, handle) in groups {
+        let Some(mesh) = meshes.get(&handle) else { println!("  {key:?} mesh not in assets"); continue };
+        let positions: Vec<Vec3> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(v)) => v.iter().map(|&p| Vec3::from(p)).collect(),
+            Some(VertexAttributeValues::Snorm16x4(v)) => {
+                let aabb = mesh.final_aabb.expect("bounds");
+                let (centre, half) = ((aabb.min + aabb.max) * 0.5, (aabb.max - aabb.min) * 0.5);
+                v.iter().map(|v| {
+                    let at = |i: usize| (v[i] as f32 / 32767.0).max(-1.0);
+                    Vec3::new(centre.x + half.x * at(0), centre.y + half.y * at(1), centre.z + half.z * at(2)).into()
+                }).collect()
+            }
+            other => { println!("  {key:?} positions are {:?}", other.map(|o| o.enum_variant_name())); continue }
+        };
+        let indices: Vec<u32> = match mesh.indices() {
+            Some(Indices::U16(i)) => i.iter().map(|&v| v as u32).collect(),
+            Some(Indices::U32(i)) => i.clone(),
+            None => Vec::new(),
+        };
+        let (mut near, mut closest) = (0, f32::MAX);
+        for t in indices.chunks(3) {
+            let c = (positions[t[0] as usize] + positions[t[1] as usize] + positions[t[2] as usize]) / 3.0 + origin;
+            let d = c.distance(p);
+            closest = closest.min(d);
+            near += (d < 3.0) as usize;
+        }
+        println!("  group {key:?} at {origin} shown {shown}: {} triangles, {near} within 3 blocks, closest {closest:.2}", indices.len() / 3);
+    }
+}
+
 fn setup(mut commands: Commands, world: Res<World>) {
     let spawn = world.spawn();
     let player = commands.spawn(Transform::from_translation(spawn)).id();
@@ -320,6 +362,12 @@ fn main() {
     loop {
         let t = start.elapsed().as_secs_f32();
         if t > total_secs + settle {
+            if let Some(p) = std::env::var("OCHRE_PROBE").ok().and_then(|s| {
+                let v: Vec<f32> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+                (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
+            }) {
+                probe_mesh(&mut app, p);
+            }
             break;
         }
         // let the start area load first

@@ -273,4 +273,69 @@ mod tests {
         );
         assert_eq!(4, pack(mesh).count_vertices());
     }
+
+    // Seed 1's peak, around where a hole was seen: the groups the game builds, merged, split and packed as it does, keep every triangle where it was.
+    #[test]
+    #[ignore = "builds seed 1's whole world, a few seconds"]
+    fn diag_group_pipeline_keeps_every_triangle() {
+        use crate::group::pack_group;
+        use ochre_world::worldmap::{character::world_config, WorldConfig, WorldTerrain};
+        set_packed(true);
+        let map = Arc::new(ochre_world::worldmap::generate(1, world_config(1, WorldConfig::default())));
+        let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
+        let key = |p: [f32; 3]| [(p[0] * 32.0).round() as i64, (p[1] * 32.0).round() as i64, (p[2] * 32.0).round() as i64];
+        let (mut groups, mut lost_total) = (0, 0usize);
+        for (gx, gy, gz) in [(417, 28, -146), (416, 28, -146), (417, 28, -147), (416, 28, -147), (417, 27, -146), (417, 29, -146)] {
+            let (cx, cy, cz) = (gx * 2, gy * 2, gz * 2);
+            let mut data: HashMap<ChunkCoordinate, Arc<ChunkData>> = HashMap::new();
+            for dx in -1..3 {
+                for dy in -1..3 {
+                    for dz in -1..3 {
+                        let c = ChunkCoordinate(I64Vec3::new(cx + dx, cy + dy, cz + dz));
+                        data.insert(c, Arc::new(generate_chunk(regions.clone(), c)));
+                    }
+                }
+            }
+            let mut parts = Vec::new();
+            for dx in 0..2 {
+                for dy in 0..2 {
+                    for dz in 0..2 {
+                        let c = ChunkCoordinate(I64Vec3::new(cx + dx, cy + dy, cz + dz));
+                        let neighbours = c.neighbors_26().iter().map(|n| data.get(n).cloned()).collect();
+                        let meshes = generate_chunk_mesh_with(data[&c].clone(), neighbours, c, &regions, false);
+                        parts.push((Vec3::new(dx as f32, dy as f32, dz as f32) * 16.0, meshes));
+                    }
+                }
+            }
+            let merged = merge_chunk_meshes(parts);
+            let positions: Vec<[f32; 3]> = merged.opaque.attribute(Mesh::ATTRIBUTE_POSITION).and_then(VertexAttributeValues::as_float3).map_or(Vec::new(), |p| p.to_vec());
+            let Some(Indices::U32(indices)) = merged.opaque.indices().cloned() else { continue };
+            let mut before: Vec<[[i64; 3]; 3]> = indices.chunks(3).map(|t| [0, 1, 2].map(|k| key(positions[t[k] as usize]))).collect();
+            let packed = pack_group(merged);
+            let mut after: Vec<[[i64; 3]; 3]> = Vec::new();
+            for mesh in [Some(&packed.opaque), packed.cutout.as_ref()].into_iter().flatten() {
+                if mesh.count_vertices() == 0 {
+                    continue;
+                }
+                let decoded = decoded_positions(mesh);
+                let triangles: Vec<u32> = match mesh.indices() {
+                    Some(Indices::U16(i)) => i.iter().map(|&v| v as u32).collect(),
+                    Some(Indices::U32(i)) => i.clone(),
+                    None => Vec::new(),
+                };
+                after.extend(triangles.chunks(3).map(|t| [0, 1, 2].map(|k| key(decoded[t[k] as usize]))));
+            }
+            before.sort();
+            after.sort();
+            // a triangle may move by a rounding step, so match each to one within 2 steps
+            let lost: Vec<&[[i64; 3]; 3]> = before.iter().filter(|b| after.binary_search(b).is_err()).collect();
+            let near = |a: &[[i64; 3]; 3], b: &[[i64; 3]; 3]| (0..3).all(|v| (0..3).all(|k| (a[v][k] - b[v][k]).abs() <= 2));
+            let really_lost = lost.iter().filter(|l| !after.iter().any(|a| near(l, a))).count();
+            eprintln!("group ({gx}, {gy}, {gz}): {} triangles before, {} after, {} not found exactly, {} not found within rounding", before.len(), after.len(), lost.len(), really_lost);
+            groups += 1;
+            lost_total += really_lost;
+        }
+        assert!(groups >= 4, "only {groups} groups meshed");
+        assert_eq!(lost_total, 0, "triangles lost between the merge and the packed mesh");
+    }
 }
