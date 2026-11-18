@@ -97,8 +97,8 @@ pub const SHADOW_AMOUNT: f32 = 0.3;
 const COLD: Row = Row { sun: 0.0, sun_colour: SUN, temperature: 0.0, saturation: 0.0, contrast: 0.0, haze_tint: [0.88, 0.95, 1.08], haze_density: 0.45, storm: 0.0, shadow_tint: SHADOW, shadow_amount: 0.0 };
 // a hard, hot sun on bleached land, in a thick warm haze
 const HOT: Row = Row { sun: 0.5, sun_colour: [1.0, 0.86, 0.66], temperature: 0.03, saturation: 0.12, contrast: 0.14, haze_tint: [1.0, 0.86, 0.64], haze_density: 1.2, storm: 0.0, shadow_tint: [0.80, 0.60, 0.55], shadow_amount: 0.10 };
-// hot, sticky and wet: vibrant colour in a soft, close, green-warm haze, the sun filtered
-const JUNGLE: Row = Row { sun: -0.12, sun_colour: [1.0, 0.92, 0.70], temperature: 0.015, saturation: 0.20, contrast: -0.04, haze_tint: [0.90, 1.0, 0.84], haze_density: 1.6, storm: 0.0, shadow_tint: [0.40, 0.65, 0.55], shadow_amount: 0.15 };
+// hot, sticky and wet: vibrant colour in a thick, green haze that closes in past a kilometre, the sun filtered
+const JUNGLE: Row = Row { sun: -0.12, sun_colour: [1.0, 0.92, 0.70], temperature: 0.015, saturation: 0.20, contrast: -0.04, haze_tint: [0.72, 1.0, 0.66], haze_density: 15.0, storm: 0.0, shadow_tint: [0.40, 0.65, 0.55], shadow_amount: 0.15 };
 // sheltered, cosy and gloomier: a dimmer, warmer sun and a soft close haze. A taiga is this with the cold over it
 const FOREST: Row = Row { sun: -0.2, sun_colour: [1.0, 0.89, 0.72], temperature: 0.01, saturation: 0.04, contrast: -0.03, haze_tint: [0.95, 0.95, 0.90], haze_density: 0.8, storm: 0.0, shadow_tint: [0.62, 0.55, 0.70], shadow_amount: 0.10 };
 // vast, desolate and exposed: drained colour, a hard clear light, far views, and a sky that turns on you

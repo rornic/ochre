@@ -45,7 +45,7 @@ Banks and hollows green grass up only to `LUSH_CAP` (0.6 humidity, `worldmap/sou
 Each kind of country has a feel (`atmosphere.rs`): `Feel` weights cold, hot, jungle, forest and steppe, 0 to 1, smooth in the climate (`Feel::of`), so they overlap where kinds meet and a taiga is a forest's weight with the cold's. A row of knobs per kind (`COLD`, `HOT`, `JUNGLE`, `FOREST`, `STEPPE`) says what each does at full weight, and `Atmosphere::of` sums them into the sun's strength and colour, the grade's white balance, saturation and midtone contrast, the haze's tint and density, and how deep a storm dims the light, exactly neutral at no feel.
 
 - Hot (savanna, desert): a hard, bright, warm sun, a warmer, richer, harder grade, a thick warm haze.
-- Jungle: hot, sticky, wet, vibrant: the most colour, a filtered sun, a soft close green-warm haze.
+- Jungle: hot, sticky, wet, vibrant: the most colour, a filtered sun, a thick, green, short haze (`JUNGLE.haze_density` 15 times, since the fog's range is tens of kilometres) that closes in on the trees past about a kilometre.
 - Forest: sheltered, cosy, gloomier: a dimmer, warmer sun and a soft close haze. Taiga is this under the cold.
 - Steppe: vast, desolate, exposed: drained colour, a hard clear light, thin haze so views run far, and storms dim the light half as deep again.
 - Mountain (`TerrainSource::mountain_cover`, smooth across its edge): crisp, thin air, a clear hard light, far views, bluer shadows, and weather that comes up faster.
