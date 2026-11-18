@@ -434,6 +434,20 @@ fn sculpt<const MARGIN: i32>(
     let look = |m: BlockType| if soft(m) { k.soft } else { k.rock };
     let between = |from: usize, to: u32, offsets: &[Vec3]| (homes[to as usize] - homes[from]).as_vec3() + offsets[to as usize];
 
+    // which of this chunk and the six against its faces hold any ground before the gap fill: a face goes to its solid block's chunk unless that has none
+    let slot = |c: usize| (c as i32 - margin).div_euclid(SIZE) + 1;
+    let has_ground = {
+        let mut has = [[[true; 3]; 3]; 3];
+        if !lod {
+            for (x, y, z) in [(1, 1, 1), (0, 1, 1), (2, 1, 1), (1, 0, 1), (1, 2, 1), (1, 1, 0), (1, 1, 2)] {
+                let start = |s: i32| (margin + (s - 1) * SIZE) as usize;
+                let (si, sj, sk) = (start(x), start(y), start(z));
+                has[x as usize][y as usize][z as usize] = (si..si + SIZE as usize)
+                    .any(|i| (sj..sj + SIZE as usize).any(|j| (sk..sk + SIZE as usize).any(|kk| touching[index(i, j, kk)])));
+            }
+        }
+        has
+    };
     // quads across every crossing between block centres, of the four cells round it, and whether the chunk owns it
     let mut quads: Vec<([u32; 4], bool)> = Vec::new();
     let mut quad_out: Vec<Vec3> = Vec::new();
@@ -459,7 +473,17 @@ fn sculpt<const MARGIN: i32>(
                     if here {
                         quad.reverse();
                     }
-                    let owned = own.contains(&i) && own_y.contains(&j) && own.contains(&kk);
+                    // a chunk draws the faces over its own solid blocks, as the cube mesher did, so an all-air chunk, which the loader never meshes, draws
+                    // none; a node keeps the low side, as its edges hang skirts
+                    let (sol, other) = if here { ((i, j, kk), (i + a, j + b, kk + c)) } else { ((i + a, j + b, kk + c), (i, j, kk)) };
+                    let (oi, oj, ok) = if lod {
+                        (i, j, kk)
+                    } else if has_ground[slot(sol.0) as usize][slot(sol.1) as usize][slot(sol.2) as usize] {
+                        sol
+                    } else {
+                        other
+                    };
+                    let owned = own.contains(&oi) && own_y.contains(&oj) && own.contains(&ok);
                     quads.push((quad, owned));
                     let dir = Vec3::new(a as f32, b as f32, c as f32);
                     quad_out.push(if here { dir } else { -dir });

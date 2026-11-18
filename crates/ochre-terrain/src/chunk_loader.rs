@@ -186,9 +186,9 @@ pub(crate) fn generate_chunks(
         if let Some(data) = futures::check_ready(&mut generating.task) {
             let mut entity = commands.entity(entity);
             entity.remove::<GenerateChunkData>();
-            // an empty chunk too, as it owns the sculpted faces against its +x, +y and +z neighbours, see `World::is_chunk_bare`
-            world.insert_chunk(chunk.coord, data);
-            entity.insert(DirtyChunk);
+            if !world.insert_chunk(chunk.coord, data).empty() {
+                entity.insert(DirtyChunk);
+            }
         }
     }
 }
@@ -201,15 +201,6 @@ pub(crate) fn mark_chunks(
     chunks_query: Query<(Entity, &Chunk), (With<DirtyChunk>, Without<GenerateChunkMesh>)>,
 ) {
     for (entity, chunk) in &chunks_query {
-        // most chunks are air with air past them, settled as soon as their three high neighbours are there
-        match world.is_chunk_bare(chunk.coord) {
-            Some(true) => {
-                commands.entity(entity).remove::<DirtyChunk>();
-                continue;
-            }
-            None => continue,
-            Some(false) => {}
-        }
         // meshing reads the whole 3x3x3 neighbourhood, for ambient occlusion at the corners
         if !chunk_loader
             .layout

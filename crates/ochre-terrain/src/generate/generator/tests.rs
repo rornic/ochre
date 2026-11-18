@@ -3964,19 +3964,24 @@ fn test_sculpted_ground_never_folds_a_triangle() {
     assert_eq!(unsound, 0, "{unsound} quads have no diagonal whose triangles face from solid to air");
 }
 
-// A sculpted face belongs to the chunk on its low side, so an all-air chunk with rock against its +x face draws that wall: the loader must mesh it.
+// A chunk draws the faces over its own solid blocks, so an all-air chunk, which the loader never meshes, draws nothing, and the rock against it draws the wall.
 #[test]
-fn test_an_empty_chunk_draws_the_wall_against_its_high_side() {
+fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
     let regions = test_regions();
     let mut rock = ChunkData::default();
-    for y in 0..CHUNK_SIZE as u16 {
-        for z in 0..CHUNK_SIZE as u16 {
+    for y in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
             rock.set_block_at(U16Vec3::new(0, y, z), BlockType::Rock);
         }
     }
-    let mut adjacent = vec![None; 26];
-    adjacent[neighbor_26_index(1, 0, 0)] = Some(Arc::new(rock));
-    let meshes = generate_chunk_mesh_with(Arc::new(ChunkData::default()), adjacent, ChunkCoordinate(I64Vec3::new(0, 40, 0)), &regions, false);
-    let triangles = meshes.opaque.indices().map_or(0, |i| i.len() / 3);
-    assert!(triangles > 100, "an empty chunk against a wall drew {triangles} triangles");
+    let (rock, empty) = (Arc::new(rock), Arc::new(ChunkData::default()));
+    let triangles = |meshes: ChunkMeshes| meshes.opaque.indices().map_or(0, |i| i.len() / 3);
+    let mut beside_rock = vec![None; 26];
+    beside_rock[neighbor_26_index(1, 0, 0)] = Some(rock.clone());
+    let from_empty = triangles(generate_chunk_mesh_with(empty.clone(), beside_rock, ChunkCoordinate(I64Vec3::new(0, 40, 0)), &regions, false));
+    let mut beside_empty = vec![Some(empty.clone()); 26];
+    beside_empty[neighbor_26_index(-1, 0, 0)] = Some(empty);
+    let from_rock = triangles(generate_chunk_mesh_with(rock, beside_empty, ChunkCoordinate(I64Vec3::new(1, 40, 0)), &regions, false));
+    assert_eq!(from_empty, 0, "the empty chunk drew {from_empty} triangles");
+    assert!(from_rock > 100, "the rock drew only {from_rock} triangles of its wall");
 }
