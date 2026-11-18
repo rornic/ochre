@@ -162,7 +162,7 @@ fn describe(
         v.round().clamp(0.0, max) as usize,
     );
     format!(
-        "x={x} z={z} biome={} ground={:.2} dry={:.2} base={:.2} water={:.2} {:?} | chunk ground_top={} water_top={} | map cell {:?} at {:.2}",
+        "x={x} z={z} biome={} ground={:.2} dry={:.2} base={:.2} water={:.2} {:?} | chunk ground_top={} water_top={} | map cell {:?} at {:.2} | temperature {:.2} humidity {:.2} exposure {:.2} water_closeness {:.2}",
         terrain
             .biomes()
             .name(terrain.biome(x as f64, z as f64))
@@ -176,6 +176,10 @@ fn describe(
         sampler.water_top(x, z),
         WaterCell::from_u8(map.water_kind[cell]),
         map.water_surface[cell],
+        terrain.climate(x as f64, z as f64).temperature,
+        terrain.climate(x as f64, z as f64).humidity,
+        terrain.exposure(x as f64, z as f64),
+        terrain.water_closeness(x as f64, z as f64),
     )
 }
 

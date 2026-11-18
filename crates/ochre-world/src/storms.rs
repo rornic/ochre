@@ -113,6 +113,7 @@ const SPELL_SLOT: f64 = 1.5 * DAY_SECONDS as f64;
 const SALT_WIND: u32 = 0x57A1_0001;
 const SALT_STORM: u32 = 0x57A1_0002;
 const SALT_SPELL: u32 = 0x57A1_0003;
+const SALT_FURY: u32 = 0x57A1_0004;
 
 /// The weather over one world: a pure function of its seed, its climate and the time.
 #[derive(Resource)]
@@ -173,6 +174,32 @@ struct Air {
     wet: f64,
     /// In a cloudy spell, which starts before a wet one and ends after it; between them the sky is clear.
     cloudy: f64,
+    /// In a spell of fury: over the steppe, the whole air mass darkens, thunders and blows in swells for hours, with no rain.
+    fury: f64,
+}
+
+// How much of the steppe's country this is, 0..1: mid-warm and dry, not the desert, which stays dry, nor the cold.
+fn steppe(moisture: f64, warmth: f64) -> f64 {
+    (1.0 - smoothstep_f64(STEPPE_MOISTURE.0, STEPPE_MOISTURE.1, moisture))
+        * smoothstep_f64(STEPPE_WARM.0, STEPPE_WARM.1, warmth)
+        * (1.0 - smoothstep_f64(STEPPE_HOT.0, STEPPE_HOT.1, warmth))
+}
+
+// A swell rolling through a spell of fury, 0..1, over lumps this many blocks across and this many game seconds, drifting with the storms: the dark cloud
+// builds and breaks in it, and its heights thunder.
+fn fury_swell(seed: u32, carried: DVec2, t: f64) -> f64 {
+    let (x, z, k) = (carried.x / SWELL_LUMP, carried.y / SWELL_LUMP, t / SWELL_SECONDS);
+    let (cell_x, cell_z, cell_t) = (x.floor(), z.floor(), k.floor());
+    let fade = |f: f64| f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let corner = |dx: i32, dz: i32, dt: i32| {
+        let h = hash(seed ^ SALT_FURY, cell_x as i32 + dx, cell_z as i32 + dz);
+        let slot = cell_t as i64 + dt as i64;
+        hash(h, slot as i32, (slot >> 32) as i32) as f64 / 4_294_967_296.0
+    };
+    let mix = |a: f64, b: f64, t: f64| a + (b - a) * t;
+    let (u, v, w) = (fade(x - cell_x), fade(z - cell_z), fade(k - cell_t));
+    let plane = |dt| mix(mix(corner(0, 0, dt), corner(1, 0, dt), u), mix(corner(0, 1, dt), corner(1, 1, dt), u), v);
+    mix(plane(0), plane(1), w)
 }
 
 // Slow noise over air masses drifting with the storms, past bars the climate sets: it's all the climate does to the weather.
@@ -206,6 +233,7 @@ fn air_mass(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> Ai
     let wet_bar = bar + SPELL_DRY_BAR * dry;
     let cloudy_bar = bar + CLOUDY_DRY_BAR * dry;
     Air {
+        fury: smoothstep_f64(FURY_BAR - 0.04, FURY_BAR + 0.04, noise),
         wet: smoothstep_f64(wet_bar - 0.04, wet_bar + 0.04, noise),
         cloudy: smoothstep_f64(
             cloudy_bar - CLOUDY_BELOW_BAR.0,
@@ -225,6 +253,18 @@ const SPELL_WARM: (f64, f64) = (0.45, 0.7);
 // dry, easing back by the second, over steppe.
 const SPELL_DRY_GROUND: (f64, f64) = (0.16, 0.35);
 const SPELL_DRY_BAR: f64 = 0.4;
+// The steppe's range of moisture and warmth, in which a spell of fury can come: not the desert, which stays dry, nor the cold.
+const STEPPE_MOISTURE: (f64, f64) = (0.25, 0.35);
+const STEPPE_WARM: (f64, f64) = (0.20, 0.30);
+const STEPPE_HOT: (f64, f64) = (0.55, 0.62);
+// The noise a spell of fury needs to clear, which is far easier than a wet spell's over the steppe.
+const FURY_BAR: f64 = 0.70;
+// The swell's lumps, in blocks and game seconds (an hour and a half), and the swell it takes for the sky to darken and for thunder to come.
+const SWELL_LUMP: f64 = 30_000.0;
+const SWELL_SECONDS: f64 = 1.5 * 3600.0;
+const SWELL_DARK: (f64, f64) = (0.3, 0.55);
+const SWELL_THUNDER: (f64, f64) = (0.55, 0.8);
+
 // How far under the wet bar the noise is where cloud starts to build, and where it's all there.
 const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
 // Dry ground raises the cloud bar by this much, so steppe and desert are clearer still.
@@ -525,7 +565,15 @@ impl Forecast {
         rain *= air.wet;
         thunder *= air.wet;
         // storm cloud thins out over ground too dry for cloudy spells
-        let (shield, dark) = (shield * air.cloudy, dark * air.cloudy);
+        let (mut shield, mut dark) = (shield * air.cloudy, dark * air.cloudy);
+        // a spell of fury over the steppe darkens and thunders in swells, with the rain left to the wet spells
+        let furious = air.fury * steppe(moisture, warmth);
+        if furious > 0.0 {
+            let swell = fury_swell(self.seed, p - self.wind * t, t);
+            shield = shield.max(furious);
+            dark = dark.max(furious * smoothstep_f64(SWELL_DARK.0, SWELL_DARK.1, swell));
+            thunder = thunder.max(furious * smoothstep_f64(SWELL_THUNDER.0, SWELL_THUNDER.1, swell));
+        }
         let fair = fair_cloud(moisture) * air.cloudy;
         let snow = snow_share(warmth);
         Sky {
@@ -633,6 +681,41 @@ mod tests {
             a.sky(5_000.0, 5_000.0, tick) != c.sky(5_000.0, 5_000.0, tick)
         });
         assert!(differs);
+    }
+
+    // Huge dark storms a place sees a game week, and the share of time it rains there, over `weeks` weeks at a spread of places.
+    fn storms_a_week(moisture: f32, warmth: f32, weeks: u64) -> (f64, f64) {
+        let forecast = Forecast::new(7, [1.0, 0.3], uniform(moisture, warmth));
+        let step = DAY_TICKS / 20;
+        let (mut events, mut rainy, mut samples) = (0usize, 0usize, 0usize);
+        let places: Vec<(f64, f64)> = (0..5)
+            .flat_map(|i| (0..5).map(move |j| (i as f64 * 37_000.0 - 70_000.0, j as f64 * 41_000.0 - 80_000.0)))
+            .collect();
+        for &(x, z) in &places {
+            let mut inside = false;
+            for k in 0..weeks * 7 * 20 {
+                let sky = forecast.sky(x, z, k * step);
+                if !inside && sky.storm > 0.5 {
+                    inside = true;
+                    events += 1;
+                } else if inside && sky.storm < 0.15 {
+                    inside = false;
+                }
+                rainy += (sky.precipitation > 0.1) as usize;
+                samples += 1;
+            }
+        }
+        (events as f64 / (places.len() as u64 * weeks) as f64, rainy as f64 / samples as f64)
+    }
+
+    #[test]
+    fn test_the_steppe_gets_a_few_huge_dry_storms_a_week_and_the_desert_and_cold_none() {
+        // the steppe's real climate is very dry
+        let (steppe, steppe_rain) = storms_a_week(0.05, 0.45, 30);
+        assert!((1.0..=3.5).contains(&steppe), "{steppe} huge storms a week over the steppe");
+        assert!(steppe_rain < 0.01, "rain over the steppe {steppe_rain}");
+        assert_eq!(0.0, storms_a_week(0.1, 0.8, 30).0, "desert");
+        assert_eq!(0.0, storms_a_week(0.05, 0.1, 30).0, "tundra");
     }
 
     #[test]

@@ -170,11 +170,15 @@ fn main() {
     const SAMPLES_A_DAY: u64 = 24;
     // no cloud to speak of below this share of the sky
     const CLEAR_BELOW: f32 = 0.01;
+// A sample is stormy when this much of a storm's dark cloud is overhead, whether or not rain falls.
+const STORM_ABOVE: f32 = 0.5;
     let cell = 2.0 * half / GRID as f64;
     let corner = DVec2::splat(-half);
     let mut wet_days = vec![vec![false; days as usize]; GRID * GRID];
     let mut cloudy_days = vec![vec![false; days as usize]; GRID * GRID];
     let mut stats = vec![(0usize, 0usize, 0usize); BiomeKind::ALL.len()];
+    // per biome, the samples under a dark storm, dry or wet
+    let mut dark = vec![0usize; BiomeKind::ALL.len()];
     // per biome, the samples with rain or snow falling, and the ones where it's mostly snow
     let mut falling = vec![(0usize, 0usize); BiomeKind::ALL.len()];
     let biomes: Vec<BiomeKind> = (0..GRID * GRID)
@@ -193,6 +197,7 @@ fn main() {
             entry.0 += 1;
             entry.1 += raining as usize;
             entry.2 += clear as usize;
+            dark[biomes[k] as usize] += (sky.storm > STORM_ABOVE) as usize;
             if raining {
                 let entry = &mut falling[biomes[k] as usize];
                 entry.0 += 1;
@@ -204,7 +209,7 @@ fn main() {
         }
     }
     println!(
-        "\n{:<10} {:>6} {:>8} {:>9} {:>9} {:>9} {:>7} {:>10}   ({days} days, {:.1?})",
+        "\n{:<10} {:>6} {:>8} {:>9} {:>9} {:>9} {:>7} {:>10} {:>7}   ({days} days, {:.1?})",
         "biome",
         "cells",
         "raining",
@@ -213,6 +218,7 @@ fn main() {
         "dry run",
         "clear",
         "clear days",
+        "stormy",
         start.elapsed()
     );
     for kind in BiomeKind::ALL {
@@ -247,7 +253,7 @@ fn main() {
         }
         let mean = |runs: &[f64]| runs.iter().sum::<f64>() / runs.len().max(1) as f64;
         println!(
-            "{:<10} {:>6} {:>7.1}% {:>8.0}% {:>8.1}d {:>8.1}d {:>6.0}% {:>9.0}%",
+            "{:<10} {:>6} {:>7.1}% {:>8.0}% {:>8.1}d {:>8.1}d {:>6.0}% {:>9.0}% {:>6.1}%",
             format!("{kind:?}"),
             cells.len(),
             100.0 * raining as f64 / samples as f64,
@@ -256,6 +262,7 @@ fn main() {
             mean(&dry_runs),
             100.0 * clear as f64 / samples as f64,
             100.0 * clear_days as f64 / (cells.len() * days as usize) as f64,
+            100.0 * dark[kind as usize] as f64 / samples as f64,
         );
     }
 

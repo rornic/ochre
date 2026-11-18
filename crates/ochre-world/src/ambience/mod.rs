@@ -363,8 +363,8 @@ fn mix_loops(
     weather: Option<Res<crate::weather::Weather>>,
     mut loops: Query<(&Loop, &mut Activity, &mut AudioSink)>,
 ) {
-    // birds and crickets fall silent in the rain
-    let rain = weather.map_or(0.0, |weather| weather.precipitation());
+    // birds and crickets fall silent in the rain, and before a storm's rain, or without it
+    let rain = weather.map_or(0.0, |weather| weather.gloom());
     let follow = 1.0 - (-time.delta_secs() / LOOP_FOLLOW_SECONDS).exp();
     for (kind, mut activity, mut sink) in &mut loops {
         let active = kind.coming_and_going().map_or(1.0, |bursts| {
