@@ -4,6 +4,13 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
+## Holes in the mesh on a steep steppe mountain's cliffs, seed 1
+
+- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The exact spots were not recorded, so the place is rough: within a few hundred blocks of (13408, -4704).
+- **Known:** the place is the scorer's best steppe place on seed 1 (`docs/meso-baseline.csv`, relief 110, 235 and 315 blocks at the three windows). The build includes the ranges' valleys from `exp/meso-geography`, so seed 1's mountains differ from `main`'s.
+- **Not known:** the cause, and whether it is the same defect as the mesh hole at the marble arch on seed 4 or the thin rock-edge strip below. A guess only: steep faces from the valley walls and bed risers are where the mesher's chisel and the rule that no vertex stands far over its neighbours' mean are pushed hardest. Not looked into, and not checked on `main`.
+- **To check:** `worldprobe 1 render 13408 -4704 400 out.png` with `OCHRE_RENDER_FLAT=1` for open edges, then the checker in `test_sculpted_ground_leaves_no_hole` over the chunks there. This is also an input to the slice 1 spike on what the mesher can hold.
+
 ## A thin strip of grass or dirt inset from a rock's edge
 
 - **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
