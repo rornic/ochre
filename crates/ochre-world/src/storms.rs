@@ -263,7 +263,7 @@ const FURY_BAR: f64 = 0.70;
 const SWELL_LUMP: f64 = 30_000.0;
 const SWELL_SECONDS: f64 = 1.5 * 3600.0;
 const SWELL_DARK: (f64, f64) = (0.3, 0.55);
-const SWELL_THUNDER: (f64, f64) = (0.55, 0.8);
+const SWELL_THUNDER: (f64, f64) = (0.3, 0.55);
 
 // How far under the wet bar the noise is where cloud starts to build, and where it's all there.
 const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
@@ -492,7 +492,8 @@ impl Forecast {
     /// Where the thunderstorms within `reach` blocks of `centre` have their cores at `t` (game
     /// seconds): where lightning strikes, seen from afar.
     pub fn thunderstorms_near(&self, centre: DVec2, reach: f64, t: f64) -> Vec<DVec2> {
-        self.storms_near(centre, reach, t)
+        let mut cores: Vec<DVec2> = self
+            .storms_near(centre, reach, t)
             .iter()
             .filter(|storm| {
                 let core = storm.centre(t);
@@ -500,7 +501,33 @@ impl Forecast {
                     && self.sky_among(std::slice::from_ref(storm), core, t).thunder > 0.5
             })
             .map(|storm| storm.centre(t))
-            .collect()
+            .collect();
+        cores.extend(self.fury_cores(centre, reach, t));
+        cores
+    }
+
+    // The heads of a spell of fury's swells within `reach` blocks of `centre` at `t`: the middle of each lump of the swell where the sky thunders.
+    fn fury_cores(&self, centre: DVec2, reach: f64, t: f64) -> Vec<DVec2> {
+        let carried = centre - self.wind * t;
+        let span = (reach / SWELL_LUMP).ceil() as i32 + 1;
+        let (ci, cj) = ((carried.x / SWELL_LUMP).floor() as i32, (carried.y / SWELL_LUMP).floor() as i32);
+        let mut cores = Vec::new();
+        for j in cj - span..=cj + span {
+            for i in ci - span..=ci + span {
+                let lump = (DVec2::new(i as f64, j as f64) + 0.5) * SWELL_LUMP;
+                let at = lump + self.wind * t;
+                if at.distance(centre) >= reach {
+                    continue;
+                }
+                let (moisture, warmth) = self.climate_at(at.x, at.y);
+                let furious = air_mass(self.seed, lump, t, moisture, warmth).fury * steppe(moisture, warmth);
+                let thunder = furious * smoothstep_f64(SWELL_THUNDER.0, SWELL_THUNDER.1, fury_swell(self.seed, lump, t));
+                if thunder > 0.5 {
+                    cores.push(at);
+                }
+            }
+        }
+        cores
     }
 
     /// The weather at (x, z) at game tick `tick`.
@@ -716,6 +743,25 @@ mod tests {
         assert!(steppe_rain < 0.01, "rain over the steppe {steppe_rain}");
         assert_eq!(0.0, storms_a_week(0.1, 0.8, 30).0, "desert");
         assert_eq!(0.0, storms_a_week(0.05, 0.1, 30).0, "tundra");
+    }
+
+    #[test]
+    fn test_a_spell_of_fury_thunders_overhead_and_far_off_and_the_desert_never_does() {
+        let steppe = Forecast::new(7, [1.0, 0.3], uniform(0.05, 0.45));
+        let desert = Forecast::new(7, [1.0, 0.3], uniform(0.1, 0.8));
+        let (mut thundering, mut far_off) = (0, 0);
+        for k in 0..14 * 24u64 {
+            let tick = k * DAY_TICKS / 4;
+            let at = DVec2::new(5_000.0, -9_000.0);
+            if steppe.sky(at.x, at.y, tick).thunder > 0.5 {
+                thundering += 1;
+                // some lump of the swell is in reach to flash in
+                far_off += !steppe.thunderstorms_near(at, 40_000.0, seconds(tick)).is_empty() as usize;
+            }
+            assert!(desert.thunderstorms_near(at, 40_000.0, seconds(tick)).is_empty());
+        }
+        assert!(thundering > 20, "{thundering} of the samples thunder");
+        assert_eq!(thundering, far_off, "thunder with nothing in reach to flash");
     }
 
     #[test]
