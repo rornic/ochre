@@ -813,6 +813,59 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     }
     img.save(out).unwrap();
     println!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len());
+    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays from the point and says, for each, whether the first ground triangle it meets faces it (the point is outside the
+    // drawn ground) or faces away (the point is inside the drawn ground, where a camera sees through it)
+    if let Some(p) = std::env::var("OCHRE_RENDER_INSIDE").ok().and_then(|s| {
+        let v: Vec<f32> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+        (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
+    }) {
+        let ground: Vec<[Vec3; 3]> = triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)).map(|t| [t[0].0, t[1].0, t[2].0]).collect();
+        let hit = |dir: Vec3| -> Option<(f32, bool)> {
+            let mut best: Option<(f32, bool)> = None;
+            for [a, b, c] in &ground {
+                let (e1, e2) = (*b - *a, *c - *a);
+                let h = dir.cross(e2);
+                let det = e1.dot(h);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let f = 1.0 / det;
+                let sv = p - *a;
+                let u = f * sv.dot(h);
+                if !(0.0..=1.0).contains(&u) {
+                    continue;
+                }
+                let q = sv.cross(e1);
+                let v = f * dir.dot(q);
+                if v < 0.0 || u + v > 1.0 {
+                    continue;
+                }
+                let t = f * e2.dot(q);
+                if t > 1e-4 && best.is_none_or(|(bt, _)| t < bt) {
+                    // outward is (c - a) x (b - a), as the mesher winds it
+                    let outward = (*c - *a).cross(*b - *a);
+                    best = Some((t, outward.dot(dir) < 0.0));
+                }
+            }
+            best
+        };
+        let (mut facing, mut away, mut none, mut nearest) = (0, 0, 0, f32::MAX);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if (dx, dy, dz) == (0, 0, 0) {
+                        continue;
+                    }
+                    match hit(Vec3::new(dx as f32, dy as f32, dz as f32).normalize()) {
+                        Some((t, true)) => { facing += 1; nearest = nearest.min(t); println!("  ray ({dx},{dy},{dz}) meets a facing surface at {t:.1}"); }
+                        Some((t, false)) => { away += 1; nearest = nearest.min(t); }
+                        None => none += 1,
+                    }
+                }
+            }
+        }
+        println!("from {p}: first ground hit faces the point on {facing} rays, faces away on {away}, nothing on {none}; nearest hit {nearest:.2} blocks");
+    }
     // by slope, each triangle's own face: walkable (normal.y over 0.4, as `GROUND_FACING`), steep (up to a wall), and a wall or overhang (normal.y under 0.1),
     // with the share of the ground area each holds; and the interior's open edges, which a sealed surface has none of, the plants and leaves left out
     {

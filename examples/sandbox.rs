@@ -52,10 +52,13 @@ fn main() {
             .with_dev(dev)
             .set(PlayerPlugin {
                 look: look_direction(),
+                // OCHRE_FLY starts flying, so the camera hovers at the spawn for framing a view
+                fly: std::env::var_os("OCHRE_FLY").is_some(),
             }),
     )
     .insert_resource(winit_settings())
     .insert_resource(ClearColor(Color::BLACK))
+    .add_systems(Update, timed_shot)
     .run();
 }
 
@@ -82,4 +85,16 @@ fn look_direction() -> Vec3 {
         })
         .filter(|v| v.length() > 0.0)
         .unwrap_or(Vec3::Z)
+}
+
+// OCHRE_SHOT=seconds[,path] saves the window once that many seconds in, whatever is in front of it on the desktop
+fn timed_shot(mut commands: Commands, time: Res<Time>, mut taken: Local<bool>) {
+    use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+    let Ok(spec) = std::env::var("OCHRE_SHOT") else { return };
+    let (secs, path) = spec.split_once(',').unwrap_or((spec.as_str(), "shot.png"));
+    if *taken || time.elapsed_secs() < secs.parse().unwrap_or(30.0) {
+        return;
+    }
+    *taken = true;
+    commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path.to_string()));
 }

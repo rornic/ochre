@@ -65,7 +65,8 @@ impl Plugin for DebugOverlayPlugin {
         app.insert_resource(Stats(self.stats))
             .insert_resource(counts.clone())
             .add_systems(Startup, spawn_overlay)
-            .add_systems(Update, (toggle_overlay, update_overlay).chain());
+            .add_systems(Update, (toggle_overlay, update_overlay).chain())
+            .add_systems(Update, check_holes);
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .insert_resource(counts)
@@ -364,4 +365,76 @@ fn update_overlay(
         println!("STATS {}", out.replace('\n', " | "));
     }
     text.0 = out;
+}
+
+// Every 2 s, logs ground near the camera that nothing draws: a built group hidden with no visible LOD node over it, or a chunk marked as drawn by a group that isn't there.
+#[allow(clippy::type_complexity)]
+fn check_holes(
+    time: Res<Time>,
+    mut last: Local<f32>,
+    mut reported: Local<std::collections::HashSet<(ochre_terrain::lod::LodKey, u8)>>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
+    loader: Option<Res<ochre_terrain::chunk_loader::ChunkLoader>>,
+    groups: Query<(&ochre_terrain::group::ChunkGroup, &Visibility, Option<&Mesh3d>, Has<ochre_terrain::group::BuiltGroup>)>,
+    nodes: Query<(&LodNode, &Visibility)>,
+    grouped: Query<&Chunk, With<ochre_terrain::group::GroupedChunk>>,
+    meshed: Query<&Chunk, With<ochre_terrain::group::MeshedChunk>>,
+    states: Query<(Has<ochre_terrain::chunk_loader::DirtyChunk>, Has<ochre_terrain::chunk_loader::GenerateChunkData>, Has<ochre_terrain::chunk_loader::GenerateChunkMesh>)>,
+    mut waiting_since: Local<std::collections::HashMap<ochre_terrain::lod::LodKey, f32>>,
+) {
+    use ochre_terrain::lod::LodKey;
+    let now = time.elapsed_secs();
+    if now - *last < 2.0 {
+        return;
+    }
+    *last = now;
+    let (Ok(camera), Some(loader)) = (camera.single(), loader) else { return };
+    let eye = camera.translation();
+    let near = |key: LodKey| (key.min_block().as_vec3() + Vec3::splat(16.0)).distance(eye) < 200.0;
+    let shown_nodes: std::collections::HashSet<LodKey> = nodes.iter().filter(|(_, v)| **v != Visibility::Hidden).map(|(n, _)| n.key()).collect();
+    let covered = |chunk: ChunkCoordinate| (1..=12u8).any(|l| shown_nodes.contains(&LodKey::containing(chunk, l)));
+    for (group, visibility, mesh, built) in &groups {
+        if !built || mesh.is_none() || *visibility != Visibility::Hidden || !near(group.key) {
+            continue;
+        }
+        if !covered(ChunkCoordinate(group.key.min_chunk())) && reported.insert((group.key, 0)) {
+            info!("hole check: group {:?} at {} is hidden with no LOD node over it", group.key.coord, group.key.min_block());
+        }
+    }
+    // a chunk meshed and waiting for the rest of its group, still waiting 6 s on: which of the group's chunks hold it up
+    let mut still: std::collections::HashSet<LodKey> = std::collections::HashSet::new();
+    for chunk in &meshed {
+        let key = LodKey::containing(chunk.coord, 1);
+        if !near(key) {
+            continue;
+        }
+        still.insert(key);
+        let since = *waiting_since.entry(key).or_insert(now);
+        if now - since > 6.0 && reported.insert((key, 2)) {
+            let holding: Vec<String> = key
+                .chunks()
+                .filter_map(|c| match loader.chunk_entity(c) {
+                    None => Some(format!("{:?} not loaded", c.0)),
+                    Some(e) => match states.get(e) {
+                        Ok((true, _, _)) => Some(format!("{:?} dirty", c.0)),
+                        Ok((_, true, _)) => Some(format!("{:?} generating", c.0)),
+                        Ok((_, _, true)) => Some(format!("{:?} meshing", c.0)),
+                        _ => None,
+                    },
+                })
+                .collect();
+            info!("hole check: group {:?} at {} has waited {:.0} s to be built, held up by {:?}", key.coord, key.min_block(), now - since, holding);
+        }
+    }
+    waiting_since.retain(|key, _| still.contains(key));
+    for chunk in &grouped {
+        let key = LodKey::containing(chunk.coord, 1);
+        if !near(key) {
+            continue;
+        }
+        let missing = loader.group_entity(key).is_none_or(|e| !groups.get(e).is_ok_and(|(_, _, _, built)| built));
+        if missing && reported.insert((key, 1)) {
+            info!("hole check: chunk {:?} is marked drawn by group {:?}, which isn't built", chunk.coord.0, key.coord);
+        }
+    }
 }

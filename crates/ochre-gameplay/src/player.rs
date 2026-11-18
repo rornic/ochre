@@ -522,17 +522,20 @@ fn player_look(
 /// Walking and flying, looking round, and the view underwater. Spawns the player at the world's spawn, facing `look`.
 pub struct PlayerPlugin {
     pub look: Vec3,
+    /// Starts flying, so the player hovers where it spawns.
+    pub fly: bool,
 }
 
 impl Default for PlayerPlugin {
     fn default() -> Self {
-        Self { look: Vec3::Z }
+        Self { look: Vec3::Z, fly: false }
     }
 }
 
 #[derive(Resource)]
 struct PlayerSpawn {
     look: Vec3,
+    fly: bool,
 }
 
 impl Plugin for PlayerPlugin {
@@ -543,7 +546,7 @@ impl Plugin for PlayerPlugin {
         }
         app.add_plugins(MaterialPlugin::<MurkMaterial>::default())
             .add_message::<Footstep>()
-            .insert_resource(PlayerSpawn { look: self.look })
+            .insert_resource(PlayerSpawn { look: self.look, fly: self.fly })
             .init_resource::<ColdGrade>()
             .add_systems(Startup, spawn_player)
             .add_systems(
@@ -575,7 +578,10 @@ fn spawn_player(
     info!("spawned at {position:?}");
     let player = commands
         .spawn((
-            Player::default(),
+            Player {
+                movement: if spawn.fly { Movement::Fly } else { Movement::Walk },
+                ..Player::default()
+            },
             Transform::from_translation(position).looking_to(look, Vec3::Y),
         ))
         .id();
