@@ -6,6 +6,8 @@
 
 --------------------------------------------------------------------------------
 
+**Status, 2026-11-18:** slice 1 is built (scorer, baseline, viewer layers, spike). What it found and the decision for slice 2 are in `docs/meso-slice1-decision.md`, which supersedes this document where they differ.
+
 ## Overview
 
 Ochre's macro scale (colour, valleys, weather) and micro scale (textures) work. The meso scale, about 1 to 10 km, has little to steer by. A player on a ridge sees terrain that is rough and similar in every direction, and walking through it finds nothing worth stopping for. This design adds a meso-scale layer to every biome, starting with steppe and tundra, then mountains, in which the systems the game already has (rock, water, climate, plants, weather, landforms) are coupled so that, now and then, a unique and recognisable place comes out of them. A scoring tool comes first, so we can see what the world already produces and tune from data.
