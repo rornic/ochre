@@ -22,6 +22,7 @@ use ochre_base::WATER_LEVEL;
 use ochre_terrain::generate::generator::surface_block;
 use ochre_terrain::generate::region_store::RegionStore;
 use ochre_world::worldmap::climate::BiomeKind;
+use ochre_world::worldmap::meso;
 use ochre_world::worldmap::{
     FeatureKind, WaterCell, WorldConfig, WorldMap, WorldTerrain, NEIGHBOURS,
 };
@@ -879,6 +880,18 @@ fn handle(server: &Server, mut stream: TcpStream) {
             let river_cells = map.river_width.iter().filter(|&&w| w > 0.0).count();
             let body = format!("seed: {seed}\nmin_above_sea: {:.1}\nmax_above_sea: {:.1}\nland_fraction: {:.3}\npeak_x: {x}\npeak_z: {z}\nriver_cells: {river_cells}\nmax_river_width_m: {:.1}\nriver_x: {rx}\nriver_z: {rz}\neffective_runoff_area_km2: {:.2}\nmean_land_above_sea: {:.1}\nspawn_regions: {spawns}\nmountain_share: {:.3}\nplates: {}\nrelief: {}\nwarmth: {}\n{shares}", low - WATER_LEVEL as f32, high - WATER_LEVEL as f32, land as f64 / map.height.len() as f64, map.river_width[river], map.flow[river] * (map.config.map_cell as f32).powi(2) / 1_000_000.0, land_height / land.max(1) as f64, mountain as f64 / land.max(1) as f64, map.config.tectonics.plates, map.config.tectonics.relief, map.config.climate.warmth);
             reply(stream, "200 OK", "text/plain", "", body.as_bytes());
+        }
+        "/places" => {
+            // the most distinctive places per biome as CSV, see `ochre_world::worldmap::meso`; `null=1` shifts the mass-scale relief to show what chance scores
+            let world = server.world(seed);
+            let mut params = meso::Params::default();
+            params.top = num("top", params.top as f64) as usize;
+            params.tail = num("tail", params.tail as f64) as f32;
+            if num("null", 0.0) > 0.0 {
+                params.null_shift = Some(341);
+            }
+            let places = meso::score(&world.terrain, &params);
+            reply(stream, "200 OK", "text/csv", "", meso::csv(&places).as_bytes());
         }
         "/seed" => {
             server.world(seed);
