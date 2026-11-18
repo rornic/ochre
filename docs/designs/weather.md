@@ -68,6 +68,7 @@ How much of the time the sky has no cloud at all (under 1% cover), and the share
 ## Tools
 
 *   `cargo run --release --example weather_map -- --seed N [--days D] [--out DIR]` prints how often and how hard it rains per biome, and the cost of the weather grid and of one ask. It writes maps of the whole world's weather at a few moments.
+*   `weather_map ... --storm X,Z` finds when a storm stands longest over a place by day and prints the command to start there in real time. Lightning near the camera comes faster the harder the storm: up to four times as often at full thunder as at its edge (`STRIKE_FRENZY`).
 *   `OCHRE_CLEAR_SKY` holds the sky clear: no storms, rain, snow, lightning or rainbow, and the clouds keep their fair-weather cover (the grid is left empty). The `record-flythrough` skill sets it.
 *   `OCHRE_TIMESCALE=N` runs the game's clock N times faster (`sky.rs:TimeScale`). At 60, a game day takes six minutes, and a storm seen on the horizon arrives within a few.
 

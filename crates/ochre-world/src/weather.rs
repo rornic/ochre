@@ -654,6 +654,8 @@ fn fall_rain(
 // Lightning strikes this often in the heaviest rain, at the least and most, in seconds, from
 // this far off, in blocks (a metre each), and its thunder rolls in at the speed of sound.
 const STRIKE_SECONDS: (f32, f32) = (7.0, 22.0);
+// How many times faster lightning strikes in the heart of a storm, thunder at 1, than at the edge of one, thunder at 0.4.
+const STRIKE_FRENZY: f32 = 3.0;
 const STRIKE_DISTANCE: (f32, f32) = (30.0, 520.0);
 const THUNDER_SPEED: f32 = 343.0;
 // Now and then a strike lands close, within this many blocks; the rest are farther off.
@@ -769,7 +771,9 @@ fn strike_lightning(
     } else {
         FAR_STRIKE_SECONDS
     };
-    weather.strike_in = rand::random_range(soonest..latest);
+    // the harder the storm, the sooner the next bolt
+    let pace = if near { 1.0 + STRIKE_FRENZY * ((weather.thunder - 0.4) / 0.6).clamp(0.0, 1.0) } else { 1.0 };
+    weather.strike_in = rand::random_range(soonest..latest) / pace;
 
     let eye = camera.translation();
     let strike = match forecast {

@@ -113,7 +113,43 @@ fn find_snow(
     );
 }
 
+// Prints when a storm stands over (x, z) longest by day, with the command to start there in real time.
+fn find_storm(forecast: &Forecast, (x, z): (f64, f64), seed: u32, days: u64) {
+    // a sample every 0.005 of a day, about 108 seconds
+    const STEP: u64 = DAY_TICKS / 200;
+    // thunder this hard, in daylight
+    let stormy = |tick: u64| forecast.sky(x, z, tick).thunder > 0.6 && daylight(&TimeOfDay(tick)) > 0.5;
+    let (mut best, mut run_start, mut run) = ((0u64, 0u64), 0u64, 0u64);
+    for k in 0..days * 200 {
+        if stormy(k * STEP) {
+            if run == 0 {
+                run_start = k * STEP;
+            }
+            run += 1;
+            if run > best.0 {
+                best = (run, run_start);
+            }
+        } else {
+            run = 0;
+        }
+    }
+    if best.0 == 0 {
+        println!("no storm over ({x}, {z}) in {days} days");
+        return;
+    }
+    // a fifth of the way in, so it is already building
+    let time = (best.1 + best.0 * STEP / 5) as f64 / DAY_TICKS as f64;
+    println!(
+        "a storm stands over ({x}, {z}) for {:.1} game hours, {:.0} minutes of real time, from day {:.3}:",
+        best.0 as f64 * 0.12,
+        best.0 as f64 * 0.12 * 15.0,
+        best.1 as f64 / DAY_TICKS as f64
+    );
+    println!("  OCHRE_SEED={seed} OCHRE_SPAWN={x:.0},{z:.0},40 OCHRE_TIME={time:.3} cargo run --release --example sandbox");
+}
+
 fn main() {
+    let mut storm: Option<(f64, f64)> = None;
     let mut seed = 1u32;
     let mut days = 30u64;
     let mut out = "target/weather_map".to_string();
@@ -130,6 +166,10 @@ fn main() {
         match flag.as_str() {
             "--seed" => seed = value.parse().expect("--seed must be a u32"),
             "--days" => days = value.parse().expect("--days must be a whole number"),
+            "--storm" => {
+                let (x, z) = value.split_once(',').expect("--storm takes x,z");
+                storm = Some((x.parse().expect("--storm x"), z.parse().expect("--storm z")));
+            }
             "--out" => out = value,
             _ => panic!("unknown flag {flag}"),
         }
@@ -143,6 +183,10 @@ fn main() {
     let (sx, sz, _) = terrain.find_spawn();
     let forecast = Forecast::from_terrain(terrain);
     let wind = forecast.wind();
+    if let Some(at) = storm {
+        find_storm(&forecast, at, seed, days);
+        return;
+    }
     println!(
         "seed {seed}: storms drift at {:.1} blocks a second toward ({:.2}, {:.2}); spawn at {sx}, {sz}",
         wind.length(),
