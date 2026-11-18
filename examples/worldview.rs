@@ -2,7 +2,7 @@
 // layers (height, hillshade, blocks, biomes, trees, water, climate, roughness, features...), click
 // a spot for every number there, and export the view as a PNG to share.
 //   cargo run --release --example worldview -- [seed] [port]
-// then open http://127.0.0.1:8777 (default port). The map takes a few seconds per seed.
+// then open http://127.0.0.1:8777 (default port). A seed new to the game's map cache (`OCHRE_WORLD_DIR`) takes a few seconds.
 // Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or
 // fewer they come from `RegionStore` ground, water and slope, which is what chunks are built from.
 // Export writes target/worldview/<seed>-<x>_<z>-<scale>.png, prints the path and downloads it too:
@@ -35,6 +35,7 @@ struct World {
 #[derive(Default)]
 struct Server {
     config: WorldConfig,
+    dir: std::path::PathBuf,
     world: Mutex<Option<(u32, Arc<World>)>>,
 }
 
@@ -47,13 +48,15 @@ impl Server {
             }
         }
         let start = Instant::now();
-        let map = Arc::new(ochre_world::worldmap::generate(
+        // the game's cache, so a seed the game has played loads in a moment
+        let map = Arc::new(ochre_world::worldmap::io::load_or_generate(
+            &self.dir,
             seed,
             ochre_world::worldmap::character::world_config(seed, self.config),
         ));
         let terrain = Arc::new(WorldTerrain::new(map.clone()));
         let regions = RegionStore::new(terrain.clone()).with_resident_cap(512);
-        println!("seed {seed} generated in {:.1?}", start.elapsed());
+        println!("seed {seed} ready in {:.1?}", start.elapsed());
         let world = Arc::new(World {
             map,
             terrain,
@@ -952,6 +955,7 @@ fn main() {
     config.validate().expect("invalid world configuration");
     let server = Arc::new(Server {
         config,
+        dir: ochre_engine::DevEnv::from_env().world.dir,
         ..Default::default()
     });
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("port in use");

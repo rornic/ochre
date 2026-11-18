@@ -34,7 +34,7 @@ Viewer
 - `bench.rs`, `water_audit.rs`, `worldprobe.rs` and `worldview.rs` build the map with `worldmap::character::world_config(seed, ...)`. Reuse that call so a seed gives the same world as in the game.
 - `bench.rs` is the refactor check: vertex counts must match exactly before and after (`AGENTS.md`).
 - `worldprobe.rs:main` demands at least four args, so `falls`, `features` and `sites` still need dummy `<x> <z>`. Its usage line lists only some commands, and its `grid` output subtracts a hard-coded 400.
-- `worldview.rs` is localhost only, one world in memory at a time (`Server.world`, replaced on a new seed), and the 4096-byte request buffer in `handle` caps URL length (many `layers` can truncate).
+- `worldview.rs` is localhost only, one world in memory at a time (`Server.world`, replaced on a new seed, loaded through the game's map cache in `OCHRE_WORLD_DIR`), and the 4096-byte request buffer in `handle` caps URL length (many `layers` can truncate).
 - `worldview.html` calls `/tile`, `/info`, `/export`, `/seed` with the same query keys `worldview.rs:handle` parses, and reads the `X-Path` response header set by `/export`.
 
 ## Side Effects

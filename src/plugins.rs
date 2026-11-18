@@ -2,6 +2,7 @@ use bevy::app::{PluginGroup, PluginGroupBuilder};
 use ochre_gameplay::{
     birds::BirdPlugin, breaking::BreakingPlugin, critters::CritterPlugin, debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
+    remote::RemoteControlPlugin,
 };
 use ochre_terrain::{
     curvature::CurvaturePlugin, frost::FrostPlugin, world::World, TerrainPlugin,
@@ -96,7 +97,8 @@ impl PluginGroup for OchrePlugins {
             .add(CritterPlugin)
             .add(BirdPlugin)
             .add(DebugOverlayPlugin { stats: dev.stats })
-            .add(FlythroughPlugin { flight: dev.flight });
+            .add(FlythroughPlugin { flight: dev.flight })
+            .add(RemoteControlPlugin { port: dev.remote });
         if !plugins.frost {
             group = group.disable::<FrostPlugin>();
         }

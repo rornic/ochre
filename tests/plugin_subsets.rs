@@ -11,6 +11,7 @@ use ochre_engine::{load_world, OchrePlugins};
 use ochre_gameplay::{
     birds::BirdPlugin, breaking::BreakingPlugin, critters::CritterPlugin, debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
+    remote::RemoteControlPlugin,
 };
 use ochre_terrain::{
     curvature::CurvaturePlugin, frost::FrostPlugin, task_pool_plugin,
@@ -33,6 +34,14 @@ fn settings() -> Settings {
 // A few frames of the game with the plugins `trim` leaves.
 fn run(name: &str, trim: impl FnOnce(bevy::app::PluginGroupBuilder) -> bevy::app::PluginGroupBuilder) {
     eprintln!("=== without {name}");
+    let mut app = headless(trim);
+    for _ in 0..3 {
+        app.update();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn headless(trim: impl FnOnce(bevy::app::PluginGroupBuilder) -> bevy::app::PluginGroupBuilder) -> App {
     let settings = settings();
     let options = WorldOptions {
         seed: Some(1),
@@ -59,10 +68,7 @@ fn run(name: &str, trim: impl FnOnce(bevy::app::PluginGroupBuilder) -> bevy::app
     .add_plugins(trim(OchrePlugins::new(settings, world).build()));
     app.finish();
     app.cleanup();
-    for _ in 0..3 {
-        app.update();
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    app
 }
 
 macro_rules! without {
@@ -112,4 +118,39 @@ fn each_plugin_can_be_left_out() {
         DebugOverlayPlugin,
         FlythroughPlugin
     ));
+}
+
+// One JSON-RPC call over HTTP, its response body.
+fn call(port: u16, method: &str, params: &str) -> String {
+    use std::io::{Read, Write};
+    let body = format!(r#"{{"jsonrpc":"2.0","id":1,"method":"{method}","params":{params}}}"#);
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(stream, "POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+
+#[test]
+fn remote_control_teleports_and_reports_over_http() {
+    let port = 15771;
+    let mut app = headless(|group| group.set(RemoteControlPlugin { port: Some(port) }));
+    let client = std::thread::spawn(move || {
+        while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let teleported = call(port, "ochre.teleport", r#"{"x":100,"z":-200,"y":150,"yaw":90,"pitch":-10}"#);
+        let state = call(port, "ochre.state", "null");
+        let bad = call(port, "ochre.teleport", r#"{"x":"east"}"#);
+        (teleported, state, bad)
+    });
+    while !client.is_finished() {
+        app.update();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (teleported, state, bad) = client.join().unwrap();
+    assert!(teleported.contains(r#""eye":[100.0,150.0,-200.0]"#), "{teleported}");
+    let eye = r#""eye":[100.0,150.0,-200.0]"#;
+    assert!(state.contains(eye) && state.contains(r#""seed":1"#) && state.contains(r#""yaw":90"#), "{state}");
+    assert!(bad.contains("-32602"), "{bad}");
 }
