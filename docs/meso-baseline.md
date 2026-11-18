@@ -18,3 +18,13 @@ First pass of `worldmap/meso` (see `docs/designs/meso-scale-geography.md`) over 
 ## Not shown
 
 The null run shares the grid and the rank rules, so it measures this scorer's discrimination and not the world's. Rock, water and the angular salience term are not in yet. The CSV is one scorer version, so the numbers move when the terms change.
+
+## Places the owner judged
+
+Seen in the game, 2026-11-18, and the scorer's verdict on each. This is the only calibration data so far, so a better scorer should rank the good ones high and the bad one low.
+
+| Seed | Place (x, z) | Biome the scorer gave | Verdict | Why |
+| --- | --- | --- | --- | --- |
+| 1 | 13408, -4704 | steppe, best on the seed | good | the peak of a steppe mountain over a lake, with a steep cliff (but with holes in its mesh, see `docs/issues.md`) |
+| 3 | -10144, 16672 | glacier, top steep peak | bad, before the footprint fix | a 10-block spike on a glacier with 360-degree views, which no landmark is |
+| 3 | -3296, 12000 | steppe, lowland dip | very good | a waterfall coming down through a glacier into a mountain valley and on to the sea: terrain, water, ice and the coast lining up on their own. The scorer had no water term, so it found this by relief alone |
