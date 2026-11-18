@@ -140,6 +140,7 @@ impl WorldMap {
         put_bytes(&mut out, &self.ford);
         put_bytes(&mut out, &self.valley);
         put_bytes(&mut out, &self.exposure);
+        put_bytes(&mut out, &self.water_closeness);
         out.extend((self.features.len() as u64).to_le_bytes());
         for f in &self.features {
             out.push(f.kind as u8);
@@ -237,6 +238,7 @@ impl WorldMap {
             ford: r.bytes(cells)?,
             valley: r.bytes(cells)?,
             exposure: r.bytes(cells)?,
+            water_closeness: r.bytes(cells)?,
             features: r.features()?,
             soft: Default::default(),
         };

@@ -51,6 +51,14 @@ const VOLCANIC_FROM: f64 = 120.0;
 // A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing
 // to nothing over `LAKE_FADE`. Measured, not counted in cells, so the ground's detail comes back gradually
 // and a gully is never cut off at a cell's edge.
+// How far the lie of the land moves the humidity grass is tinted by: at the water's edge, on the most exposed crest (the same, negated, in the
+// deepest hollow), and the most the height thins it, between `THIN_FROM` and `THIN_TO` blocks over the sea.
+const BANK_WETTING: f32 = 0.25;
+const EXPOSURE_DRYING: f32 = 0.2;
+const ELEVATION_THINNING: f32 = 0.3;
+const THIN_FROM: f64 = 60.0;
+const THIN_TO: f64 = 500.0;
+
 const LAKE_NEAR: f64 = 32.0;
 const LAKE_FADE: f64 = 96.0;
 
@@ -1192,6 +1200,17 @@ impl TerrainSource for WorldTerrain {
         }
     }
 
+    fn tint_climate(&self, x: f64, z: f64) -> Climate {
+        let mut climate = self.climate(x, z);
+        let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0) as f64;
+        // crests dry, hollows richer, banks wetter, and the high ground thin of cover
+        let shift = BANK_WETTING * self.water_closeness(x, z)
+            + EXPOSURE_DRYING * (0.5 - self.exposure(x, z)) * 2.0
+            - ELEVATION_THINNING * smoothstep(THIN_FROM, THIN_TO, above_sea) as f32;
+        climate.humidity = (climate.humidity + shift).clamp(0.0, 1.0);
+        climate
+    }
+
     fn temperature(&self, x: f64, z: f64) -> f32 {
         self.map
             .bilinear(&self.map.temperature, x, z)
@@ -1212,6 +1231,10 @@ impl TerrainSource for WorldTerrain {
 
     fn exposure(&self, x: f64, z: f64) -> f32 {
         self.map.bilinear_bytes(&self.map.exposure, x, z) / 255.0
+    }
+
+    fn water_closeness(&self, x: f64, z: f64) -> f32 {
+        self.map.bilinear_bytes(&self.map.water_closeness, x, z) / 255.0
     }
 
     fn steppe(&self, x: f64, z: f64) -> bool {

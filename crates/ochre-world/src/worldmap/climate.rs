@@ -70,8 +70,10 @@ const MARGIN_PROBES: [f32; 4] = [0.01, 0.02, 0.03, 0.04];
 const MARGIN_CELLS: i64 = 2;
 // Warmth and moisture are blurred this many cells each way before biomes are picked from them.
 pub(super) const FIELD_BLUR: usize = 4;
-// Cells round a river or lake that it wets and cools, and by how much at the water's edge.
+// Cells round a river or lake that valleys and swamps keep clear of or grow by.
 const RIPARIAN_REACH: u8 = 14;
+// Cells round a big river or lake that it wets and cools, short so the green reads as a corridor. Under 7 the biome tidy-up leaves slivers (63 specks of biome at 6).
+const MOISTURE_REACH: u8 = 8;
 // River widths, in blocks, that count for a little, a lot and everything of that reach, and the
 // moisture between which ground is dry: rivers lose their water crossing it, see `hydrology`.
 const RIPARIAN_WIDTHS: (f32, f32, f32) = (20.0, 38.0, 65.0);
@@ -577,7 +579,7 @@ fn boundary_margins(
 }
 
 // How strongly water near each cell wets and cools it, 0..1: a lake or a very wide river counts
-// in full, a wide river by less, a narrow stream not at all, falling to 0 at RIPARIAN_REACH cells
+// in full, a wide river by less, a narrow stream not at all, falling to 0 at MOISTURE_REACH cells
 // away and squared so the green hugs the bank.
 fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     let tiers: [(f32, f32); 3] = [
@@ -588,7 +590,7 @@ fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     let mut out = vec![0.0f32; map.height.len()];
     let lakes = big_lake_cells(map);
     for (index, (width, strength)) in tiers.into_iter().enumerate() {
-        let near = closeness(map, |i| {
+        let near = closeness_within(map, MOISTURE_REACH, |i| {
             let river = map.water_kind[i] == WaterCell::River as u8 && map.river_width[i] >= width;
             // lakes are the top tier
             river || (index == tiers.len() - 1 && lakes[i])
@@ -638,8 +640,12 @@ fn big_lake_cells(map: &WorldMap) -> Vec<bool> {
 
 // 1 on the cells `source` picks, falling to 0 at RIPARIAN_REACH cells from them, squared.
 pub(super) fn closeness(map: &WorldMap, source: impl Fn(usize) -> bool) -> Vec<f32> {
+    closeness_within(map, RIPARIAN_REACH, source)
+}
+
+// As `closeness`, falling to 0 at `reach` cells.
+pub(super) fn closeness_within(map: &WorldMap, reach: u8, source: impl Fn(usize) -> bool) -> Vec<f32> {
     let dim = map.dim();
-    let reach = RIPARIAN_REACH;
     let mut dist = vec![u8::MAX; dim * dim];
     let mut frontier: Vec<usize> = Vec::new();
     for (i, d) in dist.iter_mut().enumerate() {

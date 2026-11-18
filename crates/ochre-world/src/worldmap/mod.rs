@@ -21,6 +21,7 @@ pub mod tectonics;
 pub mod valleys;
 pub mod view;
 mod water;
+mod water_closeness;
 
 use std::sync::Arc;
 
@@ -29,7 +30,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 102;
+pub const GENERATOR_VERSION: u32 = 103;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -170,6 +171,8 @@ pub struct WorldMap {
     pub valley: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
+    /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
+    pub water_closeness: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
     /// The share of soft beds at each cell, worked out by geology and not saved: erosion asks for it millions
@@ -239,6 +242,7 @@ impl WorldMap {
             ford: vec![0; cells],
             valley: vec![0; cells],
             exposure: vec![128; cells],
+            water_closeness: vec![0; cells],
             features: Vec::new(),
             soft: SoftCache::default(),
         }
@@ -540,6 +544,8 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     lap("climate");
     exposure::run(&mut map);
     lap("exposure");
+    water_closeness::run(&mut map);
+    lap("water closeness");
     detail::roughness_layer(&mut map);
     lap("roughness");
     gameplay::label(&mut map);

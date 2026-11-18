@@ -107,6 +107,16 @@ pub trait TerrainSource: Send + Sync {
         0.5
     }
 
+    /// The climate grass and flora are tinted by at (x, z): `climate` shifted by the lie of the land, so ridges, hollows and banks read differently.
+    fn tint_climate(&self, x: f64, z: f64) -> Climate {
+        self.climate(x, z)
+    }
+
+    /// How close the column at (x, z) is to a river, lake or pond, 0..1: 1 on the water, falling to 0 within about 100 blocks.
+    fn water_closeness(&self, _x: f64, _z: f64) -> f32 {
+        0.0
+    }
+
     /// Whether the column at (x, z) is steppe, whose grass ground draws its own rougher texture.
     fn steppe(&self, _x: f64, _z: f64) -> bool {
         false
@@ -197,6 +207,14 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn exposure(&self, x: f64, z: f64) -> f32 {
         (**self).exposure(x, z)
+    }
+
+    fn water_closeness(&self, x: f64, z: f64) -> f32 {
+        (**self).water_closeness(x, z)
+    }
+
+    fn tint_climate(&self, x: f64, z: f64) -> Climate {
+        (**self).tint_climate(x, z)
     }
 
     fn steppe(&self, x: f64, z: f64) -> bool {
