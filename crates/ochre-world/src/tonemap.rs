@@ -45,9 +45,9 @@ pub fn cold_color_grading(grading: &ColorGrading, cold: f32) -> ColorGrading {
 }
 
 // What the hot, dry country adds to a grade, fully hot: a white balance toward yellow, more colour, and a harder midtone.
-const HOT_TEMPERATURE: f32 = 0.02;
-const HOT_SATURATION: f32 = 1.06;
-const HOT_CONTRAST: f32 = 1.06;
+const HOT_TEMPERATURE: f32 = 0.03;
+const HOT_SATURATION: f32 = 1.12;
+const HOT_CONTRAST: f32 = 1.14;
 
 /// `grading` as the hot country shows it, `heat` from 0 (as it was, exactly) to 1.
 pub fn hot_color_grading(grading: &ColorGrading, heat: f32) -> ColorGrading {

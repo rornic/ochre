@@ -161,7 +161,7 @@ pub(crate) const AMBIENCE_TRIM: f32 = 0.32;
 // The temperatures, see `NoiseGenerator::temperature`, between which the cold sets in.
 const FREEZING: (f32, f32) = (0.15, 0.35);
 // The temperatures between which the country turns hot, and the humidities between which it turns too wet to feel dry-hot: jungle is humid, not scorching.
-const HOT: (f32, f32) = (0.55, 0.75);
+const HOT: (f32, f32) = (0.50, 0.62);
 const HUMID: (f32, f32) = (0.45, 0.75);
 
 /// When the camera was last sensed, and where it was, for its speed.

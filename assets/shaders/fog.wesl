@@ -21,8 +21,8 @@ const FOG_SCALE: f32 = 0.16;
 const HAZE_SATURATION: f32 = 1.6;
 
 // Over hot country the haze warms and thickens: the tint it is multiplied by, and how much denser it goes, fully hot.
-const HOT_HAZE_TINT: vec3<f32> = vec3<f32>(1.0, 0.92, 0.76);
-const HOT_HAZE_DENSITY: f32 = 0.5;
+const HOT_HAZE_TINT: vec3<f32> = vec3<f32>(1.0, 0.86, 0.64);
+const HOT_HAZE_DENSITY: f32 = 1.2;
 
 // The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
 const SUN_HAZE: f32 = 0.08;

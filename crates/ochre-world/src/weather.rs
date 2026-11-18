@@ -216,8 +216,8 @@ fn run_weather(
 // clouds themselves get, at the heaviest rain.
 const STORM_LIGHT: f32 = 0.3;
 // How much brighter the sun is over fully hot country, and the colour it goes there.
-const HOT_SUN: f32 = 0.18;
-const HOT_SUN_COLOR: Color = Color::srgb(1.0, 0.86, 0.62);
+const HOT_SUN: f32 = 0.5;
+const HOT_SUN_COLOR: Color = Color::srgb(1.0, 0.86, 0.66);
 const STORM_CLOUD: f32 = 0.42;
 // Lightning's flash, in stops brighter: held, then dying away, in seconds, with a fainter
 // flicker after.
