@@ -58,6 +58,10 @@ const EXPOSURE_DRYING: f32 = 0.2;
 const ELEVATION_THINNING: f32 = 0.3;
 const THIN_FROM: f64 = 60.0;
 const THIN_TO: f64 = 500.0;
+// How many times over `vigour` moves a tree cell's chance, and the least and most it can make of it.
+const TREE_VIGOUR: f64 = 2.0;
+const MIN_LIE: f64 = 0.2;
+const MAX_LIE: f64 = 2.2;
 
 const LAKE_NEAR: f64 = 32.0;
 const LAKE_FADE: f64 = 96.0;
@@ -1202,13 +1206,16 @@ impl TerrainSource for WorldTerrain {
 
     fn tint_climate(&self, x: f64, z: f64) -> Climate {
         let mut climate = self.climate(x, z);
+        climate.humidity = (climate.humidity + self.vigour(x, z)).clamp(0.0, 1.0);
+        climate
+    }
+
+    fn vigour(&self, x: f64, z: f64) -> f32 {
         let above_sea = (self.map.height_at(x, z) - WATER_LEVEL as f32).max(0.0) as f64;
         // crests dry, hollows richer, banks wetter, and the high ground thin of cover
-        let shift = BANK_WETTING * self.water_closeness(x, z)
+        BANK_WETTING * self.water_closeness(x, z)
             + EXPOSURE_DRYING * (0.5 - self.exposure(x, z)) * 2.0
-            - ELEVATION_THINNING * smoothstep(THIN_FROM, THIN_TO, above_sea) as f32;
-        climate.humidity = (climate.humidity + shift).clamp(0.0, 1.0);
-        climate
+            - ELEVATION_THINNING * smoothstep(THIN_FROM, THIN_TO, above_sea) as f32
     }
 
     fn temperature(&self, x: f64, z: f64) -> f32 {
@@ -1218,7 +1225,12 @@ impl TerrainSource for WorldTerrain {
     }
 
     fn tree_bound(&self, x: f64, z: f64) -> f64 {
-        self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0
+        // the lie of the land can raise a cell's chance over the map's density, never lower the bound
+        self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0 * self.tree_lie(x, z).max(1.0)
+    }
+
+    fn tree_lie(&self, x: f64, z: f64) -> f64 {
+        (1.0 + TREE_VIGOUR * self.vigour(x, z) as f64).clamp(MIN_LIE, MAX_LIE)
     }
 
     // The seed's cliff boost, where there is mountain, tableland or a valley wall to carry it: 0 on other ground.

@@ -112,6 +112,16 @@ pub trait TerrainSource: Send + Sync {
         self.climate(x, z)
     }
 
+    /// How much lusher (above 0) or thinner (below 0) the lie of the land makes cover at (x, z), in humidity: banks and hollows up, crests and high ground down. Grass tint and tree density both read it.
+    fn vigour(&self, _x: f64, _z: f64) -> f32 {
+        0.0
+    }
+
+    /// How many times the map's tree density a tree cell at (x, z) keeps for the lie of the land: more on banks and in hollows, fewer on crests and high ground. 1 where it makes no difference.
+    fn tree_lie(&self, _x: f64, _z: f64) -> f64 {
+        1.0
+    }
+
     /// How close the column at (x, z) is to a river, lake or pond, 0..1: 1 on the water, falling to 0 within about 100 blocks.
     fn water_closeness(&self, _x: f64, _z: f64) -> f32 {
         0.0
@@ -215,6 +225,14 @@ impl<T: TerrainSource + ?Sized> TerrainSource for std::sync::Arc<T> {
 
     fn tint_climate(&self, x: f64, z: f64) -> Climate {
         (**self).tint_climate(x, z)
+    }
+
+    fn vigour(&self, x: f64, z: f64) -> f32 {
+        (**self).vigour(x, z)
+    }
+
+    fn tree_lie(&self, x: f64, z: f64) -> f64 {
+        (**self).tree_lie(x, z)
     }
 
     fn steppe(&self, x: f64, z: f64) -> bool {
