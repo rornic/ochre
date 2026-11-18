@@ -23,10 +23,8 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 
 **Go to slice 2 on steppe and tundra, as an amplifier.** The data cancels the hope that emergence suffices there, which was the condition the design set for slice 2. The amplifier stays bounded: landmark sites are chosen by rules over the map's own layers, and rock, water and climate still shape what forms.
 
-## Open choices for slice 2
+## Choices for slice 2, settled by the owner 2026-11-18
 
-These came out of the design review and change the build, so they are the owner's to settle.
-
-1. **Where the landmark stage runs.** Every stamped shape now runs before `carve_passes`, which guarantees walkable regions connect. Landmarks of 250 to 400 blocks of relief laid after it could split a lowland it certified.
-2. **Whether dips count as landmarks.** A bowl hides behind its own rim from 4 km. It could be sited and scored but not counted toward the landmarks visible from a ridge, or it needs a visibility test.
-3. **Tundra from what exists.** `cold_uplands` already places about 100 stamped uplands of 55 to 95 blocks on tundra. Scaling it up is the smaller step there. New primitives would serve steppe too.
+1. **The landmark stage runs before `carve_passes`,** with the other stamped shapes and their site helpers, so connectivity is checked round the landmarks.
+2. **Dips are sited and scored but do not count** toward the landmarks visible from a ridge, which counts raised ones only.
+3. **New primitives serve steppe and tundra alike** from one rule table. `cold_uplands` stays as the smaller relief between them.
