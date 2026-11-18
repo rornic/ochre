@@ -31,6 +31,8 @@ struct World {
     map: Arc<WorldMap>,
     terrain: Arc<WorldTerrain>,
     regions: RegionStore,
+    // the scorer's places, worked out the first time the `meso` layer is drawn
+    places: std::sync::OnceLock<Vec<meso::Place>>,
 }
 
 #[derive(Default)]
@@ -59,6 +61,7 @@ impl Server {
             map,
             terrain,
             regions,
+            places: std::sync::OnceLock::new(),
         });
         *slot = Some((seed, world.clone()));
         world
@@ -334,6 +337,24 @@ fn layer_pixel(w: &World, v: &View, name: &str, c: &Col) -> Option<(Rgb, f32)> {
                 Rock::Shale => [92.0, 88.0, 84.0],
             };
             (colour, 1.0)
+        }
+        // the meso scorer's inputs, 0 to 1: a valley carved through the range, alpine ground, how open to the wind, and how near water
+        "valley" => (lerp([25.0, 25.0, 35.0], [60.0, 210.0, 170.0], b(&map.valley)), 1.0),
+        "alpine" => (lerp([25.0, 25.0, 35.0], [230.0, 230.0, 245.0], b(&map.alpine)), 1.0),
+        "exposure" => (lerp([40.0, 70.0, 150.0], [240.0, 150.0, 50.0], b(&map.exposure)), 1.0),
+        "water_closeness" => (lerp([60.0, 45.0, 30.0], [40.0, 160.0, 240.0], b(&map.water_closeness)), 1.0),
+        // the scorer's places, each a disc of its kind's colour: raised red, dips blue, steep darker
+        "meso" => {
+            let places = w.places.get_or_init(|| meso::score(&w.terrain, &meso::Params::default()));
+            let radius = (v.scale * 6.0).max(96.0);
+            let place = places.iter().find(|p| (p.x - c.x).hypot(p.z - c.z) < radius)?;
+            let colour = match place.kind {
+                meso::Kind::RaisedSteep => [200.0, 40.0, 30.0],
+                meso::Kind::RaisedSoft => [250.0, 140.0, 90.0],
+                meso::Kind::DipSteep => [30.0, 60.0, 200.0],
+                meso::Kind::DipSoft => [110.0, 170.0, 250.0],
+            };
+            (colour, 0.85)
         }
         "precipitation" => (
             lerp(
