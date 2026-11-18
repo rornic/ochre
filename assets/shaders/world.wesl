@@ -131,6 +131,11 @@ const RAMP_LIT_TURN: f32 = 0.5;
 // basalt, granite, shale and their compacted forms, by material layer, and a test checks the layers against `MATERIAL_FILES`.
 const ROCK_COOL: vec3<f32> = vec3<f32>(0.93, 0.99, 1.06);
 
+// The grasses, which steep ground bares to dirt, see `STEEP_FROM`. `GRASS_LAYER` and `STEPPE_LAYER` come from `specialize`.
+fn is_grass(layer: i32) -> bool {
+    return layer == i32(constants::GRASS_LAYER) || layer == i32(constants::STEPPE_LAYER);
+}
+
 fn is_neutral_rock(layer: i32) -> bool {
     return layer == 6 || layer == 8 || layer == 9 || layer == 17 || layer == 20 || layer == 21;
 }
@@ -284,8 +289,8 @@ fn fragment(
             }
             color = mix(color, vec4<f32>(second.rgb * select(tint, vec3<f32>(1.0), tinted_side == 2.0), second.a), toward);
         }
-        // steep ground bares to dirt, but only the side that carries the tint: rock and scree keep their own colour
-        let vegetated = mix(select(1.0, 0.0, tinted_side == 1.0), select(1.0, 0.0, tinted_side == 2.0), toward);
+        // steep ground bares to dirt, but only grass: rock, scree and sand keep their own look
+        let vegetated = mix(select(0.0, 1.0, is_grass(layer)), select(0.0, 1.0, is_grass(other)), toward);
         let steepness = 1.0 - smoothstep(STEEP_TO, STEEP_FROM, normal.y);
         let bare = smoothstep(0.3, 0.7, steepness + (fray / 1.5 - 0.5) * 0.3) * vegetated;
         if bare > 0.001 {
