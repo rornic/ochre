@@ -378,12 +378,12 @@ pub(super) fn rock_darkening(block: BlockType) -> Option<f32> {
 // Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
 // sampled at the mesh's four corners and blended across it, rather than at every vertex.
 pub(super) struct GrassTint {
-    // at the mesh's edges, so neighbouring meshes share their tints along each edge: (-x, -z), (+x, -z), (-x, +z), (+x, +z)
-    pub(super) corners: [Vec3; 4],
-    // how cold it is at the same corners, 0 to 1, over which the long grasses go oxblood, as the heath does, see `oxblood_at`
-    cold: [f32; 4],
+    // a square grid of samples over the mesh, row by row from (-x, -z), the outer ones on its edges so neighbouring meshes share their tints along each edge
+    pub(super) corners: Vec<Vec3>,
+    // how cold it is at the same samples, 0 to 1, over which the long grasses go oxblood, as the heath does, see `oxblood_at`
+    cold: Vec<f32>,
     // and over a warmer ramp, how far grass on the ground goes brown, see `cold_at`
-    brown: [f32; 4],
+    brown: Vec<f32>,
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
     // how many blocks one local unit is, to find where a local position is in the world
@@ -394,15 +394,21 @@ impl GrassTint {
     // `origin` is where the mesh's local origin is in the world, and `scale` how many blocks one local unit is.
     pub(super) fn new(noise: &dyn TerrainSource, origin: Vec3, scale: f32) -> Self {
         let size = CHUNK_SIZE as f32;
-        let climates = [(0.0, 0.0), (size, 0.0), (0.0, size), (size, size)].map(|(x, z)| {
-            let world = origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale;
-            noise.climate(world.x as f64, world.z as f64)
-        });
+        // a coarse node is sampled every `TINT_SPACING` blocks or so, so a valley or a river's corridor in it shows; a chunk keeps its four corners
+        let side = ((size * scale / TINT_SPACING).round() as usize + 1).clamp(2, TINT_MAX_SIDE);
+        let step = size / (side - 1) as f32;
+        let climates: Vec<_> = (0..side * side)
+            .map(|i| {
+                let (x, z) = ((i % side) as f32 * step, (i / side) as f32 * step);
+                let world = origin + Vec3::new(x - 0.5, 0.0, z - 0.5) * scale;
+                noise.tint_climate(world.x as f64, world.z as f64)
+            })
+            .collect();
         Self {
-            corners: climates.map(grass_tint),
+            corners: climates.iter().map(|&c| grass_tint(c)).collect(),
             // the tundra reads 0.04 to 0.15 and a taiga 0.11 to 0.25, a forest 0.26 and up
-            cold: climates.map(|c| 1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, c.temperature)),
-            brown: climates.map(|c| 1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, c.temperature)),
+            cold: climates.iter().map(|c| 1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, c.temperature)).collect(),
+            brown: climates.iter().map(|c| 1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, c.temperature)).collect(),
             origin: origin.floor().as_ivec3(),
             scale,
         }
@@ -490,29 +496,40 @@ impl GrassTint {
 
     // How far the long grasses at `local` have gone from the grass's tint to `OXBLOOD_TINT`, 0 to 1.
     pub(super) fn oxblood_at(&self, local: Vec3) -> f32 {
-        self.across(self.cold, local)
+        self.across(&self.cold, local)
     }
 
     // How far the grass at `local` goes to `BROWN_TINT`, 0 to 1.
     pub(super) fn brown_at(&self, local: Vec3) -> f32 {
-        self.across(self.brown, local)
+        self.across(&self.brown, local)
     }
 
-    // `values` at the mesh's four corners, blended to `local`.
-    fn across(&self, values: [f32; 4], local: Vec3) -> f32 {
-        let size = CHUNK_SIZE as f32;
-        let (u, v) = ((local.x + 0.5) / size, (local.z + 0.5) / size);
-        let [a, b, c, d] = values;
-        let (top, bottom) = (a + (b - a) * u, c + (d - c) * u);
-        top + (bottom - top) * v
+    // `values` over the mesh's grid, blended to `local`.
+    fn across(&self, values: &[f32], local: Vec3) -> f32 {
+        grid_blend(values, |a, b, t| a + (b - a) * t, local)
     }
 
     pub(super) fn at(&self, local: Vec3) -> Vec3 {
-        let size = CHUNK_SIZE as f32;
-        let (u, v) = ((local.x + 0.5) / size, (local.z + 0.5) / size);
-        let [a, b, c, d] = self.corners;
-        a.lerp(b, u).lerp(c.lerp(d, u), v)
+        grid_blend(&self.corners, |a, b, t| a.lerp(b, t), local)
     }
+}
+
+// Blocks between samples across a coarse node, and the most samples along a side of one.
+const TINT_SPACING: f32 = 32.0;
+const TINT_MAX_SIDE: usize = 9;
+
+// `values`, a square grid over a mesh, bilinear at `local`: past the grid's edge the outer cell goes on, as the four corners did.
+fn grid_blend<T: Copy>(values: &[T], mix: impl Fn(T, T, f32) -> T, local: Vec3) -> T {
+    let side = values.len().isqrt();
+    let size = CHUNK_SIZE as f32;
+    let cell = |t: f32| {
+        let at = t * (side - 1) as f32;
+        let i = (at.floor().max(0.0) as usize).min(side - 2);
+        (i, at - i as f32)
+    };
+    let ((i, u), (j, v)) = (cell((local.x + 0.5) / size), cell((local.z + 0.5) / size));
+    let row = |j: usize| mix(values[j * side + i], values[j * side + i + 1], u);
+    mix(row(j), row(j + 1), v)
 }
 
 // Cells wider than this draw their block's mean colour instead of its texture, which tiles a
@@ -616,9 +633,9 @@ mod russet_tests {
 
     fn tint(cold: f32) -> GrassTint {
         GrassTint {
-            corners: [Vec3::ONE; 4],
-            cold: [cold; 4],
-            brown: [cold; 4],
+            corners: vec![Vec3::ONE; 4],
+            cold: vec![cold; 4],
+            brown: vec![cold; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         }
@@ -630,9 +647,9 @@ mod russet_tests {
     fn test_cold_grass_is_khaki_and_never_green_where_warm_grass_stays_green() {
         use ochre_base::biome::{grass_tint, Climate};
         let at = |temperature: f32, humidity: f32| GrassTint {
-            corners: [grass_tint(Climate { temperature, humidity }); 4],
-            cold: [1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, temperature); 4],
-            brown: [1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, temperature); 4],
+            corners: vec![grass_tint(Climate { temperature, humidity }); 4],
+            cold: vec![1.0 - smoothstep(OXBLOOD_FULL_BELOW, OXBLOOD_NONE_ABOVE, temperature); 4],
+            brown: vec![1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, temperature); 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
         };
@@ -719,7 +736,7 @@ mod russet_tests {
         let share = cream as f32 / total as f32;
         assert!((0.03..0.25).contains(&share), "{share}");
         // the tundra's edge, where it's not cold enough to be brown, and far terrain, have none
-        let edge = GrassTint { brown: [0.0; 4], ..tint(1.0) };
+        let edge = GrassTint { brown: vec![0.0; 4], ..tint(1.0) };
         let coarse = GrassTint { scale: 4.0, ..tint(1.0) };
         for x in 0..200 {
             assert_eq!(grass, edge.cotton(grass, at(x, x)));
