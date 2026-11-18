@@ -1,5 +1,9 @@
 # Meso scorer baseline: what the first run shows
 
+**Update after the first look in the game:** the top glacier peak on seed 3 turned out to be a 10-block spike on a glacier, which no landmark is. The scorer had no footprint rule and no absolute relief floor, because ranking is relative within a biome. It now smooths the ground over about 190 blocks (`FOOTPRINT`) and needs at least 40 blocks of landmark-window and 120 of mass-window relief (`Params::floor`). That cut the baseline from 626 to 350 places, and the numbers below are the first run's, before that fix, except where they say "after".
+
+**After the fix:** the best landmark-window relief in any biome is about 122 blocks (glacier), 93 in taiga and forest, 90 in tundra, 78 in steppe and 75 in grassland. The best mass-window relief is 450 in forest, 427 in taiga, 323 in glacier, 317 in steppe, 261 in grassland and 168 in tundra. So the mass scale (a broad hill or basin, 250 or more blocks) occurs naturally in steppe and several biomes, and nothing in any biome reaches 130 blocks at the landmark window. Both figures are the design's unmeasured estimates of what reads from 4 km.
+
 First pass of `worldmap/meso` (see `docs/designs/meso-scale-geography.md`) over 11 seeds, 10 places per biome at most: `docs/meso-baseline.csv`, made by `scripts/meso_baseline.sh` against a running `worldview`. Seeds: 1, 3, 4, 20, 42 and the tundra-rich 34, 35, 12, 64, 62, 30. Every term is provisional. Run `scripts/meso_spawn.sh <biome> [rank] [seed]` to get the command that starts the game at a place.
 
 ## What it shows

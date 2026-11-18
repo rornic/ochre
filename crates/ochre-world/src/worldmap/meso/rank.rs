@@ -14,13 +14,16 @@ pub struct Params {
     pub apart: f64,
     /// Places kept per biome.
     pub top: usize,
+    /// The least relief, in blocks, a place needs at the landmark and the mass window, whatever its rank: ranking is within a biome, so on a flat plain a
+    /// small bump would otherwise be in the tail.
+    pub floor: [f32; 2],
     /// For the null run: shift the mass-scale relief this many grid cells (wrapping), to see what chance alone scores.
     pub null_shift: Option<usize>,
 }
 
 impl Default for Params {
     fn default() -> Self {
-        Self { step: 64.0, tail: 0.95, apart: 2500.0, top: 20, null_shift: None }
+        Self { step: 64.0, tail: 0.95, apart: 2500.0, top: 20, floor: [40.0, 120.0], null_shift: None }
     }
 }
 
@@ -43,6 +46,8 @@ pub struct Place {
     /// Relief at the three windows in blocks (landmark, mass, range) and the steepness, rise over run.
     pub relief: [f32; 3],
     pub steep: f32,
+    /// The smoothed ground's height over the sea, in blocks.
+    pub above_sea: f32,
     /// The weakest of the three causes, by name.
     pub weakest: &'static str,
 }
@@ -87,7 +92,8 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
         let mut found: Vec<Candidate> = (0..cells.len())
             .filter_map(|n| {
                 let r = [shape[n], massive[n], steep[n]];
-                (r.iter().filter(|&&v| v >= params.tail).count() >= 2).then(|| {
+                let big_enough = terms.relief[0][cells[n]].abs() >= params.floor[0] && mass[cells[n]].abs() >= params.floor[1];
+                (big_enough && r.iter().filter(|&&v| v >= params.tail).count() >= 2).then(|| {
                     let mut sorted = r;
                     sorted.sort_by(f32::total_cmp);
                     ((sorted[2] + sorted[1]) / 2.0, cells[n], r)
@@ -138,6 +144,7 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
                         kind: *kind,
                         relief: [terms.relief[0][i], terms.relief[1][i], terms.relief[2][i]],
                         steep: terms.steep[i],
+                        above_sea: terms.ground[i] - ochre_base::WATER_LEVEL as f32,
                         weakest: CAUSES[weakest],
                     });
                     taken += 1;
@@ -151,15 +158,15 @@ pub(super) fn pick(terms: &Terms, biome: &[u8], dim: usize, params: &Params, at:
 
 /// The places as CSV: biome, rank within the biome, position, kind, score, the terms and the weakest cause. Fixed precision, so equal runs give equal text.
 pub fn csv(places: &[Place]) -> String {
-    let mut out = String::from("biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,weakest\n");
+    let mut out = String::from("biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,above_sea,weakest\n");
     let mut rank = 0usize;
     let mut last: Option<BiomeKind> = None;
     for p in places {
         rank = if last == Some(p.biome) { rank + 1 } else { 1 };
         last = Some(p.biome);
         out.push_str(&format!(
-            "{:?},{},{:.0},{:.0},{:?},{:.4},{:.1},{:.1},{:.1},{:.3},{}\n",
-            p.biome, rank, p.x, p.z, p.kind, p.score, p.relief[0], p.relief[1], p.relief[2], p.steep, p.weakest
+            "{:?},{},{:.0},{:.0},{:?},{:.4},{:.1},{:.1},{:.1},{:.3},{:.0},{}\n",
+            p.biome, rank, p.x, p.z, p.kind, p.score, p.relief[0], p.relief[1], p.relief[2], p.steep, p.above_sea, p.weakest
         ));
     }
     out
@@ -219,6 +226,18 @@ mod tests {
                 assert!(((p.x - q.x).powi(2) + (p.z - q.z).powi(2)).sqrt() >= params.apart - params.step, "two places closer than {}", params.apart);
             }
         }
+    }
+
+    #[test]
+    fn a_thin_spike_is_not_a_place() {
+        // one 64-block cell, 600 blocks tall: a few blocks wide on the ground, which no landmark is
+        let mut heights = vec![100.0f32; DIM * DIM];
+        heights[80 * DIM + 80] += 600.0;
+        let terms = from_heights(&heights, DIM, 64.0);
+        let at = |i: usize| ((i % DIM) as f64 * 64.0, (i / DIM) as f64 * 64.0);
+        let biome = vec![BiomeKind::Steppe as u8; DIM * DIM];
+        let places = pick(&terms, &biome, DIM, &Params::default(), at);
+        assert!(places.is_empty(), "{places:?}");
     }
 
     #[test]
