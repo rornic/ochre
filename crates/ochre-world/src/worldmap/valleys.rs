@@ -298,7 +298,7 @@ fn favoured_layer(map: &WorldMap) -> Vec<f32> {
 }
 
 // Pulls steppe ground toward a smoothed copy of itself, averaged over land only, so it is open plain and not hills.
-fn flatten(map: &mut WorldMap, favoured: &[f32]) {
+fn flatten(map: &mut WorldMap, favoured: &[f32], keep: &[f32]) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
     let land: Vec<f32> = map.height.iter().map(|&h| (h >= sea + 1.0) as u8 as f32).collect();
@@ -313,7 +313,9 @@ fn flatten(map: &mut WorldMap, favoured: &[f32]) {
             * land[i] as f64
             * favoured[i] as f64
             * smoothstep(PLAIN_ABOVE.0, PLAIN_ABOVE.1, above)
-            * (1.0 - smoothstep(0.0, 0.25, near_mountain[i] as f64));
+            * (1.0 - smoothstep(0.0, 0.25, near_mountain[i] as f64))
+            // after the blur, so a landmark's middle takes none of the flattening round it
+            * (1.0 - keep[i] as f64);
         if weight > 0.0 {
             let smooth = sum[i] / share[i].max(1e-3);
             map.height[i] += ((smooth - map.height[i]) as f64 * weight) as f32;
@@ -378,10 +380,14 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
         return;
     }
     let dim = map.dim();
-    let favoured: Vec<f32> = favoured_layer(map).iter().zip(keep).map(|(f, k)| f * (1.0 - k)).collect();
-    flatten(map, &favoured);
+    let favoured = favoured_layer(map);
+    flatten(map, &favoured, keep);
     let ties = flood_ties(map);
-    let (weights, held) = siting(map, share, &ties, &favoured);
+    let (mut weights, held) = siting(map, share, &ties, &favoured);
+    // no valley through a landmark
+    for (w, k) in weights.iter_mut().zip(keep) {
+        *w = (*w as f32 * (1.0 - k)) as u8;
+    }
     map.valley = weights;
     let valley = Valley::of(map);
     let mut heights = std::mem::take(&mut map.height);
@@ -603,7 +609,7 @@ mod tests {
             }
         }
         let before = map.height.clone();
-        flatten(&mut map, &vec![1.0; dim * dim]);
+        flatten(&mut map, &vec![1.0; dim * dim], &vec![0.0; dim * dim]);
         let spread = |h: &[f32]| {
             let cells: Vec<f32> = (100..200).flat_map(|z| (100..200).map(move |x| h[z * dim + x])).collect();
             let mean = cells.iter().sum::<f32>() / cells.len() as f32;
