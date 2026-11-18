@@ -39,8 +39,20 @@ What this means for the mountain design:
 - **Rock has no relax and no wobble, so placement and the spike cap are what move its vertices before the chisel.** Clamping the plane solve inside its cell (`PAST` 0.0, 0.3 and 1.0) changes nothing. Removing the spike cap doubles the folds (0.43% to 0.81% of triangles), so the cap helps. That points at the plane solve itself (planes from the blurred gradient, pulled by `PULL` 0.05 toward the crossings' mean) on cells with few solid corners or seven of eight, which are most of the bad triangles, mostly on near-flat tops and not sheer walls.
 - **A render box shows false holes.** The renderer cuts the world at the area's sides, so the inside of the mountain's far wall shows through the open cut and looks like missing or inverted slabs when culled. Judge only near the middle.
 
+**Fix applied: vertices held inside their cells across each crossing axis, quads re-split from final positions** (`docs/sculpted-ground.md`). By the exact definition (a triangle winds against the solid-to-air direction of its quad) folds went, measured over the peak at half 250 and the arch at half 40:
+
+| Stage | Peak | Arch |
+| --- | --- | --- |
+| Before the chisel | 3,458 (3,178 rock) | 34 |
+| After the chisel | 10,478 | 39 |
+| Final | 0 | 0 |
+
+`test_sculpted_ground_never_folds_a_triangle` holds it at zero. Costs: chunk meshing 480.8 to 490.0 ms (+2%) and LOD meshing 133 to 136 ms in `bench`, with the vertex count 1 higher for chunks and 8 for nodes, as the diagonal decides which triangles share a vertex.
+
+**Not settled by the fix.** `OCHRE_RENDER_INVERTED=1` steps 0.75 blocks out along each triangle's normal and in against it, and counts triangles with solid outside and air inside. Over the peak it went from 6,966 (0.61%) to 4,433 (0.39%) and at the arch from 15 to 9. The remainder is 0.4 to 0.6% of rock tiles and 0.01% of steppe grass, so it is rock-specific and not the corner-cutting any smoothed surface shows. These triangles do face along their crossing, so they are not folded by the exact definition. A guess only: chiselled 45 degree facets tilt a triangle so far that the step lands in the neighbouring step. A culled render diff was tried and dropped, as the render box's open cut shows back faces for other reasons.
+
 Not yet done: a close render of the arch pillar from the screenshot's angle, which cell patterns fold and why (the plane solve on thin or 7-corner cells is the suspect), the LOD hand-over on a sheer face (still a possible second cause), the walkable-fraction histogram over several seeds, and an ALPINE valley wall.
 
 ## Decision rule so far
 
-For slice 3: aim risers at 2.2 blocks or more with no ledge of 0.2 or more on faces over 66 degrees, and check by this test. Steeper rock multiplies the cells that fold (thin or nearly solid corners), so the folded-triangle count in `worldprobe` has to be near zero on the target ranges before slice 3 steepens them.
+For slice 3: aim risers at 2.2 blocks or more with no ledge of 0.2 or more on faces over 66 degrees, and check by this test. Folds are now held at zero by construction, so steeper rock cannot fold triangles, only change how the chisel's facets look.

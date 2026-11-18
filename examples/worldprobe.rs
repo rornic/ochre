@@ -640,6 +640,8 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     let mut vertices = 0usize;
     // each ground triangle's centroid, area and its winding's normal against its vertices' stored normals, to find folded triangles
     let mut folds: Vec<(Vec3, f32, f32, usize)> = Vec::new();
+    // the atlas cell of each triangle drawn, in step with `triangles`
+    let mut tri_cell: Vec<usize> = Vec::new();
     // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
     let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
         let (
@@ -674,6 +676,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             if !water && (cell == 6 || cell >= 30) {
                 continue;
             }
+            tri_cell.push(cell);
             triangles.push(std::array::from_fn(|k| {
                 let i = tri[k] as usize;
                 let n = normals[i];
@@ -936,6 +939,39 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         pb.sort_by_key(|r| std::cmp::Reverse(r.1));
         for ((bx, by, bz), n) in pb.iter().take(6) {
             println!("    {n} near x {} y {} z {}", bx * 16, by * 16, bz * 16);
+        }
+        // each ground triangle tested against the blocks: a step out along its outward normal landing in solid ground and a step in landing in air means it faces into rock
+        if std::env::var("OCHRE_RENDER_INVERTED").is_ok() {
+            let solid_at = |chunk_at: &mut dyn FnMut((i64, i64, i64)) -> Arc<ChunkData>, p: Vec3| {
+                let b = I64Vec3::new(p.x.round() as i64, p.y.round() as i64, p.z.round() as i64);
+                let c = (b.x.div_euclid(size), b.y.div_euclid(size), b.z.div_euclid(size));
+                let block = chunk_at(c).get_block_at(b.rem_euclid(I64Vec3::splat(size)).as_u16vec3());
+                block.is_opaque() && !matches!(block, BlockType::Leaves | BlockType::Log)
+            };
+            let (mut tested, mut inverted) = (0usize, 0usize);
+            let mut by_cell: HashMap<usize, (usize, usize)> = HashMap::new();
+            for (ti, tri) in triangles.iter().enumerate().filter(|(_, t)| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
+                let [a, b, c] = [tri[0].0, tri[1].0, tri[2].0];
+                let cross = (c - a).cross(b - a);
+                let centre = (a + b + c) / 3.0;
+                if cross.length() < 1e-4 || !inside(((centre.x * 16.0) as i64, (centre.y * 16.0) as i64, (centre.z * 16.0) as i64)) {
+                    continue;
+                }
+                let n = cross.normalize();
+                tested += 1;
+                let entry = by_cell.entry(tri_cell[ti]).or_default();
+                entry.0 += 1;
+                if solid_at(&mut chunk_at, centre + n * 0.75) && !solid_at(&mut chunk_at, centre - n * 0.75) {
+                    inverted += 1;
+                    entry.1 += 1;
+                }
+            }
+            let mut rows: Vec<_> = by_cell.iter().collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1 .0));
+            for (cell, (all, bad)) in rows.iter().take(7) {
+                println!("  cell {cell}: {bad} of {all} ({:.2}%)", 100.0 * *bad as f32 / (*all).max(1) as f32);
+            }
+            println!("triangles facing into rock by the blocks: {inverted} of {tested} ({:.3}%)", 100.0 * inverted as f32 / tested.max(1) as f32);
         }
         println!("open edges inside the middle 80% of the area, off the rows the drawing starts and stops at: {open}");
         // where they cluster, in 32-block bins: a hole is a few edges in one place, a seam or a tree a long line of them
