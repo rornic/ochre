@@ -15,6 +15,7 @@ pub mod geology;
 mod hydrology;
 pub mod io;
 pub mod landform;
+pub mod meso;
 mod shapes;
 mod source;
 pub mod tectonics;
