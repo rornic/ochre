@@ -130,7 +130,7 @@ impl Weather {
 
     /// Whether rain or snow falls hard enough that what's out and about takes shelter.
     pub fn sheltering(&self) -> bool {
-        self.precipitation() > SHELTER_RAIN
+        self.precipitation() > SHELTER_RAIN || self.gloom() > SHELTER_GLOOM
     }
 
     /// How much the storm overhead darkens the day, 0..1: its cloud before the rain or snow
@@ -147,6 +147,8 @@ fn rain_and_snow(sky: &crate::storms::Sky) -> (f32, f32) {
 
 // How hard rain or snow falls, see `Weather::precipitation`, before birds and insects take shelter.
 const SHELTER_RAIN: f32 = 0.2;
+// ... or when a storm's dark cloud has come over, before its rain or without any.
+const SHELTER_GLOOM: f32 = 0.3;
 // How dark a storm's cloud makes the day before its rain arrives, as a share of the rain's gloom.
 const GLOOM_BEFORE_RAIN: f32 = 0.8;
 // A rainbow shows after rain: looking back this many game seconds at this many moments, how
@@ -1054,5 +1056,8 @@ mod tests {
         weather.rain = 1.0;
         assert_eq!(1.0, weather.gloom());
         assert!(!Weather::default().sheltering() && weather.sheltering());
+        // what is out takes shelter from a dry storm's dark cloud as it comes, and not from a far, thin one
+        assert!(Weather { storm: 0.5, ..default() }.sheltering());
+        assert!(!Weather { storm: 0.2, ..default() }.sheltering());
     }
 }
