@@ -6,10 +6,11 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 ## Holes in the mesh on a steep steppe mountain's cliffs, seed 1
 
-- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The owner did not record the exact spots. **Located 2026-11-18** by `worldprobe`'s open-edge report: about 3,600 open mesh edges in one area, x 13088 to 13152, y 448 to 480, z -4992 to -4864, along a sheer wall of more than 50 blocks (`docs/meso-spike.md`).
+- **Seen:** 2026-11-18, playing `feat/meso-slice1` (seed 1, `OCHRE_SPAWN=13408,-4704,60`), on the peak of a steppe mountain over a lake and on its steep cliff faces. The owner saw holes in the cliff mesh. The owner did not record the exact spots.
 - **Known:** the place is the scorer's best steppe place on seed 1 (`docs/meso-baseline.csv`, relief 110, 235 and 315 blocks at the three windows). The build includes the ranges' valleys from `exp/meso-geography`, so seed 1's mountains differ from `main`'s.
-- **Not known:** the cause, and whether it is the same defect as the mesh hole at the marble arch on seed 4 or the thin rock-edge strip below. A guess only: steep faces from the valley walls and bed risers are where the mesher's chisel and the rule that no vertex stands far over its neighbours' mean are pushed hardest. Not looked into, and not checked on `main`.
-- **To check:** `OCHRE_RENDER_FLAT=1 worldprobe 1 render 13120 -4930 56 out.png`, then the checker in `test_sculpted_ground_leaves_no_hole` over the chunks there, and what in the mesher (vertex cap, chisel, chunk edges) opens a sheer wall. This is also an input to the slice 1 spike on what the mesher can hold.
+- **Known:** the full-detail chunk mesh is closed over the whole peak. `worldprobe 1 render 13408 -4704 400` (`OCHRE_RENDER_FLAT=1`) finds no open edge in the ground over 800 by 800 blocks, and none at (11393, -20193), the other spot with a hole seen. An earlier reading here of 3,600 open edges was lake water and tree trunk bases, which the report now leaves out. So the holes seen in play are not in full-detail ground. LOD nodes do have open edges, mostly on their sides (`docs/meso-spike.md`).
+- **Not known:** where the holes the owner saw are. A guess only: the hand-over between a full-detail chunk and an LOD node, where a node's surface can stand lower or further in than the chunk's on a sheer face, which `docs/sculpted-ground.md` lists as open and its skirts, which only hang down, cannot cover. Not checked in the game or by `OCHRE_RENDER_HANDOVER=1`.
+- **To check:** fly to the peak with `OCHRE_FLIGHT` and a frame capture, looking at the cliffs from 150 to 600 blocks out where the chunks hand over to nodes, and compare with `OCHRE_RENDER_HANDOVER=1` renders there.
 
 ## A thin strip of grass or dirt inset from a rock's edge
 

@@ -802,7 +802,8 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         let key = |p: Vec3| ((p.x * 16.0).round() as i64, (p.y * 16.0).round() as i64, (p.z * 16.0).round() as i64);
         type Point = (i64, i64, i64);
         let mut edges: HashMap<(Point, Point), u32> = HashMap::new();
-        for tri in &triangles {
+        // water is a sheet open along its shore, so it is left out of both counts
+        for tri in triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
             let [a, b, c] = [tri[0].0, tri[1].0, tri[2].0];
             let cross = (c - a).cross(b - a);
             let up = cross.normalize_or_zero().y;
@@ -819,13 +820,44 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             "slope bands by area: walkable {:.1}%, steep {:.1}%, wall {:.1}% ({} / {} / {} triangles)",
             100.0 * area[0] / total, 100.0 * area[1] / total, 100.0 * area[2] / total, count[0], count[1], count[2]
         );
-        let inside = |p: (i64, i64, i64)| (p.0 as f32 / 16.0 - x as f32).abs() < half as f32 * 0.8 && (p.2 as f32 / 16.0 - z as f32).abs() < half as f32 * 0.8;
-        let open = edges.iter().filter(|(&(p, q), &n)| n == 1 && inside(p) && inside(q)).count();
-        println!("open edges inside the middle 80% of the area: {open}");
+        // the area's sides and the chunk rows' ends are where the drawing stops, so edges there are the picture's, not the mesh's
+        let (floor_y, ceiling_y) = ((cy0 * size) as f32 + 8.0, ((cy1 + 1) * size) as f32 - 8.0);
+        let inside = |p: (i64, i64, i64)| {
+            let y = p.1 as f32 / 16.0;
+            (p.0 as f32 / 16.0 - x as f32).abs() < half as f32 * 0.8 && (p.2 as f32 / 16.0 - z as f32).abs() < half as f32 * 0.8 && y > floor_y && y < ceiling_y
+        };
+        // trees are drawn by their own mesher, open where they meet what they stand in, so an edge with a log or leaf block beside it is the tree's
+        let mut near_tree = |p: Point, q: Point| {
+            let mid = ((p.0 + q.0) as f32 / 32.0, (p.1 + q.1) as f32 / 32.0, (p.2 + q.2) as f32 / 32.0);
+            // trunks sink into the ground, so a trunk's base sits up to two blocks under its first log, and the edge looks up for it
+            [-0.3f32, 0.3].iter().any(|&o| {
+                [-0.3f32, 0.3, 1.3, 2.3].iter().any(|&u| {
+                    [-0.3f32, 0.3].iter().any(|&w| {
+                        let b = I64Vec3::new((mid.0 + o).round() as i64, (mid.1 + u).round() as i64, (mid.2 + w).round() as i64);
+                        let c = (b.x.div_euclid(size), b.y.div_euclid(size), b.z.div_euclid(size));
+                        let block = chunk_at(c).get_block_at(b.rem_euclid(I64Vec3::splat(size)).as_u16vec3());
+                        matches!(block, BlockType::Log | BlockType::Leaves)
+                    })
+                })
+            })
+        };
+        let open_list: Vec<(Point, Point)> = edges.iter().filter(|(&(p, q), &n)| n == 1 && inside(p) && inside(q)).map(|(&e, _)| e).collect();
+        let (mut treed, mut open_ground) = (0usize, Vec::new());
+        for &(p, q) in &open_list {
+            if near_tree(p, q) { treed += 1 } else { open_ground.push((p, q)) }
+        }
+        println!("  of them {treed} beside tree blocks, {} in the ground", open_ground.len());
+        let open = open_ground.len();
+        let on_plane = open_ground.iter().filter(|&&(p, q)| {
+            let plane = |a: i64, b: i64| a == b && ((a as f32 / 16.0 + 0.5).rem_euclid(size as f32).min(size as f32 - (a as f32 / 16.0 + 0.5).rem_euclid(size as f32))) < 0.1;
+            plane(p.0, q.0) || plane(p.1, q.1) || plane(p.2, q.2)
+        }).count();
+        println!("  of those {on_plane} lie in a chunk plane");
+        println!("open edges inside the middle 80% of the area, off the rows the drawing starts and stops at: {open}");
         // where they cluster, in 32-block bins: a hole is a few edges in one place, a seam or a tree a long line of them
         let mut bins: HashMap<(i64, i64, i64), (u32, i64)> = HashMap::new();
-        for (&(p, q), &n) in &edges {
-            if n == 1 && inside(p) && inside(q) {
+        for &(p, q) in &open_ground {
+            {
                 let entry = bins.entry((p.0 / 512, p.1 / 512, p.2 / 512)).or_default();
                 entry.0 += 1;
                 entry.1 += (p.0 + q.0) / 2 / 16 * 1000 + (p.2 + q.2) / 2 / 16;
@@ -833,6 +865,15 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         let mut worst: Vec<_> = bins.into_iter().collect();
         worst.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+        // OCHRE_RENDER_EDGES=1 lists each open edge's ends in blocks, to see whether they fall on chunk planes
+        if std::env::var("OCHRE_RENDER_EDGES").is_ok() {
+            let mut list = open_ground.clone();
+            list.sort();
+            for (p, q) in list {
+                let f = |k: (i64, i64, i64)| (k.0 as f32 / 16.0, k.1 as f32 / 16.0, k.2 as f32 / 16.0);
+                println!("edge {:?} -> {:?}", f(p), f(q));
+            }
+        }
         for ((bx, by, bz), (n, _)) in worst.iter().take(8) {
             println!("  {n} open edges near x {} y {} z {} (32-block bin)", bx * 32, by * 32, bz * 32);
         }
