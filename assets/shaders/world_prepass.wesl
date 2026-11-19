@@ -117,7 +117,7 @@ fn cut_leaf_holes(in: prepass_io::VertexOutput) {
 // doesn't keep its depth, which would reject whatever is behind it. Shadows aren't: dithered
 // in light space they would only flicker.
 fn dither_fade(in: prepass_io::VertexOutput) {
-@if(!VIEW_PROJECTION_ORTHOGRAPHIC) {
+@if(!VIEW_PROJECTION_ORTHOGRAPHIC && !OPAQUE_SOLID) {
     let threshold = dither_threshold(in.position.xy);
     if threshold < material_fade.x || threshold >= material_fade.y {
         discard;

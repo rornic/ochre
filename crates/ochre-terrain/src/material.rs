@@ -213,6 +213,8 @@ pub struct ChunkMaterialKey {
     pub debug: DebugSettings,
     pub non_cutout: bool,
     pub period: u32,
+    /// Solid and wholly drawn, so it discards nothing, see `ChunkMaterial::opaque`.
+    pub opaque: bool,
 }
 
 impl From<&ChunkMaterial> for ChunkMaterialKey {
@@ -221,7 +223,16 @@ impl From<&ChunkMaterial> for ChunkMaterialKey {
             debug: material.debug,
             non_cutout: material.non_cutout,
             period: material.period,
+            opaque: material.opaque(),
         }
+    }
+}
+
+impl ChunkMaterial {
+    /// Whether this draws solid faces wholly, with no leaf holes and no fade, so it can be opaque: a shader that may
+    /// discard loses the GPU's early depth test, so every hidden ground pixel was lit before being thrown away.
+    pub fn opaque(&self) -> bool {
+        self.non_cutout && self.fade == crate::fade::FULLY_VISIBLE
     }
 }
 
@@ -245,9 +256,13 @@ impl Material for ChunkMaterial {
         "shaders/world_prepass.wesl".into()
     }
 
-    // Camera fades discard pixels even when leaves have no holes.
+    // Camera fades discard pixels even when leaves have no holes; solid faces drawn wholly discard nothing.
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Mask(0.5)
+        if self.opaque() {
+            AlphaMode::Opaque
+        } else {
+            AlphaMode::Mask(0.5)
+        }
     }
 
     fn specialize(
@@ -310,6 +325,10 @@ impl Material for ChunkMaterial {
         }
         if key.bind_group_data.debug.no_frost {
             defs.push("NO_FROST".into());
+        }
+        // no discard at all, so the GPU keeps its early depth test, see `ChunkMaterial::opaque`
+        if key.bind_group_data.opaque {
+            defs.push("OPAQUE_SOLID".into());
         }
         push_shader_defs(descriptor, &defs);
         specialize_shadow(descriptor, key.bind_group_data.non_cutout);
@@ -601,6 +620,58 @@ mod tests {
         // the drawn texel is as it was, and the clear one keeps its colour, with no cover
         assert_eq!([200, 200, 200, 255], level_one[0..4]);
         assert_eq!([150, 150, 150, 0], level_one[4..8]);
+    }
+
+    #[test]
+    fn only_solid_wholly_drawn_terrain_is_opaque() {
+        use bevy::prelude::{AlphaMode, Material};
+        let material = |non_cutout, fade| super::ChunkMaterial {
+            color: Default::default(),
+            texture: None,
+            fade,
+            cloud_pattern: Default::default(),
+            cloud_layer: Default::default(),
+            curvature: Default::default(),
+            cloud_weather: Default::default(),
+            materials: None,
+            wind: Default::default(),
+            debug: Default::default(),
+            non_cutout,
+            period: 4,
+        };
+        let full = crate::fade::FULLY_VISIBLE;
+        let fading = bevy::math::Vec4::new(0.0, 0.5, 0.0, 0.0);
+        assert_eq!(AlphaMode::Opaque, material(true, full).alpha_mode());
+        assert!(super::ChunkMaterialKey::from(&material(true, full)).opaque);
+        // leaves cut holes, and a fade dithers, so both still discard
+        for (non_cutout, fade) in [(false, full), (true, fading), (false, fading)] {
+            assert_eq!(AlphaMode::Mask(0.5), material(non_cutout, fade).alpha_mode());
+            assert!(!super::ChunkMaterialKey::from(&material(non_cutout, fade)).opaque);
+        }
+    }
+
+    #[test]
+    fn the_opaque_shaders_compile_every_discard_out() {
+        // the GPU drops its early depth test for a shader that may discard, so none may be left in
+        for (path, open) in [("shaders/world.wesl", "@if(!OPAQUE_SOLID) {"), ("shaders/world_prepass.wesl", "@if(!VIEW_PROJECTION_ORTHOGRAPHIC && !OPAQUE_SOLID) {")] {
+            let source = std::fs::read_to_string(asset(path)).unwrap();
+            let start = source.find(open).unwrap_or_else(|| panic!("no {open} in {path}"));
+            let mut depth = 0;
+            let end = start
+                + source[start..]
+                    .char_indices()
+                    .find(|&(_, c)| {
+                        depth += (c == '{') as i32 - (c == '}') as i32;
+                        c == '}' && depth == 0
+                    })
+                    .unwrap()
+                    .0;
+            let inside = source[start..end].matches("discard;").count();
+            assert!(inside > 0, "{path}");
+            if path.ends_with("world.wesl") {
+                assert_eq!(source.matches("discard;").count(), inside, "a discard outside the opaque guard in {path}");
+            }
+        }
     }
 
     #[test]
