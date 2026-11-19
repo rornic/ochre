@@ -60,6 +60,12 @@ const MIN_POND_CELLS: usize = 4;
 const LAKE_EVAPORATION: (f32, f32) = (0.6, 4.0);
 // Rounds of draining small basins, each of which can open the next one along.
 const DRAIN_ROUNDS: usize = 4;
+// A basin shallower than this, in blocks, too small for a lake is filled to its spill level rather than drained.
+const FILL_DEPTH: f32 = 2.0;
+// The deepest a drained basin's channel is cut into the ground past its rim, in blocks; the basin is filled up to meet it.
+const BREACH_DEPTH: f32 = 2.0;
+// Only basins this deep or shallower, in blocks, are filled to meet their channel.
+const BREACH_MAX_BASIN: f32 = 12.0;
 // How much a drained basin's channel falls each cell, so it runs out of it.
 const DRAIN_FALL: f32 = 0.01;
 // Land under the sea's level but cut off from it is this much over it once drained or filled.
@@ -341,7 +347,7 @@ pub(super) fn basins(height: &[f32], flood: &Flood, dim: usize) -> (Vec<Basin>, 
 // water would leave, each cell of it under the one before, until it reaches lower ground. It's cut no
 // lower than water it runs into, which would drain too, nor under the sea, which would come in up it.
 // One whose floor is under the sea already is filled to just over it instead. Returns whether it changed anything.
-fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &Basin) -> bool {
+fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &Basin, dim: usize) -> bool {
     let sea = WATER_LEVEL as f32;
     if height[basin.floor] < sea + LAND_ABOVE_SEA {
         for &i in &basin.cells {
@@ -349,9 +355,32 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         }
         return true;
     }
+    // The basin is filled first to the level that lets its channel be cut no more than `BREACH_DEPTH` into the ground on the
+    // way out: cut from the floor, a deep basin's channel was a trench a cell wide and many blocks deep, which the smooth
+    // ground turns into a chain of round dips across the plain.
+    // A deeper basin is a landform's bowl, a crater or a cirque (37 blocks and more), whose notch is meant.
+    let breached = basin.depth <= BREACH_MAX_BASIN;
+    let (mut fill_to, mut i, mut steps) = (height[basin.floor], basin.floor, 0.0);
+    while breached && flood.down[i] != NONE && fill_to < basin.spill {
+        let d = flood.down[i] as usize;
+        steps += DRAIN_FALL;
+        if basin_of[d] != id {
+            if flood.filled[d] - height[d] > 0.25 || height[d] <= fill_to - steps {
+                break;
+            }
+            fill_to = fill_to.max((height[d] - BREACH_DEPTH + steps).min(basin.spill));
+        }
+        i = d;
+    }
+    let mut cut = false;
+    for &c in &basin.cells {
+        if height[c] < fill_to {
+            height[c] = fill_to.min(flood.filled[c]);
+            cut = true;
+        }
+    }
     let mut level = height[basin.floor];
     let mut i = basin.floor;
-    let mut cut = false;
     while flood.down[i] != NONE {
         let d = flood.down[i] as usize;
         let inside = basin_of[d] == id;
@@ -363,6 +392,19 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         if height[d] > target {
             height[d] = target;
             cut = true;
+            // a diagonal step is cut through a cell beside it too, or the channel's cells meet only at their
+            // corners and the smooth ground turns it into a chain of round dips; only a shallow channel, as a
+            // deep one's side cell would be a dry pit beside the river that comes to run down it
+            let (x, z, dx) = (i % dim, i / dim, d % dim);
+            if breached && dx != x && d / dim != z {
+                let side = [z * dim + dx, (d / dim) * dim + x]
+                    .into_iter()
+                    .filter(|&o| basin_of[o] == id || flood.filled[o] - height[o] <= 0.25)
+                    .min_by(|&a, &b| height[a].total_cmp(&height[b]).then(a.cmp(&b)));
+                if let Some(o) = side {
+                    height[o] = height[o].min(target.max(height[d]));
+                }
+            }
         } else if !inside {
             break;
         }
@@ -373,6 +415,14 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         i = d;
     }
     cut
+}
+
+// Fills `basin` to its spill level, as the flood found it, and to just over the sea if under it.
+fn fill(height: &mut [f32], flood: &Flood, basin: &Basin) {
+    let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
+    for &i in &basin.cells {
+        height[i] = height[i].max(flood.filled[i]).max(floor);
+    }
 }
 
 /// Fills every basin `wanted` picks up to its spill level, leaving a flat with no pit and no channel cut out of it.
@@ -664,7 +714,14 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
         let mut cut = false;
         for (id, basin) in lakes.iter().enumerate() {
             if (basin.cells.len() < MIN_LAKE_CELLS && !in_bowl(&basin.cells)) || basin.depth < MIN_LAKE_DEPTH {
-                cut |= drain(&mut map.height, &flood, &basin_of, id as u32, basin);
+                if basin.depth < FILL_DEPTH && !in_bowl(&basin.cells) {
+                    // a hollow this shallow is filled flat: a channel out of it ran for kilometres on level
+                    // ground and left a dry pit with a ditch out of it
+                    fill(&mut map.height, &flood, basin);
+                    cut = true;
+                } else {
+                    cut |= drain(&mut map.height, &flood, &basin_of, id as u32, basin, dim);
+                }
             }
         }
         if !cut {
@@ -942,6 +999,9 @@ mod tests {
         run(&mut map, false);
         scatter(&mut map);
         let before = map.height.clone();
+        // a basin too small or shallow for a lake is filled, wholly or part way, so a river crossing one runs over the fill,
+        // never higher than the water it would have held
+        let held = priority_flood(&before, map.dim(), &flood_ties(&map)).filled;
         run(&mut map, true);
         let mut rivers = 0;
         for (i, (&was, &now)) in before.iter().zip(&map.height).enumerate() {
@@ -952,8 +1012,9 @@ mod tests {
             {
                 rivers += 1;
                 assert!(
-                    now <= was + 1e-3,
-                    "river cell {i} raised from {was} to {now}"
+                    now <= was.max(held[i]) + 1e-3,
+                    "river cell {i} raised from {was} to {now}, over the {} its basin held",
+                    held[i]
                 );
             }
         }

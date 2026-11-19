@@ -11,14 +11,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
 - **To check:** find one and note the seed and place. Render it with `worldview <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
 
-## A river through the steppe is a chain of round dips, not a carved valley
-
-- **Seen:** 2026-11-16, in the steppe, playing the steppe branch. The seed and place were not recorded. A river's bed shows as a dried-up line of stepped, circular dips one after another, where a river should lie in a carved valley.
-- **Known:** the owner says it has been there for a while and is not from the steppe change. Nobody has looked into it. Steppe's rivers used to die within a cell or two, since all of it was counted as desert-dry; the dryness curve now lets streams run through it (`docs/water.md`, Water in dry country), which may change this, and was not checked against it.
-- **Found, 2026-11-16 (seed 20, near 1450,-10900):** one cause. A valley's floor was a long closed trough, since the valleys drained only the basins they made new, and in two rounds. With the dryness curve letting water in, a dry-country lake stands just over its floor, so the trough held a string of one-to-five-cell ponds with dry ground between, which read as a stream of dashes, and each pond wet the ground 14 cells round it into grassland. Valleys now fill any shallow basin lying mostly in a valley up to its dam (`valleys.rs`, `hydrology::fill_where`), and a lake under 20 cells wets no ground (`climate::RIPARIAN_LAKE_CELLS`). Seed 20's trough is now a dry valley with no water.
-- **Not known:** whether every chain of dips is this. Tiny lakes in valleys fell from 18, 17 and 4 to 6, 6 and 0 on seeds 20, 1 and 1337, not to none: the rest are not found. Other dips, in non-valley country, were not looked at.
-- **To check:** render the remaining valley ponds (worldview's `/export` with the `hillshade` and water layers at `scale=0.5`), and whether a dry valley should instead carry a stream through (the map has the stream's cells in the trough, which the drain now cuts out of).
-
 ## Steppe grass bends in a hollow while its wind sound is quiet
 
 - **Seen:** 2026-11-16, by design of the steppe change. The wind sound's strength follows how exposed the camera's ground is (`Surroundings::exposure`), and the foliage shader's sway size is the same everywhere (`foliage.wesl`), because a shader has no exposure per vertex.
@@ -27,9 +19,9 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 ## Steppe's streams and the climate shift are not checked as widely as the rest
 
-- **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country), and were measured on five seeds only. `water_audit`, the many-seed census and frame times were not rerun.
-- **To check:** `water_audit --fine` on seeds 1, 42 and 1337, and the census (`scripts/census.sh`) for a biome over 70% of land.
-
+- **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country), and were measured on five seeds only.
+- **Since:** `water_audit --fine` on seeds 1, 42 and 1337 (2026-11-19) finds no lake or coast walls or steps and no uncontained map cell; river walls are in the seed 42 entry below. The census and frame times were not rerun.
+- **To check:** the census (`scripts/census.sh`) for a biome over 70% of land.
 ## Steppe on hills wider than a few kilometres stays hilly
 
 - **Seen:** 2026-11-16, seed 3. The flattening of steppe ground (`valleys::flatten`) removes hills smaller than about 4 km. Seed 3's steppe stands on foothills, and a larger smoothing radius makes steep edges where the flattened zone ends.
@@ -39,9 +31,8 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 ## River walls rise near steppe valleys on seed 42
 
 - **Seen:** 2026-11-16, `water_audit --fine`. Tall river walls went from 31 to 58 on seed 42 against `main` (seeds 1 and 1337 fell or were level).
-- **Known:** valleys now cross rivers, and the audit counts the waterfalls the water rule allows as walls.
-- **Not known:** whether the new walls are waterfalls over valley walls or leaks. Not checked.
-
+- **Known:** valleys now cross rivers, and the audit counts the waterfalls the water rule allows as walls. The audit looks at every 100th edge cell (`PICK_EVERY`), so its counts move with the river layout: on 2026-11-19 the same seeds read tall walls 26, 52 and 46 (seeds 1, 42, 1337), and with every 20th cell 329 on seed 42 and 263 on 1337. After small basins were filled or breached shallow (`docs/water.md`, step 3) they read 24, 52 and 46, and 376 and 263 with every 20th; raised banks on 1337 went from 105 to 210 at every 20th.
+- **Not known:** whether the walls are waterfalls over valley walls or leaks. Not checked. The audit prints only its first few examples, all mountain waterfalls on seed 1337.
 ## The steppe change is not measured for speed
 
 - **Seen:** 2026-11-16. Frame times, `bench` vertex counts and the cost of the foliage shader's second gust term were not measured for the valleys, flattening, exposure, flora and wind. The valley stage in map generation takes 0.30 to 0.51 s against the 0.3 s a new stage may add (`docs/world-plan.md`).
@@ -51,13 +42,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-16. The ambient birds are one recorded loop (`Loop::Forest`, `forest.ogg`), played in proportion to the trees round the camera, so steppe, tundra, desert and the other treeless biomes have none. Their starling flocks and goose skeins are sized by biome (`docs/climate.md`, Birds by biome), but they make no sound.
 - **To fix:** a loop per biome, for example a lark or pipit over the steppe: a new `Loop` variant for each and a recording, CC0 if the licence rule stays (`assets/sounds/CREDITS.md`).
-
-## Small basins outside valleys still drain by a ditch and leave a pit
-
-- **Seen:** 2026-11-16, seed 1, round pits with a faint stepped line out of them in flat steppe, for example near x 1300, z 10100, and faint ladders with no valleys at all (`generate_with(seed, config, false)`, the same world with no valleys, which the viewer does not draw). The owner's complaint was dry riverbeds made of round hollows, right by the seed 1 spawn.
-- **Known:** the ones by the spawn were the valleys' drain channels (a channel cut from each basin's floor out the way its water would leave, `hydrology::drain`, each cell just under the last, so on flat ground it runs far, as deep as the basin). Valleys now fill their shallow basins and leave the deep ones, see `docs/water.md`. The general run of hydrology still drains basins under 300 cells or 4 blocks deep that way.
-- **Not known:** what a deep valley basin should be: they are left as closed pits (on seed 1, 14 tiny lakes in valleys remain, from a drained 6), and the seed 1 spawn's own valley ends in one. How common the rest are, and whether filling shallow basins (a block or two) outside valleys is safe for fjords, craters and cirques, whose tests lean on the channel.
-- **To check:** count pits by `fill - height` after the last run, then try `fill_where` for basins under two blocks deep.
 
 ## Steppe's own ground texture is a derived first try, with a hard edge
 
@@ -95,3 +79,11 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
 - **Not known:** whether anyone sees it at that distance. Not looked at.
+
+## Grass tint pops where a chunk hands over to a node near a river
+
+- **Seen:** 2026-11-19, `test_grass_tint_barely_changes_where_a_chunk_hands_over_to_a_node`, when a change to the rivers moved one onto the test's seed 5 spot (512, -3072): its gap went from 0.012 to 0.065. Over twelve level 3 nodes of seed 5 the gap runs from 0 to 0.106 (mean 0.033) before the change and to 0.100 (mean 0.030) after, so the test's spots were ones that happened to be away from water. The spot is now (-2048, -3072).
+- **Known:** a coarse node samples tint every 32 blocks (`TINT_SPACING`, `buffers.rs`) and a chunk only at its corners, while a river's bank wetting (`BANK_WETTING`, `vigour` in `source.rs`) lifts humidity from 0.12 to 0.35 over about 50 blocks, so the two interpolate it differently.
+- **Not known:** whether 0.1 shows in the game, a tenth of a channel at a node's edge.
+- **To fix:** sample tint closer near water, or blend the node's tint toward the chunk's over the handover.
+

@@ -2078,16 +2078,32 @@ mod river_bank_tests {
         super::super::gameplay::label(&mut map);
         let map = Arc::new(map);
         let terrain = WorldTerrain::new(map);
-        let wet = terrain.sample(-21752.0, 15523.0);
-        let bank = terrain.sample(-21752.0, 15524.0);
-        assert_eq!(wet.water_kind, WaterKind::River);
-        assert_eq!(bank.water_kind, WaterKind::None);
-        assert!(
-            ochre_terrain::generate::region_store::bed_top(bank.height as f32, 0.0)
-                >= ochre_terrain::generate::region_store::water_block_top(wet.water_surface),
-            "dry bank {} does not hold river surface {}",
-            bank.height,
-            wet.water_surface
-        );
+        // the bend moves with any change upstream, so every dry bank round where it was must hold the river beside it
+        let mut banks = 0;
+        for z in (15523 - 160)..(15523 + 160) {
+            for x in (-21752 - 160)..(-21752 + 160) {
+                let wet = terrain.sample(x as f64, z as f64);
+                if wet.water_kind != WaterKind::River {
+                    continue;
+                }
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let bank = terrain.sample((x + dx) as f64, (z + dz) as f64);
+                    if bank.water_kind != WaterKind::None {
+                        continue;
+                    }
+                    banks += 1;
+                    assert!(
+                        ochre_terrain::generate::region_store::bed_top(bank.height as f32, 0.0)
+                            >= ochre_terrain::generate::region_store::water_block_top(wet.water_surface),
+                        "dry bank {} at ({}, {}) does not hold river surface {}",
+                        bank.height,
+                        x + dx,
+                        z + dz,
+                        wet.water_surface
+                    );
+                }
+            }
+        }
+        assert!(banks > 20, "only {banks} river banks round the bend");
     }
 }

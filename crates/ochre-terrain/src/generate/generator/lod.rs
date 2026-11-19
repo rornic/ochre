@@ -122,7 +122,7 @@ impl TreeGround for GridGround<'_> {
 
     // From the exact samples, as the regions full detail reads are made from them.
     fn shore_top(&mut self, x: i64, z: i64) -> i64 {
-        let mut tops = |x: i64, z: i64| {
+        let tops = |x: i64, z: i64| {
             let sample = self.noise.sample(x as f64, z as f64);
             let surface = if sample.water_kind == WaterKind::None {
                 f32::NEG_INFINITY

@@ -34,7 +34,14 @@ The last run, in order:
    lower ground (complete breaching, after Lindsay 2016). It stops at water downstream rather than
    drain that too, and never cuts under the sea. A small hollow already under the sea is filled to just
    over it instead, so the sea can't come in up a channel. Up to `DRAIN_ROUNDS`, as draining one basin
-   can open another.
+   can open another. A basin under `FILL_DEPTH` (2 blocks) is filled to its brim instead: on level
+   ground its channel ran for kilometres and left a dry pit with a ditch out of it. One up to
+   `BREACH_MAX_BASIN` (12 blocks) deep is filled part way first, so its channel is cut no more than
+   `BREACH_DEPTH` (2 blocks) into the ground past its rim (hybrid breaching and filling, Lindsay 2016):
+   cut from the floor, the channel was a trench one cell wide and as deep as the basin, which the
+   smooth ground turns into a chain of round dips, and where it steps diagonally a cell beside it is
+   cut too, so its cells meet along an edge. A deeper basin is a crater or a cirque (37 blocks and
+   more) and keeps its full notch.
 4. `balance` sets each basin's lake level from its water budget, in the spirit of Fill-Spill-Merge
    (Barnes, Callaghan and Wickert 2021) but for a steady state rather than one storm. Flow runs
    downhill with rain from `rain` (runoff by dryness and rock, the same model rivers use). All that
@@ -179,7 +186,7 @@ lake's level 543 to 0, river walls 105 to 60 (over 6 blocks 4 to 0).
 - Barnes, Callaghan, Wickert 2021, *Fill–Spill–Merge*, Earth Surface Dynamics 9: lakes from a water
   budget over the basin hierarchy.
 - Lindsay 2016, *Efficient hybrid breaching-filling sink removal*, Hydrological Processes 30: draining
-  a basin by one channel all the way out.
+  a basin by one channel all the way out, or filling it part way to keep the channel shallow.
 - Génevaux et al. 2013, *Terrain generation using procedural models based on hydrology*, and Fischer,
   Boeckers, Zachmann 2022: water first, ground shaped to hold it.
 - Minecraft's aquifers (1.18): per-region fluid levels, with stone only where neighbouring levels
@@ -195,4 +202,4 @@ A river through a valley showed as a line of dashes in dry country, and a grassl
 
 Banks in dry country stay as dry as their ground, within reason: ground drier than 0.28 moisture gets banks no wetter than 0.29 (`DRY_BANK_MOISTURE`), just under where steppe ends at 0.3, so a lake or big river in the steppe leaves a steppe shore and not a patch of grassland a kilometre across (a lake wetted ground 14 cells, about 450 blocks, round it). It had been 0.5. In hot country the same cap makes a desert river's belt savanna, where it had been forest.
 
-Filling, not draining: a basin cut out through its dam left a stepped ditch from its floor out to lower ground, a cell at a time and each just under the last, so on the flattened steppe it ran a long way, a dry riverbed that held no water, ending in a round pit. A valley's basins 12 blocks deep or less, or 12 cells or fewer, are now filled to their spill level (`hydrology::fill_where`), a flat with no pit and no channel. A deeper one is left as it is: filling it plugs the valley (the basin by the seed 1 spawn is 34 blocks deep and 650 cells, and filling it raised the spawn by 35 blocks), and draining it cut a one-cell slot that deep across the plain, the dry ladder by the spawn. A deep valley basin is a closed pit, its lake, if it has one, a pond limited by evaporation. `hydrology::drain`, which still drains the small basins of the last run by a channel, can leave the same faint ditch on flat ground outside valleys.
+Filling, not draining: a basin cut out through its dam left a stepped ditch from its floor out to lower ground, a cell at a time and each just under the last, so on the flattened steppe it ran a long way, a dry riverbed that held no water, ending in a round pit. A valley's basins 12 blocks deep or less, or 12 cells or fewer, are now filled to their spill level (`hydrology::fill_where`), a flat with no pit and no channel. A deeper one is left as it is: filling it plugs the valley (the basin by the seed 1 spawn is 34 blocks deep and 650 cells, and filling it raised the spawn by 35 blocks), and draining it cut a one-cell slot that deep across the plain, the dry ladder by the spawn. A deep valley basin is a closed pit, its lake, if it has one, a pond limited by evaporation. Outside valleys, the small basins of the last run are filled or breached shallow, see step 3 above.
