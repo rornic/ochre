@@ -87,11 +87,3 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
 - **Not known:** whether anyone sees it at that distance. Not looked at.
-
-## Grass tint pops where a chunk hands over to a node near a river
-
-- **Seen:** 2026-11-19, `test_grass_tint_barely_changes_where_a_chunk_hands_over_to_a_node`, when a change to the rivers moved one onto the test's seed 5 spot (512, -3072): its gap went from 0.012 to 0.065. Over twelve level 3 nodes of seed 5 the gap runs from 0 to 0.106 (mean 0.033) before the change and to 0.100 (mean 0.030) after, so the test's spots were ones that happened to be away from water. The spot is now (-2048, -3072).
-- **Known:** a coarse node samples tint every 32 blocks (`TINT_SPACING`, `buffers.rs`) and a chunk only at its corners, while a river's bank wetting (`BANK_WETTING`, `vigour` in `source.rs`) lifts humidity from 0.12 to 0.35 over about 50 blocks, so the two interpolate it differently.
-- **Not known:** whether 0.1 shows in the game, a tenth of a channel at a node's edge.
-- **To fix:** sample tint closer near water, or blend the node's tint toward the chunk's over the handover.
-

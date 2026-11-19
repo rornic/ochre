@@ -4074,3 +4074,20 @@ fn test_lod_level_zero_lays_a_banks_sand_where_full_detail_does() {
 
 
 
+
+#[test]
+fn test_grass_tint_barely_changes_at_the_handover_near_rivers_either() {
+    // levels 3 and 4 over twelve nodes of seed 5, rivers among them: sampled every 32 blocks the gap averaged 0.045 and
+    // reached 0.15, a river's bank wetting falling between a node's samples
+    let mut gaps = Vec::new();
+    for scale in [8.0f32, 16.0] {
+        for x in [-2048.0f32, -1024.0, 0.0, 384.0, 512.0, 1024.0] {
+            for z in [-3072.0f32, -1024.0] {
+                gaps.push(handover_tint_gap(5, Vec3::new(x, 0.0, z), scale));
+            }
+        }
+    }
+    let mean = gaps.iter().sum::<f32>() / gaps.len() as f32;
+    let max = gaps.iter().cloned().fold(0.0, f32::max);
+    assert!(mean < 0.015 && max < 0.1, "tint pops by {mean} on average and {max} at most at the handover");
+}

@@ -60,7 +60,7 @@ It was built in two parts that share a way of working: smooth fields of the clim
 
 ### Geography colour
 
-*   `GrassTint` holds a grid of samples over a mesh, about one every 32 blocks and 9 a side at most for a coarse node, where a chunk keeps its four corners. The outer cell extrapolates as the corners did, so chunk edges are unchanged. Leaves and flora take the same tint.
+*   `GrassTint` holds a grid of samples over a mesh, one every 16 blocks and 17 a side at most for a coarse node, where the chunks beside it sample, where a chunk keeps its four corners. The outer cell extrapolates as the corners did, so chunk edges are unchanged. Leaves and flora take the same tint.
 *   Each sample also gives a shade, up to 30% less light in the deepest hollows by `exposure`, multiplied into each sculpted vertex's occlusion (`nets.rs`), so chunks and nodes agree.
 *   `world.wesl` blends steep ground under grass to the dirt texture along a ragged edge, only for the grass layers (`GRASS_LAYER`, `STEPPE_LAYER`), so rock, scree and sand are untouched.
 *   The haze over land gets 1.6 times its colour, easing back to the sky's by the fog's end, since the horizon's pale grey read flat.
