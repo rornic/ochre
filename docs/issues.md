@@ -18,11 +18,11 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** the gust's timing is synced between the two (`gust_at` in `ambience/wind.rs` and `foliage.wesl`, which must be kept in step), its size is not.
 - **To fix:** pass the exposure, or a wind strength, into the shader, for instance as a per-vertex value or through a buffer the weather already updates each frame.
 
-## Steppe's streams and the climate shift are not checked as widely as the rest
+## Steppe's streams and the climate shift are not measured for frame time
 
-- **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country), and were measured on five seeds only.
-- **Since:** `water_audit --fine` on seeds 1, 42 and 1337 (2026-11-19) finds no lake or coast walls or steps and no uncontained map cell; its river "walls" are steps in a river's level, not leaks: they compare samples 4 blocks apart, and its one-block check finds no water beside lower dry ground and no open block edge. The census and frame times were not rerun.
-- **To check:** the census (`scripts/census.sh`) for a biome over 70% of land.
+- **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country).
+- **Since, 2026-11-19:** `water_audit --fine` on seeds 1, 42 and 1337 finds no lake or coast walls or steps and no uncontained map cell; its river "walls" are steps in a river's level, not leaks (they compare samples 4 blocks apart, and its one-block check finds no water beside lower dry ground and no open block edge). The census over seeds 1 to 64 finds no biome over 70% of land: the most is forest at 56% on one seed, steppe averages 19% and reaches 47%.
+- **To check:** frame times, with the `profile` skill.
 ## Steppe on hills wider than a few kilometres stays hilly
 
 - **Seen:** 2026-11-16, seed 3. The flattening of steppe ground (`valleys::flatten`) removes hills smaller than about 4 km. Seed 3's steppe stands on foothills, and a larger smoothing radius makes steep edges where the flattened zone ends.
@@ -32,7 +32,8 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 ## The steppe change is not measured for speed
 
 - **Seen:** 2026-11-16. Frame times, `bench` vertex counts and the cost of the foliage shader's second gust term were not measured for the valleys, flattening, exposure, flora and wind. The valley stage in map generation takes 0.30 to 0.51 s against the 0.3 s a new stage may add (`docs/world-plan.md`).
-- **To check:** `profile` skill on a steppe seed against `main`; `OCHRE_STAGE_TIMES` for the stage.
+- **Since, 2026-11-19:** `OCHRE_STAGE_TIMES` with no map cached reads the valley stage at 0.93, 0.89 and 1.22 s on seeds 1, 3 and 20, and alpine valleys at 0.43 to 0.60 s, of about 14 s for the map. Timers inside `valleys::run` on seed 1 put about 0.22 s in the steppe-likeness layer (`favoured_layer`, which works out the climate fields again), 0.19 s in `flatten`'s blurs, 0.26 s in `siting` (0.18 s of it a priority flood) and 0.14 s in `fill_where`'s flood. Caching `flood_ties`, which five stages each work out, saved nothing measurable over three runs.
+- **To check:** `profile` skill with perf on the stage; the climate fields and the siting flood are the likeliest to share with the stages before and after.
 
 ## Only forests have birdsong
 
