@@ -3985,3 +3985,64 @@ fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
     assert_eq!(from_empty, 0, "the empty chunk drew {from_empty} triangles");
     assert!(from_rock > 100, "the rock drew only {from_rock} triangles of its wall");
 }
+
+#[test]
+fn test_no_tree_roots_on_a_banks_sand() {
+    use crate::generate::trees::trees_near;
+    use bevy::math::I64Vec2;
+    use ochre_base::terrain_source::WaterKind;
+
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let mut heights = regions.sampler();
+    let mut chunks: HashMap<I64Vec3, ChunkData> = HashMap::new();
+    let (mut trees_seen, mut on_sand) = (0, Vec::new());
+    for kind in [WaterKind::Lake, WaterKind::River] {
+        for (x, z) in wet_columns(kind).into_iter().step_by(3).take(40) {
+            let centre = I64Vec2::new(x, z);
+            for tree in trees_near(regions.terrain(), &mut heights, centre - 40, centre + 40) {
+                let under = tree.base - I64Vec3::Y;
+                let coord = under.div_euclid(I64Vec3::splat(16));
+                let chunk = chunks
+                    .entry(coord)
+                    .or_insert_with(|| generate_chunk(regions.clone(), ChunkCoordinate(coord)));
+                trees_seen += 1;
+                if chunk.get_block_at((under - coord * 16).as_u16vec3()) == BlockType::Sand {
+                    on_sand.push(tree.base);
+                }
+            }
+        }
+    }
+    assert!(trees_seen > 50, "only {trees_seen} trees by the water");
+    assert!(on_sand.is_empty(), "{} of {trees_seen} trees by the water root on sand, as at {:?}", on_sand.len(), &on_sand[..on_sand.len().min(5)]);
+}
+
+#[test]
+fn test_lod_level_zero_lays_a_banks_sand_where_full_detail_does() {
+    use ochre_base::terrain_source::WaterKind;
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let (mut sand, mut wrong) = (0, Vec::new());
+    for kind in [WaterKind::Lake, WaterKind::River] {
+        for (x, z) in wet_columns(kind).into_iter().step_by(5).take(12) {
+            let ground = regions.get_height(x, z).round() as i64;
+            let coord = I64Vec3::new(x, ground, z).div_euclid(I64Vec3::splat(16));
+            let chunk = generate_chunk(regions.clone(), ChunkCoordinate(coord));
+            let lod = LodBlocks::sample(&regions, LodKey { level: 0, coord });
+            for x in 0..16 {
+                for y in 0..16 {
+                    for z in 0..16 {
+                        let (full, node) = (
+                            chunk.get_block_at(U16Vec3::new(x, y, z)),
+                            lod.raw(IVec3::new(x as i32, y as i32, z as i32)),
+                        );
+                        sand += (full == BlockType::Sand) as usize;
+                        if (full == BlockType::Sand) != (node == BlockType::Sand) {
+                            wrong.push((coord * 16 + I64Vec3::new(x as i64, y as i64, z as i64), full, node));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(sand > 100, "only {sand} sand blocks");
+    assert!(wrong.is_empty(), "{} of {sand} blocks differ in sand, as {:?}", wrong.len(), &wrong[..wrong.len().min(4)]);
+}

@@ -28,7 +28,8 @@ use bevy::math::IVec3;
 use bevy::math::Vec3;
 use ochre_base::biome::{BiomeId, Biomes};
 use ochre_base::block::BlockType;
-use ochre_base::terrain_source::{TerrainSample, TerrainSource};
+use crate::generate::region_store::{bed_top, water_block_top};
+use ochre_base::terrain_source::{TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
 use std::sync::Arc;
@@ -117,6 +118,25 @@ impl TreeGround for GridGround<'_> {
     // stored as a byte, which can round it up by half a step.
     fn rules_out(&mut self, x: i64, z: i64, chance: f64) -> bool {
         chance >= self.noise.tree_bound(x as f64, z as f64) + 1.0 / 255.0
+    }
+
+    // From the exact samples, as the regions full detail reads are made from them.
+    fn shore_top(&mut self, x: i64, z: i64) -> i64 {
+        let mut tops = |x: i64, z: i64| {
+            let sample = self.noise.sample(x as f64, z as f64);
+            let surface = if sample.water_kind == WaterKind::None {
+                f32::NEG_INFINITY
+            } else {
+                sample.water_surface
+            };
+            let top = if surface.is_finite() { water_block_top(surface) } else { WATER_LEVEL };
+            (top, bed_top(sample.height as f32, surface))
+        };
+        let (own, height) = tops(x, z);
+        crate::generate::columns::shore_top(own, height, |dx, dz| {
+            let (top, ground) = tops(x + dx, z + dz);
+            (top > ground).then_some(top)
+        })
     }
 
     fn base_height(&mut self, x: i64, z: i64) -> i64 {
@@ -209,7 +229,7 @@ impl LodBlocks {
                     (base, cell),
                     (cx, cz),
                     biome,
-                    (height, gradient, temperature, water_top),
+                    (height, gradient, temperature, water_top, water_top),
                     &mut |y| {
                         rock.get_or_insert_with(|| noise.rock_column(world_x, world_z))
                             .at(y)
@@ -317,6 +337,17 @@ impl LodBlocks {
         let biomes = noise.biomes();
         let (mut lowest, mut highest) = (i64::MAX, i64::MIN);
 
+        // the water over every block a bank looks at, where it stands over its ground, as chunks read it
+        let reach = crate::generate::columns::SHORE_REACH;
+        let low = I64Vec2::new(base.x, base.z) - cell + cell / 2 - reach;
+        let span = (size as i64 + 1) * cell + 2 * reach + 1;
+        let wet: Vec<Option<i64>> = (0..span * span)
+            .map(|n| {
+                let (x, z) = (low.x + n / span, low.y + n % span);
+                let top = heights.water_top(x, z);
+                (top > heights.ground_top(x, z)).then_some(top)
+            })
+            .collect();
         for cx in -1..=size {
             for cz in -1..=size {
                 let world_x = base.x + cx as i64 * cell + cell / 2;
@@ -351,6 +382,10 @@ impl LodBlocks {
                 let temperature = noise.temperature(world_x as f64, world_z as f64);
                 let water_top = heights.water_top(world_x, world_z);
                 water_tops[Self::column(size, cx, cz)] = water_top;
+                // a bank's sand, as full detail lays it (`TreeGround::shore_top`); coarse cells are wider than the beach
+                let shore_top = crate::generate::columns::shore_top(water_top, column_height, |dx, dz| {
+                    wet[((world_x + dx - low.x) * span + world_z + dz - low.y) as usize]
+                });
 
                 tops[Self::column(size, cx, cz)] = ground_top(column_height);
                 let mut rock = None;
@@ -360,7 +395,7 @@ impl LodBlocks {
                     (base, cell),
                     (cx, cz),
                     biome,
-                    (column_height, combined_gradient, temperature, water_top),
+                    (column_height, combined_gradient, temperature, water_top, shore_top),
                     &mut |y| {
                         rock.get_or_insert_with(|| noise.rock_column(world_x, world_z))
                             .at(y)
@@ -749,18 +784,20 @@ pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
 
 // Fills the cells up column (`cx`, `cz`) of the node with its lowest block and cell size at
 // `base`, each sampled at its middle, with ground `height` high on its `gradient` at `temperature`.
-// The cell the ground tops out in is solid however little of it the ground fills.
+// The cell the ground tops out in is solid however little of it the ground fills. Its blocks are
+// chosen by `shore_top`, the water a bank's sand is laid by (`columns::shore_top`), and its water
+// and ice by `water_top`, its own.
 fn fill_column(
     cells: &mut [BlockType],
     biomes: &Biomes,
     (base, cell): (I64Vec3, i64),
     (cx, cz): (i32, i32),
     biome: BiomeId,
-    (height, gradient, temperature, water_top): (i64, f64, f32, i64),
+    (height, gradient, temperature, water_top, shore_top): (i64, f64, f32, i64, i64),
     rock: &mut dyn FnMut(i64) -> BlockType,
 ) {
     let size = CHUNK_SIZE as i32;
-    let block_at = |y| column_block(biomes, biome, y, height, gradient, temperature, water_top);
+    let block_at = |y| column_block(biomes, biome, y, height, gradient, temperature, shore_top);
     let top = ground_top(height);
     for cy in -1..=size {
         let bottom = base.y + cy as i64 * cell;
@@ -822,7 +859,7 @@ mod tests {
             (base, cell),
             (0, 0),
             id,
-            (height, 0.0, temperature, water_top),
+            (height, 0.0, temperature, water_top, water_top),
             &mut |_| BlockType::Rock,
         );
         (-1..=size)

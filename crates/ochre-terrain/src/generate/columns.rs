@@ -159,7 +159,22 @@ impl ColumnGrid {
 /// What generating a full-detail chunk takes from each of its columns, the same for every chunk
 /// stacked over them, see `generator::generate_chunk`.
 // How far, in blocks, a dry column looks for the river or lake it's a bank of.
-const SHORE_REACH: i64 = 2;
+pub(crate) const SHORE_REACH: i64 = 2;
+
+/// The water a column's ground is chosen by: its own where it's under water, else the highest river, lake or sea within
+/// `SHORE_REACH` whose surface stands within a block of the column's `height`, so its bank is a beach, else its own.
+/// `wet` gives the water top over a column at an offset where it stands over that column's ground.
+pub(crate) fn shore_top(own: i64, height: i64, mut wet: impl FnMut(i64, i64) -> Option<i64>) -> i64 {
+    if own > height {
+        return own;
+    }
+    (-SHORE_REACH..=SHORE_REACH)
+        .flat_map(|dx| (-SHORE_REACH..=SHORE_REACH).map(move |dz| (dx, dz)))
+        .filter_map(|(dx, dz)| wet(dx, dz))
+        .filter(|&top| top >= height - 1 && top <= height + 1)
+        .max()
+        .unwrap_or(own)
+}
 
 pub struct ChunkColumns {
     heights: Vec<i64>,
@@ -215,12 +230,9 @@ impl ChunkColumns {
                 let (world_x, world_z) = (x * size + cx, z * size + cz);
                 let height = heights.ground_top(world_x, world_z);
                 let own = heights.water_top(world_x, world_z);
-                let shore = (-SHORE_REACH..=SHORE_REACH)
-                    .flat_map(|dx| (-SHORE_REACH..=SHORE_REACH).map(move |dz| (dx, dz)))
-                    .filter_map(|(dx, dz)| wet[((cx + SHORE_REACH + dx) * span + cz + SHORE_REACH + dz) as usize])
-                    .filter(|&top| top >= height - 1 && top <= height + 1)
-                    .max();
-                columns.shore_tops.push(if own > height { own } else { shore.unwrap_or(own) });
+                columns.shore_tops.push(shore_top(own, height, |dx, dz| {
+                    wet[((cx + SHORE_REACH + dx) * span + cz + SHORE_REACH + dz) as usize]
+                }));
                 let (gradient_x, gradient_z) = heights.gradient(world_x, world_z);
                 columns.heights.push(height);
                 columns.gradients.push(gradient_x.abs() + gradient_z.abs());

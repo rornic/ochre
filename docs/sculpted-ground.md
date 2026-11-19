@@ -75,7 +75,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - A chunk's edge that lies lower or further in than the node beside it opens a gap seen only from outside the full-detail area.
 - Rock's chisel turns over 9 blocks, so from 8-block cells its directions change at every vertex.
 - In a blend, the untinted side loses its weathering tint.
-- LOD nodes don't read the shore's sand or cut water along the ground, so a shore can change at the hand-over, and trees can grow on shore sand.
+- LOD nodes don't cut water along the ground, so a waterline can change at the hand-over. Nodes of cells 1 and 2 lay the shore's sand as chunks do; coarser cells are wider than the beach.
 - Near-flat banks leave a saw-tooth waterline where the ground lies just under the water.
 - The constraint's corner trim was not judged by eye.
 - The constraint trims the sharpest corners, which could stand 0.3 past their cell.

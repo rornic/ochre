@@ -73,12 +73,11 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Not known:** how it reads in the game against the steppe ground, or whether one species of flower is too few.
 - **To check:** walk a steppe hollow, and count the butterflies there against grassland's.
 
-## LOD shores ignore the generated sand and the water cut, and trees root on shore sand
+## LOD nodes draw water with the old block edges, not the shore cut
 
-- **Seen:** 2026-11-17, reading the sculpted-ground change. Full-detail chunks give any bank within 2 blocks of water and a block of its level sand (`ColumnGrid::shore_top`, `columns.rs`) and cut the water surface along the sculpted ground (`push_shore`, `mesh.rs`). LOD nodes choose surface blocks through `column_block` with the column's own water top, and `trees.rs` does the same, and the water of a node uses the old block edges.
-- **Known:** by reading the code, not by looking. The two paths pass the column's own water top where chunks pass the shore's.
-- **Not known:** how visible the change is at the hand-over from chunk to node: a lake's bank may turn from sand to grass, and trees may stand on sand. Not checked.
-- **To fix:** pass the shore top into the LOD columns and the tree ground rule, then bump `GENERATOR_VERSION`.
+- **Seen:** 2026-11-17, reading the sculpted-ground change. Full-detail chunks cut the water surface along the sculpted ground (`push_shore`, `mesh.rs`); the water of a node uses the old block edges.
+- **Known:** by reading the code. Nodes of cells 1 and 2 now lay a bank's sand as chunks do (`columns::shore_top`), and trees no longer root on it; coarse cells (4 and up) are wider than the 2-block beach and keep the column's own water.
+- **Not known:** how visible the water's edge is at the hand-over from chunk to node.
 
 ## Near-flat banks leave a saw-tooth waterline
 
