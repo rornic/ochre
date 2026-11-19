@@ -21,7 +21,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 ## Steppe's streams and the climate shift are not checked as widely as the rest
 
 - **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country), and were measured on five seeds only.
-- **Since:** `water_audit --fine` on seeds 1, 42 and 1337 (2026-11-19) finds no lake or coast walls or steps and no uncontained map cell; river walls are in the seed 42 entry below. The census and frame times were not rerun.
+- **Since:** `water_audit --fine` on seeds 1, 42 and 1337 (2026-11-19) finds no lake or coast walls or steps and no uncontained map cell; its river "walls" are steps in a river's level, not leaks: they compare samples 4 blocks apart, and its one-block check finds no water beside lower dry ground and no open block edge. The census and frame times were not rerun.
 - **To check:** the census (`scripts/census.sh`) for a biome over 70% of land.
 ## Steppe on hills wider than a few kilometres stays hilly
 
@@ -29,11 +29,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** median slope fell by about two thirds on the seed 3 windows with no valley cut, relief over 1.5 km by about a fifth (`docs/terrain-perf.md`).
 - **Not known:** whether steppe should be kept off foothills in the first place, which is a change to `classify` and the census shares.
 
-## River walls rise near steppe valleys on seed 42
-
-- **Seen:** 2026-11-16, `water_audit --fine`. Tall river walls went from 31 to 58 on seed 42 against `main` (seeds 1 and 1337 fell or were level).
-- **Known:** valleys now cross rivers, and the audit counts the waterfalls the water rule allows as walls. The audit looks at every 100th edge cell (`PICK_EVERY`), so its counts move with the river layout: on 2026-11-19 the same seeds read tall walls 26, 52 and 46 (seeds 1, 42, 1337), and with every 20th cell 329 on seed 42 and 263 on 1337. After small basins were filled or breached shallow (`docs/water.md`, step 3) they read 24, 52 and 46, and 376 and 263 with every 20th; raised banks on 1337 went from 105 to 210 at every 20th.
-- **Not known:** whether the walls are waterfalls over valley walls or leaks. Not checked. The audit prints only its first few examples, all mountain waterfalls on seed 1337.
 ## The steppe change is not measured for speed
 
 - **Seen:** 2026-11-16. Frame times, `bench` vertex counts and the cost of the foliage shader's second gust term were not measured for the valleys, flattening, exposure, flora and wind. The valley stage in map generation takes 0.30 to 0.51 s against the 0.3 s a new stage may add (`docs/world-plan.md`).
