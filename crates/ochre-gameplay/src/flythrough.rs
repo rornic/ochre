@@ -155,7 +155,7 @@ fn sample_keys(keys: &[Key], t: f32) -> Key {
 }
 
 // Which way the camera looks for a compass `yaw` and `pitch`, in degrees: yaw 0 is north (-z) and 90 is east (+x).
-fn facing(yaw: f32, pitch: f32) -> Vec3 {
+pub(crate) fn facing(yaw: f32, pitch: f32) -> Vec3 {
     let (yaw, pitch) = (yaw.to_radians(), pitch.to_radians());
     Vec3::new(yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos())
 }
@@ -232,7 +232,7 @@ fn fly_keys(
 }
 
 // The highest ground or water round `p`'s column, from the terrain itself, as the blocks far along the path aren't loaded yet.
-fn ground_height(world: &World, p: Vec3) -> f32 {
+pub(crate) fn ground_height(world: &World, p: Vec3) -> f32 {
     let terrain = world.region_store.terrain();
     let mut top = f32::MIN;
     for dx in [-8.0, 0.0, 8.0] {

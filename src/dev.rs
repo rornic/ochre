@@ -23,6 +23,8 @@ pub struct DevEnv {
     pub stats: bool,
     /// `OCHRE_FLIGHT`, with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`.
     pub flight: Option<FlightConfig>,
+    /// `OCHRE_REMOTE`, the port for `RemoteControlPlugin`, Bevy's 15702 if it isn't a number.
+    pub remote: Option<u16>,
 }
 
 fn number<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -57,6 +59,7 @@ impl DevEnv {
                 warmup: number("OCHRE_FLIGHT_WARMUP"),
                 frames: var("OCHRE_FLIGHT_FRAMES").ok(),
             }),
+            remote: var("OCHRE_REMOTE").ok().map(|v| v.parse().unwrap_or(bevy::remote::http::DEFAULT_PORT)),
         }
     }
 }

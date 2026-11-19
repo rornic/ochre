@@ -10,5 +10,6 @@ pub mod debug;
 pub mod flythrough;
 pub mod footsteps;
 pub mod player;
+pub mod remote;
 mod view;
 mod wings;

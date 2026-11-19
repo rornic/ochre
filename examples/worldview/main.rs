@@ -2,12 +2,17 @@
 // layers (height, hillshade, blocks, biomes, trees, water, climate, roughness, features...), click
 // a spot for every number there, and export the view as a PNG to share.
 //   cargo run --release --example worldview -- [seed] [port]
-// then open http://127.0.0.1:8777 (default port). The map takes a few seconds per seed.
+// then open http://127.0.0.1:8777 (default port). A seed new to the game's map cache (`OCHRE_WORLD_DIR`) takes a few seconds.
 // Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or
 // fewer they come from `RegionStore` ground, water and slope, which is what chunks are built from.
 // Export writes target/worldview/<seed>-<x>_<z>-<scale>.png, prints the path and downloads it too:
 //   curl 'http://127.0.0.1:8777/export?seed=42&layers=height,hillshade,water:0.6&x=0&z=0&w=1024&h=1024&scale=4' -o view.png
 // Rough: one world in memory at a time, tree density only (not individual trees), localhost only.
+// It also runs the probe commands in `probe.rs`, once from the command line or on the held world over HTTP:
+//   cargo run --release --example worldview -- <seed> slice <x> <z> x 64 380 460
+//   curl 'http://127.0.0.1:8777/probe?seed=42&cmd=line+100+-200+x+16'
+mod probe;
+
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -29,12 +34,13 @@ use ochre_world::worldmap::{
 struct World {
     map: Arc<WorldMap>,
     terrain: Arc<WorldTerrain>,
-    regions: RegionStore,
+    regions: Arc<RegionStore>,
 }
 
 #[derive(Default)]
 struct Server {
     config: WorldConfig,
+    dir: std::path::PathBuf,
     world: Mutex<Option<(u32, Arc<World>)>>,
 }
 
@@ -47,13 +53,15 @@ impl Server {
             }
         }
         let start = Instant::now();
-        let map = Arc::new(ochre_world::worldmap::generate(
+        // the game's cache, so a seed the game has played loads in a moment
+        let map = Arc::new(ochre_world::worldmap::io::load_or_generate(
+            &self.dir,
             seed,
             ochre_world::worldmap::character::world_config(seed, self.config),
         ));
         let terrain = Arc::new(WorldTerrain::new(map.clone()));
-        let regions = RegionStore::new(terrain.clone()).with_resident_cap(512);
-        println!("seed {seed} generated in {:.1?}", start.elapsed());
+        let regions = Arc::new(RegionStore::new(terrain.clone()).with_resident_cap(512));
+        eprintln!("seed {seed} ready in {:.1?}", start.elapsed());
         let world = Arc::new(World {
             map,
             terrain,
@@ -896,6 +904,17 @@ fn handle(server: &Server, mut stream: TcpStream) {
                 &png(render(&world, &v), size, size),
             );
         }
+        "/probe" => {
+            let world = server.world(seed);
+            let args: Vec<String> = [seed.to_string()]
+                .into_iter()
+                .chain(q.get("cmd").map_or("", String::as_str).split_whitespace().map(String::from))
+                .collect();
+            match probe::run(&world, &args) {
+                Ok(text) => reply(stream, "200 OK", "text/plain", "", text.as_bytes()),
+                Err(e) => reply(stream, "400 Bad Request", "text/plain", "", e.as_bytes()),
+            }
+        }
         "/info" => {
             let world = server.world(seed);
             reply(
@@ -941,19 +960,30 @@ fn handle(server: &Server, mut stream: TcpStream) {
 }
 
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let seed: u32 = args
-        .next()
-        .map_or(42, |s| s.parse().expect("seed is a u32"));
-    let port: u16 = args.next().map_or(8777, |s| s.parse().expect("port"));
+    let args: Vec<String> = std::env::args().skip(1).collect();
     let config = ochre_engine::settings::Settings::read("assets/settings.toml")
         .expect("read assets/settings.toml")
         .world;
     config.validate().expect("invalid world configuration");
     let server = Arc::new(Server {
         config,
+        dir: ochre_engine::DevEnv::from_env().world.dir,
         ..Default::default()
     });
+    // `<seed> <command> ...` runs one probe and exits; `[seed] [port]` serves
+    if args.get(1).is_some_and(|a| a.parse::<u16>().is_err()) {
+        let seed: u32 = args[0].parse().expect("seed is a u32");
+        match probe::run(&server.world(seed), &args) {
+            Ok(text) => print!("{text}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
+    let seed: u32 = args.first().map_or(42, |s| s.parse().expect("seed is a u32"));
+    let port: u16 = args.get(1).map_or(8777, |s| s.parse().expect("port"));
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("port in use");
     println!("http://127.0.0.1:{port}/?seed={seed}");
     for stream in listener.incoming().flatten() {

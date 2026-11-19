@@ -1,15 +1,16 @@
-// A command line probe of a seed's world, for digging at a spot without the viewer's server. It builds the
-// same columns chunks are built from (`RegionStore` ground and water), so what it prints is what the game draws.
-//   cargo run --release --example worldprobe -- <seed> info <x> <z>
-//   cargo run --release --example worldprobe -- <seed> line <x> <z> <x|z> <len>   one row a block along an axis
-//   cargo run --release --example worldprobe -- <seed> grid <x> <z> <half>        ascii: water kind and block-rounded level
-//   cargo run --release --example worldprobe -- <seed> png <x> <z> <half> <out.png> [pixels_per_block]
-//   cargo run --release --example worldprobe -- <seed> route <x> <z> [cells]
+// Probe commands on a seed's world, run from the command line or the viewer's `/probe` route. They read the same
+// columns chunks are built from (`RegionStore` ground and water), so what they print is what the game draws.
+//   worldview <seed> info <x> <z>
+//   worldview <seed> line <x> <z> <x|z> <len>   one row a block along an axis
+//   worldview <seed> grid <x> <z> <half>        ascii: water kind and block-rounded level
+//   worldview <seed> png <x> <z> <half> <out.png> [pixels_per_block]
+//   worldview <seed> route <x> <z> [cells]
+//   worldview <seed> sites|valley|falls|features|edges <x> <z> ...
 // Real blocks, from `generate_chunk_with`, so the cliff pass, trees and flora can each be switched off:
-//   ... <seed> slice <x> <z> <x|z> <len> <y0> <y1> [flags]   a vertical cross-section, one letter a block
-//   ... <seed> top <x> <z> <half> <out.png> [flags]           top-down surface blocks, 1 pixel a block
-//   ... <seed> passes <x> <z> <half>                         blocks each pass changes in the area, and where
-//   ... <seed> render <x> <z> <half> <out.png> [azimuth]       the meshes as the game builds them, sun-shaded in mean colours
+//   worldview <seed> slice <x> <z> <x|z> <len> <y0> <y1> [flags]   a vertical cross-section, one letter a block
+//   worldview <seed> top <x> <z> <half> <out.png> [flags]           top-down surface blocks, 1 pixel a block
+//   worldview <seed> passes <x> <z> <half>                         blocks each pass changes in the area, and where
+//   worldview <seed> render <x> <z> <half> <out.png> [azimuth]       the meshes as the game builds them, sun-shaded in mean colours
 // flags: --no-cliffs --no-trees --no-flora
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +24,25 @@ use image::{Rgb, RgbImage};
 use ochre_base::terrain_source::{TerrainSource, WaterKind};
 use ochre_terrain::generate::region_store::RegionStore;
 use ochre_world::worldmap::valleys::Valley;
-use ochre_world::worldmap::{WaterCell, WorldConfig, WorldMap, WorldTerrain, NEIGHBOURS};
+use ochre_world::worldmap::{WaterCell, WorldMap, WorldTerrain, NEIGHBOURS};
+
+const USAGE: &str = "commands: info line grid png route sites valley falls features edges slice top passes render";
+
+macro_rules! outln {
+    ($out:expr, $($t:tt)*) => {{
+        use std::fmt::Write;
+        let _ = writeln!($out, $($t)*);
+    }};
+}
+
+fn arg<T: std::str::FromStr>(args: &[String], i: usize) -> Result<T, String> {
+    let s = args.get(i).ok_or_else(|| format!("missing argument {i}\n{USAGE}"))?;
+    s.parse().map_err(|_| format!("bad argument {i}: {s}"))
+}
+
+fn opt<T: std::str::FromStr>(args: &[String], i: usize, default: T) -> Result<T, String> {
+    if args.get(i).is_some() { arg(args, i) } else { Ok(default) }
+}
 
 fn kind_char(kind: WaterKind) -> char {
     match kind {
@@ -279,27 +298,19 @@ fn feature_counts(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> String {
     )
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 4 {
-        eprintln!("usage: worldprobe <seed> info|line|grid|png|route|edges|valley <x> <z> ...");
-        std::process::exit(2);
-    }
-    let seed: u32 = args[0].parse().unwrap();
-    let (x, z): (i64, i64) = (args[2].parse().unwrap(), args[3].parse().unwrap());
-    let map = Arc::new(ochre_world::worldmap::generate(
-        seed,
-        ochre_world::worldmap::character::world_config(seed, WorldConfig::default()),
-    ));
-    let terrain = Arc::new(WorldTerrain::new(map.clone()));
-    let regions = Arc::new(RegionStore::new(terrain.clone()));
-    match args[1].as_str() {
-        "info" => println!("{}", describe(&terrain, &map, &regions, x, z)),
+/// Runs one probe command, `args` as on the command line: seed, command, x, z, then the command's own.
+pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
+    let mut out = String::new();
+    let seed: u32 = arg(args, 0)?;
+    let (x, z): (i64, i64) = (arg(args, 2)?, arg(args, 3)?);
+    let (map, terrain, regions) = (&world.map, &world.terrain, &world.regions);
+    match arg::<String>(args, 1)?.as_str() {
+        "info" => outln!(out, "{}", describe(terrain, map, regions, x, z)),
         "sites" => {
-            let half: i64 = args.get(4).map_or(4096, |s| s.parse().unwrap());
-            println!("x z open_rays(of 16) relief_in_view");
-            for site in ochre_world::worldmap::view::view_sites(&terrain, x, z, half) {
-                println!(
+            let half: i64 = opt(args, 4, 4096)?;
+            outln!(out, "x z open_rays(of 16) relief_in_view");
+            for site in ochre_world::worldmap::view::view_sites(terrain, x, z, half) {
+                outln!(out, 
                     "{} {} {} {:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={},{} OCHRE_LOOK={:.2},{:.2},{:.2}",
                     site.x, site.z, site.open_rays, site.relief, site.x, site.z, site.look.0, site.look.1, site.look.2
                 );
@@ -307,8 +318,8 @@ fn main() {
         }
         "valley" => {
             // the valley at a point, then how much of the window round it is floor or wall, with spawn lines at walls
-            let half: i64 = args.get(4).map_or(2048, |s| s.parse().unwrap());
-            let valley = Valley::of(&map);
+            let half: i64 = opt(args, 4, 2048)?;
+            let valley = Valley::of(map);
             let dim = map.dim() as f64;
             let weight = |x: f64, z: f64| {
                 let (u, v) = map.to_cell(x, z);
@@ -316,7 +327,7 @@ fn main() {
                 map.valley[map.index(cell(u), cell(v))] as f64 / 255.0
             };
             let cut = valley.at(x as f64, z as f64);
-            println!(
+            outln!(out, 
                 "at ({x}, {z}): weight {:.2} depth {:.0} soft {:.2} sharp {:.2} wall {:.2} exposure {:.2} ground {:.1}",
                 weight(x as f64, z as f64),
                 cut.depth,
@@ -342,13 +353,13 @@ fn main() {
                     }
                 }
             }
-            println!("{samples} samples: {floors} on a floor, {} wall spots", walls.len());
-            for (wx, wz) in walls.iter().take(args.get(5).map_or(8, |s| s.parse().unwrap())) {
-                println!("OCHRE_SEED={seed} OCHRE_SPAWN={wx},{wz},20 OCHRE_LOOK=0,-0.1,1");
+            outln!(out, "{samples} samples: {floors} on a floor, {} wall spots", walls.len());
+            for (wx, wz) in walls.iter().take(opt(args, 5, 8)?) {
+                outln!(out, "OCHRE_SEED={seed} OCHRE_SPAWN={wx},{wz},20 OCHRE_LOOK=0,-0.1,1");
             }
-            println!("floor spots:");
-            for (fx, fz) in floor_spots.iter().take(args.get(5).map_or(8, |s| s.parse().unwrap())) {
-                println!("OCHRE_SEED={seed} OCHRE_SPAWN={fx},{fz},20 OCHRE_LOOK=0,-0.1,1");
+            outln!(out, "floor spots:");
+            for (fx, fz) in floor_spots.iter().take(opt(args, 5, 8)?) {
+                outln!(out, "OCHRE_SEED={seed} OCHRE_SPAWN={fx},{fz},20 OCHRE_LOOK=0,-0.1,1");
             }
         }
         "falls" => {
@@ -369,12 +380,12 @@ fn main() {
                     format!("{lo}..{hi}: {n}")
                 })
                 .collect();
-            println!("{} falls ({})", falls.len(), counts.join(", "));
+            outln!(out, "{} falls ({})", falls.len(), counts.join(", "));
             for (fx, fz, drop, level) in falls
                 .iter()
-                .take(args.get(4).map_or(12, |s| s.parse().unwrap()))
+                .take(opt(args, 4, 12)?)
             {
-                println!(
+                outln!(out, 
                     "drop {drop:.1} from {level:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={:.0},{:.0},12 OCHRE_LOOK={fx:.0},{level:.0},{fz:.0}",
                     fx - 20.0,
                     fz - 20.0
@@ -382,11 +393,11 @@ fn main() {
             }
         }
         "features" => {
-            let half: i64 = args.get(4).map_or(1024, |s| s.parse().unwrap());
-            println!("{}", feature_counts(&terrain, x, z, half));
+            let half: i64 = opt(args, 4, 1024)?;
+            outln!(out, "{}", feature_counts(terrain, x, z, half));
         }
         "route" => {
-            let cells: usize = args.get(4).map_or(256, |s| s.parse().unwrap());
+            let cells: usize = opt(args, 4, 256)?;
             let (u, v) = map.to_cell(x as f64, z as f64);
             let dim = map.dim();
             let mut i = map.index(
@@ -407,7 +418,7 @@ fn main() {
                         .then(|| map.index(nx as usize, nz as usize))
                 };
                 if step.is_multiple_of(8) || kind != WaterCell::River || next.is_none() {
-                    println!(
+                    outln!(out, 
                         "{step:4} {wx:7.0},{wz:7.0} ground={:.1} {:?} surface={:.1} flow={:.0} down={:?}",
                         map.height[i], kind, map.water_surface[i], map.flow[i], next.map(|n| map.cell_centre(n % dim, n / dim))
                     );
@@ -417,19 +428,19 @@ fn main() {
             }
         }
         "edges" => {
-            let half: i64 = args[4].parse().unwrap();
-            println!("{}", longest_straight_edge(&terrain, x, z, half));
+            let half: i64 = arg(args, 4)?;
+            outln!(out, "{}", longest_straight_edge(terrain, x, z, half));
         }
         "line" => {
-            let along_x = args[4] == "x";
-            let len: i64 = args[5].parse().unwrap();
+            let along_x = arg::<String>(args, 4)? == "x";
+            let len: i64 = arg(args, 5)?;
             for d in 0..len {
                 let (px, pz) = if along_x { (x + d, z) } else { (x, z + d) };
-                println!("{}", describe(&terrain, &map, &regions, px, pz));
+                outln!(out, "{}", describe(terrain, map, regions, px, pz));
             }
         }
         "grid" => {
-            let half: i64 = args[4].parse().unwrap();
+            let half: i64 = arg(args, 4)?;
             let mut sampler = regions.sampler();
             for pz in z - half..z + half {
                 let mut row = String::new();
@@ -442,13 +453,13 @@ fn main() {
                         row.push_str(&format!(" {:<3}", g - 400));
                     }
                 }
-                println!("{row}");
+                outln!(out, "{row}");
             }
         }
         "png" => {
-            let half: i64 = args[4].parse().unwrap();
-            let out = &args[5];
-            let scale: u32 = args.get(6).map_or(1, |s| s.parse().unwrap());
+            let half: i64 = arg(args, 4)?;
+            let file = &arg::<String>(args, 5)?;
+            let scale: u32 = opt(args, 6, 1)?;
             let mut sampler = regions.sampler();
             let n = (2 * half) as u32;
             let (mut lo, mut hi) = (i64::MAX, i64::MIN);
@@ -489,32 +500,32 @@ fn main() {
                     }
                 }
             }
-            img.save(out).unwrap();
-            println!("wrote {out}");
+            img.save(file).map_err(|e| format!("{file}: {e}"))?;
+            outln!(out, "wrote {file}");
         }
         "slice" => {
-            let along_x = args[4] == "x";
-            let len: i64 = args[5].parse().unwrap();
-            let (y0, y1): (i64, i64) = (args[6].parse().unwrap(), args[7].parse().unwrap());
-            let mut blocks = Blocks::new(regions.clone(), passes_from(&args[8..]));
+            let along_x = arg::<String>(args, 4)? == "x";
+            let len: i64 = arg(args, 5)?;
+            let (y0, y1): (i64, i64) = (arg(args, 6)?, arg(args, 7)?);
+            let mut blocks = Blocks::new(regions.clone(), passes_from(&args[8.min(args.len())..]));
             for y in (y0..=y1).rev() {
                 let mut row = format!("{y:4} ");
                 for d in 0..len {
                     let (px, pz) = if along_x { (x + d, z) } else { (x, z + d) };
                     row.push(letter(blocks.at(px, y, pz)));
                 }
-                println!("{row}");
+                outln!(out, "{row}");
             }
         }
         "render" => {
-            let half: i64 = args[4].parse().unwrap();
-            let azimuth: f32 = args.get(6).map_or(225.0, |a| a.parse().unwrap());
-            render(&regions, x, z, half, azimuth, &args[5]);
+            let half: i64 = arg(args, 4)?;
+            let azimuth: f32 = opt(args, 6, 225.0)?;
+            outln!(out, "{}", render(regions, x, z, half, azimuth, &arg::<String>(args, 5)?)?);
         }
         "top" => {
-            let half: i64 = args[4].parse().unwrap();
-            let out = &args[5];
-            let mut blocks = Blocks::new(regions.clone(), passes_from(&args[6..]));
+            let half: i64 = arg(args, 4)?;
+            let file = &arg::<String>(args, 5)?;
+            let mut blocks = Blocks::new(regions.clone(), passes_from(&args[6.min(args.len())..]));
             let mut sampler = regions.sampler();
             let n = (2 * half) as u32;
             let mut img = RgbImage::new(n, n);
@@ -527,11 +538,11 @@ fn main() {
                     img.put_pixel((px - (x - half)) as u32, (pz - (z - half)) as u32, Rgb(rgb));
                 }
             }
-            img.save(out).unwrap();
-            println!("wrote {out}");
+            img.save(file).map_err(|e| format!("{file}: {e}"))?;
+            outln!(out, "wrote {file}");
         }
         "passes" => {
-            let half: i64 = args[4].parse().unwrap();
+            let half: i64 = arg(args, 4)?;
             let mut sampler = regions.sampler();
             let mut all = Blocks::new(regions.clone(), ChunkPasses::ALL);
             let off = [
@@ -582,23 +593,21 @@ fn main() {
                         columns += column as u64;
                     }
                 }
-                println!(
+                outln!(out, 
                     "{name}: {changed} blocks in {columns} columns; e.g. {}",
                     examples.join("  ")
                 );
             }
         }
-        other => {
-            eprintln!("unknown command {other}");
-            std::process::exit(2);
-        }
+        other => return Err(format!("unknown command {other}\n{USAGE}")),
     }
+    Ok(out)
 }
 
 // The chunks round (`x`, `z`) meshed as the game meshes them, drawn from above at `azimuth` degrees with an orthographic
 // camera, each face its tile's mean colour times its vertex colour, lit by one sun. Plants and leaves are left out, as
 // their cards would draw solid.
-fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, out: &str) {
+fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, out: &str) -> Result<String, String> {
     use bevy::math::Vec3;
     use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
     use ochre_terrain::chunk::CHUNK_SIZE;
@@ -793,6 +802,6 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             }
         }
     }
-    img.save(out).unwrap();
-    println!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len());
+    img.save(out).map_err(|e| format!("{out}: {e}"))?;
+    Ok(format!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len()))
 }
