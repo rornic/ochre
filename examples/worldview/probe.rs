@@ -432,7 +432,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             // driest first by how far the ground lies under the map's own: water the map has and the blocks lose
             let limit: usize = opt(args, 4, 12)?;
             let dim = map.dim();
-            let cell = map.config.map_cell as i64;
+            let cell = map.config.map_cell;
             let rivers: Vec<usize> = (0..dim * dim).filter(|&i| map.water_kind[i] == WaterCell::River as u8).collect();
             let mut dry = Vec::new();
             for &i in &rivers {
