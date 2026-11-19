@@ -9,6 +9,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
 - **Known:** the owner says it happens sometimes, and that it comes from the dual contouring, the way rock's vertices are placed where its planes meet (`docs/sculpted-ground.md`, The mesh). Not checked on `main`, so not known to be new.
 - **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
+- **Lead, 2026-11-19:** `OCHRE_RENDER_FLAT=1 worldview 1 render 10816 -6784 14 out.png` shows thin grass slivers between rock faces on a cliff, not confirmed to be this.
 - **To check:** find one and note the seed and place. Render it with `worldview <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
 
 ## Steppe grass bends in a hollow while its wind sound is quiet
