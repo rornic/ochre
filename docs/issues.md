@@ -9,14 +9,14 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
 - **Known:** the owner says it happens sometimes, and that it comes from the dual contouring, the way rock's vertices are placed where its planes meet (`docs/sculpted-ground.md`, The mesh). Not checked on `main`, so not known to be new.
 - **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
-- **To check:** find one and note the seed and place. Render it with `worldprobe <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
+- **To check:** find one and note the seed and place. Render it with `worldview <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
 
 ## A hole in the mesh at a marble arch on seed 4
 
 - **Seen:** 2026-11-18, seed 4, at (11393, 110, -20193), a block outline on the ground beside a giant marble arch in the tundra, on the `feat/geography-colour` build. The screenshot is `docs/issues/mesh-hole-seed4-11393-110--20193.jpg`: sky shows through a gap in the arch's pillar just over the outlined block.
 - **Known:** the owner says it is not from the geography colour change. Not checked on `main`.
 - **Not known:** the cause, or whether the gap is the arch's designed opening (3.5 to 4.5 blocks between pillars) and not a hole. From one frame it reads as a hole in the pillar's face. Not reproduced. A guess only: it is where the arch's pillar meets its capstone, which `generate/rocks.rs` builds block by block.
-- **Since:** `worldprobe 4 render 11393 -20193 40` finds no open edge but 23 folded triangles in the chunks (11376, 112, -20192) and (11392, 112, -20192), the only anomaly in the area (see the seed 1 entry above). **To check:** `test_sculpted_ground_leaves_no_hole`'s checker looks for open edges only, so it cannot see this. See Open in `docs/sculpted-ground.md`, which already lists rare holes seen in play and not found by the tests.
+- **Since:** `worldview 4 render 11393 -20193 40` finds no open edge but 23 folded triangles in the chunks (11376, 112, -20192) and (11392, 112, -20192), the only anomaly in the area (see the seed 1 entry above). **To check:** `test_sculpted_ground_leaves_no_hole`'s checker looks for open edges only, so it cannot see this. See Open in `docs/sculpted-ground.md`, which already lists rare holes seen in play and not found by the tests.
 - **Likely cause, fixed 2026-11-18, not confirmed here:** the outlined block sits on a chunk corner (x 11392, z -20192). Holes on seed 1's cliffs had one cause: a sculpted face belonged to the chunk on its low side, and the loader never meshed all-air chunks, so a face toward -x, -y or -z on a chunk boundary with an empty chunk on its air side was never drawn. A face is now drawn by the chunk of its solid block (`docs/sculpted-ground.md`). Delete this entry once the arch is seen whole.
 
 ## A river through the steppe is a chain of round dips, not a carved valley
@@ -104,7 +104,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-17, in play, rarely. Where was not recorded. The tests (`test_sculpted_ground_leaves_no_hole`, `test_sculpted_lod_nodes_leave_no_hole`) find no open edge on the spots they mesh.
 - **Known:** earlier holes were a winding flip, a chunk-edge float mismatch, a remesh range too short after a dig, and plants cut at a chunk's vertical edge, all fixed.
-- **Not known:** the cause of these. Record the seed and the place when one is seen, and mesh it with `worldprobe <seed> render <x> <z> <half> <out.png>` (`docs/sculpted-ground.md`, Checking it).
+- **Not known:** the cause of these. Record the seed and the place when one is seen, and mesh it with `worldview <seed> render <x> <z> <half> <out.png>` (`docs/sculpted-ground.md`, Checking it).
 
 ## A chunk's edge lower than the LOD node beside it opens a gap from outside
 

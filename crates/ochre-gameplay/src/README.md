@@ -24,6 +24,7 @@ What moves through the world (`lib.rs`: module doc): the player and its collisio
 - `critters.rs`: `CritterPlugin` (butterflies over `Poppy` and `Dandelion`, fireflies over meadow, both near the camera).
 - `debug.rs`: `DebugOverlayPlugin`; F1 (`TOGGLE_KEY`) toggles a text readout.
 - `flythrough.rs`: `FlythroughPlugin { flight }`; active only when a `FlightConfig` is given (`OCHRE_FLIGHT` through `DevEnv`).
+- `remote.rs`: `RemoteControlPlugin { port }`; active only with a port (`OCHRE_REMOTE` through `DevEnv`). Adds Bevy's `RemotePlugin` and `RemoteHttpPlugin` on 127.0.0.1 with `ochre.teleport`, `ochre.time`, `ochre.state`, `ochre.screenshot` (see the `game-remote` skill). Reuses `flythrough.rs:facing` and `ground_height`.
 
 ## Invariants
 - `collision.rs:EPSILON` (1e-3): overlaps thinner than this are ignored, so a resting box is not read as inside the block under it. Blocks the box already overlaps are ignored too (`move_and_collide` doc), so it can always move out, except on the horizontal axes, where an overlap of up to `STEP_REACH` (0.25) still stops it and pushes it back out.

@@ -23,10 +23,11 @@ serde = { version = "1.0", features = ["serde_derive"] }
 bevy = { version = "0.20", default-features = false, features = [
     "trace", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "reflect_auto_register",
     "std", "bevy_gilrs", "bevy_winit", "bevy_clipboard", "audio", "default_font", "multi_threaded", "x11", "custom_cursor",
-    "common_api", "3d_bevy_render", "ui_api", "ui_bevy_render", "bevy_ui_widgets",
+    "common_api", "3d_bevy_render", "ui_api", "ui_bevy_render", "bevy_ui_widgets", "bevy_remote",
 ] }
 tracing = { version = "0.1.40", features = ["attributes"] }
 criterion = "0.8"
+serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 # The engine: re-exports the ochre crates, and holds the examples and benchmarks.

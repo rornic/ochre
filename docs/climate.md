@@ -4,7 +4,7 @@ How a cell gets a biome and what grows on it. Landforms are `docs/landforms.md` 
 
 ## The config
 
-A seed draws `warmth`, `humidity`, a temperature `gradient` and its angle, `continentality`, the wind direction and the plate count (`worldmap/character.rs`). `OCHRE_CHARACTER=off` keeps the config as given, and the tools (`worldview`, `worldprobe`, `bench`, the game) all build the world with the drawn character.
+A seed draws `warmth`, `humidity`, a temperature `gradient` and its angle, `continentality`, the wind direction and the plate count (`worldmap/character.rs`). `OCHRE_CHARACTER=off` keeps the config as given, and the tools (`worldview`, `bench`, the game) all build the world with the drawn character.
 
 ## Warmth and moisture (`climate.rs`)
 
@@ -16,7 +16,7 @@ A biome sets how thick trees grow, how big they get (`TreeScale`: height, spread
 
 ## Edges between biomes
 
-The map holds, for each land cell, `biome_alt` (the climate biome across its nearest class boundary) and `biome_margin` (how far off the boundary it is, 255 well inside: the climate offset that changes the class, but never past two cells from a different class, since a slowly changing climate would otherwise scatter patches for hundreds of blocks). At block scale `biome_at` looks up the cell through a wander of 1.5 cells and a slow drift of up to 160 blocks, which bends edges over hundreds of blocks, and near a boundary a block takes the alt biome in patches of 10 to 20 blocks, thickest on the boundary. Cells 16 blocks wide or more use their own biome, so LODs do not change. `worldprobe edges` measures it.
+The map holds, for each land cell, `biome_alt` (the climate biome across its nearest class boundary) and `biome_margin` (how far off the boundary it is, 255 well inside: the climate offset that changes the class, but never past two cells from a different class, since a slowly changing climate would otherwise scatter patches for hundreds of blocks). At block scale `biome_at` looks up the cell through a wander of 1.5 cells and a slow drift of up to 160 blocks, which bends edges over hundreds of blocks, and near a boundary a block takes the alt biome in patches of 10 to 20 blocks, thickest on the boundary. Cells 16 blocks wide or more use their own biome, so LODs do not change. `worldview <seed> edges` measures it.
 
 ## Trees and flora
 

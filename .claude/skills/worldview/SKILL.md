@@ -5,7 +5,7 @@ description: Inspect Ochre's generated world (terrain, water, rivers, lakes, bio
 
 # Worldview
 
-`examples/worldview.rs` serves a seed's whole world on localhost. It shows exactly what chunks are built from at 2 blocks a pixel or finer (`RegionStore` ground and water, same as `generate_chunk`), so a render here is the evidence for a terrain or water change. Use it before launching the game.
+`examples/worldview/` serves a seed's whole world on localhost. It shows exactly what chunks are built from at 2 blocks a pixel or finer (`RegionStore` ground and water, same as `generate_chunk`), so a render here is the evidence for a terrain or water change. Use it before launching the game.
 
 ## Start it
 
@@ -15,7 +15,8 @@ cargo build --release --example worldview
 until curl -s -o /dev/null http://127.0.0.1:8777/; do sleep 3; done
 ```
 
-- One seed is held in memory, generated on first request (about 4.5 s), tiles after that about 0.2 s.
+- One seed is held in memory, loaded from the game's map cache (`worlds/`, or `OCHRE_WORLD_DIR`) or generated on first request (about 4.5 s), tiles after that about 0.2 s.
+- To see a spot it finds in the game itself, teleport and screenshot with the `game-remote` skill.
 - It does not reload code. After any change to world generation, stop it and rebuild. Stop it by pid (`pgrep -f '^target/release/examples/worldview'`), never `pkill -f worldview`, which matches your own shell command and kills it.
 - The game's seed is in its log (`world seed is ...`). A coordinate quoted by the user only makes sense on the seed it was seen on, so ask for the seed if unsure.
 
@@ -28,22 +29,23 @@ curl -s 'http://127.0.0.1:8777/export?seed=S&layers=hillshade,water:0.8,waterlev
 ```
 
 - `x`, `z` are the world position of the image's top-left corner (centre minus half the size times scale), `scale` is blocks a pixel, size up to 4096.
-- Layers draw in list order, `name:opacity`. Available: height, hillshade, blocks, contours, biomes, trees, water, waterlevel, flowdir, flow, temperature, moisture, continentalness, roughness, range, features, cells.
+- Layers draw in list order, `name:opacity`. Available: height, hillshade, blocks, contours, biomes, trees, water, waterlevel, flowdir, flow, temperature, moisture, continentalness, roughness, range, features, cells, and for the meso scorer valley, alpine, exposure, water_closeness and meso (its places as discs: raised red, dips blue, steep darker). `/places?seed=S` returns the scorer's places as CSV.
 - `water` is lake and river in two blues; `waterlevel` bands every block, so a step in a river or lake level shows as a colour change; `cells` draws the 32 block map-cell grid, which is where squared artefacts line up.
 - Values for one block: `curl -s 'http://127.0.0.1:8777/info?seed=S&x=X&z=Z'` gives ground height, the map's smooth height ("map bicubic"), top block, water kind, level and depth, and the map cell's lake and river data. Compare ground and bicubic heights to tell detail carved under the smooth ground (hollows, gorges) from the map itself.
 - The interactive page at `http://127.0.0.1:8777/?seed=S` has pan, zoom and click-for-info for the user.
 
 ## Dig from the command line
 
-`examples/worldprobe.rs` needs no server and prints what chunks are built from, for one block, a line, an ascii grid or a PNG. Prefer it for quick checks; use the viewer for looking round.
+The viewer's probe commands (`examples/worldview/probe.rs`) print what chunks are built from, for one block, a line, an ascii grid or a PNG. Run one from the command line, or send it to a running viewer's `/probe` route, which answers at once on the world it already holds:
 
 ```
-cargo build --release --example worldprobe
-P=target/release/examples/worldprobe
+cargo build --release --example worldview
+P=target/release/examples/worldview
 $P <seed> info <x> <z>                  # ground, dry ground, map base, water kind and level, chunk ground_top and water_top, lake level and cover
 $P <seed> line <x> <z> <x|z> <len>      # one row a block along an axis: find where a value steps
 $P <seed> grid <x> <z> <half>           # ascii: ground (y-400) and water as kind letter (r river, L lake, s sea) plus level
 $P <seed> png <x> <z> <half> out.png [pixels_per_block]
+curl -s 'http://127.0.0.1:8777/probe?seed=<seed>&cmd=line+<x>+<z>+x+16'   # the same, on a running viewer
 ```
 
 Real blocks, from the game's `generate_chunk_with`, with the passes laid over the terrain switchable (`--no-cliffs --no-trees --no-flora`), so you can tell which pass made a block:
@@ -56,9 +58,9 @@ $P <seed> passes <x> <z> <half>                          # blocks each pass chan
 
 Render `top` twice, all passes and `--no-cliffs`, to see what the cliff pass does at a shore. Columns and water from `info`, `line`, `grid` are the input to these passes; if the columns are right and `slice` is wrong, a pass is at fault.
 
-The viewer and the probe both build the world with the seed's drawn character (plates, relief, warmth, wind, humidity), as the game does, so a coordinate means the same in each. `$P <seed> edges <x> <z> <half>` measures biome edges, `features` counts relief features, `sites` lists spawn regions with the view from each.
+The viewer and the probe commands both build the world with the seed's drawn character (plates, relief, warmth, wind, humidity), as the game does, so a coordinate means the same in each. `$P <seed> edges <x> <z> <half>` measures biome edges, `features` counts relief features, `sites` lists spawn regions with the view from each.
 
-It generates the map each run (about 4.5 s), so for many questions about one seed use the viewer's `info` and `export`. `ground` is the finished column, `dry` the ground with no river or lake water on it, `base` the map's smooth height: `ground` far under `base` is detail carved into a hollow, `ground` over `dry` is a bank or valley built up.
+From the command line it loads the map from the cache (about 0.5 s, 4.5 s for a seed not cached yet), so for many questions about one seed use a running viewer's `/probe`. `ground` is the finished column, `dry` the ground with no river or lake water on it, `base` the map's smooth height: `ground` far under `base` is detail carved into a hollow, `ground` over `dry` is a bank or valley built up.
 
 ## Hunt artefacts
 

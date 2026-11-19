@@ -26,7 +26,7 @@ What this means for the mountain design:
 
 Wrong turns, kept as a record of what was ruled out: the earlier sections below blamed folded triangles, the LOD hand-over and the air layer behind the sandstone skin. None was the cause. Folded triangles were real and are now held at zero, but fixing them did not remove a hole. Mesh packing, group merging, the loader's visibility and the camera's near plane were all checked and cleared.
 
-`worldprobe <seed> render <x> <z> <half> <out> [azimuth]` prints slope bands and checks the ground mesh. It leaves out water and edges beside tree blocks (trunks sink up to 2 blocks and are drawn open). `OCHRE_RENDER_EDGES=1` lists open edges, `OCHRE_RENDER_CULL=out` draws only triangles whose winding faces the camera as a backface cull would, and `OCHRE_RENDER_PITCH=<degrees>` sets the camera pitch (35 by default), so a near-level view can be diffed against the uncullled one.
+`worldview <seed> render <x> <z> <half> <out> [azimuth]` prints slope bands and checks the ground mesh. It leaves out water and edges beside tree blocks (trunks sink up to 2 blocks and are drawn open). `OCHRE_RENDER_EDGES=1` lists open edges, `OCHRE_RENDER_CULL=out` draws only triangles whose winding faces the camera as a backface cull would, and `OCHRE_RENDER_PITCH=<degrees>` sets the camera pitch (35 by default), so a near-level view can be diffed against the uncullled one.
 
 **What the owner saw is not an open edge.** The owner confirmed the holes are in full-detail ground. A first reading of this section said the mesh was closed, because it counted open edges only, and a folded or inverted triangle has a neighbour on every edge. The checks that find it:
 
@@ -59,7 +59,7 @@ Wrong turns, kept as a record of what was ruled out: the earlier sections below 
 
 - `OCHRE_PROBE=13373.5,915,-4672 lod_sim -- 0 1` (with `OCHRE_SEED=1 OCHRE_SPAWN=13374,-4672,6`) decodes the packed group meshes the game builds. The group holding the block has 4,200 triangles, 42 within 3 blocks of it and the nearest 0.2 away, and all 12 groups round it are visible. `lod_sim` reports no surface chunk without something drawing it.
 - The ignored test `diag_group_pipeline_keeps_every_triangle` runs the game's merge, cutout split and 16-bit pack over the groups round the spot and finds every triangle kept, to rounding.
-- `worldprobe 1 render 13374 -4672 32` finds no open edge and no exact fold. The blocks there are a thin sandstone skin with a 1 to 2 block air layer behind it before the compacted core.
+- `worldview 1 render 13374 -4672 32` finds no open edge and no exact fold. The blocks there are a thin sandstone skin with a 1 to 2 block air layer behind it before the compacted core.
 
 So it is not a missing patch of mesh. It is either a face drawn but culled or discarded in the render, or terrain, and a game frame with the F1 readout (position and looked-at block) is needed to say which. A flythrough of the spot from a fixed camera shows the face solid, with small dark dimples.
 

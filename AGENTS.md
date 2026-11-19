@@ -14,7 +14,7 @@ cargo clippy --workspace --all-targets
 
 Always `--release`: debug generation is unusably slow. Run from the repo root, since assets and shaders load by relative path. Rust 1.97.1+ (Bevy 0.20), plus `libudev-dev` and `pkg-config` on Linux. Wayland is deliberately off (X11 only).
 
-Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_MUSIC_TRACK` (play the track whose file name has this in it, as `steppe4`), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at). The sandbox also reads `OCHRE_FLY` (start flying, to hover at the spawn), `OCHRE_SHOT=seconds[,path]` (save the window that far in, whatever covers it on the desktop), `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
+Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_MUSIC_DELAY` (seconds before the first track), `OCHRE_MUSIC_TRACK` (play the track whose file name has this in it, as `steppe4`), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at), `OCHRE_REMOTE` (serve the remote control on localhost, see the `game-remote` skill). The sandbox also reads `OCHRE_FLY` (start flying, to hover at the spawn), `OCHRE_SHOT=seconds[,path]` (save the window that far in, whatever covers it on the desktop), `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
 
 ## Crates
 
@@ -51,7 +51,7 @@ Every plugin but the terrain's can be left out: one that reads another's resourc
 - The feel of each kind of country (sun, grade, haze, shadow tint, storm depth, blended smoothly by climate, and the geography colour on the ground): `ochre-world/src/atmosphere.rs`, `docs/climate.md` (Geography colour and heat). Far country shows in the haze through a table in the curvature buffer (`ambience/haze.rs`).
 - Weather: a pure function of seed, place and game tick in `ochre-world/src/storms.rs`, read by `weather.rs` at the camera and by the clouds through a grid round it: `docs/designs/weather.md`.
 - Shaders: `assets/shaders/`. The lighting is `painterly.wesl` plus the haze, grade and AO that go with it: `docs/designs/painterly-lighting.md`. Block textures: `assets/textures/blocks.png` (a 16px atlas that only water still draws from) and the painted materials in `assets/textures/materials/` (one 512px PNG per material, RGBA for leaves and flora, see `docs/materials.md`), both built by the `block-textures` skill.
-- Examples double as tools: `worldprobe` (CLI probe of a spot, plus `edges`, `features` and `sites`), `water_audit`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report), `weather_map` (rain per biome and maps of a seed's storms).
+- Examples double as tools: `worldview` (the browser viewer, and a probe of a spot from the CLI or its `/probe` route, plus `edges`, `features` and `sites`), `water_audit`, `lod_sim` (headless loading), `flow_sim` (headless frame times while water flows), `shadow_cull` (what the sun's shadow cascades draw, see `docs/shadow-perf.md`), `flight` (scripted flight report), `weather_map` (rain per biome and maps of a seed's storms).
 
 ## Conventions
 
@@ -59,7 +59,7 @@ Every plugin but the terrain's can be left out: one that reads another's resourc
 - Terrain is deterministic per seed. Don't introduce thread-order or hash-order dependence in generation (`generate/generator/determinism.rs` guards it).
 - World generation takes `exp`, `powf`, `sin`, `cos` and the like from the `libm` crate, never `f32::exp` and friends, so a seed gives the same world on x86-64 and ARM64 (`worldmap/portable_maths.rs` scans for it).
 - Perf work follows the `profile` skill and is logged in `docs/terrain-perf.md`. A phase that regresses p99 frame time needs a recorded reason.
-- Debug the world with the `worldview` skill, not ad hoc probe scripts.
+- Debug the world with the `worldview` skill, not ad hoc probe scripts. To see a spot in the running game, use the `game-remote` skill.
 - Record the game with the `record-flythrough` skill, not a screen capture, which drops most frames.
 - Large test modules (`generator/tests.rs`, `lod/tests.rs`) run real generation, so expect slow `cargo test`.
 - Commit messages and PR titles are lowercase conventional commits. PRs target `main`. See `CONTRIBUTING.md`.

@@ -127,7 +127,7 @@ Landforms never read climate, because water is routed after them, and that rule 
 
 ### 5. The spike (before slice 3)
 
-Render synthetic walls (60, 70 and 80 degrees, 20, 60 and 150 blocks) and an existing steep valley wall with `worldprobe render` at LOD 3, 4 and 5. Measure the walkable fraction by landform and rock on 10 or more seeds, and define an unclimbable face height. Test where ground contact lets a player stand on a near-vertical face. Check whether a granite core ringed by marble already occurs.
+Render synthetic walls (60, 70 and 80 degrees, 20, 60 and 150 blocks) and an existing steep valley wall with `worldview render` at LOD 3, 4 and 5. Measure the walkable fraction by landform and rock on 10 or more seeds, and define an unclimbable face height. Test where ground contact lets a player stand on a near-vertical face. Check whether a granite core ringed by marble already occurs.
 
 ### Slices
 
@@ -250,7 +250,7 @@ Slices are in order and each ends in a commit on its own local branch, cut from 
 #### 7. The mesher and ground-contact spike
 
 *   **`crates/ochre-terrain/src/generate/generator/tests.rs` (Modify)**: build synthetic walls (60, 70, 80 degrees; 20, 60, 150 blocks) and report which the mesher holds as a wall and which it softens, and whether a standing player finds footing on any tiny ledge.
-*   **`examples/worldprobe.rs` (Modify)**: `render` the same walls and an existing steep valley wall (seed 20 near 1450, -10900) at `OCHRE_RENDER_LOD` 3, 4 and 5, and print a walkable-fraction histogram by landform and rock over 10 or more seeds. Keep the addition small, since the file is 798 lines.
+*   **`examples/worldview/probe.rs` (Modify)**: `render` the same walls and an existing steep valley wall (seed 20 near 1450, -10900) at `OCHRE_RENDER_LOD` 3, 4 and 5, and print a walkable-fraction histogram by landform and rock over 10 or more seeds. Keep the addition small, since the file is 798 lines.
 *   **`docs/meso-spike.md` (Create)**: the results, an "unclimbable face height" metric, whether a granite core ringed by marble already occurs, and the conclusion for slice 3.
 
 #### 8. Docs for slice 1
