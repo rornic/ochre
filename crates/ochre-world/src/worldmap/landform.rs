@@ -71,7 +71,9 @@ pub(super) fn tableland(
     (1.0 - mountain) * window * smoothstep(cut - 0.04, cut + 0.04, n)
 }
 
-/// Steps the tableland's ground into its beds, so water is routed over the treads it will stand on.
+/// Steps the tableland's and the mountains' ground into its beds, so water is routed over the treads it will stand on:
+/// `WorldTerrain::bedded_ground` steps both at block level, and a mountain river routed over the smooth ground above
+/// the steps followed them down under the lake it ran into and was cut off (`water::UNDER_LAKE`).
 pub fn terrace(map: &mut WorldMap, share: f64) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f64;
@@ -81,7 +83,7 @@ pub fn terrace(map: &mut WorldMap, share: f64) {
             let above = *cell as f64 - sea;
             let mountain = (map.landform[row * dim + col] == MOUNTAIN) as u8 as f64;
             let (x, z) = map.cell_centre(col, row);
-            let weight = tableland(map.seed, share, x, z, above, mountain);
+            let weight = mountain.max(tableland(map.seed, share, x, z, above, mountain));
             if weight > 0.0 {
                 let height = *cell as f64;
                 let stepped = map.terraced(x, z, height, above);

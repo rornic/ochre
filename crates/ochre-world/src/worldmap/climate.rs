@@ -96,6 +96,8 @@ const MIN_BIOME_CELLS: usize = 400;
 // Swamp: grassland, forest or jungle no higher than this over the sea, on ground flatter than this, at least this
 // wet and within about 13 cells of a river or lake (`closeness` there).
 const SWAMP_BELOW: f32 = 40.0;
+// How far over `SWAMP_BELOW` a small patch merged into a swamp may stand.
+const SWAMP_KNOLL: f32 = 4.0;
 const SWAMP_SLOPE: f32 = 0.2;
 const SWAMP_MOISTURE: f32 = 0.65;
 const SWAMP_NEAR: f32 = 0.02;
@@ -486,7 +488,9 @@ pub fn run(map: &mut WorldMap) {
         }
     }
     // which can leave specks of the climate's biome inside the swamp, or of swamp beside it
-    let too_high = |i: usize| map.height[i] - sea > SWAMP_BELOW || map.landform[i] == super::landform::MOUNTAIN;
+    // a speck merged into the swamp round it may stand a little over the swamp's limit, a knoll in it, or a cell of
+    // forest a block or two up would stay a speck with only swamp to join
+    let too_high = |i: usize| map.height[i] - sea > SWAMP_BELOW + SWAMP_KNOLL || map.landform[i] == super::landform::MOUNTAIN;
     merge_small(&mut kinds, dim, |i, kind| kind != BiomeKind::Swamp as u8 || !too_high(i));
 
     let (alt, margin) = boundary_margins(map, &temperature, &moisture, &kinds);

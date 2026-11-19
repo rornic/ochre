@@ -584,6 +584,17 @@ impl WorldMap {
                 None
             })
             .collect();
+        // a river that drains into a lake is held at the lake's level where its valley floor dips under it: the floor follows
+        // block-level steps the map doesn't have (`valley_floor`), a river never rises, so it would stay under the lake from
+        // that dip on and be cut off at it (below), dry down to the lake. Its banks are levees where the land lies under it
+        // (`channel`).
+        for (n, lake) in into_lake.iter().enumerate() {
+            if let Some(lake) = lake {
+                for cap in caps[n].iter_mut() {
+                    *cap = cap.max(lake - UNDER_LAKE * 0.5);
+                }
+            }
+        }
         for n in 0..stretches.len() {
             let mut hops = 0;
             let mut end = stretches[n];
