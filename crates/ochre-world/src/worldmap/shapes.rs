@@ -350,6 +350,11 @@ fn weights(map: &WorldMap) -> (f64, f64, f64) {
 
 // Up to `count` of the cells `eligible` in a seeded order, each `BIG_APART` cells from the others.
 fn sites(map: &WorldMap, eligible: Vec<usize>, count: usize, salt: u32) -> Vec<(usize, usize)> {
+    sites_apart(map, eligible, count, salt, BIG_APART)
+}
+
+/// Up to `count` of the cells `eligible` in a seeded order, each `apart` cells from the others.
+pub(super) fn sites_apart(map: &WorldMap, eligible: Vec<usize>, count: usize, salt: u32, apart: f64) -> Vec<(usize, usize)> {
     let dim = map.dim();
     let mut order = eligible;
     order.sort_by_key(|&i| hash(map.seed ^ salt, i as i32, 0));
@@ -360,7 +365,7 @@ fn sites(map: &WorldMap, eligible: Vec<usize>, count: usize, salt: u32) -> Vec<(
         }
         let (x, z) = ((i % dim) as f64, (i / dim) as f64);
         if chosen.iter().all(|&(sx, sz)| {
-            ((x - sx as f64).powi(2) + (z - sz as f64).powi(2)).sqrt() >= BIG_APART
+            ((x - sx as f64).powi(2) + (z - sz as f64).powi(2)).sqrt() >= apart
         }) {
             chosen.push((i % dim, i / dim));
         }
@@ -385,7 +390,7 @@ fn plain(map: &WorldMap) -> Vec<usize> {
 }
 
 // The ragged distance in cells from (`sx`, `sz`) to (`cx`, `cz`), over `radius`.
-fn ragged_t(
+pub(super) fn ragged_t(
     map: &WorldMap,
     salt: u32,
     (cx, cz): (i64, i64),

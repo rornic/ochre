@@ -8,6 +8,10 @@ use bevy::math::{IVec3, Mat3, Vec3};
 use ochre_base::block::{BlockType, Face, Tile};
 use std::ops::Deref;
 
+// Quads left without a diagonal whose triangles both face from solid to air, which the cell constraint makes impossible.
+#[cfg(test)]
+pub(super) static UNSOUND_QUADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 // What the surface wraps: logs and leaves are drawn as they were.
 pub(super) fn ground(block: BlockType) -> bool {
     block.is_opaque() && !matches!(block, BlockType::Leaves | BlockType::Log)
@@ -320,6 +324,8 @@ fn sculpt<const MARGIN: i32>(
     let mut offsets: Vec<Vec3> = Vec::new();
     let mut materials: Vec<BlockType> = Vec::new();
     let mut solid_corners: Vec<u8> = Vec::new();
+    // the axes a cell's crossings run along, as bits x, y, z
+    let mut crossing_axes: Vec<u8> = Vec::new();
     // how far toward rock each vertex's blend is, kept to its own material's side of a half, and how far it's placed as rock
     let mut rockiness: Vec<f32> = Vec::new();
     let mut rocky: Vec<f32> = Vec::new();
@@ -414,6 +420,11 @@ fn sculpt<const MARGIN: i32>(
                 offsets.push(offset);
                 materials.push(material);
                 solid_corners.push(count as u8);
+                crossing_axes.push(
+                    [1usize, 2, 4].iter().enumerate().fold(0u8, |bits, (axis, &bit)| {
+                        bits | (((0..8).any(|c| c & bit == 0 && inside[c] != inside[c | bit])) as u8) << axis
+                    }),
+                );
                 rockiness.push(toward_rock);
                 rocky.push(as_rock);
                 lights.push(lit);
@@ -423,8 +434,23 @@ fn sculpt<const MARGIN: i32>(
     let look = |m: BlockType| if soft(m) { k.soft } else { k.rock };
     let between = |from: usize, to: u32, offsets: &[Vec3]| (homes[to as usize] - homes[from]).as_vec3() + offsets[to as usize];
 
+    // which of this chunk and the six against its faces hold any ground before the gap fill: a face goes to its solid block's chunk unless that has none
+    let slot = |c: usize| (c as i32 - margin).div_euclid(SIZE) + 1;
+    let has_ground = {
+        let mut has = [[[true; 3]; 3]; 3];
+        if !lod {
+            for (x, y, z) in [(1, 1, 1), (0, 1, 1), (2, 1, 1), (1, 0, 1), (1, 2, 1), (1, 1, 0), (1, 1, 2)] {
+                let start = |s: i32| (margin + (s - 1) * SIZE) as usize;
+                let (si, sj, sk) = (start(x), start(y), start(z));
+                has[x as usize][y as usize][z as usize] = (si..si + SIZE as usize)
+                    .any(|i| (sj..sj + SIZE as usize).any(|j| (sk..sk + SIZE as usize).any(|kk| touching[index(i, j, kk)])));
+            }
+        }
+        has
+    };
     // quads across every crossing between block centres, of the four cells round it, and whether the chunk owns it
     let mut quads: Vec<([u32; 4], bool)> = Vec::new();
+    let mut quad_out: Vec<Vec3> = Vec::new();
     // a quad's ring reaches a cell back on the two axes across it, and only cells near enough have vertices
     for i in near_low.max(1)..=near_high {
         for j in low.saturating_sub(1).max(near_low).max(1)..=high.min(near_high) {
@@ -447,8 +473,20 @@ fn sculpt<const MARGIN: i32>(
                     if here {
                         quad.reverse();
                     }
-                    let owned = own.contains(&i) && own_y.contains(&j) && own.contains(&kk);
+                    // a chunk draws the faces over its own solid blocks, as the cube mesher did, so an all-air chunk, which the loader never meshes, draws
+                    // none; a node keeps the low side, as its edges hang skirts
+                    let (sol, other) = if here { ((i, j, kk), (i + a, j + b, kk + c)) } else { ((i + a, j + b, kk + c), (i, j, kk)) };
+                    let (oi, oj, ok) = if lod {
+                        (i, j, kk)
+                    } else if has_ground[slot(sol.0) as usize][slot(sol.1) as usize][slot(sol.2) as usize] {
+                        sol
+                    } else {
+                        other
+                    };
+                    let owned = own.contains(&oi) && own_y.contains(&oj) && own.contains(&ok);
                     quads.push((quad, owned));
+                    let dir = Vec3::new(a as f32, b as f32, c as f32);
+                    quad_out.push(if here { dir } else { -dir });
                 }
             }
         }
@@ -553,6 +591,7 @@ fn sculpt<const MARGIN: i32>(
             triangles.push((t, *owned));
         }
     }
+
     // chisel rock: snap its triangles' normals to a few noise-turned directions and pull its vertices onto those planes
     if k.chisel_round > 0.0 {
         let mut around: Vec<Vec<usize>> = vec![Vec::new(); homes.len()];
@@ -598,6 +637,37 @@ fn sculpt<const MARGIN: i32>(
                 offset.z = 0.5;
             }
         }
+    }
+    // inside its cell across each axis a crossing runs along, a vertex can't fold a triangle, however the passes moved it
+    const INSET: f32 = 1.0 / 64.0;
+    for (offset, &axes) in offsets.iter_mut().zip(&crossing_axes) {
+        for axis in (0..3).filter(|a| axes >> a & 1 == 1) {
+            for other in [(axis + 1) % 3, (axis + 2) % 3] {
+                offset[other] = offset[other].clamp(INSET, 1.0 - INSET);
+            }
+        }
+    }
+    // split again from the final positions, along a diagonal whose triangles both face from solid to air
+    let mut triangles: Vec<([u32; 3], bool)> = Vec::new();
+    for (qi, (q, owned)) in quads.iter().enumerate().filter(|(_, (q, _))| nearest(q) <= chisel_reaches[0].max(normals_reach)) {
+        let base = q[0] as usize;
+        let [a, b, c, d] = q.map(|m| between(base, m, &offsets));
+        let faces = |t: [Vec3; 3]| (t[2] - t[0]).cross(t[1] - t[0]).dot(quad_out[qi]) > 0.0;
+        let diagonals = [([q[0], q[1], q[2]], [q[0], q[2], q[3]], [[a, b, c], [a, c, d]]), ([q[0], q[1], q[3]], [q[1], q[2], q[3]], [[a, b, d], [b, c, d]])];
+        let fold = |n1: Vec3, n2: Vec3| n1.normalize_or_zero().dot(n2.normalize_or_zero());
+        let flatness = [fold((b - a).cross(c - a), (c - a).cross(d - a)), fold((b - a).cross(d - a), (c - b).cross(d - b))];
+        let sound = diagonals.map(|(_, _, [t1, t2])| faces(t1) && faces(t2));
+        #[cfg(test)]
+        if !sound.contains(&true) && nearest(q) == 0 {
+            UNSOUND_QUADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        let pick = match sound {
+            [true, false] => 0,
+            [false, true] => 1,
+            _ => (flatness[1] > flatness[0]) as usize,
+        };
+        triangles.push((diagonals[pick].0, *owned));
+        triangles.push((diagonals[pick].1, *owned));
     }
     let mut smooth_normals = vec![Vec3::ZERO; homes.len()];
     for (t, _) in triangles.iter().filter(|(t, _)| nearest(t) <= normals_reach) {

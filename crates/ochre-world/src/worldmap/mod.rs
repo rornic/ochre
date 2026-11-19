@@ -15,6 +15,7 @@ pub mod geology;
 mod hydrology;
 pub mod io;
 pub mod landform;
+pub mod meso;
 mod shapes;
 mod source;
 pub mod tectonics;
@@ -30,7 +31,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 104;
+pub const GENERATOR_VERSION: u32 = 106;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -169,6 +170,8 @@ pub struct WorldMap {
     pub ford: Vec<u8>,
     /// How much of a valley's cut each cell takes, 0..1 as 0..=255, sited before the valleys are cut: see `valleys`.
     pub valley: Vec<u8>,
+    /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only, see `valleys::run_alpine`.
+    pub alpine: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
     /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
@@ -241,6 +244,7 @@ impl WorldMap {
             landform: vec![0; cells],
             ford: vec![0; cells],
             valley: vec![0; cells],
+            alpine: vec![0; cells],
             exposure: vec![128; cells],
             water_closeness: vec![0; cells],
             features: Vec::new(),
@@ -521,6 +525,10 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     shapes::cold_uplands(&mut map);
     shapes::karst(&mut map, knobs.karst_groups);
     shapes::cirques(&mut map, knobs.cirques);
+    // with the other shapes, so the passes connect round them; the steppe's flattening leaves them alone
+    let (placed, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    let bowls = meso::landmarks::bowl_cells(map.dim(), &placed);
+    lap("landmarks");
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);
     lap("carve passes");
@@ -529,11 +537,15 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     landform::terrace(&mut map, knobs.tableland_share);
     lap("terrace");
     // after the terraces, which make lakes of their own that no valley is cut through, and before the water
-    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 });
+    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 }, &landmarks);
     lap("valleys");
+    if valleys {
+        valleys::run_alpine(&mut map);
+        lap("alpine valleys");
+    }
     hydrology::scatter(&mut map);
     lap("scatter");
-    hydrology::run(&mut map, true);
+    hydrology::run_keeping(&mut map, true, &bowls);
     lap("hydrology 2");
     for h in &mut map.height {
         *h = h.max(floor);

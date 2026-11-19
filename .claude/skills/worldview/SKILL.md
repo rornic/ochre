@@ -29,7 +29,7 @@ curl -s 'http://127.0.0.1:8777/export?seed=S&layers=hillshade,water:0.8,waterlev
 ```
 
 - `x`, `z` are the world position of the image's top-left corner (centre minus half the size times scale), `scale` is blocks a pixel, size up to 4096.
-- Layers draw in list order, `name:opacity`. Available: height, hillshade, blocks, contours, biomes, trees, water, waterlevel, flowdir, flow, temperature, moisture, continentalness, roughness, range, features, cells.
+- Layers draw in list order, `name:opacity`. Available: height, hillshade, blocks, contours, biomes, trees, water, waterlevel, flowdir, flow, temperature, moisture, continentalness, roughness, range, features, cells, and for the meso scorer valley, alpine, exposure, water_closeness and meso (its places as discs: raised red, dips blue, steep darker). `/places?seed=S` returns the scorer's places as CSV.
 - `water` is lake and river in two blues; `waterlevel` bands every block, so a step in a river or lake level shows as a colour change; `cells` draws the 32 block map-cell grid, which is where squared artefacts line up.
 - Values for one block: `curl -s 'http://127.0.0.1:8777/info?seed=S&x=X&z=Z'` gives ground height, the map's smooth height ("map bicubic"), top block, water kind, level and depth, and the map cell's lake and river data. Compare ground and bicubic heights to tell detail carved under the smooth ground (hollows, gorges) from the map itself.
 - The interactive page at `http://127.0.0.1:8777/?seed=S` has pan, zoom and click-for-info for the user.

@@ -647,6 +647,10 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     // (position, normal, colour) triangles in world blocks
     let mut triangles: Vec<[(Vec3, Vec3, Vec3); 3]> = Vec::new();
     let mut vertices = 0usize;
+    // each ground triangle's centroid, area and its winding's normal against its vertices' stored normals, to find folded triangles
+    let mut folds: Vec<(Vec3, f32, f32, usize)> = Vec::new();
+    // the atlas cell of each triangle drawn, in step with `triangles`
+    let mut tri_cell: Vec<usize> = Vec::new();
     // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
     let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
         let (
@@ -672,10 +676,16 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             let cell = colours[tri[0] as usize][3].round() as usize;
             let corners: [Vec3; 3] = std::array::from_fn(|k| Vec3::from(positions[tri[k] as usize]));
             let face = (corners[2] - corners[0]).cross(corners[1] - corners[0]).normalize_or_zero();
+            if !water {
+                let stored: Vec3 = (0..3).map(|k| { let n = normals[tri[k] as usize]; Vec3::new(n[0], n[1], -n[2]) }).sum();
+                let area = (corners[2] - corners[0]).cross(corners[1] - corners[0]).length() / 2.0;
+                folds.push(((corners[0] + corners[1] + corners[2]) / 3.0 * scale + origin, area * scale * scale, face.dot(stored.normalize_or_zero()), cell));
+            }
             // leaves and the plants after the steppe's top in the atlas
             if !water && (cell == 6 || cell >= 30) {
                 continue;
             }
+            tri_cell.push(cell);
             triangles.push(std::array::from_fn(|k| {
                 let i = tri[k] as usize;
                 let n = normals[i];
@@ -748,7 +758,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     }
     let (w, h) = (1600u32, 1000u32);
     let centre = Vec3::new(x as f32, sampler.ground_top(x, z) as f32, z as f32);
-    let (yaw, pitch) = (azimuth.to_radians(), 35f32.to_radians());
+    let (yaw, pitch) = (azimuth.to_radians(), std::env::var("OCHRE_RENDER_PITCH").ok().and_then(|p| p.parse::<f32>().ok()).unwrap_or(35.0).to_radians());
     let forward = Vec3::new(yaw.cos() * pitch.cos(), -pitch.sin(), yaw.sin() * pitch.cos());
     let right = forward.cross(Vec3::Y).normalize();
     let up = right.cross(forward);
@@ -765,6 +775,14 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             - (screen[2].0 - screen[0].0) * (screen[1].1 - screen[0].1);
         if area.abs() < 1e-6 {
             continue;
+        }
+        // OCHRE_RENDER_CULL=out draws only triangles whose winding faces the camera (the outward side the mesher winds toward), `in` the others, as a backface cull would
+        if let Ok(mode) = std::env::var("OCHRE_RENDER_CULL") {
+            let outward = (tri[2].0 - tri[0].0).cross(tri[1].0 - tri[0].0);
+            let facing_camera = outward.dot(forward) < 0.0;
+            if facing_camera != (mode == "out") {
+                continue;
+            }
         }
         let (min_x, max_x) = (
             screen.iter().map(|s| s.0).fold(f32::MAX, f32::min).floor().max(0.0) as u32,
@@ -803,5 +821,243 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
     }
     img.save(out).map_err(|e| format!("{out}: {e}"))?;
+    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays from the point and says, for each, whether the first ground triangle it meets faces it (the point is outside the
+    // drawn ground) or faces away (the point is inside the drawn ground, where a camera sees through it)
+    if let Some(p) = std::env::var("OCHRE_RENDER_INSIDE").ok().and_then(|s| {
+        let v: Vec<f32> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+        (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
+    }) {
+        let ground: Vec<[Vec3; 3]> = triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)).map(|t| [t[0].0, t[1].0, t[2].0]).collect();
+        let hit = |dir: Vec3| -> Option<(f32, bool)> {
+            let mut best: Option<(f32, bool)> = None;
+            for [a, b, c] in &ground {
+                let (e1, e2) = (*b - *a, *c - *a);
+                let h = dir.cross(e2);
+                let det = e1.dot(h);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let f = 1.0 / det;
+                let sv = p - *a;
+                let u = f * sv.dot(h);
+                if !(0.0..=1.0).contains(&u) {
+                    continue;
+                }
+                let q = sv.cross(e1);
+                let v = f * dir.dot(q);
+                if v < 0.0 || u + v > 1.0 {
+                    continue;
+                }
+                let t = f * e2.dot(q);
+                if t > 1e-4 && best.is_none_or(|(bt, _)| t < bt) {
+                    // outward is (c - a) x (b - a), as the mesher winds it
+                    let outward = (*c - *a).cross(*b - *a);
+                    best = Some((t, outward.dot(dir) < 0.0));
+                }
+            }
+            best
+        };
+        let (mut facing, mut away, mut none, mut nearest) = (0, 0, 0, f32::MAX);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if (dx, dy, dz) == (0, 0, 0) {
+                        continue;
+                    }
+                    match hit(Vec3::new(dx as f32, dy as f32, dz as f32).normalize()) {
+                        Some((t, true)) => { facing += 1; nearest = nearest.min(t); println!("  ray ({dx},{dy},{dz}) meets a facing surface at {t:.1}"); }
+                        Some((t, false)) => { away += 1; nearest = nearest.min(t); }
+                        None => none += 1,
+                    }
+                }
+            }
+        }
+        println!("from {p}: first ground hit faces the point on {facing} rays, faces away on {away}, nothing on {none}; nearest hit {nearest:.2} blocks");
+    }
+    // by slope, each triangle's own face: walkable (normal.y over 0.4, as `GROUND_FACING`), steep (up to a wall), and a wall or overhang (normal.y under 0.1),
+    // with the share of the ground area each holds; and the interior's open edges, which a sealed surface has none of, the plants and leaves left out
+    {
+        let (mut area, mut count) = ([0.0f32; 3], [0usize; 3]);
+        let key = |p: Vec3| ((p.x * 16.0).round() as i64, (p.y * 16.0).round() as i64, (p.z * 16.0).round() as i64);
+        type Point = (i64, i64, i64);
+        let mut edges: HashMap<(Point, Point), u32> = HashMap::new();
+        // water is a sheet open along its shore, so it is left out of both counts
+        for tri in triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
+            let [a, b, c] = [tri[0].0, tri[1].0, tri[2].0];
+            let cross = (c - a).cross(b - a);
+            let up = cross.normalize_or_zero().y;
+            let band = if up > 0.4 { 0 } else if up > 0.1 { 1 } else { 2 };
+            area[band] += cross.length() / 2.0;
+            count[band] += 1;
+            for (p, q) in [(a, b), (b, c), (c, a)] {
+                let (kp, kq) = (key(p), key(q));
+                *edges.entry(if kp < kq { (kp, kq) } else { (kq, kp) }).or_default() += 1;
+            }
+        }
+        let total: f32 = area.iter().sum::<f32>().max(1e-6);
+        println!(
+            "slope bands by area: walkable {:.1}%, steep {:.1}%, wall {:.1}% ({} / {} / {} triangles)",
+            100.0 * area[0] / total, 100.0 * area[1] / total, 100.0 * area[2] / total, count[0], count[1], count[2]
+        );
+        // the area's sides and the chunk rows' ends are where the drawing stops, so edges there are the picture's, not the mesh's
+        let (floor_y, ceiling_y) = ((cy0 * size) as f32 + 8.0, ((cy1 + 1) * size) as f32 - 8.0);
+        let inside = |p: (i64, i64, i64)| {
+            let y = p.1 as f32 / 16.0;
+            (p.0 as f32 / 16.0 - x as f32).abs() < half as f32 * 0.8 && (p.2 as f32 / 16.0 - z as f32).abs() < half as f32 * 0.8 && y > floor_y && y < ceiling_y
+        };
+        // trees are drawn by their own mesher, open where they meet what they stand in, so an edge with a log or leaf block beside it is the tree's
+        let mut near_tree = |p: Point, q: Point| {
+            let mid = ((p.0 + q.0) as f32 / 32.0, (p.1 + q.1) as f32 / 32.0, (p.2 + q.2) as f32 / 32.0);
+            // trunks sink into the ground, so a trunk's base sits up to two blocks under its first log, and the edge looks up for it
+            [-0.3f32, 0.3].iter().any(|&o| {
+                [-0.3f32, 0.3, 1.3, 2.3].iter().any(|&u| {
+                    [-0.3f32, 0.3].iter().any(|&w| {
+                        let b = I64Vec3::new((mid.0 + o).round() as i64, (mid.1 + u).round() as i64, (mid.2 + w).round() as i64);
+                        let c = (b.x.div_euclid(size), b.y.div_euclid(size), b.z.div_euclid(size));
+                        let block = chunk_at(c).get_block_at(b.rem_euclid(I64Vec3::splat(size)).as_u16vec3());
+                        matches!(block, BlockType::Log | BlockType::Leaves)
+                    })
+                })
+            })
+        };
+        let open_list: Vec<(Point, Point)> = edges.iter().filter(|(&(p, q), &n)| n == 1 && inside(p) && inside(q)).map(|(&e, _)| e).collect();
+        let (mut treed, mut open_ground) = (0usize, Vec::new());
+        for &(p, q) in &open_list {
+            if near_tree(p, q) { treed += 1 } else { open_ground.push((p, q)) }
+        }
+        println!("  of them {treed} beside tree blocks, {} in the ground", open_ground.len());
+        let open = open_ground.len();
+        let on_plane = open_ground.iter().filter(|&&(p, q)| {
+            let plane = |a: i64, b: i64| a == b && ((a as f32 / 16.0 + 0.5).rem_euclid(size as f32).min(size as f32 - (a as f32 / 16.0 + 0.5).rem_euclid(size as f32))) < 0.1;
+            plane(p.0, q.0) || plane(p.1, q.1) || plane(p.2, q.2)
+        }).count();
+        println!("  of those {on_plane} lie in a chunk plane");
+        // a triangle whose winding faces against its vertices' normals is folded over and culled in the game
+        let leaf_or_plant = |cell: usize| cell == 6 || cell >= 30;
+        let mut near_trunk = |c: Vec3| near_tree(((c.x * 16.0) as i64, (c.y * 16.0) as i64, (c.z * 16.0) as i64), ((c.x * 16.0) as i64, (c.y * 16.0) as i64, (c.z * 16.0) as i64));
+        let ground: Vec<&(Vec3, f32, f32, usize)> = folds.iter().filter(|f| !leaf_or_plant(f.3) && f.1 > 1e-6).collect();
+        let mut flipped: Vec<&(Vec3, f32, f32, usize)> = ground.iter().copied().filter(|f| f.2 < -0.05).collect();
+        flipped.retain(|f| inside(((f.0.x * 16.0) as i64, (f.0.y * 16.0) as i64, (f.0.z * 16.0) as i64)) && !near_trunk(f.0));
+        // which material tile (the atlas cell) the folds are in, against all ground, and how steep the stored normals say the place is
+        {
+            let mut by_cell: HashMap<usize, (usize, usize)> = HashMap::new();
+            for f in &ground { by_cell.entry(f.3).or_default().0 += 1; }
+            for f in &flipped { by_cell.entry(f.3).or_default().1 += 1; }
+            let mut rows: Vec<_> = by_cell.into_iter().collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1 .1));
+            for (cell, (all, bad)) in rows.iter().take(6) {
+                println!("  cell {cell}: {bad} folded of {all} ({:.2}%)", 100.0 * *bad as f32 / (*all).max(1) as f32);
+            }
+        }
+        let area_all: f32 = ground.iter().map(|f| f.1).sum();
+        let area_flipped: f32 = flipped.iter().map(|f| f.1).sum();
+        println!("folded triangles (winding against the vertices' normals): {} of {} ground triangles, {:.3}% of area", flipped.len(), ground.len(), 100.0 * area_flipped / area_all.max(1e-6));
+        let mut fold_bins: HashMap<(i64, i64, i64), (u32, f32)> = HashMap::new();
+        for f in &flipped {
+            let e = fold_bins.entry(((f.0.x / 16.0).floor() as i64, (f.0.y / 16.0).floor() as i64, (f.0.z / 16.0).floor() as i64)).or_default();
+            e.0 += 1;
+            e.1 += f.1;
+        }
+        let mut fold_worst: Vec<_> = fold_bins.into_iter().collect();
+        fold_worst.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+        for ((bx, by, bz), (n, a)) in fold_worst.iter().take(10) {
+            println!("  {n} folded ({a:.1} blocks of area) in the 16-block chunk at x {} y {} z {}", bx * 16, by * 16, bz * 16);
+        }
+        // the winding checked by edges too: an edge walked the same way by two triangles means one of them is wound the wrong way
+        let mut directed: HashMap<(Point, Point), u32> = HashMap::new();
+        for tri in triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
+            let k = [tri[0].0, tri[1].0, tri[2].0].map(key);
+            for e in 0..3 {
+                *directed.entry((k[e], k[(e + 1) % 3])).or_default() += 1;
+            }
+        }
+        let same_way = directed.iter().filter(|(&(p, q), &n)| n >= 2 && inside(p) && inside(q)).count();
+        println!("edges walked the same way twice: {same_way}");
+        // of those, edges with exactly two triangles (a pair wound against each other's sense) and not three or more meeting (a non-manifold join)
+        let (mut pair_bad, mut multi) = (0usize, 0usize);
+        let mut pair_where: Vec<(Point, Point)> = Vec::new();
+        for (&(p, q), &n) in directed.iter() {
+            if !(inside(p) && inside(q)) || p > q {
+                continue;
+            }
+            let (fwd, back) = (n, directed.get(&(q, p)).copied().unwrap_or(0));
+            let total = fwd + back;
+            if total == 2 && (fwd == 2 || back == 2) {
+                pair_bad += 1;
+                pair_where.push((p, q));
+            } else if total >= 3 {
+                multi += 1;
+            }
+        }
+        println!("  undirected edges with exactly two triangles wound the same way: {pair_bad}; with three or more triangles: {multi}");
+        let trees = pair_where.iter().filter(|&&(p, q)| near_tree(p, q)).count();
+        println!("  of the two-triangle ones, beside tree blocks: {trees}");
+        let mut pair_bins: HashMap<(i64, i64, i64), u32> = HashMap::new();
+        for &(p, _) in &pair_where {
+            *pair_bins.entry((p.0 / 256, p.1 / 256, p.2 / 256)).or_default() += 1;
+        }
+        let mut pb: Vec<_> = pair_bins.into_iter().collect();
+        pb.sort_by_key(|r| std::cmp::Reverse(r.1));
+        for ((bx, by, bz), n) in pb.iter().take(6) {
+            println!("    {n} near x {} y {} z {}", bx * 16, by * 16, bz * 16);
+        }
+        // each ground triangle tested against the blocks: a step out along its outward normal landing in solid ground and a step in landing in air means it faces into rock
+        if std::env::var("OCHRE_RENDER_INVERTED").is_ok() {
+            let solid_at = |chunk_at: &mut dyn FnMut((i64, i64, i64)) -> Arc<ChunkData>, p: Vec3| {
+                let b = I64Vec3::new(p.x.round() as i64, p.y.round() as i64, p.z.round() as i64);
+                let c = (b.x.div_euclid(size), b.y.div_euclid(size), b.z.div_euclid(size));
+                let block = chunk_at(c).get_block_at(b.rem_euclid(I64Vec3::splat(size)).as_u16vec3());
+                block.is_opaque() && !matches!(block, BlockType::Leaves | BlockType::Log)
+            };
+            let (mut tested, mut inverted) = (0usize, 0usize);
+            let mut by_cell: HashMap<usize, (usize, usize)> = HashMap::new();
+            for (ti, tri) in triangles.iter().enumerate().filter(|(_, t)| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
+                let [a, b, c] = [tri[0].0, tri[1].0, tri[2].0];
+                let cross = (c - a).cross(b - a);
+                let centre = (a + b + c) / 3.0;
+                if cross.length() < 1e-4 || !inside(((centre.x * 16.0) as i64, (centre.y * 16.0) as i64, (centre.z * 16.0) as i64)) {
+                    continue;
+                }
+                let n = cross.normalize();
+                tested += 1;
+                let entry = by_cell.entry(tri_cell[ti]).or_default();
+                entry.0 += 1;
+                if solid_at(&mut chunk_at, centre + n * 0.75) && !solid_at(&mut chunk_at, centre - n * 0.75) {
+                    inverted += 1;
+                    entry.1 += 1;
+                }
+            }
+            let mut rows: Vec<_> = by_cell.iter().collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1 .0));
+            for (cell, (all, bad)) in rows.iter().take(7) {
+                println!("  cell {cell}: {bad} of {all} ({:.2}%)", 100.0 * *bad as f32 / (*all).max(1) as f32);
+            }
+            println!("triangles facing into rock by the blocks: {inverted} of {tested} ({:.3}%)", 100.0 * inverted as f32 / tested.max(1) as f32);
+        }
+        println!("open edges inside the middle 80% of the area, off the rows the drawing starts and stops at: {open}");
+        // where they cluster, in 32-block bins: a hole is a few edges in one place, a seam or a tree a long line of them
+        let mut bins: HashMap<(i64, i64, i64), (u32, i64)> = HashMap::new();
+        for &(p, q) in &open_ground {
+            {
+                let entry = bins.entry((p.0 / 512, p.1 / 512, p.2 / 512)).or_default();
+                entry.0 += 1;
+                entry.1 += (p.0 + q.0) / 2 / 16 * 1000 + (p.2 + q.2) / 2 / 16;
+            }
+        }
+        let mut worst: Vec<_> = bins.into_iter().collect();
+        worst.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+        // OCHRE_RENDER_EDGES=1 lists each open edge's ends in blocks, to see whether they fall on chunk planes
+        if std::env::var("OCHRE_RENDER_EDGES").is_ok() {
+            let mut list = open_ground.clone();
+            list.sort();
+            for (p, q) in list {
+                let f = |k: (i64, i64, i64)| (k.0 as f32 / 16.0, k.1 as f32 / 16.0, k.2 as f32 / 16.0);
+                println!("edge {:?} -> {:?}", f(p), f(q));
+            }
+        }
+        for ((bx, by, bz), (n, _)) in worst.iter().take(8) {
+            println!("  {n} open edges near x {} y {} z {} (32-block bin)", bx * 32, by * 32, bz * 32);
+        }
+    }
     Ok(format!("wrote {out}: {} triangles drawn, {vertices} opaque vertices", triangles.len()))
 }

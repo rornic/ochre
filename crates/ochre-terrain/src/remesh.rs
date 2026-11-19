@@ -268,7 +268,7 @@ mod tests {
         app::{App, TaskPoolPlugin, Update},
         asset::{AssetApp, AssetPlugin, Assets, Handle},
         ecs::{entity::Entity, schedule::IntoScheduleConfigs},
-        math::{I64Vec3, U16Vec3},
+        math::{I64Vec3, U16Vec3, Vec3},
         mesh::Mesh3d,
         platform::collections::HashSet,
         render::mesh::{Mesh, VertexAttributeValues},
@@ -463,13 +463,28 @@ mod tests {
                 .opaque
                 .count_vertices()
         };
-        let whole = vertices(&world);
+        // how many faces a vertical line through the dug column crosses: the floor's top and underside, then none once the hole is through
+        let crossings = |world: &World| {
+            let mesh = mesh_group(key, inputs(world), &regions).meshes.opaque;
+            let positions: Vec<Vec3> = mesh.attribute(Mesh::ATTRIBUTE_POSITION).and_then(VertexAttributeValues::as_float3).unwrap().iter().map(|&p| Vec3::from(p)).collect();
+            let indices: Vec<usize> = mesh.indices().unwrap().iter().collect();
+            indices
+                .chunks(3)
+                .filter(|t| {
+                    let [a, b, c] = [positions[t[0]], positions[t[1]], positions[t[2]]];
+                    let edge = |p: Vec3, q: Vec3| (q.x - p.x) * (4.91 - p.z) - (q.z - p.z) * (5.13 - p.x);
+                    let (e0, e1, e2) = (edge(a, b), edge(b, c), edge(c, a));
+                    (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0) || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0)
+                })
+                .count()
+        };
+        assert!(vertices(&world) > 0);
+        assert_eq!(2, crossings(&world), "the floor's top and underside over the column");
         assert_eq!(
             Some(BlockType::Rock),
             world.break_block(I64Vec3::new(5, 0, 5))
         );
-        // the floor's top is split around the hole, and the hole has walls
-        assert!(vertices(&world) > whole);
+        assert_eq!(0, crossings(&world), "the hole goes through");
         let remeshed = mesh_group(key, inputs(&world), &regions);
         assert_eq!(
             vec![true, true, true, true],

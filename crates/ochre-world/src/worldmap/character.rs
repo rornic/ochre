@@ -28,10 +28,13 @@ const SALT_INSELBERGS: u32 = 0xC4A0_000E;
 const SALT_KARST: u32 = 0xC4A0_000F;
 const SALT_CIRQUES: u32 = 0xC4A0_0010;
 const SALT_VALLEYS: u32 = 0xC4A0_0011;
+const SALT_LANDMARKS: u32 = 0xC4A0_0012;
 const INSELBERGS: (f64, f64) = (0.0, 9.0);
 const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
 const CIRQUES: (f64, f64) = (0.0, 7.0);
 const VALLEY_SHARE: (f64, f64) = (0.5, 1.0);
+// Cells between steppe and tundra landmarks: about 2.2 to 3.5 km, so two or three stand in view from most places.
+const LANDMARK_APART: (f64, f64) = (70.0, 110.0);
 const CONE_SHARE: (f64, f64) = (0.0, 0.25);
 const FJORD_SHARE: (f64, f64) = (0.0, 0.3);
 const CLIFF_BOOST: (f64, f64) = (0.0, 1.0);
@@ -71,6 +74,8 @@ pub(crate) struct LandformKnobs {
     pub cirques: u32,
     /// How much of the weight the valleys' siting gives it, 0.5 to 1.
     pub valley_share: f64,
+    /// Cells between steppe and tundra landmarks, 70 to 110.
+    pub landmark_apart: f64,
 }
 
 impl LandformKnobs {
@@ -85,6 +90,7 @@ impl LandformKnobs {
             karst_groups: draw(seed, SALT_KARST, KARST_GROUPS).floor() as u32,
             cirques: draw(seed, SALT_CIRQUES, CIRQUES).floor() as u32,
             valley_share: round(draw(seed, SALT_VALLEYS, VALLEY_SHARE), 3),
+            landmark_apart: draw(seed, SALT_LANDMARKS, LANDMARK_APART).floor(),
         }
     }
 }
@@ -205,7 +211,22 @@ mod tests {
             .collect();
         assert!(cones.iter().all(|&c| (0.0..=CONE_SHARE.1).contains(&c)));
         assert!(cones.iter().any(|&c| c < 0.01) && cones.iter().any(|&c| c > 0.24));
+        let apart: Vec<f64> = (0..1000).map(|s| LandformKnobs::from_seed(s).landmark_apart).collect();
+        assert!(apart.iter().all(|&a| (LANDMARK_APART.0..LANDMARK_APART.1).contains(&a)));
+        assert!(apart.iter().any(|&a| a < 72.0) && apart.iter().any(|&a| a > 107.0));
         assert_eq!(LandformKnobs::from_seed(5), LandformKnobs::from_seed(5));
+    }
+
+    // two knobs on one salt would draw the same, so a seed's knobs would move together
+    #[test]
+    fn test_every_knob_has_its_own_salt() {
+        let salts = [
+            SALT_PLATES, SALT_RELIEF, SALT_WARMTH, SALT_GRADIENT, SALT_GRADIENT_ANGLE, SALT_CONTINENTALITY, SALT_WIND, SALT_TABLELAND,
+            SALT_DUNES, SALT_CLIFFS, SALT_FJORDS, SALT_CONES, SALT_INSELBERGS, SALT_KARST, SALT_CIRQUES, SALT_VALLEYS, SALT_LANDMARKS,
+            SALT_HUMIDITY,
+        ];
+        let unique: std::collections::BTreeSet<u32> = salts.iter().copied().collect();
+        assert_eq!(salts.len(), unique.len());
     }
 
     #[test]

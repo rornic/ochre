@@ -3912,3 +3912,76 @@ fn test_a_dig_changes_only_the_sculpted_chunks_meshed_again() {
         }
     }
 }
+
+// Ground scrambled into thin walls, lone blocks and diagonal touches, still has a diagonal to split every quad along whose triangles face from solid to air.
+#[test]
+fn test_sculpted_ground_never_folds_a_triangle() {
+    let regions = test_regions();
+    let size = CHUNK_SIZE as i64;
+    let mut sampler = regions.sampler();
+    let land: Vec<(i64, i64)> = (0..400i64)
+        .map(|i| ((i % 20) * 700 - 7000, (i / 20) * 700 - 7000))
+        .filter(|&(x, z)| sampler.ground_top(x, z) > WATER_LEVEL + 3)
+        .take(4)
+        .collect();
+    assert!(land.len() >= 3, "too few land spots");
+    let mut triangles = 0;
+    for (sx, sz) in land {
+        let (cx, cz) = (sx.div_euclid(size), sz.div_euclid(size));
+        let cy = (sampler.ground_top(sx, sz) - 1).div_euclid(size);
+        for (salt, share) in [(1u64, 3u64), (2, 5), (3, 2)] {
+            let mut chunk = generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(cx, cy, cz)));
+            for x in 0..size {
+                for y in 0..size {
+                    for z in 0..size {
+                        let at = U16Vec3::new(x as u16, y as u16, z as u16);
+                        let hash = ((x as u64 * 73856093) ^ (y as u64 * 19349663) ^ (z as u64 * 83492791) ^ (salt * 2654435761)).wrapping_mul(0x9E3779B97F4A7C15) >> 40;
+                        if hash % 10 < share {
+                            let to = if chunk.get_block_at(at).is_opaque() { BlockType::Air } else { BlockType::Rock };
+                            chunk.set_block_at(at, to);
+                        }
+                    }
+                }
+            }
+            let coord = ChunkCoordinate(I64Vec3::new(cx, cy, cz));
+            let mut adjacent = vec![None; 26];
+            for ax in -1..=1i64 {
+                for ay in -1..=1i64 {
+                    for az in -1..=1i64 {
+                        if (ax, ay, az) != (0, 0, 0) {
+                            adjacent[neighbor_26_index(ax as i32, ay as i32, az as i32)] =
+                                Some(Arc::new(generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(cx + ax, cy + ay, cz + az)))));
+                        }
+                    }
+                }
+            }
+            let meshes = generate_chunk_mesh_with(Arc::new(chunk), adjacent, coord, &regions, false);
+            triangles += meshes.opaque.indices().map_or(0, |i| i.len() / 3);
+        }
+    }
+    assert!(triangles > 1000, "scrambled ground meshed to only {triangles} triangles");
+    let unsound = super::nets::UNSOUND_QUADS.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(unsound, 0, "{unsound} quads have no diagonal whose triangles face from solid to air");
+}
+
+// A chunk draws the faces over its own solid blocks, so an all-air chunk, which the loader never meshes, draws nothing, and the rock against it draws the wall.
+#[test]
+fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
+    let regions = test_regions();
+    let mut rock = ChunkData::default();
+    for y in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            rock.set_block_at(U16Vec3::new(0, y, z), BlockType::Rock);
+        }
+    }
+    let (rock, empty) = (Arc::new(rock), Arc::new(ChunkData::default()));
+    let triangles = |meshes: ChunkMeshes| meshes.opaque.indices().map_or(0, |i| i.len() / 3);
+    let mut beside_rock = vec![None; 26];
+    beside_rock[neighbor_26_index(1, 0, 0)] = Some(rock.clone());
+    let from_empty = triangles(generate_chunk_mesh_with(empty.clone(), beside_rock, ChunkCoordinate(I64Vec3::new(0, 40, 0)), &regions, false));
+    let mut beside_empty = vec![Some(empty.clone()); 26];
+    beside_empty[neighbor_26_index(-1, 0, 0)] = Some(empty);
+    let from_rock = triangles(generate_chunk_mesh_with(rock, beside_empty, ChunkCoordinate(I64Vec3::new(1, 40, 0)), &regions, false));
+    assert_eq!(from_empty, 0, "the empty chunk drew {from_empty} triangles");
+    assert!(from_rock > 100, "the rock drew only {from_rock} triangles of its wall");
+}

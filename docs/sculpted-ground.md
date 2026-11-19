@@ -12,6 +12,7 @@ A vertex takes its cell's material, the highest solid corner with air over it, a
 - Rock sits where its crossings' planes meet (dual contouring), each plane facing out of the blocks counted over 2 each way. A chisel pass then snaps rock triangles' normals to 6 directions round and steps of 45 degrees up, turned by slow noise, and pulls rock vertices onto those planes, so neighbours that snap alike flatten into one face with a crease where they don't.
 - No vertex stands more than a set height over its neighbours' mean, and a soft vertex at a lone block's tip or a lone hole's drops onto its neighbours, so a lone block isn't a pyramid.
 - Loose ground then lumps, about 6 blocks across and up to 0.9 high, along its normal, and wobbles a little in world space.
+- Last, every vertex is held 1/64 inside its cell across each axis a crossing in its cell runs along, and each quad is split again from the final positions along a diagonal whose two triangles both face from solid to air. A quad's four vertices then lie in the four cells round its crossing, so its outline winds once round it and no triangle can fold. Placement past the cell (0.3), the spike cap (0.75) and the chisel (0.3, and it overshoots) all move vertices out of their cells, and before this about 3,500 of 1.6 million triangles on seed 1's steppe peak folded before the chisel and 10,500 after. Along the crossing's own axis a vertex stays free, so soft ground still lumps along its normal.
 
 Each material's look (relax, wobble, facet) and the other values are constants in `KNOBS`.
 
@@ -24,6 +25,7 @@ A chunk owns the quads from its own blocks to the next along each axis, and its 
 - Every step that reads a vertex's neighbours takes any error from where the data runs out a cell further in. `NEIGHBOUR_STEPS` counts them. Vertices exist only within `VERTEX_REACH` cells of the chunk, and each step works only as far out as the chunk's own vertices still need. A const assertion keeps the reach within the 16 blocks `ChunkNeighbourhood` holds, so adding a pass fails to compile until something else gives.
 - A vertex is kept as its cell plus an offset, and neighbour sums are taken relative to the vertex, so both chunks add the same numbers in the same order. Block counts are whole numbers. Offsets snap to 1/4096 before the cell is added, so the sum is exact.
 - Trig in the chisel comes from `libm`, so a chunk meshed on another machine still meets its neighbour.
+- A face is drawn by the chunk of the solid block it covers, as the cube mesher's were, unless that chunk holds no ground at all before the gap fill, when the chunk on its other side draws it. So an all-air chunk draws nothing and the loader can skip it. Owning by the low side instead left walls facing -x or -z and overhang undersides on a chunk boundary to an empty chunk, which was never meshed: holes in big cliffs with chunk-straight edges (`test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock`). Nodes keep the low side.
 - An edit reaches `EDIT_REACH` blocks of mesh each way, so `remesh` meshes every chunk that far from a changed block again, not only its neighbours.
 
 ## LOD nodes
@@ -61,6 +63,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 ## Checking it
 
 - `test_sculpted_ground_leaves_no_hole` meshes real terrain at 8 spots, as generated and with a pit dug, over 3×3×3 chunks, and finds no open or mis-wound edge in the ground. Trees are drawn open by their own mesher, so edges beside logs and leaves are skipped.
+- `test_sculpted_ground_never_folds_a_triangle` scrambles real terrain into thin walls, lone blocks and diagonal touches and finds every quad has a sound diagonal. Without the cell constraint it finds 1,164 that have none. An open-edge check cannot see a folded triangle, as every edge of one has a neighbour.
 - `test_sculpted_lod_nodes_leave_no_hole` meshes LOD nodes of levels 1 to 4 at 4 spots and finds no open or mis-wound edge in the sculpted ground but at the node's top and bottom and where a skirt ends.
 - `worldview <seed> render <x> <z> <half> <out.png>` draws the game's chunk meshes on the CPU, and `OCHRE_RENDER_FLAT=1` shades each triangle flat, as the shader cuts rock. `OCHRE_RENDER_LOD=<level>` draws that level's nodes, and `OCHRE_RENDER_HANDOVER=1` chunks in the node holding the spot, for the seam round it. The renderer culls nothing, so the near side of the seam shows what the eye, inside, never sees.
 - `test_a_dig_changes_only_the_sculpted_chunks_meshed_again` digs and checks no chunk outside the remeshed range changes. `contact.rs` tests ledges, sliding along walls, landing, steep slopes and low ceilings.
@@ -74,4 +77,5 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - In a blend, the untinted side loses its weathering tint.
 - LOD nodes don't read the shore's sand or cut water along the ground, so a shore can change at the hand-over, and trees can grow on shore sand.
 - Near-flat banks leave a saw-tooth waterline where the ground lies just under the water.
-- Rare holes are still reported in play, not yet found by the tests.
+- The constraint's corner trim was not judged by eye.
+- The constraint trims the sharpest corners, which could stand 0.3 past their cell.
