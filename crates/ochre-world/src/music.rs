@@ -40,6 +40,7 @@ impl Plugin for MusicPlugin {
         }
         app.insert_resource(FirstDelay(self.first_delay))
             .insert_resource(ForcedTrack(self.track.clone()))
+            .insert_resource(Present::scan())
             .add_systems(Update, play_music.after(SenseSurroundings));
     }
 }
@@ -69,15 +70,30 @@ impl Mood {
         } else if around.desert > 0.5 {
             Mood::Desert
         } else {
-            match around.biome {
-                Some("tundra" | "taiga" | "glacier") => Mood::Cold,
-                Some("forest") => Mood::Forest,
-                Some("jungle" | "swamp") => Mood::Rainforest,
-                Some("savanna") => Mood::Savanna,
-                Some("steppe") => Mood::Steppe,
-                _ => Mood::Grassland,
-            }
+            Mood::of_biome(around)
         }
+    }
+
+    // The biome's own mood, with no weather or desert over it.
+    fn of_biome(around: &Surroundings) -> Mood {
+        match around.biome {
+            Some("tundra" | "taiga" | "glacier") => Mood::Cold,
+            Some("forest") => Mood::Forest,
+            Some("jungle" | "swamp") => Mood::Rainforest,
+            Some("savanna") => Mood::Savanna,
+            Some("steppe") => Mood::Steppe,
+            _ => Mood::Grassland,
+        }
+    }
+
+    // The tracks to pick from for this mood: its own files that are on disk, else the biome's, else grassland's.
+    // Most moods' files are gitignored (assets/sounds/CREDITS.md), so a fresh clone has none for a storm or the desert.
+    fn present_files(self, around: &Surroundings, present: &Present) -> Vec<&'static str> {
+        [self, Mood::of_biome(around), Mood::Grassland]
+            .into_iter()
+            .map(|mood| present.filter(mood.files()))
+            .find(|files| !files.is_empty())
+            .unwrap_or_default()
     }
 
     // the tracks a mood has, one of which is picked each time music starts, see `pick`
@@ -101,15 +117,77 @@ impl Mood {
     }
 }
 
+// Every track any mood names.
+const ALL_MOODS: [Mood; 9] = [
+    Mood::Storm,
+    Mood::SteppeFury,
+    Mood::Desert,
+    Mood::Cold,
+    Mood::Forest,
+    Mood::Rainforest,
+    Mood::Savanna,
+    Mood::Steppe,
+    Mood::Grassland,
+];
+
+/// Which track files are on disk, looked for once at startup, so a missing one is never loaded: that left a silent
+/// track standing in for the mood's music, with an asset error in the log.
+#[derive(Resource, Debug, Default)]
+struct Present(Option<std::collections::HashSet<&'static str>>);
+
+impl Present {
+    // Looks under Bevy's default asset root. If none of the files is found there the root is a guess gone wrong, so
+    // every file counts as present, as before.
+    fn scan() -> Self {
+        let root = std::env::var_os("BEVY_ASSET_ROOT")
+            .or_else(|| std::env::var_os("CARGO_MANIFEST_DIR"))
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()?
+                    .parent()
+                    .map(|p| p.to_path_buf())
+            })
+            .unwrap_or_default()
+            .join("assets");
+        Self::scan_in(&root)
+    }
+
+    fn scan_in(root: &std::path::Path) -> Self {
+        Self::with(|file| root.join(file).exists())
+    }
+
+    fn with(exists: impl Fn(&str) -> bool) -> Self {
+        let found: std::collections::HashSet<&'static str> = ALL_MOODS
+            .iter()
+            .flat_map(|mood| mood.files().iter().copied())
+            .filter(|file| exists(file))
+            .collect();
+        Present((!found.is_empty()).then_some(found))
+    }
+
+    fn filter(&self, files: &'static [&'static str]) -> Vec<&'static str> {
+        files
+            .iter()
+            .copied()
+            .filter(|f| self.0.as_ref().is_none_or(|found| found.contains(f)))
+            .collect()
+    }
+}
+
 // The first of `files` with `name` in its file name, if any.
-fn named(files: &'static [&'static str], name: &str) -> Option<&'static str> {
+fn named(files: &[&'static str], name: &str) -> Option<&'static str> {
     files.iter().copied().find(|f| f.contains(name))
 }
 
 // One of `files` for a `draw` in 0..1, never the `last` played unless it is the only one.
-fn pick(files: &'static [&'static str], last: Option<&str>, draw: f32) -> &'static str {
+fn pick(files: &[&'static str], last: Option<&str>, draw: f32) -> &'static str {
     let others: Vec<&'static str> = files.iter().copied().filter(|f| Some(*f) != last).collect();
-    let choices = if others.is_empty() { files } else { &others[..] };
+    let choices = if others.is_empty() {
+        files
+    } else {
+        &others[..]
+    };
     choices[((draw * choices.len() as f32) as usize).min(choices.len() - 1)]
 }
 
@@ -142,6 +220,7 @@ struct Context<'w> {
     around: Res<'w, Surroundings>,
     first_delay: Res<'w, FirstDelay>,
     forced: Res<'w, ForcedTrack>,
+    present: Res<'w, Present>,
     weather: Option<Res<'w, Weather>>,
 }
 
@@ -165,12 +244,15 @@ fn play_music(
         around,
         first_delay,
         forced,
+        present,
         weather,
     } = context;
     let dt = time.delta_secs();
     let mood = Mood::of(
         &around,
-        weather.as_ref().map_or(0.0, |weather| weather.precipitation()),
+        weather
+            .as_ref()
+            .map_or(0.0, |weather| weather.precipitation()),
         weather.as_ref().map_or(0.0, |weather| weather.gloom()),
     );
     let (mut live, mut handover) = (false, false);
@@ -219,11 +301,15 @@ fn play_music(
     }
     *wait = None;
     played.any = true;
+    let files = mood.present_files(&around, &present);
+    if files.is_empty() {
+        return;
+    }
     let file = forced
         .0
         .as_deref()
-        .and_then(|name| named(mood.files(), name))
-        .unwrap_or_else(|| pick(mood.files(), played.last, rand::random()));
+        .and_then(|name| named(&files, name))
+        .unwrap_or_else(|| pick(&files, played.last, rand::random()));
     played.last = Some(file);
     commands.spawn((
         Track {
@@ -273,8 +359,68 @@ mod tests {
     #[test]
     fn the_committed_steppe_track_is_a_file_that_exists() {
         // the others are gitignored, see assets/sounds/CREDITS.md, so a fresh clone has only this one
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sounds/music/steppe.ogg");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/sounds/music/steppe.ogg");
         assert!(path.exists(), "steppe.ogg is missing");
+    }
+
+    #[test]
+    fn a_mood_with_no_file_on_disk_plays_the_biome_or_grassland_instead() {
+        // a fresh clone: only the six committed tracks
+        let committed = [
+            "cold",
+            "forest",
+            "grassland",
+            "rainforest",
+            "savanna",
+            "steppe.",
+        ];
+        let present = Present::with(|f| committed.iter().any(|c| f.contains(c)));
+        let forest = Surroundings {
+            biome: Some("forest"),
+            ..Surroundings::default()
+        };
+        assert_eq!(
+            vec!["sounds/music/forest.ogg"],
+            Mood::Storm.present_files(&forest, &present)
+        );
+        assert_eq!(
+            vec!["sounds/music/grassland.ogg"],
+            Mood::Desert.present_files(&Surroundings::default(), &present)
+        );
+        assert_eq!(
+            vec!["sounds/music/steppe.ogg"],
+            Mood::Steppe.present_files(&forest, &present)
+        );
+        // the owner's checkout, with every file, keeps each mood's own
+        let all = Present::with(|_| true);
+        assert_eq!(
+            vec!["sounds/music/storm.ogg"],
+            Mood::Storm.present_files(&forest, &all)
+        );
+        assert_eq!(4, Mood::Steppe.present_files(&forest, &all).len());
+        // nothing found means the root was guessed wrong, so everything counts
+        assert_eq!(
+            4,
+            Mood::Steppe
+                .present_files(&forest, &Present::with(|_| false))
+                .len()
+        );
+    }
+
+    #[test]
+    fn this_checkouts_files_are_found_and_every_mood_has_a_track() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let present = Present::scan_in(&root);
+        assert!(present.0.is_some(), "no track found under the asset root");
+        for mood in ALL_MOODS {
+            for file in mood.present_files(&Surroundings::default(), &present) {
+                assert!(root.join(file).exists(), "{file} picked but missing");
+            }
+            assert!(!mood
+                .present_files(&Surroundings::default(), &present)
+                .is_empty());
+        }
     }
 
     #[test]
@@ -304,7 +450,10 @@ mod tests {
         assert_eq!(Mood::Desert, Mood::of(&desert, 0.0, 0.0));
         assert_eq!(Mood::Storm, Mood::of(&desert, 0.8, 0.8));
         // a dry storm over the steppe has the steppe's fury, a wet one the storm's music, and a dark sky elsewhere neither
-        let steppe = Surroundings { steppe: 1.0, ..biome("steppe") };
+        let steppe = Surroundings {
+            steppe: 1.0,
+            ..biome("steppe")
+        };
         assert_eq!(Mood::SteppeFury, Mood::of(&steppe, 0.0, 0.7));
         assert_eq!(Mood::Steppe, Mood::of(&steppe, 0.0, 0.3));
         assert_eq!(Mood::Storm, Mood::of(&steppe, 0.8, 0.8));

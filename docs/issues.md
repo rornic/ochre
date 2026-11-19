@@ -19,12 +19,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Not known:** whether every chain of dips is this. Tiny lakes in valleys fell from 18, 17 and 4 to 6, 6 and 0 on seeds 20, 1 and 1337, not to none: the rest are not found. Other dips, in non-valley country, were not looked at.
 - **To check:** render the remaining valley ponds (worldview's `/export` with the `hillshade` and water layers at `scale=0.5`), and whether a dry valley should instead carry a stream through (the map has the stream's cells in the trough, which the drain now cuts out of).
 
-## `storm.ogg` and `desert.ogg` are not in the repo
-
-- **Seen:** 2026-11-16, listing `assets/sounds/music/`. `music.rs` (`Mood::Storm`, `Mood::Desert`) names both files, and only the cold, forest, grassland, rainforest, savanna and steppe tracks exist.
-- **Known:** the files are missing.
-- **Not known:** what a player gets in a storm or the desert, silence or an error in the log. Not checked.
-
 ## Steppe grass bends in a hollow while its wind sound is quiet
 
 - **Seen:** 2026-11-16, by design of the steppe change. The wind sound's strength follows how exposed the camera's ground is (`Surroundings::exposure`), and the foliage shader's sway size is the same everywhere (`foliage.wesl`), because a shader has no exposure per vertex.
