@@ -427,6 +427,35 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                 i = n;
             }
         }
+        "dryrivers" => {
+            // map river cells with no river or lake water anywhere in them at block scale (every 4 blocks), the
+            // driest first by how far the ground lies under the map's own: water the map has and the blocks lose
+            let limit: usize = opt(args, 4, 12)?;
+            let dim = map.dim();
+            let cell = map.config.map_cell as i64;
+            let rivers: Vec<usize> = (0..dim * dim).filter(|&i| map.water_kind[i] == WaterCell::River as u8).collect();
+            let mut dry = Vec::new();
+            for &i in &rivers {
+                let (wx, wz) = map.cell_centre(i % dim, i / dim);
+                let (x0, z0) = (wx as i64 - cell / 2, wz as i64 - cell / 2);
+                let mut lowest = f64::MAX;
+                let wet = (0..cell).step_by(4).any(|dz| {
+                    (0..cell).step_by(4).any(|dx| {
+                        let s = terrain.sample((x0 + dx) as f64, (z0 + dz) as f64);
+                        lowest = lowest.min(s.height);
+                        matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
+                    })
+                });
+                if !wet {
+                    dry.push((map.water_surface[i] as f64 - lowest, wx, wz, map.water_surface[i], map.flow[i]));
+                }
+            }
+            dry.sort_by(|a, b| b.0.total_cmp(&a.0));
+            outln!(out, "{} of {} river cells have no water in them at block scale", dry.len(), rivers.len());
+            for (under, wx, wz, surface, flow) in dry.iter().take(limit) {
+                outln!(out, "{wx:.0},{wz:.0} map surface {surface:.1}, lowest ground {:.1} under it, flow {flow:.0}", under);
+            }
+        }
         "edges" => {
             let half: i64 = arg(args, 4)?;
             outln!(out, "{}", longest_straight_edge(terrain, x, z, half));

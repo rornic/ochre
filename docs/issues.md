@@ -83,3 +83,11 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
 - **Not known:** whether anyone sees it at that distance. Not looked at.
+
+## Mountain rivers vanish where block-level terraces fall under the map
+
+- **Seen:** 2026-11-19, `worldview 1 dryrivers 0 0`: 1,233 of seed 1's 10,164 river cells have no river or lake water anywhere in them at block scale (sampled every 4 blocks). The worst, a river of flow about 3,800, stops at 11950,-7410 and the map's path runs on about 450 blocks east into a lake at 352 with no water, over ground 150 blocks under the map's (212 to 237 against a map surface of 362 to 370).
+- **Known:** `valley_floor` follows the real ground down where it falls 12 to 30 blocks or more under the map's (`VALLEY_GAP`), so a river runs over a cliff (`docs/terrain-perf.md`, Falls). On mountain ground the beds of `bedded_ground` step the ground 30 to 80 blocks under the map along this river at the 32-block scale `valley_floor` reads (the block-level alpine valley steepening adds 64 more at block scale, but none at that scale). The profile follows the steps down, under the lake's level, and `UNDER_LAKE` ends every stretch that drains into a lake where its water would stand more than a block under it, so the river is cut off at the first step. Tableland is terraced on the map before the water is routed (`landform::terrace`, GENERATOR_VERSION 74) for this reason; mountain ground is terraced only at block level.
+- **Not known:** how many of the 1,233 are this and how many are small streams ending in hollows. Clamping the river to the lake's level, and holding water under terraced ground, were both tried and dropped before (walls tripled, slots 13 blocks deep).
+- **To fix:** a guess only: terrace mountain cells on the map too before the last hydrology run, as tableland is, so rivers and lakes form on the treads; or keep the beds off a river's valley floor as still water's calm keeps them off a lake's shore. Rerun `dryrivers` and `water_audit --fine` either way.
+
