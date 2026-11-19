@@ -76,6 +76,13 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** skirts hang from the node's open edges to close the usual cases (`hang_skirts`), and the test allows open edges where a skirt ends.
 - **Not known:** how often it shows from a mountain or the air.
 
+## Stacked LOD nodes still z-fight a little on their shared row
+
+- **Seen:** 2026-11-19, with `OCHRE_RENDER_ZFIGHT` in the worldview renderer (`docs/sculpted-ground.md`, Checking it), after the fix for skirts flickering on distant cliffs: skirts lay in a node's side plane with the neighbour's skirts and its walls across the side, and the row past a node's bottom lay over the top row of the node below and hung the same skirts.
+- **Known:** 49 to 117 pixels of about a million drawn still z-fight at 0.001 blocks on seed 1 (10816, -6784) and seed 4 (-6076, 5236), levels 1 to 3, against 1,748 to 22,854 before. The samples are the row past the bottom near its top, where it meets the row below, and the flat crossings both nodes draw in that one cell row, which can't lean.
+- **Not known:** whether the rest shows in the game. The renderer is orthographic with no depth precision limit, so the counts are geometry, not the GPU's depth test. Level n beside level n + 1, and a chunk beside a node at the hand-over, were not measured.
+- **To fix:** make the two nodes' vertices on their shared row agree (`docs/sculpted-ground.md`, Open).
+
 ## Rock's facets turn at every vertex in 8-block cells
 
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.

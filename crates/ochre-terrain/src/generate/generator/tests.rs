@@ -3820,6 +3820,14 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
             ground.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions.clone()));
             ground.insert_indices(Indices::U32(sculpted.clone()));
             let last = CHUNK_SIZE as f32 - 0.5;
+            // a vertex's normal and uv, which a skirt's lower corner copies from the vertex on the side it hangs from
+            let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) else { continue };
+            let look = |i: usize| (normals[i].map(f32::to_bits), uvs[i].map(f32::to_bits));
+            let hung: std::collections::HashSet<_> = (0..positions.len())
+                .flat_map(|i| [0usize, 2].into_iter().flat_map(move |axis| [-0.5f32, last].into_iter().map(move |wall| (i, axis, wall))))
+                .filter(|&(i, axis, wall)| positions[i][axis] == wall)
+                .map(|(i, axis, wall)| (axis, wall.to_bits(), look(i)))
+                .collect();
             let in_side = |ps: &[[f32; 3]]| [0, 2].iter().any(|&axis| [-0.5, last].iter().any(|&wall| ps.iter().all(|p| p[axis] == wall)));
             for line in open_edges(&ground) {
                 let n: Vec<f32> = line
@@ -3828,8 +3836,21 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
                     .collect();
                 let (a, b) = ([n[0], n[1], n[2]], [n[3], n[4], n[5]]);
                 let owner: Vec<[f32; 3]> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| positions[i as usize]).collect();
-                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it
-                let skirt_end = n.len() == 7 && in_side(&[a, b]) && in_side(&owner);
+                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it. A skirt leans into the node
+                // from the side it hangs on, so it faces across that side, touches it and keeps within its lean of it
+                // from the side it hangs on, so its triangles touch that side and their other corners are copies of a vertex on it, within its lean
+                let lean = super::lod::MAX_SKIRT_CELLS as f32 * super::nets::SKIRT_LEAN + 0.01;
+                let corners: Vec<usize> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| i as usize).collect();
+                let skirt = [0, 2].iter().any(|&axis| {
+                    [-0.5, last].iter().any(|&wall| {
+                        corners.iter().any(|&i| positions[i][axis] == wall)
+                            && corners.iter().all(|&i| {
+                                let off = (positions[i][axis] - wall).abs();
+                                off == 0.0 || (off <= lean && hung.contains(&(axis, wall.to_bits(), look(i))))
+                            })
+                    })
+                });
+                let skirt_end = n.len() == 7 && ((in_side(&[a, b]) && in_side(&owner)) || skirt);
                 let past_top_or_bottom = [a[1], b[1]].iter().any(|&y| !(0.5..=last - 1.0).contains(&y));
                 if !skirt_end && !past_top_or_bottom {
                     holes.push(format!("level {level} at {sx},{sz}: {line}"));
