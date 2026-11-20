@@ -58,7 +58,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - The player (`contact.rs`) walks the floor with three spheres. Faces steeper than 66 degrees are walls, which stop the player only above a 1-block step unless the ground on top is walkable. Ground comes from a footprint of five height lookups, and a fall lands on any upward face. A move is cut into 0.2-block substeps, and the head checks the faces above it before rising. Without sculpted ground near, it falls back to blocks.
 - Digging is a brush (`breaking.rs`): it removes blocks within 1.5 of the hit on loose ground, or 1 on rock, a rough 0.3 deep, so a dig doesn't print one block's outline in the surface.
 - A water surface reaches up to 1.5 blocks over the shore and is cut along the floor in 4 steps a block, so it meets the bank instead of stopping at block edges.
-- Generation lays sand on any bank within 2 blocks of water and a block of its level, lakes and rivers as well as the sea (`columns.rs`), so water never meets a grass edge.
+- Generation lays a bed on any bank within 2 blocks of water and a block of its level (`columns.rs`), so water never meets a grass edge: sand by the sea, and by a lake or river what the ground there is (`terrain::fresh_bed`): mud where grass would grow on flat ground, gravel where it slopes 0.3 or more, gravel for snow, and rock and sand as they are.
 
 ## Checking it
 
@@ -78,7 +78,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - Level n beside level n + 1 was not measured: the renderer draws one level at a time. The lean is the same at every level.
 - Rock's chisel turns over 9 blocks, so from 8-block cells its directions change at every vertex.
 - In a blend, the untinted side loses its weathering tint.
-- LOD nodes don't cut water along the ground, so a waterline can change at the hand-over. Nodes of cells 1 and 2 lay the shore's sand as chunks do; coarser cells are wider than the beach.
+- LOD nodes don't cut water along the ground, so a waterline can change at the hand-over. Nodes of cells 1 and 2 lay the shore's bed as chunks do; coarser cells are wider than the beach.
 - Near-flat banks leave a saw-tooth waterline where the ground lies just under the water.
 - The constraint's corner trim was not judged by eye.
 - The constraint trims the sharpest corners, which could stand 0.3 past their cell.

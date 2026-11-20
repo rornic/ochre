@@ -1705,12 +1705,9 @@ fn test_lakes_and_rivers_above_the_sea_are_filled_to_their_own_surface() {
             // the top layer may be ice in the cold, but never air, and under it is water
             assert!(matches!(water(top - 1), BlockType::Water | BlockType::Ice));
             assert_eq!(BlockType::Water, water(top - 1 - 4.min(top - ground - 1)));
-            // sand, or water where a gorge's cliffs were cut open under it and flooded
+            // a bed of the ground round it (`fresh_bed`), or water where a gorge's cliffs were cut open under it and flooded
             assert!(
-                matches!(
-                    water(ground - 1),
-                    BlockType::Sand | BlockType::Gravel | BlockType::Water
-                ),
+                water(ground - 1).is_opaque() || water(ground - 1) == BlockType::Water,
                 "the bed at ({x}, {z}) is {:?}",
                 water(ground - 1)
             );
@@ -4038,11 +4035,13 @@ fn test_no_tree_roots_on_a_banks_sand() {
 }
 
 #[test]
-fn test_lod_level_zero_lays_a_banks_sand_where_full_detail_does() {
+fn test_lod_level_zero_lays_a_banks_bed_where_full_detail_does() {
     use ochre_base::terrain_source::WaterKind;
     let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
     let mut heights = regions.sampler();
-    let (mut sand, mut wrong) = (0, Vec::new());
+    // a bank's and bed's blocks, which fresh water lays from the ground round it (`fresh_bed`)
+    let bed = |b: BlockType| matches!(b, BlockType::Sand | BlockType::Gravel | BlockType::Dirt);
+    let (mut beds, mut wrong) = (0, Vec::new());
     for kind in [WaterKind::Lake, WaterKind::River] {
         for (x, z) in wet_columns(kind).into_iter().step_by(5).take(12) {
             let ground = regions.get_height(x, z).round() as i64;
@@ -4051,16 +4050,16 @@ fn test_lod_level_zero_lays_a_banks_sand_where_full_detail_does() {
             let lod = LodBlocks::sample(&regions, LodKey { level: 0, coord });
             for x in 0..16 {
                 for z in 0..16 {
-                    // the top two layers, which show: how deep the soil runs under them is not the shore's
-                    let top = heights.ground_top(coord.x * 16 + x as i64, coord.z * 16 + z as i64) - coord.y * 16;
-                    for y in (top - 2).max(0)..top.min(16) {
-                        let (x, y, z) = (x as u16, y as u16, z as u16);
-                        let (full, node) = (
-                            chunk.get_block_at(U16Vec3::new(x, y, z)),
-                            lod.raw(IVec3::new(x as i32, y as i32, z as i32)),
-                        );
-                        sand += (full == BlockType::Sand) as usize;
-                        if (full == BlockType::Sand) != (node == BlockType::Sand) {
+                    // the top block, which shows: how deep the soil runs under it is not the shore's
+                    let y = heights.ground_top(coord.x * 16 + x as i64, coord.z * 16 + z as i64) - 1 - coord.y * 16;
+                    if !(0..16).contains(&y) {
+                        continue;
+                    }
+                    let (x, y, z) = (x as u16, y as u16, z as u16);
+                    let (full, node) = (chunk.get_block_at(U16Vec3::new(x, y, z)), lod.raw(IVec3::new(x as i32, y as i32, z as i32)));
+                    if bed(full) || bed(node) {
+                        beds += 1;
+                        if full != node {
                             wrong.push((coord * 16 + I64Vec3::new(x as i64, y as i64, z as i64), full, node));
                         }
                     }
@@ -4068,8 +4067,8 @@ fn test_lod_level_zero_lays_a_banks_sand_where_full_detail_does() {
             }
         }
     }
-    assert!(sand > 100, "only {sand} sand blocks");
-    assert!(wrong.is_empty(), "{} of {sand} blocks differ in sand, as {:?}", wrong.len(), &wrong[..wrong.len().min(4)]);
+    assert!(beds > 100, "only {beds} bed blocks");
+    assert!(wrong.is_empty(), "{} of {beds} bed blocks differ, as {:?}", wrong.len(), &wrong[..wrong.len().min(4)]);
 }
 
 
@@ -4125,4 +4124,35 @@ fn test_rock_a_cliff_builds_over_a_column_buries_no_grass() {
     }
     assert!(grass > 1000, "only {grass} grass blocks");
     assert!(buried.is_empty(), "{} of {grass} grass blocks lie under rock a cliff built, as {:?}", buried.len(), &buried[..buried.len().min(3)]);
+}
+
+#[test]
+fn test_lake_and_river_beds_take_the_ground_round_them_and_the_sea_keeps_its_sand() {
+    use ochre_base::terrain_source::{TerrainSource, WaterKind};
+    use ochre_world::worldmap::{character::world_config, generate, WorldConfig, WorldTerrain};
+    let map = Arc::new(generate(1, world_config(1, WorldConfig::default())));
+    let terrain = Arc::new(WorldTerrain::new(map.clone()));
+    let regions = Arc::new(RegionStore::new(terrain.clone()));
+    let (mut fresh, mut sea): (HashMap<u8, usize>, HashMap<u8, usize>) = (HashMap::new(), HashMap::new());
+    let mut rivers: HashMap<u8, usize> = HashMap::new();
+    for i in (0..map.height.len()).step_by(211) {
+        let (x, z) = map.cell_centre(i % map.dim(), i / map.dim());
+        let s = terrain.sample(x, z);
+        let tally = match s.water_kind {
+            WaterKind::Lake | WaterKind::River => &mut fresh,
+            WaterKind::Ocean if s.height > WATER_LEVEL as f64 - 6.0 => &mut sea,
+            _ => continue,
+        };
+        let ground = regions.sampler().ground_top(x as i64, z as i64);
+        let bed = block_at(&regions, x as i64, ground - 1, z as i64) as u8;
+        *tally.entry(bed).or_default() += 1;
+        if s.water_kind == WaterKind::River {
+            *rivers.entry(bed).or_default() += 1;
+        }
+    }
+    eprintln!("fresh beds by block code {fresh:?}, of them rivers {rivers:?}, shallow sea {sea:?}");
+    let share = |t: &HashMap<u8, usize>| t.get(&(BlockType::Sand as u8)).copied().unwrap_or(0) as f64 / t.values().sum::<usize>().max(1) as f64;
+    assert!(fresh.values().sum::<usize>() > 100 && sea.values().sum::<usize>() > 20);
+    assert!(fresh.len() >= 3 && share(&fresh) < 0.5, "fresh beds are mostly sand or all one block: {fresh:?}");
+    assert!(share(&sea) > 0.9, "the shallow sea's beds aren't sand: {sea:?}");
 }
