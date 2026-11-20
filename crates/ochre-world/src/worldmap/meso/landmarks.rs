@@ -1,21 +1,15 @@
-//! Landmarks on steppe and tundra (meso slice 2): big raised forms and bowls, sited by a rule table over the map's own layers,
-//! laid with the other stamped shapes before the passes are carved. See `docs/meso-slice1-decision.md`.
+//! Landmarks (meso slice 2): big raised forms and bowls, sited by a rule table over the map's own layers, the form drawn from the rock
+//! under the site, laid with the other stamped shapes before the passes are carved. A biome has landmarks if the table has rows for it.
+//! See `docs/meso-slice1-decision.md`.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::{hash, unit};
+use ochre_base::noise::{fbm, hash, unit};
 use ochre_base::WATER_LEVEL;
 
-use super::super::climate::{blur_box, moisture_field, FIELD_BLUR, LAPSE_PER_BLOCK};
+use super::super::climate::{blur_box, classify, moisture_field, BiomeKind, FIELD_BLUR, LAPSE_PER_BLOCK};
+use super::super::geology::{METAMORPHIC, SEDIMENTARY, VOLCANIC};
 use super::super::shapes::{ragged_t, sites_apart};
-use super::super::valleys::steppe_likeness;
 use super::super::WorldMap;
-
-/// The country a row is for, read from the climate fields before the climate pass decides biomes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Country {
-    Steppe,
-    Tundra,
-}
 
 /// A height profile, in blocks, round a site.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,24 +25,53 @@ pub enum Primitive {
 }
 
 struct Row {
-    country: Country,
+    biome: BiomeKind,
     primitive: Primitive,
+    // the geology classes it forms on, none listed for any: a butte needs a hard bed over soft ones
+    rock: &'static [u8],
     weight: f64,
     // radius in cells (a ridge's half length), and height or a bowl's depth in blocks
     radius: (f64, f64),
     height: (f64, f64),
 }
 
-// Sized from the slice 1 baseline: 130 blocks of relief over about 190 blocks reads from 4 km, and 250 over 750 as a mass.
+// The share of sited places that get a landmark, from thin patches to full ones, and a patch's width in landmark spacings.
+const SPAWN: (f64, f64) = (0.35, 1.0);
+const PATCH: f64 = 2.5;
+
+const CAPPED: &[u8] = &[SEDIMENTARY, VOLCANIC];
+const BEDDED: &[u8] = &[SEDIMENTARY, METAMORPHIC];
+const ANY: &[u8] = &[];
+
+// Sized from the slice 1 baseline: 130 blocks of relief over about 190 blocks reads from 4 km, and 250 over 750 as a mass. Every biome keeps
+// a massif and a bowl that form on any rock, so a site never lacks a row.
 const TABLE: &[Row] = &[
-    Row { country: Country::Steppe, primitive: Primitive::Butte, weight: 0.35, radius: (2.5, 4.0), height: (150.0, 260.0) },
-    Row { country: Country::Steppe, primitive: Primitive::Massif, weight: 0.25, radius: (7.0, 11.0), height: (250.0, 380.0) },
-    Row { country: Country::Steppe, primitive: Primitive::Ridge, weight: 0.25, radius: (8.0, 13.0), height: (160.0, 260.0) },
-    Row { country: Country::Steppe, primitive: Primitive::Bowl, weight: 0.15, radius: (4.0, 7.0), height: (60.0, 120.0) },
-    Row { country: Country::Tundra, primitive: Primitive::Massif, weight: 0.35, radius: (6.0, 10.0), height: (220.0, 340.0) },
-    Row { country: Country::Tundra, primitive: Primitive::Butte, weight: 0.25, radius: (2.5, 3.5), height: (140.0, 220.0) },
-    Row { country: Country::Tundra, primitive: Primitive::Ridge, weight: 0.25, radius: (7.0, 12.0), height: (150.0, 240.0) },
-    Row { country: Country::Tundra, primitive: Primitive::Bowl, weight: 0.15, radius: (4.0, 6.0), height: (50.0, 100.0) },
+    Row { biome: BiomeKind::Steppe, primitive: Primitive::Butte, rock: CAPPED, weight: 0.35, radius: (2.5, 4.0), height: (150.0, 260.0) },
+    Row { biome: BiomeKind::Steppe, primitive: Primitive::Massif, rock: ANY, weight: 0.25, radius: (7.0, 11.0), height: (250.0, 380.0) },
+    Row { biome: BiomeKind::Steppe, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.25, radius: (8.0, 13.0), height: (160.0, 260.0) },
+    Row { biome: BiomeKind::Steppe, primitive: Primitive::Bowl, rock: ANY, weight: 0.15, radius: (4.0, 7.0), height: (60.0, 120.0) },
+    Row { biome: BiomeKind::Tundra, primitive: Primitive::Massif, rock: ANY, weight: 0.35, radius: (6.0, 10.0), height: (220.0, 340.0) },
+    Row { biome: BiomeKind::Tundra, primitive: Primitive::Butte, rock: CAPPED, weight: 0.25, radius: (2.5, 3.5), height: (140.0, 220.0) },
+    Row { biome: BiomeKind::Tundra, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.25, radius: (7.0, 12.0), height: (150.0, 240.0) },
+    Row { biome: BiomeKind::Tundra, primitive: Primitive::Bowl, rock: ANY, weight: 0.15, radius: (4.0, 6.0), height: (50.0, 100.0) },
+    // desert: mesas and buttes over a hard cap, the domes of bare rock left standing, hogbacks, and dry basins
+    Row { biome: BiomeKind::Desert, primitive: Primitive::Butte, rock: CAPPED, weight: 0.40, radius: (2.5, 4.0), height: (130.0, 240.0) },
+    Row { biome: BiomeKind::Desert, primitive: Primitive::Massif, rock: ANY, weight: 0.25, radius: (6.0, 9.0), height: (200.0, 320.0) },
+    Row { biome: BiomeKind::Desert, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.20, radius: (8.0, 12.0), height: (140.0, 230.0) },
+    Row { biome: BiomeKind::Desert, primitive: Primitive::Bowl, rock: ANY, weight: 0.15, radius: (4.0, 6.0), height: (50.0, 100.0) },
+    // grassland: big rolling hills and long escarpments, kept lower so it stays pastoral
+    Row { biome: BiomeKind::Grassland, primitive: Primitive::Massif, rock: ANY, weight: 0.45, radius: (7.0, 11.0), height: (180.0, 300.0) },
+    Row { biome: BiomeKind::Grassland, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.30, radius: (8.0, 12.0), height: (120.0, 200.0) },
+    Row { biome: BiomeKind::Grassland, primitive: Primitive::Butte, rock: CAPPED, weight: 0.10, radius: (2.5, 3.5), height: (100.0, 170.0) },
+    Row { biome: BiomeKind::Grassland, primitive: Primitive::Bowl, rock: ANY, weight: 0.15, radius: (4.0, 7.0), height: (40.0, 80.0) },
+    // forest: wooded hills and ridges, and basins that fill
+    Row { biome: BiomeKind::Forest, primitive: Primitive::Massif, rock: ANY, weight: 0.40, radius: (7.0, 11.0), height: (200.0, 320.0) },
+    Row { biome: BiomeKind::Forest, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.35, radius: (8.0, 13.0), height: (130.0, 220.0) },
+    Row { biome: BiomeKind::Forest, primitive: Primitive::Bowl, rock: ANY, weight: 0.25, radius: (4.0, 7.0), height: (40.0, 90.0) },
+    // taiga: glaciated country, long moraine ridges and kettle basins between the hills
+    Row { biome: BiomeKind::Taiga, primitive: Primitive::Massif, rock: ANY, weight: 0.35, radius: (6.0, 10.0), height: (200.0, 320.0) },
+    Row { biome: BiomeKind::Taiga, primitive: Primitive::Ridge, rock: ANY, weight: 0.30, radius: (7.0, 12.0), height: (110.0, 200.0) },
+    Row { biome: BiomeKind::Taiga, primitive: Primitive::Bowl, rock: ANY, weight: 0.35, radius: (4.0, 6.0), height: (40.0, 90.0) },
 ];
 
 // Cells kept clear of the map's edge, as the other shapes keep.
@@ -57,9 +80,6 @@ const EDGE: usize = 60;
 const ABOVE: (f32, f32) = (20.0, 700.0);
 // Flat enough to stand out of.
 const FLAT: f32 = 0.15;
-const STEPPE_FROM: f32 = 0.6;
-// Tundra's warmth at height, the band `cold_uplands` reads.
-const TUNDRA: (f64, f64) = (0.05, 0.22);
 const SALT: u32 = 0x1A4D_0001;
 
 /// A landmark laid down: its site in cells, kind, radius in cells and height (a bowl's depth) in blocks.
@@ -67,14 +87,15 @@ const SALT: u32 = 0x1A4D_0001;
 pub struct Landmark {
     pub x: usize,
     pub z: usize,
-    pub country: Country,
+    pub biome: BiomeKind,
     pub primitive: Primitive,
     pub radius: f64,
     pub height: f64,
 }
 
-// The country of each cell, if it is steppe or tundra ground a landmark could stand on.
-fn countries(map: &WorldMap) -> Vec<Option<Country>> {
+// The biome of each cell, if the table has rows for it and a landmark could stand on the ground: the climate's own classification of its warmth
+// at height and its moisture, before the climate pass decides.
+fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
     let dim = map.dim();
     let (temperature, moisture) = moisture_field(map);
     let moisture = blur_box(&moisture, dim, FIELD_BLUR);
@@ -87,14 +108,9 @@ fn countries(map: &WorldMap) -> Vec<Option<Country>> {
             if x < EDGE || z < EDGE || x >= dim - EDGE || z >= dim - EDGE || !(ABOVE.0..ABOVE.1).contains(&above) || slope[i] >= FLAT {
                 return None;
             }
-            let warmth = (temperature[i] as f64 - above as f64 * LAPSE_PER_BLOCK as f64).max(0.0);
-            if steppe_likeness(warmth, moisture[i] as f64) as f32 >= STEPPE_FROM {
-                Some(Country::Steppe)
-            } else if (TUNDRA.0..TUNDRA.1).contains(&warmth) {
-                Some(Country::Tundra)
-            } else {
-                None
-            }
+            let warmth = (temperature[i] - above * LAPSE_PER_BLOCK).max(0.0);
+            let biome = classify(warmth, moisture[i]);
+            TABLE.iter().any(|r| r.biome == biome).then_some(biome)
         })
         .collect()
 }
@@ -109,9 +125,9 @@ fn profile(primitive: Primitive, t: f64) -> f64 {
     }
 }
 
-// The row a site draws, by the rows' weights for its country.
-fn row_for(country: Country, h: u32) -> &'static Row {
-    let rows: Vec<&Row> = TABLE.iter().filter(|r| r.country == country).collect();
+// The row a site draws, by the weights of the rows for its biome that form on the rock under it.
+fn row_for(biome: BiomeKind, rock: u8, h: u32) -> &'static Row {
+    let rows: Vec<&Row> = TABLE.iter().filter(|r| r.biome == biome && (r.rock.is_empty() || r.rock.contains(&rock))).collect();
     let total: f64 = rows.iter().map(|r| r.weight).sum();
     let mut pick = unit(h, 1, 0) * total;
     for row in &rows {
@@ -126,18 +142,25 @@ fn row_for(country: Country, h: u32) -> &'static Row {
 /// Lays landmarks on steppe and tundra, each `apart` cells from the others, into `map.height`. Returns them, and a mask of how
 /// much each cell belongs to one (1 inside, easing off past its radius), which the steppe's flattening leaves alone.
 pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
+    // sited closer so the count holds, then each kept by a chance that swells and thins over patches: dart throwing alone packs a near-regular lattice
+    let wavelength = apart * PATCH;
+    let chance = |x: usize, z: usize| SPAWN.0 + (SPAWN.1 - SPAWN.0) * smoothstep(-0.4, 0.4, fbm(map.seed ^ SALT ^ 6, x as f64, z as f64, wavelength, 2));
+    let apart = apart * libm::sqrt((SPAWN.0 + SPAWN.1) / 2.0);
     let dim = map.dim();
     let mut keep = vec![0.0f32; dim * dim];
     if dim <= 2 * EDGE {
         return (Vec::new(), keep);
     }
-    let country = countries(map);
-    let eligible: Vec<usize> = (0..dim * dim).filter(|&i| country[i].is_some()).collect();
+    let biome = biomes(map);
+    let eligible: Vec<usize> = (0..dim * dim).filter(|&i| biome[i].is_some()).collect();
     let mut placed = Vec::new();
     for (sx, sz) in sites_apart(map, eligible, usize::MAX, SALT, apart) {
-        let Some(at) = country[sz * dim + sx] else { continue };
+        let Some(at) = biome[sz * dim + sx] else { continue };
         let h = hash(map.seed ^ SALT ^ 1, sx as i32, sz as i32);
-        let row = row_for(at, h);
+        if unit(h, 5, 0) >= chance(sx, sz) {
+            continue;
+        }
+        let row = row_for(at, map.geology[sz * dim + sx], h);
         let radius = row.radius.0 + (row.radius.1 - row.radius.0) * unit(h, 2, 0);
         let height = row.height.0 + (row.height.1 - row.height.0) * unit(h, 3, 0);
         // a ridge's crest runs at a seeded angle, a third as wide as it is long
@@ -158,7 +181,7 @@ pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
                 keep[i] = keep[i].max(1.0 - smoothstep(1.0, 1.3, t) as f32);
             }
         }
-        placed.push(Landmark { x: sx, z: sz, country: at, primitive: row.primitive, radius, height });
+        placed.push(Landmark { x: sx, z: sz, biome: at, primitive: row.primitive, radius, height });
     }
     (placed, keep)
 }
@@ -201,7 +224,7 @@ mod tests {
         let (placed, keep) = run(&mut map, 40.0);
         assert!(!placed.is_empty(), "no landmark on cold flat ground");
         for (n, a) in placed.iter().enumerate() {
-            assert_eq!(Country::Tundra, a.country);
+            assert!(matches!(a.biome, BiomeKind::Tundra | BiomeKind::Taiga), "{:?} on cold ground", a.biome);
             let i = a.z * map.dim() + a.x;
             let rise = map.height[i] - before[i];
             if a.primitive == Primitive::Bowl {
@@ -212,25 +235,65 @@ mod tests {
             assert_eq!(1.0, keep[i]);
             for b in &placed[n + 1..] {
                 let d = ((a.x as f64 - b.x as f64).powi(2) + (a.z as f64 - b.z as f64).powi(2)).sqrt();
-                assert!(d >= 40.0, "two landmarks {d} cells apart");
+                assert!(d >= 40.0 * libm::sqrt((SPAWN.0 + SPAWN.1) / 2.0) - 0.01, "two landmarks {d} cells apart");
             }
         }
     }
 
     #[test]
-    fn no_landmark_on_warm_wet_ground() {
-        let mut map = flat(0.75, 1.6);
-        let (placed, keep) = run(&mut map, 40.0);
-        assert!(placed.is_empty());
-        assert!(keep.iter().all(|&k| k == 0.0));
+    fn landmarks_come_in_patches_not_on_a_lattice() {
+        let mut map = flat(0.45, 0.2);
+        let (placed, _) = run(&mut map, 40.0);
+        let mut blocks = [0f64; 25];
+        for l in &placed {
+            blocks[(l.z / 80).min(4) * 5 + (l.x / 80).min(4)] += 1.0;
+        }
+        let mean = blocks.iter().sum::<f64>() / 25.0;
+        let spread = (blocks.iter().map(|b| (b - mean).powi(2)).sum::<f64>() / 25.0).sqrt() / mean;
+        // dart throwing alone gives about 0.15 here
+        assert!(placed.len() > 20 && spread > 0.4, "{} landmarks, spread {spread}", placed.len());
     }
 
     #[test]
-    fn every_country_has_raised_rows_and_a_bowl() {
-        for country in [Country::Steppe, Country::Tundra] {
-            let rows: Vec<&Row> = TABLE.iter().filter(|r| r.country == country).collect();
-            assert!(rows.iter().any(|r| r.primitive == Primitive::Bowl));
-            assert!(rows.iter().filter(|r| r.primitive != Primitive::Bowl).all(|r| r.height.0 >= 130.0), "a raised row under the readable 130 blocks");
+    fn biomes_without_rows_get_no_landmarks() {
+        // the owner's call: jungle, savanna and glacier need their base terrain worked out first
+        for biome in [BiomeKind::Jungle, BiomeKind::Savanna, BiomeKind::Glacier, BiomeKind::Swamp] {
+            assert!(TABLE.iter().all(|r| r.biome != biome), "{biome:?} has rows");
         }
+        let mut map = flat(0.75, 1.6);
+        let (placed, _) = run(&mut map, 40.0);
+        assert!(placed.iter().all(|l| TABLE.iter().any(|r| r.biome == l.biome)));
+    }
+
+    #[test]
+    fn every_biome_keeps_a_massif_and_a_bowl_that_form_on_any_rock() {
+        let biomes: std::collections::BTreeSet<u8> = TABLE.iter().map(|r| r.biome as u8).collect();
+        assert!(biomes.len() >= 6, "{biomes:?}");
+        for r in TABLE {
+            let rows: Vec<&Row> = TABLE.iter().filter(|o| o.biome == r.biome).collect();
+            for primitive in [Primitive::Massif, Primitive::Bowl] {
+                assert!(rows.iter().any(|o| o.primitive == primitive && o.rock.is_empty()), "{:?} lacks an any-rock {primitive:?}", r.biome);
+            }
+            assert!(rows.iter().filter(|o| o.primitive != Primitive::Bowl).all(|o| o.height.0 >= 100.0), "{:?} has a raised row under 100 blocks", r.biome);
+        }
+    }
+
+    #[test]
+    fn rock_picks_the_form() {
+        let drawn = |rock: u8| -> std::collections::BTreeSet<&'static str> {
+            (0..400u32)
+                .map(|h| match row_for(BiomeKind::Desert, rock, hash(7, h as i32, 0)).primitive {
+                    Primitive::Butte => "butte",
+                    Primitive::Massif => "massif",
+                    Primitive::Ridge => "ridge",
+                    Primitive::Bowl => "bowl",
+                })
+                .collect()
+        };
+        // 0 is generic rock, which holds no cap and has no dipping beds
+        assert_eq!(["bowl", "massif"].into_iter().collect::<std::collections::BTreeSet<_>>(), drawn(0));
+        assert!(drawn(SEDIMENTARY).contains("butte") && drawn(SEDIMENTARY).contains("ridge"));
+        assert!(drawn(VOLCANIC).contains("butte") && !drawn(VOLCANIC).contains("ridge"));
+        assert!(drawn(METAMORPHIC).contains("ridge") && !drawn(METAMORPHIC).contains("butte"));
     }
 }

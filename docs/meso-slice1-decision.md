@@ -36,8 +36,17 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 - **Bowls hold lakes** however small (`hydrology::run_keeping`): 23 of 26 on seeds 3, 4 and 20.
 - **The mass-scale relief** the scorer finds on steppe and tundra rises to 270 to 317 blocks on seven seeds.
 
-## Deferred to the next part
+## Slice 2, second part: built
 
+- **Rock picks the form.** A butte needs a hard cap (sedimentary or volcanic), a ridge needs dipping beds (sedimentary or metamorphic), and a massif and a bowl form on any rock, so every site has a row.
+- **Every biome is a candidate** through the climate's own classification, and a biome has landmarks if the table has rows for it. Enabled: steppe, tundra, taiga, forest, grassland, desert. Left out until their base terrain is worked out, by the owner's call: jungle, savanna, glacier, swamp.
+
+## Deferred
+
+- **Desert canyons.** A meso-scale linear cut that drains: its own primitive, not a row, with a river through its floor.
+- **Micro formations** (hoodoos, standing rocks, boulder fields, small arches) in `rocks.rs`, which only knows glacial erratics and termite mounds. Block-level, so not a map-height stamp. It would help grassland, taiga and forest too.
+- **Glacial forms on tundra and taiga** at their real proportions (eskers, kettles).
 - **Shelter:** exposure over wider windows feeding temperature and humidity (design item 14).
-- **Geology picks the form.** A site's row is drawn at random by weight. Realism wants rock to choose it: buttes on sedimentary ground under a hard bed, massifs on granite, ridges along dipping beds, and on tundra smaller glacial forms (eskers, kettles) at their real proportions.
 - **A seam check** at the flattening's edge round each landmark (design item 12).
+- **Landmark spacing.** Dart throwing alone packed steppe landmarks into a near lattice (nearest-neighbour spread 6%). Sites are now thrown closer by the square root of the mean chance, then each is kept with a chance of 0.35 to 1.0 that swells and thins over patches 2.5 spacings wide (`SPAWN` and `PATCH` in `meso/landmarks.rs`), so landmarks clump and leave open country. Judge the patch strength by eye.
+- **Forest and taiga density.** They get 30 to 70 landmarks a seed, as the biomes are huge and spacing is by area. Judge by eye whether that is too busy.

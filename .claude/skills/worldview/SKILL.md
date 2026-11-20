@@ -18,7 +18,7 @@ until curl -s -o /dev/null http://127.0.0.1:8777/; do sleep 3; done
 - One seed is held in memory, loaded from the game's map cache (`worlds/`, or `OCHRE_WORLD_DIR`) or generated on first request (about 4.5 s), tiles after that about 0.2 s.
 - To see a spot it finds in the game itself, teleport and screenshot with the `game-remote` skill.
 - It does not reload code. After any change to world generation, stop it and rebuild. Stop it by pid (`pgrep -f '^target/release/examples/worldview'`), never `pkill -f worldview`, which matches your own shell command and kills it.
-- The game's seed is in its log (`world seed is ...`). A coordinate quoted by the user only makes sense on the seed it was seen on, so ask for the seed if unsure.
+- The running game's seed and position come from `ochre.state` over the remote (see the `game-remote` skill), or its log (`world seed is ...`). A coordinate quoted by the user only makes sense on the seed it was seen on, so ask for the seed if unsure.
 
 ## Look
 

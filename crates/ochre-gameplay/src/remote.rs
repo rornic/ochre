@@ -19,7 +19,7 @@ use ochre_world::weather::Weather;
 /// - `ochre.teleport {x, z, y?, height?, yaw?, pitch?}`: eyes at `y`, else `height` (default 3) over the ground; compass degrees, 0 north, 90 east.
 /// - `ochre.time {day}`: the time of day, 0 midnight, 0.25 sunrise, 0.5 noon.
 /// - `ochre.state`: seed, position, view, biome, time, weather, fps, loaded counts, whether loading has settled, the last shot saved.
-/// - `ochre.screenshot {path?}`: saves the window once loading settles and returns the path; poll `ochre.state` for `last_shot`.
+/// - `ochre.screenshot {path?}`: saves the window once loading settles, as `path` (a bare .png file name) in `target/remote`, and returns the path; poll `ochre.state` for `last_shot`.
 ///
 /// Does nothing without a port. The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
 #[derive(Default)]
@@ -193,23 +193,40 @@ fn state(
 }
 
 fn screenshot(In(params): In<Option<Value>>, mut remote: ResMut<Remote>) -> BrpResult {
-    let path = match params.as_ref().and_then(|p| p.get("path")) {
+    let dir = std::path::Path::new("target/remote");
+    let name = match params.as_ref().and_then(|p| p.get("path")) {
         None | Some(Value::Null) => {
-            let dir = std::path::Path::new("target/remote");
-            std::fs::create_dir_all(dir).map_err(|e| invalid(e.to_string()))?;
             let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-            dir.join(format!("shot-{n}.png")).to_string_lossy().into_owned()
+            format!("shot-{n}.png")
         }
-        Some(Value::String(path)) => path.clone(),
+        Some(Value::String(name)) => name.clone(),
         Some(_) => return Err(invalid("`path` must be a string".into())),
     };
+    if !is_shot_name(&name) {
+        return Err(invalid("`path` must be a bare .png file name, saved in target/remote".into()));
+    }
+    std::fs::create_dir_all(dir).map_err(|e| invalid(e.to_string()))?;
+    let path = dir.join(name).to_string_lossy().into_owned();
     remote.queued.push(path.clone());
     Ok(json!({ "path": path }))
+}
+
+// a page in the user's browser can reach this server, so a shot may only land in target/remote
+fn is_shot_name(name: &str) -> bool {
+    name.ends_with(".png") && !name.starts_with('.') && !name.contains(['/', '\\', '\0'])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_shot_name_cannot_leave_the_shot_directory() {
+        assert!(is_shot_name("cliff.png"));
+        for bad in ["../x.png", "/etc/x.png", "a/b.png", "a\\\\b.png", ".png", ".hidden.png", "x.txt", ""] {
+            assert!(!is_shot_name(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn test_compass_reads_back_the_yaw_and_pitch_facing_was_given() {
