@@ -48,4 +48,5 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 - **Glacial forms on tundra and taiga** at their real proportions (eskers, kettles).
 - **Shelter:** exposure over wider windows feeding temperature and humidity (design item 14).
 - **A seam check** at the flattening's edge round each landmark (design item 12).
+- **Landmark spacing.** Dart throwing alone packed steppe landmarks into a near lattice (nearest-neighbour spread 6%). Sites are now thrown closer by the square root of the mean chance, then each is kept with a chance of 0.35 to 1.0 that swells and thins over patches 2.5 spacings wide (`SPAWN` and `PATCH` in `meso/landmarks.rs`), so landmarks clump and leave open country. Judge the patch strength by eye.
 - **Forest and taiga density.** They get 30 to 70 landmarks a seed, as the biomes are huge and spacing is by area. Judge by eye whether that is too busy.

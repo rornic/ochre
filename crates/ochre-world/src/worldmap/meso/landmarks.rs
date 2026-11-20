@@ -3,7 +3,7 @@
 //! See `docs/meso-slice1-decision.md`.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::{hash, unit};
+use ochre_base::noise::{fbm, hash, unit};
 use ochre_base::WATER_LEVEL;
 
 use super::super::climate::{blur_box, classify, moisture_field, BiomeKind, FIELD_BLUR, LAPSE_PER_BLOCK};
@@ -34,6 +34,10 @@ struct Row {
     radius: (f64, f64),
     height: (f64, f64),
 }
+
+// The share of sited places that get a landmark, from thin patches to full ones, and a patch's width in landmark spacings.
+const SPAWN: (f64, f64) = (0.35, 1.0);
+const PATCH: f64 = 2.5;
 
 const CAPPED: &[u8] = &[SEDIMENTARY, VOLCANIC];
 const BEDDED: &[u8] = &[SEDIMENTARY, METAMORPHIC];
@@ -138,6 +142,10 @@ fn row_for(biome: BiomeKind, rock: u8, h: u32) -> &'static Row {
 /// Lays landmarks on steppe and tundra, each `apart` cells from the others, into `map.height`. Returns them, and a mask of how
 /// much each cell belongs to one (1 inside, easing off past its radius), which the steppe's flattening leaves alone.
 pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
+    // sited closer so the count holds, then each kept by a chance that swells and thins over patches: dart throwing alone packs a near-regular lattice
+    let wavelength = apart * PATCH;
+    let chance = |x: usize, z: usize| SPAWN.0 + (SPAWN.1 - SPAWN.0) * smoothstep(-0.4, 0.4, fbm(map.seed ^ SALT ^ 6, x as f64, z as f64, wavelength, 2));
+    let apart = apart * libm::sqrt((SPAWN.0 + SPAWN.1) / 2.0);
     let dim = map.dim();
     let mut keep = vec![0.0f32; dim * dim];
     if dim <= 2 * EDGE {
@@ -149,6 +157,9 @@ pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
     for (sx, sz) in sites_apart(map, eligible, usize::MAX, SALT, apart) {
         let Some(at) = biome[sz * dim + sx] else { continue };
         let h = hash(map.seed ^ SALT ^ 1, sx as i32, sz as i32);
+        if unit(h, 5, 0) >= chance(sx, sz) {
+            continue;
+        }
         let row = row_for(at, map.geology[sz * dim + sx], h);
         let radius = row.radius.0 + (row.radius.1 - row.radius.0) * unit(h, 2, 0);
         let height = row.height.0 + (row.height.1 - row.height.0) * unit(h, 3, 0);
@@ -224,9 +235,23 @@ mod tests {
             assert_eq!(1.0, keep[i]);
             for b in &placed[n + 1..] {
                 let d = ((a.x as f64 - b.x as f64).powi(2) + (a.z as f64 - b.z as f64).powi(2)).sqrt();
-                assert!(d >= 40.0, "two landmarks {d} cells apart");
+                assert!(d >= 40.0 * libm::sqrt((SPAWN.0 + SPAWN.1) / 2.0) - 0.01, "two landmarks {d} cells apart");
             }
         }
+    }
+
+    #[test]
+    fn landmarks_come_in_patches_not_on_a_lattice() {
+        let mut map = flat(0.45, 0.2);
+        let (placed, _) = run(&mut map, 40.0);
+        let mut blocks = [0f64; 25];
+        for l in &placed {
+            blocks[(l.z / 80).min(4) * 5 + (l.x / 80).min(4)] += 1.0;
+        }
+        let mean = blocks.iter().sum::<f64>() / 25.0;
+        let spread = (blocks.iter().map(|b| (b - mean).powi(2)).sum::<f64>() / 25.0).sqrt() / mean;
+        // dart throwing alone gives about 0.15 here
+        assert!(placed.len() > 20 && spread > 0.4, "{} landmarks, spread {spread}", placed.len());
     }
 
     #[test]
