@@ -12,7 +12,7 @@ A vertex takes its cell's material, the highest solid corner with air over it, a
 - Rock sits where its crossings' planes meet (dual contouring), each plane facing out of the blocks counted over 2 each way. A chisel pass then snaps rock triangles' normals to 6 directions round and steps of 45 degrees up, turned by slow noise, and pulls rock vertices onto those planes, so neighbours that snap alike flatten into one face with a crease where they don't.
 - No vertex stands more than a set height over its neighbours' mean, and a soft vertex at a lone block's tip or a lone hole's drops onto its neighbours, so a lone block isn't a pyramid.
 - Loose ground then lumps, about 6 blocks across and up to 0.9 high, along its normal, and wobbles a little in world space.
-- Last, every vertex is held 1/64 inside its cell across each axis a crossing in its cell runs along, and each quad is split again from the final positions along a diagonal whose two triangles both face from solid to air. A quad's four vertices then lie in the four cells round its crossing, so its outline winds once round it and no triangle can fold. Placement past the cell (0.3), the spike cap (0.75) and the chisel (0.3, and it overshoots) all move vertices out of their cells, and before this about 3,500 of 1.6 million triangles on seed 1's steppe peak folded before the chisel and 10,500 after. Along the crossing's own axis a vertex stays free, so soft ground still lumps along its normal.
+- Last, a vertex of a quad that would fold is held 1/64 inside its cell across each axis a crossing in its cell runs along, a round at a time (holding one can fold the quad beside it), and the last round holds every vertex of a quad still folding, and each quad is split again from the final positions along a diagonal whose two triangles both face from solid to air. A quad's four vertices then lie in the four cells round its crossing, so its outline winds once round it and no triangle can fold. Placement past the cell (0.3), the spike cap (0.75) and the chisel (0.3, and it overshoots) all move vertices out of their cells, and before this about 3,500 of 1.6 million triangles on seed 1's steppe peak folded before the chisel and 10,500 after. Along the crossing's own axis a vertex stays free, so soft ground still lumps along its normal. Held everywhere, as at first, it pulled smooth slopes of soft ground back onto their blocks' staircase, which read as terraces in grass: image roughness over mountain grass on seed 1 at 11150,-6600 was 0.139 held everywhere, 0.113 held only where a quad folds and 0.111 never held.
 
 Each material's look (relax, wobble, facet) and the other values are constants in `KNOBS`.
 
@@ -58,7 +58,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - The player (`contact.rs`) walks the floor with three spheres. Faces steeper than 66 degrees are walls, which stop the player only above a 1-block step unless the ground on top is walkable. Ground comes from a footprint of five height lookups, and a fall lands on any upward face. A move is cut into 0.2-block substeps, and the head checks the faces above it before rising. Without sculpted ground near, it falls back to blocks.
 - Digging is a brush (`breaking.rs`): it removes blocks within 1.5 of the hit on loose ground, or 1 on rock, a rough 0.3 deep, so a dig doesn't print one block's outline in the surface.
 - A water surface reaches up to 1.5 blocks over the shore and is cut along the floor in 4 steps a block, so it meets the bank instead of stopping at block edges.
-- Generation lays sand on any bank within 2 blocks of water and a block of its level, lakes and rivers as well as the sea (`columns.rs`), so water never meets a grass edge.
+- Generation lays a bed on any bank within 2 blocks of water and a block of its level (`columns.rs`), so water never meets a grass edge: sand by the sea, and by a lake or river what the ground there is (`terrain::fresh_bed`): mud where grass would grow on flat ground, gravel where it slopes 0.3 or more, gravel for snow, and rock and sand as they are.
 
 ## Checking it
 
@@ -78,7 +78,7 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 - Level n beside level n + 1 was not measured: the renderer draws one level at a time. The lean is the same at every level.
 - Rock's chisel turns over 9 blocks, so from 8-block cells its directions change at every vertex.
 - In a blend, the untinted side loses its weathering tint.
-- LOD nodes don't cut water along the ground, so a waterline can change at the hand-over. Nodes of cells 1 and 2 lay the shore's sand as chunks do; coarser cells are wider than the beach.
+- LOD nodes don't cut water along the ground, so a waterline can change at the hand-over. Nodes of cells 1 and 2 lay the shore's bed as chunks do; coarser cells are wider than the beach.
 - Near-flat banks leave a saw-tooth waterline where the ground lies just under the water.
 - The constraint's corner trim was not judged by eye.
 - The constraint trims the sharpest corners, which could stand 0.3 past their cell.

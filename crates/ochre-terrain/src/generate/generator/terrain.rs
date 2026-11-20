@@ -309,8 +309,28 @@ pub(in crate::generate) fn column_block(
         temperature,
         water_top,
     );
+    // a lake's or river's bed and shore are what the ground there is, not always sand: the sea alone keeps its beaches
+    if base == BlockType::Sand && water_top > WATER_LEVEL && world_y < ground_top(column_height) {
+        let dry = terrain_block(world_y, column_height, combined_gradient, temperature, WATER_LEVEL);
+        return fresh_bed(biomes.block(biome, dry, world_y - WATER_LEVEL, combined_gradient), combined_gradient);
+    }
     biomes.block(biome, base, world_y - WATER_LEVEL, combined_gradient)
 }
+
+// The bed fresh water lays over ground that would be `dry`, on a `slope`: where grass would grow, mud settles in still and
+// slow water and moving water leaves gravel; snow lies as gravel; rock, sand and the rest stay as they are, rock taking the
+// geology's beds as all stone does.
+fn fresh_bed(dry: BlockType, slope: f64) -> BlockType {
+    match dry {
+        BlockType::Grass if slope >= GRAVEL_BED_SLOPE => BlockType::Gravel,
+        BlockType::Grass => BlockType::Dirt,
+        BlockType::Snow | BlockType::Ice => BlockType::Gravel,
+        other => other,
+    }
+}
+
+// The slope, as `terrain_block` takes it, from which a grassy bed is gravel and not mud.
+const GRAVEL_BED_SLOPE: f64 = 0.3;
 
 // The block on top of a column as chunk generation lays it, water and ice included: for tools that map the world.
 pub fn surface_block(

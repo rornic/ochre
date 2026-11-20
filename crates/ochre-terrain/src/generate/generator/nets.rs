@@ -645,13 +645,43 @@ fn sculpt<const MARGIN: i32>(
             }
         }
     }
-    // inside its cell across each axis a crossing runs along, a vertex can't fold a triangle, however the passes moved it
+    // inside its cell across each axis a crossing runs along, a vertex can't fold a triangle, however the passes moved it. Only
+    // the vertices of a quad that would fold are held so, a round at a time, as holding one can fold a quad beside it: held
+    // everywhere, a smooth slope of soft ground was pulled back onto its blocks' staircase and read as terraces
     const INSET: f32 = 1.0 / 64.0;
-    for (offset, &axes) in offsets.iter_mut().zip(&crossing_axes) {
+    const HOLD_ROUNDS: usize = 4;
+    let hold = |offset: &mut Vec3, axes: u8| {
         for axis in (0..3).filter(|a| axes >> a & 1 == 1) {
             for other in [(axis + 1) % 3, (axis + 2) % 3] {
                 offset[other] = offset[other].clamp(INSET, 1.0 - INSET);
             }
+        }
+    };
+    let considered: Vec<usize> = (0..quads.len()).filter(|&qi| nearest(&quads[qi].0) <= chisel_reaches[0].max(normals_reach)).collect();
+    let sound_quad = |qi: usize, offsets: &[Vec3]| {
+        let q = quads[qi].0;
+        let base = q[0] as usize;
+        let [a, b, c, d] = q.map(|m| between(base, m, offsets));
+        let faces = |t: [Vec3; 3]| (t[2] - t[0]).cross(t[1] - t[0]).dot(quad_out[qi]) > 0.0;
+        (faces([a, b, c]) && faces([a, c, d])) || (faces([a, b, d]) && faces([b, c, d]))
+    };
+    let mut held = vec![false; offsets.len()];
+    for round in 0..=HOLD_ROUNDS {
+        let unsound: Vec<usize> = considered.iter().copied().filter(|&qi| !sound_quad(qi, &offsets)).collect();
+        let mut moved = false;
+        for qi in unsound {
+            for &m in &quads[qi].0 {
+                let m = m as usize;
+                // the last round holds every vertex of a quad still folding, which always makes it sound
+                if !held[m] || round == HOLD_ROUNDS {
+                    held[m] = true;
+                    hold(&mut offsets[m], crossing_axes[m]);
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
         }
     }
     // split again from the final positions, along a diagonal whose triangles both face from solid to air
