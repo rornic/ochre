@@ -37,7 +37,7 @@ use ochre_terrain::{
 use ochre_world::ambience::SurroundingsPlugin;
 
 use crate::character::{
-    step_character, CharacterState, MovementInput, Movement, BLOCK_CORNER, JUMP_SPEED, STEP_HEIGHT,
+    step_character, CharacterState, Movement, MovementInput, WorldEnvironment, BLOCK_CORNER, JUMP_SPEED, STEP_HEIGHT,
 };
 use crate::footsteps::{Footstep, Surface, SPRINT_LOUDER};
 use crate::view::{
@@ -153,28 +153,19 @@ fn player_step(
     let Ok((mut transform, mut state, mut input, mut player)) = player_query.single_mut() else {
         return;
     };
-    // the sculpted ground of the groups round the player, in world units: the highest surface from `below` to `above` a point
+    // the sculpted ground of the groups round the player
     let home = LodKey::containing(ChunkCoordinate::containing((transform.translation + BLOCK_CORNER).floor().as_i64vec3()), 1);
-    let near: Vec<(Vec3, &Floor)> = floors
-        .iter()
-        .filter(|(group, _, _)| group.key.level == home.level && (group.key.coord - home.coord).abs().max_element() <= 1)
-        .map(|(_, at, floor)| (at.translation, floor))
-        .collect();
-    // and its triangles between two corners, in world units
-    let sculpted = |min: Vec3, max: Vec3| {
-        near.iter()
-            .flat_map(|&(at, floor)| floor.near(min - at, max - at).into_iter().map(move |t| t.map(|p| p + at)))
-            .collect::<Vec<_>>()
-    };
-    let floor_at = |p: Vec3, below: f32, above: f32, up: f32| {
-        near.iter()
-            .filter_map(|&(at, floor)| floor.surface_facing(p - at, below, above, up).map(|(y, _)| y + at.y))
-            .max_by(f32::total_cmp)
-    };
+    let env = WorldEnvironment::new(
+        &world,
+        floors
+            .iter()
+            .filter(|(group, _, _)| group.key.level == home.level && (group.key.coord - home.coord).abs().max_element() <= 1)
+            .map(|(group, at, floor)| (group.key, at.translation, floor)),
+    );
 
     let start = transform.translation;
     let mut position = start;
-    let events = step_character(&mut state, &mut position, &input, &world, &floor_at, &sculpted, time.delta_secs());
+    let events = step_character(&mut state, &mut position, &input, &env, time.delta_secs());
     input.toggle_fly = false;
     transform.translation = position;
     player.moved = position - start;
