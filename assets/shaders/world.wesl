@@ -210,8 +210,9 @@ fn fragment(
     coarse = in.uv_b.y > 0.5;
 }
     // a sculpted blend: tinted side (1 second, 2 first, 0 both), weight toward the second, frayed cut; facets only on rock
-    let sculpt_side = floor(in.uv.y / 2.0);
-    let sculpt_weight = in.uv.y - sculpt_side * 2.0;
+    // a weight of 0 sits on a band's edge, which packing the mesh can land either side of, so the side is read from a quarter in
+    let sculpt_side = floor((in.uv.y + 0.25) / 2.0);
+    let sculpt_weight = clamp(in.uv.y - sculpt_side * 2.0, 0.0, 1.0);
     let unbent = uncurved(world_position);
     let fray = value_noise(unbent.xz * 0.45 + vec2<f32>(unbent.y * 0.3)) + 0.5 * value_noise(unbent.xz * 1.6 + vec2<f32>(7.0, unbent.y));
     // a band between `nets::OWN_SIDE` and its mirror, frayed no further, so each vertex shows its own material alone

@@ -11,15 +11,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Not known:** which term does it. A guess only: the saturation and contrast shares stack on already orange sandstone and sand, and a bigger rock face fills more of the frame with it than the flat desert did.
 - **To check:** take the same view with `HOT`'s saturation at 0 and contrast at 0.05, one at a time, with the `game-remote` skill's screenshots, and compare against the owner's view.
 
-## A thin strip of grass or dirt inset from a rock's edge
-
-- **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
-- **Known:** the owner says it happens sometimes, and that it comes from the dual contouring, the way rock's vertices are placed where its planes meet (`docs/sculpted-ground.md`, The mesh). Not checked on `main`, so not known to be new.
-- **Not known:** the cause. A guess only: a vertex on rock's edge takes the material of its cell's highest solid corner with air over it, so where the edge's cells hold a grass or dirt corner, the quads on that strip blend to it along the `other_cell` edge (`world.wesl`) while the rock's vertices sit further out. Not looked into.
-- **Lead, 2026-11-19:** `OCHRE_RENDER_FLAT=1 worldview 1 render 10816 -6784 14 out.png` shows thin grass slivers between rock faces on a cliff, not confirmed to be this.
-- **Since, 2026-11-20:** seen on seed 2925398056 by 1911,39,6919 (the owner's photo: thin grass strips in red sandstone). The CPU renders there show no strips, with the shader's blend copied (`OCHRE_RENDER_BLEND=1` was tried, not kept). The cliff pass there built a shell of sandstone a block thick over the grass, which stayed under it; that is fixed (the top blocks under rock a cliff builds over them are rock), but whether it caused the strips is not known. Still to rule out: an LOD node drawn with the chunks there, whose ground has no cliff pass.
-- **To check:** find one and note the seed and place. Render it with `worldview <seed> render <x> <z> <half> out.png` with `OCHRE_RENDER_FLAT=1`, to see whether the strip's triangles carry a second material, and compare the strip's vertices' materials with the rock's beside it.
-
 ## Steppe grass bends in a hollow while its wind sound is quiet
 
 - **Seen:** 2026-11-16, by design of the steppe change. The wind sound's strength follows how exposed the camera's ground is (`Surroundings::exposure`), and the foliage shader's sway size is the same everywhere (`foliage.wesl`), because a shader has no exposure per vertex.
