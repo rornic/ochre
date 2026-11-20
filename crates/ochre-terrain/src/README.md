@@ -13,7 +13,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `group.rs`: `ChunkGroup`, `BuiltGroup`, `MeshedChunk`, `GroupedChunk`, `merge_chunk_meshes`.
 - `remesh.rs`: crate-internal `remesh_edits`, `apply_remeshes`, `chunks_reading`, `groups_reading`, `mesh_group`.
 - `flow.rs`: `FALLING` (8), `SPREAD` (7), `surface(level)`; crate-internal `step`, `flow_water`.
-- `material.rs`: `ChunkMaterial`, `WaterMaterial`, `SprayMaterial`, `TerrainMaterials`, `ShaderInputs`, `CloudLayer`, `TerrainAssets`, `block_atlas`, `material_array`, `MATERIAL_SIZE` (512), `water_level`, `push_shader_defs`.
+- `material.rs`: `ChunkMaterial`, `WaterMaterial`, `SprayMaterial`, `TerrainMaterials`, `ShaderInputs`, `CloudLayer`, `TerrainAssets`, `material_array`, `MATERIAL_SIZE` (512), `water_level`, `push_shader_defs`.
 - `fade.rs`: `FadeMaterials`, `Fade`, `SolidWater`, `FULLY_VISIBLE`, `set_shown`, `fade_out_and_despawn`.
 - `frost.rs`: `FrostPlugin`: reads the camera's temperature, biome frost factor and ground height four times a second, eases them, and writes them with the snow rule's constants into `Curvature.cold` (`ochre_base::cold::shader_values`) for `frost.wesl` and the mist in `fog.wesl`. `FrostOn` is present while the plugin is, and `frost_cover(&World, feet) -> f32` is the same cold sum at a point without the shader's patchiness (footsteps ring like ice above `ICY_FROST`).
 - `curvature.rs`: `Curve` (`horizon_distance`, `edge_dip`), `WORLD_CURVE`, `Curvature`, `CurvaturePlugin`. `horizon.rs`: `MAX_RENDER_DISTANCE` (2048), `render_distance_at`, `update_horizon`.
@@ -39,7 +39,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - Spawns/despawns chunk, group and mesh entities; mutates `World` (`insert_chunk`, `clear_chunk`, edits, flow) and `Assets<Mesh>`.
 - `World::with_terrain` reads env var `OCHRE_SPAWN` (`x,z[,lift]`) to override spawn (`world.rs`).
 - `TerrainRenderPlugin::build` sets the global `pack::PACKED` flag and inserts a `MeshAllocatorSettings` resource into the render sub-app (`lib.rs`, `settings.rs:mesh_allocator`).
-- `material_array` and `block_atlas` build mipmapped images from PNGs under the given directory (`material.rs`); `ChunkMaterial`/`WaterMaterial` bind curvature (binding 8), clouds and fade uniforms to shaders under `assets/shaders/`.
+- `material_array` builds a mipmapped image array from the PNGs under the given directory (`material.rs`); `ChunkMaterial`/`WaterMaterial` bind curvature (binding 8), clouds and fade uniforms to shaders under `assets/shaders/`.
 - `update_horizon` mutates `LodLoader` render distance, camera `DistanceFog` and projection far plane (`horizon.rs`); it is scheduled by `ochre-gameplay` (`player.rs`), not `TerrainPlugin`. `CurvaturePlugin` runs in `PostUpdate` and loosens camera frusta each frame (`curvature.rs`).
 
 ## Verification

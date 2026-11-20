@@ -38,31 +38,6 @@ pub fn push_shader_defs(descriptor: &mut RenderPipelineDescriptor, defs: &[Shade
     }
 }
 
-/// The block texture atlas, one square tile per block in a row, with mipmaps down to one texel
-/// a tile: each mip level halves every tile, so none bleeds into its neighbour. Bevy builds no
-/// mipmaps itself, and without them textures shimmer as the camera moves. Magnified texels
-/// stay crisp.
-pub(crate) fn block_atlas(path: &str) -> Image {
-    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("could not read {path}: {e}"));
-    let mut image = Image::from_buffer(
-        &bytes,
-        ImageType::Extension("png"),
-        CompressedImageFormats::NONE,
-        true,
-        ImageSampler::Descriptor(ImageSamplerDescriptor {
-            mag_filter: ImageFilterMode::Nearest,
-            min_filter: ImageFilterMode::Linear,
-            mipmap_filter: ImageFilterMode::Linear,
-            ..default()
-        }),
-        RenderAssetUsages::RENDER_WORLD,
-    )
-    .unwrap_or_else(|e| panic!("could not decode {path}: {e}"));
-    let tile = image.height();
-    mip_tiles(&mut image, tile.ilog2() + 1);
-    image
-}
-
 /// Each painted material's square side in texels, see `material_array`.
 pub(crate) const MATERIAL_SIZE: u32 = 512;
 
@@ -175,9 +150,6 @@ fn mip_tiles(image: &mut Image, levels: u32) {
 pub struct ChunkMaterial {
     #[uniform(0)]
     pub color: LinearRgba,
-    #[texture(1)]
-    #[sampler(2)]
-    pub texture: Option<Handle<Image>>,
     // the dither window drawn, see `fade::FadeMaterials`
     #[uniform(3)]
     pub fade: Vec4,
@@ -370,7 +342,6 @@ impl TerrainMaterials {
         let clouds = &inputs.clouds;
         let chunk = assets.chunk.add(ChunkMaterial {
             color: LinearRgba::WHITE,
-            texture: inputs.atlas.clone(),
             fade: FULLY_VISIBLE,
             cloud_pattern: clouds.pattern.clone(),
             cloud_layer: clouds.layer,
@@ -389,7 +360,6 @@ impl TerrainMaterials {
         });
         let water = WaterMaterial {
             color: LinearRgba::rgb(0.0, 0.85, 0.85),
-            texture: inputs.atlas.clone(),
             fade: FULLY_VISIBLE,
             cloud_pattern: clouds.pattern.clone(),
             cloud_layer: clouds.layer,
@@ -456,7 +426,6 @@ impl CloudLayer {
 /// What the terrain's shaders sample that other systems own. The default is blank, for a headless run.
 #[derive(Clone, Default)]
 pub(crate) struct ShaderInputs {
-    pub atlas: Option<Handle<Image>>,
     /// The painted materials, see `material_array`.
     pub materials: Option<Handle<Image>>,
     pub clouds: CloudLayer,
@@ -517,9 +486,6 @@ impl Material for SprayMaterial {
 pub struct WaterMaterial {
     #[uniform(0)]
     pub color: LinearRgba,
-    #[texture(1)]
-    #[sampler(2)]
-    pub texture: Option<Handle<Image>>,
     // the dither window drawn, see `fade::FadeMaterials`
     #[uniform(3)]
     pub fade: Vec4,
@@ -627,7 +593,6 @@ mod tests {
         use bevy::prelude::{AlphaMode, Material};
         let material = |non_cutout, fade| super::ChunkMaterial {
             color: Default::default(),
-            texture: None,
             fade,
             cloud_pattern: Default::default(),
             cloud_layer: Default::default(),
@@ -709,23 +674,6 @@ mod tests {
     // the workspace's assets, wherever the tests run from
     fn asset(path: &str) -> String {
         format!("{}/../../assets/{path}", env!("CARGO_MANIFEST_DIR"))
-    }
-
-    #[test]
-    fn test_atlas_mips_end_at_one_texel_a_tile() {
-        let atlas = super::block_atlas(&asset("textures/blocks.png"));
-        let tile = atlas.height() as usize;
-        let levels = tile.ilog2() as usize + 1;
-        assert_eq!(levels as u32, atlas.texture_descriptor.mip_level_count);
-        let texels: usize = (0..levels)
-            .map(|l| (atlas.width() as usize >> l) * (tile >> l))
-            .sum();
-        assert_eq!(texels * 4, atlas.data.as_ref().unwrap().len());
-        // the last level has one texel for each of the atlas's tiles
-        assert_eq!(
-            atlas.width() as usize / tile,
-            atlas.width() as usize >> (levels - 1)
-        );
     }
 
     #[test]
@@ -833,36 +781,29 @@ mod tests {
         [mean(|c| c.red), mean(|c| c.green), mean(|c| c.blue)]
     }
 
-    // What each atlas cell averages to: its tile in blocks.png, or for a painted tile its material.
-    fn atlas_means() -> Vec<[f32; 3]> {
-        let atlas = image::open(asset("textures/blocks.png"))
-            .unwrap()
-            .to_rgba8();
-        let tile = atlas.height();
-        (0..atlas.width() / tile)
+    // What each cell's own material averages to, `None` for water and the side variants, which have none.
+    fn material_means() -> Vec<Option<[f32; 3]>> {
+        (0..ochre_base::block::TILE_COUNT)
             .map(|cell| {
                 // SAFETY: as in `test_shader_layer_table_matches_the_tiles`
                 let tile_of: Tile = unsafe { std::mem::transmute(cell as u8) };
-                // grass sides draw the dirt layer but keep their own row, and the placeholder rocks have none and draw shale's
+                // grass sides draw the grass layer but keep their own row, and the placeholder rocks have none and draw shale's
                 let placeholder = matches!(tile_of, Tile::Stone | Tile::CompactedStone);
-                match tile_of
+                tile_of
                     .material_layer()
                     .or(tile_of.foliage_layer())
                     .filter(|l| {
                         placeholder
                             || snake_case(&format!("{tile_of:?}")) == MATERIAL_FILES[*l as usize]
                     })
-                {
-                    Some(layer) => {
+                    .map(|layer| {
                         let name = MATERIAL_FILES[layer as usize];
                         let material =
                             image::open(asset(&format!("textures/materials/{name}.png")))
                                 .unwrap()
                                 .to_rgba8();
                         image_mean(&material, 0, material.height())
-                    }
-                    None => image_mean(&atlas, cell * tile, tile),
-                }
+                    })
             })
             .collect()
     }
@@ -1008,13 +949,14 @@ mod tests {
 
     #[test]
     fn test_block_means_match_the_textures() {
-        let (shader, atlas) = (shader_means(), atlas_means());
-        assert_eq!(atlas.len(), shader.len(), "one mean per atlas cell");
-        for (cell, (s, a)) in shader.iter().zip(&atlas).enumerate() {
+        let (shader, textures) = (shader_means(), material_means());
+        assert_eq!(textures.len(), shader.len(), "one mean per cell");
+        for (cell, (s, a)) in shader.iter().zip(&textures).enumerate() {
+            let Some(a) = a else { continue };
             for i in 0..3 {
                 assert!(
                     (s[i] - a[i]).abs() < 0.001,
-                    "atlas cell {cell}: shader has {s:?}, its texture averages {a:?}"
+                    "cell {cell}: shader has {s:?}, its texture averages {a:?}"
                 );
             }
         }

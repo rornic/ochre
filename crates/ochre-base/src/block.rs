@@ -197,7 +197,7 @@ impl Face {
     }
 }
 
-// The textures in blocks.png, left to right, in `generate.py`'s `TILES` order.
+// The tiles, in `generate.py`'s `TILES` order. A tile's cell is its id in mesh vertex alpha and the shaders' tables.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[repr(u8)]
 pub enum Tile {
