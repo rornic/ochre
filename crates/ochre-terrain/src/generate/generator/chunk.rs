@@ -150,6 +150,16 @@ pub fn generate_chunk_with(
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
             let ice_cliffs = biomes.block(biome, BlockType::Rock, 20, 0.0) == BlockType::Ice;
+            // whether the cliff builds rock into the air just over the column's top: its top blocks are then rock too, not
+            // grass left buried under the rock (a shell of sandstone a block thick over grass on seed 2925398056 by 1911,6919)
+            // worked out only once a top block asks, as the cliff noise is dear
+            let built_over = std::cell::LazyCell::new(|| {
+                cliff != 0.0 && !bank && {
+                    let over = column_block(biomes, biome, column_height, column_height, slope, temperature, shore_top);
+                    let density = -0.5 + cliff * cliff_density(seed, world_x, column_height, world_z, column_height);
+                    density > 0.0 && cut_cliff(over, true, column_height, temperature, flood_top) == BlockType::Rock
+                }
+            });
             let soil = soil_depth(slope);
             let bare = biomes.name(biome) == Some("steppe") && steppe_bare(seed, world_x, world_z, columns.exposure(x, z));
             let column_block_at = |y: i64| {
@@ -183,9 +193,15 @@ pub fn generate_chunk_with(
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
                     return block;
                 }
-                // the top blocks stay, or the cliff noise pits the grass and shows the dirt under it
+                // the top blocks stay, or the cliff noise pits the grass and shows the dirt under it, but under rock the cliff
+                // built over them they are rock as well
                 if (column_height - SKIN..column_height).contains(&y) {
-                    return block;
+                    return match block {
+                        BlockType::Grass | BlockType::Dirt | BlockType::Snow if *built_over => {
+                            if ice_cliffs { BlockType::Ice } else { BlockType::Rock }
+                        }
+                        _ => block,
+                    };
                 }
                 let density = (column_height - y) as f64 - 0.5
                     + cliff * cliff_density(seed, world_x, y, world_z, column_height);

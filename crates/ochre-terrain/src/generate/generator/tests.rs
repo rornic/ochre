@@ -4091,3 +4091,38 @@ fn test_grass_tint_barely_changes_at_the_handover_near_rivers_either() {
     let max = gaps.iter().cloned().fold(0.0, f32::max);
     assert!(mean < 0.015 && max < 0.1, "tint pops by {mean} on average and {max} at most at the handover");
 }
+
+#[test]
+fn test_rock_a_cliff_builds_over_a_column_buries_no_grass() {
+    use super::chunk::{generate_chunk_with, ChunkPasses};
+    use ochre_world::worldmap::{generate, WorldConfig, WorldTerrain};
+    // seed 2925398056 by 1911,6919: a one-block shell of sandstone built over grass along a slope
+    let seed = 2925398056;
+    let map = Arc::new(generate(seed, ochre_world::worldmap::character::world_config(seed, WorldConfig::default())));
+    let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
+    let passes = ChunkPasses { cliffs: true, trees: false, flora: false };
+    let (mut grass, mut buried) = (0, Vec::new());
+    for cx in (1911 / 16 - 4)..(1911 / 16 + 4) {
+        for cz in (6919 / 16 - 4)..(6919 / 16 + 4) {
+            let chunks: Vec<ChunkData> =
+                (0..5).map(|cy| generate_chunk_with(regions.clone(), ChunkCoordinate(I64Vec3::new(cx, cy, cz)), passes)).collect();
+            let at = |y: i64, x: u16, z: u16| chunks[(y / 16) as usize].get_block_at(U16Vec3::new(x, (y % 16) as u16, z));
+            for x in 0..16 {
+                for z in 0..16 {
+                    for y in 0..79 {
+                        if at(y, x, z) != BlockType::Grass {
+                            continue;
+                        }
+                        grass += 1;
+                        let above = at(y + 1, x, z);
+                        if above.is_opaque() && !matches!(above, BlockType::Grass | BlockType::Dirt | BlockType::Snow) {
+                            buried.push((cx * 16 + x as i64, y, cz * 16 + z as i64, above));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(grass > 1000, "only {grass} grass blocks");
+    assert!(buried.is_empty(), "{} of {grass} grass blocks lie under rock a cliff built, as {:?}", buried.len(), &buried[..buried.len().min(3)]);
+}
