@@ -4258,6 +4258,7 @@ dependencies = [
  "ochre-terrain",
  "ochre-world",
  "rand 0.10.3",
+ "serde",
  "serde_json",
 ]
 
