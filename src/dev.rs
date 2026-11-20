@@ -23,8 +23,16 @@ pub struct DevEnv {
     pub stats: bool,
     /// `OCHRE_FLIGHT`, with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`.
     pub flight: Option<FlightConfig>,
-    /// `OCHRE_REMOTE`, the port for `RemoteControlPlugin`, Bevy's 15702 if it isn't a number.
+    /// `OCHRE_REMOTE`, the port for `RemoteControlPlugin`: a port from 1024 up, off for `0`, `off` or `false`, else Bevy's 15702.
     pub remote: Option<u16>,
+}
+
+// `1` and `true` mean on, not port 1, which nothing can bind below 1024.
+fn remote_port(value: &str) -> Option<u16> {
+    match value.trim() {
+        "" | "0" | "off" | "false" => None,
+        v => Some(v.parse().ok().filter(|&p| p >= 1024).unwrap_or(bevy::remote::http::DEFAULT_PORT)),
+    }
 }
 
 fn number<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -59,7 +67,25 @@ impl DevEnv {
                 warmup: number("OCHRE_FLIGHT_WARMUP"),
                 frames: var("OCHRE_FLIGHT_FRAMES").ok(),
             }),
-            remote: var("OCHRE_REMOTE").ok().map(|v| v.parse().unwrap_or(bevy::remote::http::DEFAULT_PORT)),
+            remote: var("OCHRE_REMOTE").ok().and_then(|v| remote_port(&v)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_port;
+
+    #[test]
+    fn the_remote_port_is_a_port_or_the_default_and_never_a_flag_read_as_one() {
+        let default = bevy::remote::http::DEFAULT_PORT;
+        assert_eq!(Some(default), remote_port("1"));
+        assert_eq!(Some(default), remote_port("on"));
+        assert_eq!(Some(default), remote_port("true"));
+        assert_eq!(Some(16000), remote_port("16000"));
+        assert_eq!(Some(default), remote_port("80"));
+        for off in ["", "0", "off", "false"] {
+            assert_eq!(None, remote_port(off));
         }
     }
 }
