@@ -7,7 +7,8 @@ use bevy::{
 use serde_json::{json, Value};
 
 use crate::flythrough::{facing, ground_height};
-use crate::player::{Movement, Player, EYE_HEIGHT};
+use crate::character::{CharacterState, Movement};
+use crate::player::{Player, EYE_HEIGHT};
 use ochre_terrain::chunk_loader::{Chunk, DirtyChunk, GenerateChunkData, GenerateChunkMesh};
 use ochre_terrain::lod::{GenerateLodMesh, LodNode};
 use ochre_terrain::world::World;
@@ -109,7 +110,7 @@ fn teleport(
     In(params): In<Option<Value>>,
     world: Res<World>,
     mut remote: ResMut<Remote>,
-    mut player: Query<(&mut Transform, &mut Player)>,
+    mut player: Query<(&mut Transform, &mut CharacterState), With<Player>>,
     mut camera: Query<&mut Transform, (With<Camera3d>, Without<Player>)>,
 ) -> BrpResult {
     let (Some(x), Some(z)) = (number(&params, "x")?, number(&params, "z")?) else {
