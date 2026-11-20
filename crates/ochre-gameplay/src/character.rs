@@ -10,6 +10,7 @@ use crate::collision::{move_and_collide, move_and_step, Aabb};
 use crate::contact::{Body, Walker};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Movement {
     /// Flying anywhere, through anything, the way the camera is facing.
     #[default]
@@ -20,6 +21,7 @@ pub enum Movement {
 
 /// What the body remembers from one step to the next. Position is the body's `Transform`.
 #[derive(Component, Debug, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CharacterState {
     pub movement: Movement,
     pub velocity: Vec3,

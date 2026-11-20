@@ -15,6 +15,10 @@ ochre-world.workspace = true
 bevy.workspace = true
 serde_json.workspace = true
 rand.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+serde = ["dep:serde", "bevy/serialize"]
 
 [dev-dependencies]
 # the tests build worlds on real world maps
