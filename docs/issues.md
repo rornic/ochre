@@ -4,6 +4,13 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
+## Desert colour grading is too harsh and too saturated
+
+- **Seen:** 2026-11-20, playing the `feat/meso-more-biomes` build on seed 20 in the desert near (8300, 1248), looking at the new landmarks. The owner says the grade feels too harsh and too saturating.
+- **Known:** the desert's feel is the `HOT` row in `ochre-world/src/atmosphere.rs`: sun +0.5, saturation +0.12, midtone contrast +0.14, an orange sun colour (1.0, 0.86, 0.66), a thick warm haze and a warm shadow tint. It was tuned by eye on 2026-11-18 and judged good then, before desert had landmarks of orange sandstone.
+- **Not known:** which term does it. A guess only: the saturation and contrast shares stack on already orange sandstone and sand, and a bigger rock face fills more of the frame with it than the flat desert did.
+- **To check:** take the same view with `HOT`'s saturation at 0 and contrast at 0.05, one at a time, with the `game-remote` skill's screenshots, and compare against the owner's view.
+
 ## A thin strip of grass or dirt inset from a rock's edge
 
 - **Seen:** 2026-11-18, playing the `feat/geography-colour` build. On rock's sculpted ground, a thin strip of quads in grass or dirt shows a little way in from the rock's edge, instead of the rock running to the edge. The seed and place were not recorded, and there is no screenshot.
