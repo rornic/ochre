@@ -74,9 +74,9 @@ impl Rock {
 // The province describes a vertical column. Sedimentary provinces contain beds;
 // volcanic and metamorphic provinces are treated as massive rock for this first iteration.
 const GENERIC: u8 = 0;
-const SEDIMENTARY: u8 = 1;
+pub(super) const SEDIMENTARY: u8 = 1;
 pub(super) const VOLCANIC: u8 = 2;
-const METAMORPHIC: u8 = 3;
+pub(super) const METAMORPHIC: u8 = 3;
 // Where a metamorphic belt is uplifted this much (blocks) its core is granite, the marble being the margin.
 const INTRUSIVE: u8 = 4;
 const GRANITE_UPLIFT: f32 = 450.0;
