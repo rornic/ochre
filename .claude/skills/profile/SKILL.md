@@ -56,7 +56,7 @@ Keep a change only if it wins in every pair. Revert one within noise, as it's co
 OCHRE_SEED=7 timeout -s INT 30 ./target/release/examples/lod_sim 80 10 > /tmp/sim.txt 2>&1
 ```
 
-The arguments are flying speed in blocks a second and seconds spent flying. A full run lasts about 90 seconds (20 to load, the flight, then 60 stopped), so the 30-second timeout keeps just the load and the start of the flight. Node counts at the same timestamps show loading speed. Holes on a fixed seed must match between builds. Some persistent full-detail holes are pre-existing.
+The arguments are flying speed in blocks a second and seconds spent flying. A full run lasts about 90 seconds (20 to load, the flight, then 60 stopped), so the 30-second timeout keeps just the load and the start of the flight. Node counts at the same timestamps show loading speed. Holes on a fixed seed must match between builds; seed 1 reads none once loaded (a hole that persisted at the spawn was the check truncating a height just over a chunk's top).
 
 ## Where time went last time
 

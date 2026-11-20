@@ -31,7 +31,7 @@ Each footstep set is four single steps cut from a longer recording, 0.5 s with a
 
 ## Music
 
-`music/*.ogg` are not committed (gitignored) except `cold`, `forest`, `grassland`, `rainforest`, `savanna` and `steppe.ogg`: the others are Suno free-tier tracks, so non-commercial, and the repo is public, while those six were made on a Suno paid plan and are committed. Without a mood's file there, no music plays for it; a biome with no track of its own falls back to grassland's. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
+`music/*.ogg` are not committed (gitignored) except `cold`, `forest`, `grassland`, `rainforest`, `savanna` and `steppe.ogg`: the others are Suno free-tier tracks, so non-commercial, and the repo is public, while those six were made on a Suno paid plan and are committed. Without a mood's file there, the biome's own track plays in its place, or grassland's (`Present` in `music.rs` looks for the files at startup); a biome with no track of its own falls back to grassland's. Each should be levelled to -20 LUFS with a 6 s fade in and 10 s fade out baked in (`ffmpeg -af volume=<gain>dB,afade=t=in:d=6,afade=t=out:st=<length-10>:d=10 -c:a libvorbis -q:a 5`), and `MUSIC_VOLUME` in `crates/ochre-world/src/music.rs` sets them under the ambience.
 
 | File | Suno title | Plays |
 |---|---|---|

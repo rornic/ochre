@@ -89,6 +89,10 @@ const _: () = assert!(VERTEX_REACH + PLANE_REACH + 2 <= REACH as usize);
 const LOD_REACH: i32 = 4;
 // How far, in blocks, a node's surface sits under the ground's, so full-detail chunks drawn over it as it stands in for them win.
 const LOD_SINK: f32 = 0.3;
+// How far a skirt leans into its node for each cell it runs, so it never lies in the plane a neighbour draws in, see docs/sculpted-ground.md.
+pub(super) const SKIRT_LEAN: f32 = 1.0 / 16.0;
+// How far, in cells, the lowest vertices of the row past a node's bottom sit in behind the node below's, see docs/sculpted-ground.md.
+const ROW_LEAN: f32 = 0.5;
 // How far out along its normal a vertex's occlusion is read from the blurred blocks.
 const AO_OUT: f32 = 1.5;
 // A vertex's occlusion, 0.2 to 1, rides in its cell's fraction, within the ±0.5 every reader rounds away, see `world.wesl`.
@@ -165,8 +169,8 @@ pub(super) fn mesh_nets(
 ) {
     if cell_size > 1 {
         let start = buffers.indices.len();
-        sculpt::<LOD_REACH>(source, buffers, grass_tint, light, cell_size, beside);
-        hang_skirts(source, buffers, start);
+        let past_bottom = sculpt::<LOD_REACH>(source, buffers, grass_tint, light, cell_size, beside);
+        hang_skirts(source, buffers, start, past_bottom);
     } else {
         sculpt::<REACH>(source, buffers, grass_tint, light, cell_size, beside);
     }
@@ -179,7 +183,7 @@ fn sculpt<const MARGIN: i32>(
     light: &impl Deref<Target = SkyLight>,
     cell_size: i64,
     beside: &mut Vec<[Vec3; 3]>,
-) {
+) -> usize {
     let k = &KNOBS;
     let lod = cell_size > 1;
     let margin = MARGIN;
@@ -224,7 +228,7 @@ fn sculpt<const MARGIN: i32>(
         }
     }
     if low > high {
-        return;
+        return buffers.indices.len();
     }
     // blocks touching only along an edge would pinch the vertex between them, so the mesh (not collision) fills the gap
     let touching = solid.clone();
@@ -268,7 +272,7 @@ fn sculpt<const MARGIN: i32>(
         })
     });
     if !any_near {
-        return;
+        return buffers.indices.len();
     }
 
     // blocks counted over `plane_reach` each way, for rock's planes and occlusion: whole counts, so neighbours' sums agree
@@ -450,6 +454,8 @@ fn sculpt<const MARGIN: i32>(
     };
     // quads across every crossing between block centres, of the four cells round it, and whether the chunk owns it
     let mut quads: Vec<([u32; 4], bool)> = Vec::new();
+    // in step with `quads`, whether a node's quad is in the row past its bottom
+    let mut below: Vec<bool> = Vec::new();
     let mut quad_out: Vec<Vec3> = Vec::new();
     // a quad's ring reaches a cell back on the two axes across it, and only cells near enough have vertices
     for i in near_low.max(1)..=near_high {
@@ -485,6 +491,7 @@ fn sculpt<const MARGIN: i32>(
                     };
                     let owned = own.contains(&oi) && own_y.contains(&oj) && own.contains(&ok);
                     quads.push((quad, owned));
+                    below.push(lod && oj < own.start);
                     let dir = Vec3::new(a as f32, b as f32, c as f32);
                     quad_out.push(if here { dir } else { -dir });
                 }
@@ -649,6 +656,7 @@ fn sculpt<const MARGIN: i32>(
     }
     // split again from the final positions, along a diagonal whose triangles both face from solid to air
     let mut triangles: Vec<([u32; 3], bool)> = Vec::new();
+    let mut triangles_below: Vec<bool> = Vec::new();
     for (qi, (q, owned)) in quads.iter().enumerate().filter(|(_, (q, _))| nearest(q) <= chisel_reaches[0].max(normals_reach)) {
         let base = q[0] as usize;
         let [a, b, c, d] = q.map(|m| between(base, m, &offsets));
@@ -668,6 +676,7 @@ fn sculpt<const MARGIN: i32>(
         };
         triangles.push((diagonals[pick].0, *owned));
         triangles.push((diagonals[pick].1, *owned));
+        triangles_below.extend([below[qi]; 2]);
     }
     let mut smooth_normals = vec![Vec3::ZERO; homes.len()];
     for (t, _) in triangles.iter().filter(|(t, _)| nearest(t) <= normals_reach) {
@@ -700,9 +709,16 @@ fn sculpt<const MARGIN: i32>(
         let at = |v: usize| (homes[v] + local(0, 0, 0)).as_vec3() + (offsets[v] * 4096.0).round() / 4096.0;
         beside.extend(triangles.iter().filter(|(t, owned)| !owned && t.iter().all(|&m| past[m as usize] <= 2)).map(|(t, _)| t.map(|m| at(m as usize))));
     }
-    for (t, owned) in &triangles {
+    // the row past a node's bottom drawn last, so its skirts can be left to the node below, which hangs the same ones
+    let mut past_bottom = usize::MAX;
+    let order = (0..triangles.len()).filter(|&t| !triangles_below[t]).chain((0..triangles.len()).filter(|&t| triangles_below[t]));
+    for i in order {
+        let (t, owned) = &triangles[i];
         if !owned {
             continue;
+        }
+        if triangles_below[i] && past_bottom == usize::MAX {
+            past_bottom = buffers.indices.len();
         }
         let [m0, m1, m2] = t.map(|m| materials[m as usize]);
         let main = if m1 == m2 { m1 } else { m0 };
@@ -726,7 +742,9 @@ fn sculpt<const MARGIN: i32>(
                 let normal = smooth_normals[v].normalize_or_zero();
                 // straight down, so edge vertices stay on the node's sides where its skirts hang
                 let sunk = if lod { Vec3::Y * (LOD_SINK / cell_blocks) } else { Vec3::ZERO };
-                let position = (homes[v] + local(0, 0, 0)).as_vec3() + snapped - sunk;
+                // the row past a node's bottom redraws the top row of the node below, so it leans in behind it from its own row down
+                let behind = if lod && homes[v].y == margin - 2 { normal * ROW_LEAN } else { Vec3::ZERO };
+                let position = (homes[v] + local(0, 0, 0)).as_vec3() + snapped - sunk - behind;
                 let open = sample(homes[v].as_vec3() + offsets[v] + normal * AO_OUT);
                 // the blocks round it, and the lie of the land over hundreds of blocks
                 let ao = ((1.0 - (open - 0.25).max(0.0) * k.ao) * grass_tint.shade_at(position)).clamp(0.2, 1.0);
@@ -762,10 +780,12 @@ fn sculpt<const MARGIN: i32>(
             buffers.indices.push(index);
         }
     }
+    past_bottom.min(buffers.indices.len())
 }
 
-// Each open edge along a node's sides, of the surface drawn from index `start`, hangs a wall into the ground, see docs/sculpted-ground.md.
-fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usize) {
+// Each open edge along a node's sides, of the surface drawn from index `start` up to the row past its bottom at `past_bottom`, hangs a wall
+// into the ground, see docs/sculpted-ground.md.
+fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usize, past_bottom: usize) {
     let side = |c: f32| c == -0.5 || c == SIZE as f32 - 0.5;
     let at = |i: u32| buffers.vertices[i as usize].position;
     let key = |i: u32| at(i).map(f32::to_bits);
@@ -780,10 +800,16 @@ fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usiz
         inward[axis] = 0.0;
         let inward = if inward.length_squared() > 1e-6 { inward.normalize() } else { Vec3::NEG_Y };
         let depth = source.skirt_cells((p[0].round() as i32).clamp(0, SIZE - 1), (p[2].round() as i32).clamp(0, SIZE - 1));
-        Vec3::new(inward.x, inward.y.min(0.0) * depth as f32, inward.z)
+        let mut reach = Vec3::new(inward.x, inward.y.min(0.0) * depth as f32, inward.z);
+        // leaning into the node, off the side's plane, where the neighbour's skirt and the walls it draws there lie too
+        let into = if p[axis] < 0.0 { 1.0 } else { -1.0 };
+        reach[axis] = into * reach.length() * SKIRT_LEAN;
+        reach
     };
+    // the row past the bottom redraws the node below's top row, which hangs these skirts itself
     let skirts: Vec<(u32, u32, Vec3, Vec3)> = edges
         .into_iter()
+        .take(past_bottom - start)
         .filter_map(|(top_a, top_b)| {
             let (a, b) = (at(top_a), at(top_b));
             let axis = [0, 2].into_iter().find(|&axis| side(a[axis]) && a[axis] == b[axis])?;
@@ -795,7 +821,10 @@ fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usiz
         let [low_a, low_b] = [(top_a, reach_a), (top_b, reach_b)].map(|(top, reach)| {
             let top = top as usize;
             let mut vertex = buffers.vertices[top];
-            vertex.position = (Vec3::from(vertex.position) + reach).to_array();
+            // within the node's own sides, as the neighbour along this side hangs its own skirt in the same plane past them
+            let low = Vec3::from(vertex.position) + reach;
+            let (inside, far) = (-0.5, SIZE as f32 - 0.5);
+            vertex.position = [low.x.clamp(inside, far), low.y, low.z.clamp(inside, far)];
             buffers.vertices.push(vertex);
             buffers.colors.push(buffers.colors[top]);
             buffers.lights.push(buffers.lights[top]);

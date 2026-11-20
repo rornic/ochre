@@ -427,6 +427,35 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                 i = n;
             }
         }
+        "dryrivers" => {
+            // map river cells with no river or lake water anywhere in them at block scale (every 4 blocks), the
+            // driest first by how far the ground lies under the map's own: water the map has and the blocks lose
+            let limit: usize = opt(args, 4, 12)?;
+            let dim = map.dim();
+            let cell = map.config.map_cell;
+            let rivers: Vec<usize> = (0..dim * dim).filter(|&i| map.water_kind[i] == WaterCell::River as u8).collect();
+            let mut dry = Vec::new();
+            for &i in &rivers {
+                let (wx, wz) = map.cell_centre(i % dim, i / dim);
+                let (x0, z0) = (wx as i64 - cell / 2, wz as i64 - cell / 2);
+                let mut lowest = f64::MAX;
+                let wet = (0..cell).step_by(4).any(|dz| {
+                    (0..cell).step_by(4).any(|dx| {
+                        let s = terrain.sample((x0 + dx) as f64, (z0 + dz) as f64);
+                        lowest = lowest.min(s.height);
+                        matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
+                    })
+                });
+                if !wet {
+                    dry.push((map.water_surface[i] as f64 - lowest, wx, wz, map.water_surface[i], map.flow[i]));
+                }
+            }
+            dry.sort_by(|a, b| b.0.total_cmp(&a.0));
+            outln!(out, "{} of {} river cells have no water in them at block scale", dry.len(), rivers.len());
+            for (under, wx, wz, surface, flow) in dry.iter().take(limit) {
+                outln!(out, "{wx:.0},{wz:.0} map surface {surface:.1}, lowest ground {:.1} under it, flow {flow:.0}", under);
+            }
+        }
         "edges" => {
             let half: i64 = arg(args, 4)?;
             outln!(out, "{}", longest_straight_edge(terrain, x, z, half));
@@ -651,6 +680,11 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     let mut folds: Vec<(Vec3, f32, f32, usize)> = Vec::new();
     // the atlas cell of each triangle drawn, in step with `triangles`
     let mut tri_cell: Vec<usize> = Vec::new();
+    // which mesh each triangle came from, and whether it lies wholly in one of a node's side planes (1, walls drawn there) or is water (2)
+    let mut tri_mesh: Vec<u32> = Vec::new();
+    let mut tri_side: Vec<u8> = Vec::new();
+    let mut meshes_added = 0u32;
+    let mut mesh_origins: Vec<Vec3> = vec![Vec3::ZERO];
     // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
     let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
         let (
@@ -670,6 +704,9 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         if !water {
             vertices += positions.len();
         }
+        meshes_added += 1;
+        mesh_origins.push(origin);
+        let side = |c: f32| scale > 1.0 && (c == -0.5 || c == CHUNK_SIZE as f32 - 0.5);
         // OCHRE_RENDER_FLAT=1 shades each triangle by its own normal, as the game cuts sculpted rock's facets
         let flat = std::env::var("OCHRE_RENDER_FLAT").is_ok();
         for tri in indices.chunks(3) {
@@ -686,6 +723,8 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
                 continue;
             }
             tri_cell.push(cell);
+            tri_mesh.push(meshes_added);
+            tri_side.push(if water { 2 } else { [0, 2].into_iter().any(|a| corners.iter().all(|c| side(c[a]) && c[a] == corners[0][a])) as u8 });
             triangles.push(std::array::from_fn(|k| {
                 let i = tri[k] as usize;
                 let n = normals[i];
@@ -766,7 +805,9 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     let sun = Vec3::new(-0.45, 0.75, -0.3).normalize();
     let mut depth = vec![f32::INFINITY; (w * h) as usize];
     let mut img = RgbImage::from_pixel(w, h, Rgb([170, 196, 222]));
-    for tri in &triangles {
+    // every pixel a triangle covers, with its depth and barycentric weights, or none if culled
+    let cull = std::env::var("OCHRE_RENDER_CULL").ok();
+    let cover = |tri: &[(Vec3, Vec3, Vec3); 3], each: &mut dyn FnMut(u32, u32, f32, [f32; 3])| {
         let screen = tri.map(|(p, _, _)| {
             let d = p - centre;
             (w as f32 / 2.0 + d.dot(right) * scale, h as f32 / 2.0 - d.dot(up) * scale, d.dot(forward))
@@ -774,14 +815,14 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         let area = (screen[1].0 - screen[0].0) * (screen[2].1 - screen[0].1)
             - (screen[2].0 - screen[0].0) * (screen[1].1 - screen[0].1);
         if area.abs() < 1e-6 {
-            continue;
+            return;
         }
         // OCHRE_RENDER_CULL=out draws only triangles whose winding faces the camera (the outward side the mesher winds toward), `in` the others, as a backface cull would
-        if let Ok(mode) = std::env::var("OCHRE_RENDER_CULL") {
+        if let Some(mode) = &cull {
             let outward = (tri[2].0 - tri[0].0).cross(tri[1].0 - tri[0].0);
             let facing_camera = outward.dot(forward) < 0.0;
             if facing_camera != (mode == "out") {
-                continue;
+                return;
             }
         }
         let (min_x, max_x) = (
@@ -793,7 +834,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             screen.iter().map(|s| s.1).fold(f32::MIN, f32::max).ceil().min(h as f32 - 1.0) as u32,
         );
         if min_x > max_x || min_y > max_y {
-            continue;
+            return;
         }
         for py in min_y..=max_y {
             for px in min_x..=max_x {
@@ -806,18 +847,67 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
                     continue;
                 }
                 let d = weights[0] * screen[0].2 + weights[1] * screen[1].2 + weights[2] * screen[2].2;
-                let at = (py * w + px) as usize;
-                if d >= depth[at] {
-                    continue;
-                }
-                depth[at] = d;
-                let normal = (tri[0].1 * weights[0] + tri[1].1 * weights[1] + tri[2].1 * weights[2]).normalize_or_zero();
-                let colour = tri[0].2 * weights[0] + tri[1].2 * weights[1] + tri[2].2 * weights[2];
-                let lit = colour * (0.35 + 0.9 * normal.dot(sun).max(0.0));
-                // a rough sRGB, so mid colours aren't crushed
-                let rgb = lit.map(|c| c.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0);
-                img.put_pixel(px, py, Rgb([rgb.x as u8, rgb.y as u8, rgb.z as u8]));
+                each(px, py, d, weights);
             }
+        }
+    };
+    let mut front = vec![usize::MAX; (w * h) as usize];
+    for (t, tri) in triangles.iter().enumerate() {
+        cover(tri, &mut |px, py, d, weights| {
+            let at = (py * w + px) as usize;
+            if d >= depth[at] {
+                return;
+            }
+            depth[at] = d;
+            front[at] = t;
+            let normal = (tri[0].1 * weights[0] + tri[1].1 * weights[1] + tri[2].1 * weights[2]).normalize_or_zero();
+            let colour = tri[0].2 * weights[0] + tri[1].2 * weights[1] + tri[2].2 * weights[2];
+            let lit = colour * (0.35 + 0.9 * normal.dot(sun).max(0.0));
+            // a rough sRGB, so mid colours aren't crushed
+            let rgb = lit.map(|c| c.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0);
+            img.put_pixel(px, py, Rgb([rgb.x as u8, rgb.y as u8, rgb.z as u8]));
+        });
+    }
+    // OCHRE_RENDER_ZFIGHT=<blocks>: pixels where a second triangle, sharing no corner with the front one, lies within that depth of it, where the
+    // game's depth test would flicker between the two; counted by whether each lies in a node's side plane, and painted magenta
+    if let Some(eps) = std::env::var("OCHRE_RENDER_ZFIGHT").ok().and_then(|e| e.parse::<f32>().ok()) {
+        let mut fighting = vec![false; (w * h) as usize];
+        // [front kind][other kind][same mesh], kinds as `tri_side`
+        let mut kinds = [[[0usize; 2]; 3]; 3];
+        let mut fighters: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        // the area's own sides show nodes' skirts with no neighbour drawn, so only pixels well inside count
+        let inner = |t: usize| {
+            let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
+            (c.x - x as f32).abs() < half as f32 * 0.8 && (c.z - z as f32).abs() < half as f32 * 0.8
+        };
+        let shares = |a: usize, b: usize| triangles[a].iter().any(|p| triangles[b].iter().any(|q| p.0.distance_squared(q.0) < 1e-6));
+        for (t, tri) in triangles.iter().enumerate() {
+            cover(tri, &mut |px, py, d, _| {
+                let at = (py * w + px) as usize;
+                let f = front[at];
+                if f == t || f == usize::MAX || fighting[at] || (d - depth[at]).abs() >= eps || !inner(f) || shares(f, t) {
+                    return;
+                }
+                fighting[at] = true;
+                kinds[tri_side[f] as usize][tri_side[t] as usize][(tri_mesh[f] == tri_mesh[t]) as usize] += 1;
+                fighters.insert(f);
+                fighters.insert(t);
+                // OCHRE_RENDER_ZFIGHT_SAMPLES=1 prints every 50th pair of each kind, with the origins of the meshes they came from
+                if std::env::var("OCHRE_RENDER_ZFIGHT_SAMPLES").is_ok() && kinds[tri_side[f] as usize][tri_side[t] as usize][(tri_mesh[f] == tri_mesh[t]) as usize] % 50 == 1 {
+                    println!("  sample side {} / {} meshes at {} / {}: {:?} against {:?}", tri_side[f], tri_side[t], mesh_origins[tri_mesh[f] as usize], mesh_origins[tri_mesh[t] as usize], triangles[f].map(|v| v.0), triangles[t].map(|v| v.0));
+                }
+            });
+        }
+        let total = fighting.iter().filter(|&&f| f).count();
+        let drawn = front.iter().filter(|&&f| f != usize::MAX).count();
+        println!("z-fighting pixels within {eps} blocks: {total} of {drawn} drawn ({:.3}%), {} triangles take part", 100.0 * total as f32 / drawn.max(1) as f32, fighters.len());
+        for (a, name_a) in ["surface", "side plane", "water"].iter().enumerate() {
+            for (b, name_b) in ["surface", "side plane", "water"].iter().enumerate() {
+                println!("  front {name_a} against {name_b}: {} across meshes, {} in one mesh", kinds[a][b][0], kinds[a][b][1]);
+            }
+        }
+        for (at, _) in fighting.iter().enumerate().filter(|(_, f)| **f) {
+            img.put_pixel(at as u32 % w, at as u32 / w, Rgb([255, 0, 255]));
         }
     }
     img.save(out).map_err(|e| format!("{out}: {e}"))?;

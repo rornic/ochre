@@ -39,6 +39,12 @@ pub trait TreeGround {
         false
     }
 
+    /// The water the ground at `x`, `z` is chosen by, as chunks lay it (`columns::shore_top`): a bank's river or
+    /// lake beside it, so no tree stands on the sand a chunk lays there.
+    fn shore_top(&mut self, _x: i64, _z: i64) -> i64 {
+        WATER_LEVEL
+    }
+
     /// The height a tree's base stands at, which a coarse node sets to the ground it draws, so
     /// trees sit on it, while the rest above stay exact, so the same trees grow at every level.
     fn base_height(&mut self, x: i64, z: i64) -> i64 {
@@ -57,6 +63,14 @@ impl TreeGround for HeightSampler<'_> {
 
     fn biome(&mut self, x: i64, z: i64) -> BiomeId {
         HeightSampler::biome(self, x, z)
+    }
+
+    fn shore_top(&mut self, x: i64, z: i64) -> i64 {
+        let (own, height) = (self.water_top(x, z), self.ground_top(x, z));
+        super::columns::shore_top(own, height, |dx, dz| {
+            let top = self.water_top(x + dx, z + dz);
+            (top > self.ground_top(x + dx, z + dz)).then_some(top)
+        })
     }
 
     fn rocky(&mut self, x: i64, z: i64) -> bool {
@@ -901,7 +915,7 @@ fn tree_in_cell(
         height,
         gradient,
         temperature,
-        WATER_LEVEL,
+        heights.shore_top(x, z),
     );
     if ground != BlockType::Grass {
         return None;

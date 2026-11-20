@@ -536,9 +536,10 @@ const HOLLOW_FROM: f32 = 0.15;
 const HOLLOW_TO: f32 = 0.55;
 const MACRO_AO: f32 = 0.3;
 
-// Blocks between samples across a coarse node, and the most samples along a side of one.
-const TINT_SPACING: f32 = 32.0;
-const TINT_MAX_SIDE: usize = 9;
+// Blocks between samples across a coarse node, and the most samples along a side of one: a chunk's width, so a node
+// samples where the chunks beside it do and a river's bank wetting, which climbs over about 50 blocks, pops no colour at the handover.
+const TINT_SPACING: f32 = 16.0;
+const TINT_MAX_SIDE: usize = 17;
 
 // `values`, a square grid over a mesh, bilinear at `local`: past the grid's edge the outer cell goes on, as the four corners did.
 fn grid_blend<T: Copy>(values: &[T], mix: impl Fn(T, T, f32) -> T, local: Vec3) -> T {

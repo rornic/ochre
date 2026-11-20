@@ -182,20 +182,23 @@ fn hydraulic_round(grid: &mut [f32], map: &WorldMap, round: u32, shift: usize) {
             .flat_map(|tz| (0..tiles).map(move |tx| (tx, tz)))
             .filter(|&(tx, tz)| (tx % 2) + 2 * (tz % 2) == phase)
             .collect();
-        let results: Vec<_> = std::thread::scope(|scope| {
-            let threads = super::worker_threads();
-            let per = jobs.len().div_ceil(threads).max(1);
-            let handles: Vec<_> = jobs
-                .chunks(per)
-                .map(|batch| {
-                    let (grid, brush) = (&*grid, &brush);
+        // each thread takes the next tile as it finishes one, since a range's tiles take far longer than the sea's; a
+        // phase's windows don't overlap, so the order they are written back in changes nothing, and it is kept anyway
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let mut results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..super::worker_threads())
+                .map(|_| {
+                    let (grid, brush, jobs, next) = (&*grid, &brush, &jobs, &next);
                     scope.spawn(move || {
-                        batch
-                            .iter()
-                            .filter_map(|&(tx, tz)| {
-                                tile(grid, map, (tx, tz), shift, (seed, round), sea, brush)
-                            })
-                            .collect::<Vec<_>>()
+                        let mut done = Vec::new();
+                        loop {
+                            let n = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(&(tx, tz)) = jobs.get(n) else { break };
+                            if let Some(window) = tile(grid, map, (tx, tz), shift, (seed, round), sea, brush) {
+                                done.push((n, window));
+                            }
+                        }
+                        done
                     })
                 })
                 .collect();
@@ -204,6 +207,8 @@ fn hydraulic_round(grid: &mut [f32], map: &WorldMap, round: u32, shift: usize) {
                 .flat_map(|h| h.join().unwrap())
                 .collect()
         });
+        results.sort_unstable_by_key(|(n, _)| *n);
+        let results = results.into_iter().map(|(_, window)| window);
         for (x0, z0, window) in results {
             for row in 0..window.h {
                 let from = row * window.w;
@@ -306,21 +311,24 @@ pub(crate) fn thermal(map: &mut WorldMap) {
                 *slot = TALUS / map.rock_at_cell(i, h[i]).stream_erodibility().sqrt();
             }
         });
-        let get = |x: i64, z: i64| h[z as usize * dim + x as usize];
+        // a cell's neighbours as offsets into the grid, in `offsets`' order; cells on the map's edge take the slow path
+        let step: [isize; 8] = offsets.map(|(dx, dz, _)| dz as isize * dim as isize + dx as isize);
         let inside = |x: i64, z: i64| x >= 0 && z >= 0 && x < dim as i64 && z < dim as i64;
+        let edge = |row: usize, col: usize| row == 0 || col == 0 || row == dim - 1 || col == dim - 1;
         // per cell: how much it sheds, and the total drop it sheds over
         par_rows(dim, &mut out, |row, cells| {
             for (col, cell_out) in cells.iter_mut().enumerate() {
-                let (x, z) = (col as i64, row as i64);
-                let here = get(x, z);
+                let i = row * dim + col;
+                let here = h[i];
                 if here <= sea {
                     continue;
                 }
                 let (mut max_drop, mut total) = (0.0f32, 0.0f32);
-                for &(dx, dz, dist) in &offsets {
-                    if inside(x + dx, z + dz) {
-                        let rest = talus[row * dim + col] * cell * dist;
-                        let drop = here - get(x + dx, z + dz) - rest;
+                let rest = talus[i] * cell;
+                let interior = !edge(row, col);
+                for (k, &(dx, dz, dist)) in offsets.iter().enumerate() {
+                    if interior || inside(col as i64 + dx, row as i64 + dz) {
+                        let drop = here - h[(i as isize + step[k]) as usize] - rest * dist;
                         if drop > 0.0 {
                             max_drop = max_drop.max(drop);
                             total += drop;
@@ -333,16 +341,17 @@ pub(crate) fn thermal(map: &mut WorldMap) {
         let shed = &out;
         par_rows(dim, &mut delta, |row, cells| {
             for (col, d) in cells.iter_mut().enumerate() {
-                let (x, z) = (col as i64, row as i64);
-                let here = get(x, z);
-                let mut change = -shed[row * dim + col].0;
-                for &(dx, dz, dist) in &offsets {
-                    if !inside(x + dx, z + dz) {
+                let i = row * dim + col;
+                let here = h[i];
+                let mut change = -shed[i].0;
+                let interior = !edge(row, col);
+                for (k, &(dx, dz, dist)) in offsets.iter().enumerate() {
+                    if !interior && !inside(col as i64 + dx, row as i64 + dz) {
                         continue;
                     }
-                    let n = (z + dz) as usize * dim + (x + dx) as usize;
+                    let n = (i as isize + step[k]) as usize;
                     let (give, total) = shed[n];
-                    let drop = get(x + dx, z + dz) - here - talus[n] * cell * dist;
+                    let drop = h[n] - here - talus[n] * cell * dist;
                     if total > 0.0 && drop > 0.0 {
                         change += give * drop / total;
                     }

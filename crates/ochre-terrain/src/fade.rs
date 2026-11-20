@@ -299,7 +299,7 @@ mod tests {
     use super::{fade_in_window, fade_out_window, fade_step, set_shown, Fade, FADE_STEPS};
 
     #[test]
-    fn solid_and_cutout_children_keep_their_pipeline_class_during_and_after_fades() {
+    fn solid_terrain_is_opaque_once_its_fade_is_done_and_cutout_always_masked() {
         use crate::{
             group::SolidTerrain,
             material::{
@@ -372,10 +372,11 @@ mod tests {
             assert!(solid.non_cutout);
             assert!(!cutout.non_cutout);
             assert_eq!(solid.fade, cutout.fade);
-            assert!(matches!(
-                solid.alpha_mode(),
-                bevy::prelude::AlphaMode::Mask(_)
-            ));
+            // solid faces dither while they fade and are opaque, discarding nothing, once drawn whole
+            let fading = world.get::<Fade>(parent).is_some();
+            assert_eq!(fading, matches!(solid.alpha_mode(), bevy::prelude::AlphaMode::Mask(_)));
+            assert_eq!(!fading, solid.alpha_mode() == bevy::prelude::AlphaMode::Opaque);
+            assert!(matches!(cutout.alpha_mode(), bevy::prelude::AlphaMode::Mask(_)));
         }
         assert!(world.get::<Fade>(parent).is_none());
     }

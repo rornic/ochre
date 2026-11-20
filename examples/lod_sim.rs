@@ -181,7 +181,9 @@ fn report(app: &mut App, layout: LodLayout, pos: Vec3) -> Report {
                 .sample((cx * size + size / 2) as f64, (cz * size + size / 2) as f64)
                 .height
                 .max(WATER_LEVEL as f64);
-            let c = ChunkCoordinate(I64Vec3::new(cx, (h as i64 - 1).div_euclid(size), cz));
+            // the chunk holding the ground's top block, which is rounded as chunks round it (`bed_top`): truncated, a
+            // height just over a chunk's top (32.9) named the buried chunk under it, a hole that was never there
+            let c = ChunkCoordinate(I64Vec3::new(cx, (h.round() as i64 - 1).div_euclid(size), cz));
             let shown = |key: LodKey| lod_vis.get(&key).copied().unwrap_or(false);
             let drawn = chunk_vis(&c).unwrap_or(false)
                 || (1..=layout.max_level).any(|l| {
@@ -281,7 +283,7 @@ fn coarse_ground(
         .max(WATER_LEVEL as f64);
     Some(ChunkCoordinate(I64Vec3::new(
         cx,
-        (h as i64 - 1).div_euclid(size),
+        (h.round() as i64 - 1).div_euclid(size),
         cz,
     )))
 }
@@ -306,7 +308,7 @@ fn surface_chunks(app: &App, pos: Vec3, radius: i64) -> Vec<ChunkCoordinate> {
                 .max(WATER_LEVEL as f64);
             chunks.push(ChunkCoordinate(I64Vec3::new(
                 cx,
-                (h as i64 - 1).div_euclid(size),
+                (h.round() as i64 - 1).div_euclid(size),
                 cz,
             )));
         }

@@ -96,6 +96,8 @@ const MIN_BIOME_CELLS: usize = 400;
 // Swamp: grassland, forest or jungle no higher than this over the sea, on ground flatter than this, at least this
 // wet and within about 13 cells of a river or lake (`closeness` there).
 const SWAMP_BELOW: f32 = 40.0;
+// How far over `SWAMP_BELOW` a small patch merged into a swamp may stand.
+const SWAMP_KNOLL: f32 = 4.0;
 const SWAMP_SLOPE: f32 = 0.2;
 const SWAMP_MOISTURE: f32 = 0.65;
 const SWAMP_NEAR: f32 = 0.02;
@@ -485,6 +487,11 @@ pub fn run(map: &mut WorldMap) {
             kinds[i] = climate_kinds[i];
         }
     }
+    // which can leave specks of the climate's biome inside the swamp, or of swamp beside it
+    // a speck merged into the swamp round it may stand a little over the swamp's limit, a knoll in it, or a cell of
+    // forest a block or two up would stay a speck with only swamp to join
+    let too_high = |i: usize| map.height[i] - sea > SWAMP_BELOW + SWAMP_KNOLL || map.landform[i] == super::landform::MOUNTAIN;
+    merge_small(&mut kinds, dim, |i, kind| kind != BiomeKind::Swamp as u8 || !too_high(i));
 
     let (alt, margin) = boundary_margins(map, &temperature, &moisture, &kinds);
     map.biome_alt = alt;
@@ -785,8 +792,14 @@ pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
         });
         kinds = out;
     }
-    // a patch of one biome too small to be worth its own: merged into the neighbour it shares
-    // the longest edge with
+    merge_small(&mut kinds, dim, |_, _| true);
+    kinds
+}
+
+// A patch of one biome too small to be worth its own is merged into the neighbour it shares the longest edge with, if
+// `allowed` lets each of its cells be that biome. The sea is left alone.
+fn merge_small(kinds: &mut [u8], dim: usize, allowed: impl Fn(usize, u8) -> bool) {
+    let sea = BiomeKind::Sea as u8;
     let mut small_passes = 0;
     loop {
         let mut changed = false;
@@ -822,7 +835,7 @@ pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
             }
             if cells.len() < MIN_BIOME_CELLS {
                 if let Some(best) = (0..border.len())
-                    .filter(|&k| border[k] > 0)
+                    .filter(|&k| border[k] > 0 && cells.iter().all(|&i| allowed(i, k as u8)))
                     .max_by_key(|&k| border[k])
                 {
                     for &i in &cells {
@@ -837,7 +850,6 @@ pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
             break;
         }
     }
-    kinds
 }
 
 #[cfg(test)]

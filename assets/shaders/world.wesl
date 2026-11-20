@@ -413,6 +413,11 @@ fn fragment(
     // so distant chunks fade into the sky instead of popping in and out
     color = fogged(color, world_position, in.position.xy);
 
+    // a solid mesh drawn wholly discards nothing, so the GPU keeps its early depth test (`ChunkMaterial::opaque`)
+@if(OPAQUE_SOLID) {
+    color.a = 1.0;
+}
+@if(!OPAQUE_SOLID) {
     // after the texture samples above, which need uniform control flow
     if threshold < material_fade.x || threshold >= material_fade.y {
         discard;
@@ -428,6 +433,7 @@ fn fragment(
     if is_flora(in.color.a) && color.a < 0.5 {
         discard;
     }
+}
 }
 
     var output: FragmentOutput;

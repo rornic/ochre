@@ -123,7 +123,10 @@ fn channel(ground: f32, river: RiverHit, gorge: f64) -> f32 {
     // where a dip would leave the water standing over it, so the water is always held in by ground
     // and over the block the water's surface lies in by at least half of it, or the water stands over the bank
     let rim = (river.surface + freeboard(river.width)).max(river.surface.ceil() - 0.4);
-    let t = ((river.distance - half) / bank_width(river, gorge)).clamp(0.0, 1.0);
+    // where the land lies far under the water, as where a river held at the level of the lake it runs into crosses a dip,
+    // the bank is a levee as wide as the drop, not a wall a block thick
+    let width = bank_width(river, gorge).max(((rim - ground) * LEVEE_RUN).min(LEVEE_MAX));
+    let t = ((river.distance - half) / width).clamp(0.0, 1.0);
     // The bank joins the surrounding terrain over its width. Block-level containment
     // is applied separately against actual neighbouring water, after all water is known.
     let rise = if gorge > GORGE_FROM {
@@ -139,6 +142,10 @@ fn bed_height(river: RiverHit) -> f32 {
     let t = (river.distance / (river.width / 2.0)).min(1.0);
     river.bed + river.depth * t * t
 }
+
+// Blocks across a levee runs for each block it falls, and the widest one, within a river's reach.
+const LEVEE_RUN: f32 = 1.5;
+const LEVEE_MAX: f32 = 30.0;
 
 fn bank_width(river: RiverHit, gorge: f64) -> f32 {
     let width = 2.0 + river.width * 0.25;
@@ -1694,9 +1701,10 @@ mod river_bank_tests {
         let config = super::super::WorldConfig { size: 65536, map_cell: 128, ..Default::default() };
         let terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
         let (mut cliffs, mut walls, mut seen) = (0, 0, 0);
-        for i in 0..400 {
-            for j in 0..400 {
-                let (x, z) = (i as f64 * 160.0 - 32000.0, j as f64 * 160.0 - 32000.0);
+        // every 100 blocks, so enough wall points are looked at that one or two more or fewer reaching a cliff don't decide it
+        for i in 0..640 {
+            for j in 0..640 {
+                let (x, z) = (i as f64 * 100.0 - 32000.0, j as f64 * 100.0 - 32000.0);
                 let cut = terrain.valley.at(x, z);
                 let weight = terrain.valley_weight(x, z);
                 // the ranges' own valleys add to the ground there
@@ -1719,9 +1727,10 @@ mod river_bank_tests {
                 }
             }
         }
-        assert!(walls >= 20, "only {walls} cliff wall points to look at, of {seen} valley points");
-        // a wall's edge is 14 to 64 blocks wide and the steepest stretches are cliffs: some reach a gradient of 1, not all
-        assert!(cliffs >= 10 && cliffs * 8 >= walls, "{cliffs} of {walls} cliff wall points reach a gradient of 1");
+        assert!(walls >= 50, "only {walls} cliff wall points to look at, of {seen} valley points");
+        // a wall's edge is 14 to 64 blocks wide and the steepest stretches are cliffs: some reach a gradient of 1, not all.
+        // Every 100 blocks seed 1 reads 17 of 132 with the mountains smooth on the map and 16 of 131 with them stepped
+        assert!(cliffs >= 12 && cliffs * 10 >= walls, "{cliffs} of {walls} cliff wall points reach a gradient of 1");
     }
 
     #[test]
@@ -2078,16 +2087,32 @@ mod river_bank_tests {
         super::super::gameplay::label(&mut map);
         let map = Arc::new(map);
         let terrain = WorldTerrain::new(map);
-        let wet = terrain.sample(-21752.0, 15523.0);
-        let bank = terrain.sample(-21752.0, 15524.0);
-        assert_eq!(wet.water_kind, WaterKind::River);
-        assert_eq!(bank.water_kind, WaterKind::None);
-        assert!(
-            ochre_terrain::generate::region_store::bed_top(bank.height as f32, 0.0)
-                >= ochre_terrain::generate::region_store::water_block_top(wet.water_surface),
-            "dry bank {} does not hold river surface {}",
-            bank.height,
-            wet.water_surface
-        );
+        // the bend moves with any change upstream, so every dry bank round where it was must hold the river beside it
+        let mut banks = 0;
+        for z in (15523 - 160)..(15523 + 160) {
+            for x in (-21752 - 160)..(-21752 + 160) {
+                let wet = terrain.sample(x as f64, z as f64);
+                if wet.water_kind != WaterKind::River {
+                    continue;
+                }
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let bank = terrain.sample((x + dx) as f64, (z + dz) as f64);
+                    if bank.water_kind != WaterKind::None {
+                        continue;
+                    }
+                    banks += 1;
+                    assert!(
+                        ochre_terrain::generate::region_store::bed_top(bank.height as f32, 0.0)
+                            >= ochre_terrain::generate::region_store::water_block_top(wet.water_surface),
+                        "dry bank {} at ({}, {}) does not hold river surface {}",
+                        bank.height,
+                        x + dx,
+                        z + dz,
+                        wet.water_surface
+                    );
+                }
+            }
+        }
+        assert!(banks > 20, "only {banks} river banks round the bend");
     }
 }
