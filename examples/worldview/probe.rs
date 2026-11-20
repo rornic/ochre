@@ -456,6 +456,31 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                 outln!(out, "{wx:.0},{wz:.0} map surface {surface:.1}, lowest ground {:.1} under it, flow {flow:.0}", under);
             }
         }
+        "steps" => {
+            // how terraced gentle ground is: of points on a slope of 0.2 to 1 over 8 blocks, the share whose ground
+            // is near level over 1 block (a tread), sampled every 2 blocks, both ways
+            let half: i64 = arg(args, 4)?;
+            let h = |x: i64, z: i64| terrain.sample(x as f64, z as f64).height;
+            let (mut slopes, mut treads) = (0usize, 0usize);
+            for zz in (z - half..z + half).step_by(2) {
+                for xx in (x - half..x + half).step_by(2) {
+                    let s = terrain.sample(xx as f64, zz as f64);
+                    if s.water_kind != WaterKind::None || s.rocky {
+                        continue;
+                    }
+                    for (dx, dz) in [(1, 0), (0, 1)] {
+                        let broad = (h(xx + 4 * dx, zz + 4 * dz) - h(xx - 4 * dx, zz - 4 * dz)).abs() / 8.0;
+                        if !(0.2..1.0).contains(&broad) {
+                            continue;
+                        }
+                        slopes += 1;
+                        let fine = (h(xx + dx, zz + dz) - h(xx, zz)).abs();
+                        treads += (fine < broad * 0.25) as usize;
+                    }
+                }
+            }
+            outln!(out, "{treads} treads of {slopes} slope samples: {:.1}%", 100.0 * treads as f64 / slopes.max(1) as f64);
+        }
         "edges" => {
             let half: i64 = arg(args, 4)?;
             outln!(out, "{}", longest_straight_edge(terrain, x, z, half));
