@@ -1,11 +1,11 @@
 ---
 name: block-textures
-description: Generate or regenerate Ochre's 16px seamless block textures (stone, grass, logs, side variants) with ComfyUI, and pack them into assets/textures/blocks.png. Use when adding, restyling or fixing a block texture.
+description: Generate Ochre's painted block materials (stone, grass, logs, foliage) with ComfyUI. Use when adding, restyling or fixing a block texture.
 ---
 
 # Block textures
 
-The atlas `assets/textures/blocks.png` is one 16px-tall strip. Only water still draws from it: every other tile is painted (see Painted materials and Foliage below), and the strip's cells for them are placeholders the mesher and `block_mean` still index. Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. `pack.py` asserts the length.
+There is no block atlas texture any more: every tile is painted (see Painted materials and Foliage below) except water, a constant in `water.wesl`. A tile's cell is its id in the mesh and in `block_mean`. Tile order is `enum Tile` in `crates/ochre-base/src/block.rs` and must match `TILES` in `generate.py`. The 16px tile steps below (`generate.py`'s `finish()`, `flora.py`) no longer feed anything.
 
 ## One-time setup
 
@@ -24,7 +24,6 @@ On Windows it runs natively (no WSL needed): the venv's python is `venv\Scripts\
 cd .claude/skills/block-textures
 python generate.py                 # all tiles, seed 1
 python generate.py Stone Dirt --seed 7
-python pack.py                     # writes the atlas, the block_mean table and out/contact.png
 ```
 
 Pick the best of several seeds. `python generate.py LogBark --candidates 4` writes `out/LogBark_c1..4.png` and a numbered `out/LogBark_candidates.png`. Look at the sheet, then `python generate.py --pick LogBark=1` makes that one the tile. Claude can do the looking itself by reading the sheet image.
@@ -40,7 +39,7 @@ Open `out/contact.png` (each tile repeated 3x3, 9x zoom) and check seams. Re-rol
 - `GrassTop` and `Leaves` are greyscale and tinted per climate by the shader, which assumes mean brightness 187 and 135 (sRGB), so `grey=` fixes their mean.
 - The flora atlas cells (`derive="sprite"`, the atlas's last six) are no longer drawn, see Foliage; they were never AI-generated either: SD can't draw a lone plant on transparency at 16px. `flora.py` draws them pixel by pixel, greyscale grasses and fern levelled by `grey=` for the climate tint, flowers in colour. The shaders treat every tile from `Tile::FIRST_FLORA` on as a sprite, so new flora goes on the end.
 - Side tiles are not AI-generated, since SD can't draw a fringe. `derive()` builds them from the picked tiles, so after picking new sources rerun `generate.py GrassSide SnowSide SandstoneSide`. `GrassSide` is `overlay`: only a greyscale grass fringe on transparency (shifted GrassTop pixels, 2-4 rows deep), which `world.wesl` layers over the Dirt tile by its alpha, tinting just the grass, so changing Dirt changes grass sides too. `SnowSide` is `fringe`: a snow fringe baked over Dirt. `SandstoneSide` is `strata`: darker rows over SandstoneTop.
-- `pack.py` rewrites the `block_mean` table in `block_texture.wesl`, which `material.rs` tests against the atlas.
+- `materials.py` rewrites the `block_mean` table in `block_texture.wesl`, which `material.rs` tests against the materials.
 - Don't add the Plixel Minecraft LoRA. It was trained on sprites, so it draws a sprite on a white or checkerboard background and ignores tiling. At 512px it only produces dither noise.
 - Prompts must not say "minecraft", "top-down" or "orthographic". SD reads them as an isometric scene. `STYLE` asks for a flat close-up instead, and the negative prompt bans landscapes and trees.
 - Known weak spot: Leaves candidates all look the same, because the holes come from the reference alpha.
@@ -49,8 +48,7 @@ Open `out/contact.png` (each tile repeated 3x3, 9x zoom) and check seams. Re-rol
 
 1. Add the variant to `enum Tile` and bump `TILE_COUNT` in `crates/ochre-base/src/block.rs`, and use it in `BlockType::tile`.
 2. Append a row to `TILES` in `generate.py` at the same index.
-3. In `block_texture.wesl`, bump `ATLAS_CELLS` and add a `vec3` row to `block_mean` (`pack.py` asserts one row per tile and fills the numbers in).
-4. Widen the atlas first (`pack.py` asserts 16px per row entry), e.g. paste a blank 16px onto the right edge, then generate and pack.
+3. In `block_texture.wesl`, add a `vec3` row to `block_mean` and an entry to `MATERIAL_LAYER_TABLE`, and bump both array sizes (`materials.py` asserts one row per tile and fills the numbers in).
 
 ## Painted materials
 

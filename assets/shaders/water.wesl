@@ -24,8 +24,9 @@ import super::curvature::{curved, uncurved};
 import super::hash::hash2;
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material_color: vec4<f32>;
-@group(constants::MATERIAL_BIND_GROUP) @binding(1) var material_color_texture: texture_2d<f32>;
-@group(constants::MATERIAL_BIND_GROUP) @binding(2) var material_color_sampler: sampler;
+
+// The mean of the 16px water tile this replaced, in linear colour.
+const WATER_COLOR: vec3<f32> = vec3<f32>(0.0665, 0.1023, 0.9149);
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> material_fade: vec4<f32>;
 
@@ -720,7 +721,7 @@ fn fragment(
 }
 
     // its colour's tuned for midday, so follows the light from there
-    let tint = scene_colour((material_color * textureSample(material_color_texture, material_color_sampler, in.uv)).rgb) * daylight(uncurved(world_position));
+    let tint = scene_colour((material_color.rgb * WATER_COLOR)) * daylight(uncurved(world_position));
 
     // Foam is still worth branching around beyond FOAM_FADE_END: detail that's
     // imperceptible at distance anyway, so skipping it is a real saving, not just a fade.

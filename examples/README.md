@@ -7,7 +7,7 @@ Directory of Cargo examples (auto-discovered, none declared in `Cargo.toml`) of 
 Run all from the repo root, with `cargo run --release --example <name> -- <args>`. Assets, shaders and `assets/settings.toml` load by relative path.
 
 Game
-- `sandbox.rs:main`: the game. Builds `DefaultPlugins` (nearest-neighbour images, `task_pool_plugin`) plus `OchrePlugins`, with `PlayerPlugin` set to look along `OCHRE_LOOK`. `load_world` runs in `main`, before the window exists. `TerrainRenderPlugin` loads `assets/textures/blocks.png` and `assets/textures/materials`.
+- `sandbox.rs:main`: the game. Builds `DefaultPlugins` (nearest-neighbour images, `task_pool_plugin`) plus `OchrePlugins`, with `PlayerPlugin` set to look along `OCHRE_LOOK`. `load_world` runs in `main`, before the window exists. `TerrainRenderPlugin` loads `assets/textures/materials`.
 - Env vars: `OCHRE_RESOLUTION=WxH` (`window_size`), `OCHRE_FLIGHT` (1920x1080), `OCHRE_NOVSYNC`, `OCHRE_STATS` (`winit_settings`: continuous updates even unfocused), `OCHRE_LOOK=x,y,z` (`look_direction`, a direction, default `Vec3::Z`).
 
 Headless simulations (`MinimalPlugins` + `TerrainPlugin::new`, no window or GPU, blank shader inputs)

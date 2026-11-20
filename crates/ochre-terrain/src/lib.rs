@@ -47,7 +47,7 @@ use lod::{
     load_lods, refresh_lod_visibility, retire_lods, spawn_lods, update_lod_selection, LodLoader,
 };
 use material::{
-    block_atlas, material_array, ChunkMaterial, CloudLayer, ShaderInputs, SprayMaterial,
+    material_array, ChunkMaterial, CloudLayer, ShaderInputs, SprayMaterial,
     TerrainAssets, TerrainMaterials, WaterMaterial,
 };
 use world::World;
@@ -139,10 +139,9 @@ impl Plugin for TerrainRenderPlugin {
     }
 }
 
-/// The block atlas and painted materials the terrain's shaders sample, as loaded by `TerrainRenderPlugin`.
+/// The painted materials the terrain's shaders sample, as loaded by `TerrainRenderPlugin`.
 #[derive(Resource)]
 struct TerrainTextures {
-    atlas: Handle<Image>,
     materials: Handle<Image>,
 }
 
@@ -164,7 +163,6 @@ fn load_textures(
     renderer: Res<RendererSettings>,
 ) {
     commands.insert_resource(TerrainTextures {
-        atlas: images.add(block_atlas("assets/textures/blocks.png")),
         materials: images.add(material_array(
             "assets/textures/materials",
             renderer.material_anisotropy,
@@ -214,7 +212,6 @@ fn setup_terrain(
 ) {
     let layout = renderer.lod_layout();
     let inputs = ShaderInputs {
-        atlas: sources.textures.as_ref().map(|t| t.atlas.clone()),
         materials: sources.textures.as_ref().map(|t| t.materials.clone()),
         clouds: sources.clouds.map(|c| c.clone()).unwrap_or_default(),
         curvature: sources.curvature.map(|c| c.buffer.clone()).unwrap_or_default(),

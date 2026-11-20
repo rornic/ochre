@@ -1,6 +1,6 @@
 # Painted materials
 
-Terrain faces whose tile has a painted material draw it from a 512px layer sampled by world position, so one texture covers many blocks and ignores block edges. Leaves and flora draw RGBA layers of the same array across their tile's own uv (see Foliage below). Only water still draws from the 16px atlas. Design: `docs/designs/painted-world-space-materials.md`.
+Terrain faces whose tile has a painted material draw it from a 512px layer sampled by world position, so one texture covers many blocks and ignores block edges. Leaves and flora draw RGBA layers of the same array across their tile's own uv (see Foliage below). Water has no texture, and is a constant in `water.wesl`. Design: `docs/designs/painted-world-space-materials.md`.
 
 ## What is painted
 
@@ -19,7 +19,7 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 - Shrubs and heath are cut at no more than mip level 5 and at a coverage of 0.3, not the 0.1 that keeps thin grass from vanishing (`BIG_FLORA_*` in `block_texture.wesl`, `FIRST_BIG_FLORA_CELL`). Past level 7, from about 70 blocks, one mip texel is half the sprite, and its average passes a 0.1 cut whole, so the quad above the mound would be drawn solid, a flat slab (half of a heath's quad from 70 blocks, all of a shrub's from 135). A test replays the cut on the layers.
 - Shrubs and heath are plants up to three blocks across: one to a block, drawn as six planes in a star, 30 degrees apart, that reach past it (`SHRUB_HALF_WIDTH` and the rest in `mesh.rs`). A plant's shadow lookup is moved toward the sun and fades out with distance, since its own cut-out shadow falls on its quad. Tests check this, the sprites' clear top and sides, and the leaves' coverage.
 - `foliage.py` makes them: leaves from an SDXL candidate with holes cut where it is darkest, plants as brush strokes drawn at 2x and filled with a painting's tone, since SD can't draw a lone plant on transparency.
-- The atlas cells for these tiles are no longer drawn, but stay in `blocks.png` as placeholders, and `block_mean` rows come from the layers.
+- `block_mean` rows come from the layers.
 
 ## How it draws
 
@@ -43,7 +43,7 @@ A change passes if the median frame time at spawn stays at 16.7 ms or lower (60f
 
 ## Open
 
-- `blocks.png` still holds every tile, painted ones included, which the mesher and `block_mean` index by cell. Shrinking it to leaves, flora and water needs a new cell order.
+- The mesher and `block_mean` still index tiles by their old atlas cell (`Tile::atlas_cell`), now only an id. Renaming it needs no renumbering.
 - A log's end grain is a world-space layer, so its rings aren't centred on the trunk, and a chamfered trunk top blends the end grain, not the bark, into the wall at its rim.
 - Leaves repeat per block, so a faint block grid shows in near canopies, and tree crowns are still cubes. Painting them in world space needs normals in the shadow pass or a mesher change.
 - Blended material boundaries are not built, and the biome is not available to the shaders, so painterly constants can't vary per biome yet. The one thing they know of it is the frost factor of the biome under the camera (`docs/climate.md`).

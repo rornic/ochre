@@ -309,7 +309,7 @@ const GRASS_HOT_WET: [f32; 3] = [40.0, 130.0, 12.0];
 const GRASS_COLD_DRY: [f32; 3] = [140.0, 128.0, 88.0];
 const GRASS_COLD_WET: [f32; 3] = [30.0, 96.0, 24.0];
 
-// The mean linear value of the greyscale grass and leaves tiles in blocks.png, which vertex
+// The mean linear value of the greyscale grass and leaves tiles in their materials, which vertex
 // colours tint: leaves share grass's tint, and their darker tile makes them a deeper green.
 const GRASS_TEXTURE_MEAN: f32 = 0.5;
 const LEAF_TEXTURE_MEAN: f32 = 0.25;
