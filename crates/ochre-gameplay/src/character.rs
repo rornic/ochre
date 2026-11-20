@@ -4,13 +4,13 @@ use bevy::{
     math::{BVec3, EulerRot, I64Vec3, Quat, Vec2, Vec3},
 };
 use ochre_base::block::BlockType;
-use ochre_terrain::{chunk::ChunkCoordinate, world::World};
+use ochre_terrain::{chunk::ChunkCoordinate, floor::Floor, lod::LodKey, world::World};
 
 use crate::collision::{move_and_collide, move_and_step, Aabb};
 use crate::contact::{Body, Walker};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Movement {
+pub enum Movement {
     /// Flying anywhere, through anything, the way the camera is facing.
     #[default]
     Fly,
@@ -20,7 +20,7 @@ pub(crate) enum Movement {
 
 /// What the body remembers from one step to the next. Position is the body's `Transform`.
 #[derive(Component, Debug, Default, Clone, PartialEq)]
-pub(crate) struct CharacterState {
+pub struct CharacterState {
     pub movement: Movement,
     pub velocity: Vec3,
     pub grounded: bool,
@@ -38,7 +38,7 @@ impl CharacterState {
 
 /// What the player wants this step. The only thing a step reads besides the state and the world.
 #[derive(Component, Debug, Default, Clone, PartialEq)]
-pub(crate) struct MovementInput {
+pub struct MovementInput {
     /// Right and back, each -1, 0 or 1.
     pub across: Vec2,
     /// Up while flying, -1, 0 or 1.
@@ -55,13 +55,64 @@ pub(crate) struct MovementInput {
 
 /// What a step did that the player sees or hears, for the presentation to turn into bob, sound and view kick.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub(crate) struct StepEvents {
+pub struct StepEvents {
     // how far a step up lifted the body, else zero
     pub rose: f32,
     // how fast it was falling on the step it landed, else zero
     pub landed: f32,
     // where it pushed off on the step it jumped
     pub jumped: Option<Vec3>,
+}
+
+/// What a step collides with. A server and a client must answer these the same way for the same position, or their steps part.
+pub trait MovementEnvironment {
+    fn block(&self, at: I64Vec3) -> BlockType;
+    /// Whether the block's chunk is loaded. Ground not loaded yet is solid, so the body waits for it.
+    fn generated(&self, at: I64Vec3) -> bool;
+    /// The sculpted ground's triangles between two corners, in world units, in a fixed order.
+    fn triangles(&self, min: Vec3, max: Vec3) -> Vec<[Vec3; 3]>;
+    /// The highest sculpted surface from `below` to `above` a point, facing up at least `up`.
+    fn ground(&self, at: Vec3, below: f32, above: f32, up: f32) -> Option<f32>;
+}
+
+/// The world's blocks and the sculpted ground of the chunk groups round the body.
+pub struct WorldEnvironment<'a> {
+    world: &'a World,
+    // sorted by key, so the triangles come in the same order whatever order the groups were found in
+    grounds: Vec<(Vec3, &'a Floor)>,
+}
+
+impl<'a> WorldEnvironment<'a> {
+    /// `grounds` are the groups' keys, where each sits and its floor.
+    pub fn new(world: &'a World, grounds: impl IntoIterator<Item = (LodKey, Vec3, &'a Floor)>) -> Self {
+        let mut grounds: Vec<_> = grounds.into_iter().collect();
+        grounds.sort_by_key(|(key, _, _)| (key.level, key.coord.to_array()));
+        Self { world, grounds: grounds.into_iter().map(|(_, at, floor)| (at, floor)).collect() }
+    }
+}
+
+impl MovementEnvironment for WorldEnvironment<'_> {
+    fn block(&self, at: I64Vec3) -> BlockType {
+        self.world.get_block_at(at)
+    }
+
+    fn generated(&self, at: I64Vec3) -> bool {
+        self.world.is_chunk_generated(ChunkCoordinate::containing(at))
+    }
+
+    fn triangles(&self, min: Vec3, max: Vec3) -> Vec<[Vec3; 3]> {
+        self.grounds
+            .iter()
+            .flat_map(|&(at, floor)| floor.near(min - at, max - at).into_iter().map(move |t| t.map(|p| p + at)))
+            .collect()
+    }
+
+    fn ground(&self, p: Vec3, below: f32, above: f32, up: f32) -> Option<f32> {
+        self.grounds
+            .iter()
+            .filter_map(|&(at, floor)| floor.surface_facing(p - at, below, above, up).map(|(y, _)| y + at.y))
+            .max_by(f32::total_cmp)
+    }
 }
 
 // Blocks a second, and how much faster while Shift is held.
@@ -111,15 +162,12 @@ const SHORT_HOP_GRAVITY: f32 = 2.5;
 // Landing: the slowest fall that counts.
 const LAND_MIN_SPEED: f32 = 7.0;
 
-/// Moves the body at `position` by `dt` seconds of `input`. `floor_at` is the highest sculpted surface from `below` to `above` a point
-/// facing at least `up`, and `sculpted` the sculpted triangles between two corners, both in world units.
-pub(crate) fn step_character(
+/// Moves the body at `position` by `dt` seconds of `input` through `env`.
+pub fn step_character(
     state: &mut CharacterState,
     position: &mut Vec3,
     input: &MovementInput,
-    world: &World,
-    floor_at: &dyn Fn(Vec3, f32, f32, f32) -> Option<f32>,
-    sculpted: &dyn Fn(Vec3, Vec3) -> Vec<[Vec3; 3]>,
+    env: &impl MovementEnvironment,
     dt: f32,
 ) -> StepEvents {
     if input.toggle_fly {
@@ -138,28 +186,25 @@ pub(crate) fn step_character(
             *position += (facing * across + Vec3::Y * input.lift) * speed;
             StepEvents::default()
         }
-        Movement::Walk => walk(world, state, position, input, across, dt, floor_at, sculpted),
+        Movement::Walk => walk(env, state, position, input, across, dt),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn walk(
-    world: &World,
+    env: &impl MovementEnvironment,
     state: &mut CharacterState,
     position: &mut Vec3,
     input: &MovementInput,
     across: Vec3,
     dt: f32,
-    floor_at: &dyn Fn(Vec3, f32, f32, f32) -> Option<f32>,
-    sculpted: &dyn Fn(Vec3, Vec3) -> Vec<[Vec3; 3]>,
 ) -> StepEvents {
     let mut events = StepEvents::default();
     // swimming until the chest is out, so the head bobs well clear of the water
     let chest = *position + Vec3::Y * SWIM_CHEST;
-    let swimming = world.get_block_at(chest.round().as_i64vec3()) == BlockType::Water;
+    let swimming = env.block(chest.round().as_i64vec3()) == BlockType::Water;
     // just over the feet, so wading through a shallow river slows the player as swimming does
     let feet = *position + Vec3::Y * 0.1;
-    let wading = world.get_block_at(feet.round().as_i64vec3()) == BlockType::Water;
+    let wading = env.block(feet.round().as_i64vec3()) == BlockType::Water;
     let jumping = input.jump;
 
     let mut speed = WALK_SPEED;
@@ -212,19 +257,19 @@ fn walk(
     let start = *position;
     let delta = state.velocity * dt;
     let reach = Vec3::new(1.5, 1.5, 1.5);
-    let ground_near = sculpted(start - reach + delta.min(Vec3::ZERO), start + reach + Vec3::Y * 2.0 + delta.max(Vec3::ZERO));
-    let generated = |block: I64Vec3| world.is_chunk_generated(ChunkCoordinate::containing(block));
+    let ground_near = env.triangles(start - reach + delta.min(Vec3::ZERO), start + reach + Vec3::Y * 2.0 + delta.max(Vec3::ZERO));
+    let generated = |block: I64Vec3| env.generated(block);
     let mut walled = false;
     let (moved_to, hit) = if ground_near.is_empty() {
         // Chunks not generated yet are solid, so the player waits where it is for the ground to load rather than falling through it.
-        let solid = |block: I64Vec3| !generated(block) || world.get_block_at(block).is_solid();
+        let solid = |block: I64Vec3| !generated(block) || env.block(block).is_solid();
         move_and_step(start + BLOCK_CORNER, delta, BODY, step, solid)
     } else {
         // sculpted ground collides as its surface, walls and ground apart, see `Walker`; trees and unloaded chunks as blocks
-        let solid = |block: I64Vec3| !generated(block) || matches!(world.get_block_at(block), BlockType::Leaves | BlockType::Log);
+        let solid = |block: I64Vec3| !generated(block) || matches!(env.block(block), BlockType::Leaves | BlockType::Log);
         let across_blocks = |feet: Vec3, delta: Vec3| move_and_collide(feet + BLOCK_CORNER, delta, BODY, solid).0 - BLOCK_CORNER;
-        let ground = |p: Vec3, below: f32, above: f32| floor_at(p, below, above, GROUND_FACING);
-        let support = |p: Vec3, below: f32, above: f32| floor_at(p, below, above, 1e-3);
+        let ground = |p: Vec3, below: f32, above: f32| env.ground(p, below, above, GROUND_FACING);
+        let support = |p: Vec3, below: f32, above: f32| env.ground(p, below, above, 1e-3);
         let walker = Walker {
             body: &SPHERES,
             triangles: &ground_near,
@@ -297,7 +342,7 @@ mod tests {
     }
 
     fn step(world: &World, state: &mut CharacterState, at: &mut Vec3, input: &MovementInput) -> StepEvents {
-        step_character(state, at, input, world, &|_, _, _, _| None, &|_, _| vec![], DT)
+        step_character(state, at, input, &WorldEnvironment::new(world, []), DT)
     }
 
     fn settle(world: &World, state: &mut CharacterState, at: &mut Vec3) {
@@ -364,5 +409,29 @@ mod tests {
         let start = at;
         step(&world, &mut state, &mut at, &up);
         assert!((at.y - start.y - MOVE_SPEED * DT).abs() < 1e-5);
+    }
+
+    // A flat quad over x, z in 0..16 at `y`.
+    fn quad(y: f32) -> Floor {
+        let (a, b, c, d) = (Vec3::new(0.0, y, 0.0), Vec3::new(16.0, y, 0.0), Vec3::new(16.0, y, 16.0), Vec3::new(0.0, y, 16.0));
+        Floor::new(vec![[a, b, c], [a, c, d]])
+    }
+
+    #[test]
+    fn groups_found_in_any_order_give_the_same_triangles_and_ground() {
+        let world = flat_world();
+        let (low, high) = (quad(8.0), quad(8.5));
+        let group = |x: i64| LodKey { level: 1, coord: I64Vec3::new(x, 0, 0) };
+        let grounds = [(group(0), Vec3::ZERO, &low), (group(1), Vec3::new(0.0, 0.0, 0.0), &high), (group(-1), Vec3::new(-16.0, 0.0, 0.0), &low)];
+        let forward = WorldEnvironment::new(&world, grounds);
+        let reversed = WorldEnvironment::new(&world, grounds.into_iter().rev());
+        let (min, max) = (Vec3::new(-20.0, 7.0, -1.0), Vec3::new(20.0, 9.0, 17.0));
+        let bits = |t: Vec<[Vec3; 3]>| t.into_iter().map(|t| t.map(|p| p.to_array().map(f32::to_bits))).collect::<Vec<_>>();
+        let triangles = bits(forward.triangles(min, max));
+        assert!(!triangles.is_empty());
+        assert_eq!(triangles, bits(reversed.triangles(min, max)));
+        let at = Vec3::new(4.0, 8.0, 4.0);
+        assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), Some(8.5));
+        assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), reversed.ground(at, 1.0, 1.0, 0.0));
     }
 }

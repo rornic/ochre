@@ -3,7 +3,7 @@
 
 pub mod birds;
 pub mod breaking;
-mod character;
+pub mod character;
 mod collision;
 mod contact;
 pub mod critters;
