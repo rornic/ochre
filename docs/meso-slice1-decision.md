@@ -43,8 +43,7 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 
 ## Deferred
 
-- **Desert canyons.** A meso-scale linear cut that drains: its own primitive, not a row, with a river through its floor.
-- **Micro formations** (hoodoos, standing rocks, boulder fields, small arches) in `rocks.rs`, which only knows glacial erratics and termite mounds. Block-level, so not a map-height stamp. It would help grassland, taiga and forest too.
+- **Micro formations beyond the desert** (standing rocks, boulder fields, small arches) for grassland, taiga and forest in `rocks.rs`. The desert now has ledges, small rocks, standing rocks, arches and hoodoos (clusters of tall pillars under wide caps) by extending the tundra's tables.
 - **Glacial forms on tundra and taiga** at their real proportions (eskers, kettles).
 - **Shelter:** exposure over wider windows feeding temperature and humidity (design item 14).
 - **A seam check** at the flattening's edge round each landmark (design item 12).

@@ -95,7 +95,7 @@ pub struct Landmark {
 
 // The biome of each cell, if the table has rows for it and a landmark could stand on the ground: the climate's own classification of its warmth
 // at height and its moisture, before the climate pass decides.
-fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
+pub(super) fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
     let dim = map.dim();
     let (temperature, moisture) = moisture_field(map);
     let moisture = blur_box(&moisture, dim, FIELD_BLUR);

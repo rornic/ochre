@@ -31,7 +31,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 113;
+pub const GENERATOR_VERSION: u32 = 114;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -172,6 +172,8 @@ pub struct WorldMap {
     pub valley: Vec<u8>,
     /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only, see `valleys::run_alpine`.
     pub alpine: Vec<u8>,
+    /// Each cell on a canyon's line: the way to the next (`NEIGHBOURS` index plus one) in the low nibble, its slot's depth in tens of blocks in the high.
+    pub canyon: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
     /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
@@ -245,6 +247,7 @@ impl WorldMap {
             ford: vec![0; cells],
             valley: vec![0; cells],
             alpine: vec![0; cells],
+            canyon: vec![0; cells],
             exposure: vec![128; cells],
             water_closeness: vec![0; cells],
             features: Vec::new(),
@@ -527,6 +530,7 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     shapes::cirques(&mut map, knobs.cirques);
     // with the other shapes, so the passes connect round them; the steppe's flattening leaves them alone
     let (placed, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    meso::canyons::run(&mut map, knobs.canyons, &landmarks);
     let bowls = meso::landmarks::bowl_cells(map.dim(), &placed);
     lap("landmarks");
     // ranges get their passes before the rivers settle into the ground they leave

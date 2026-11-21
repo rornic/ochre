@@ -48,6 +48,13 @@ const ARCH_CLEARANCE: f64 = 4.5;
 // How far height may differ over a giant's feet.
 const GIANT_SPREAD: i64 = 8;
 
+// The desert's hoodoos: clusters of one to three tall pillars, each under a wide thin cap.
+const HOODOO_SHARE: f64 = 0.4;
+const HOODOO_RADIUS: (f64, f64) = (2.2, 3.6);
+const HOODOO_SQUASH: (f64, f64) = (3.0, 4.4);
+const HOODOO_CAP: f64 = 1.8;
+const HOODOO_SCATTER: f64 = 8.0;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RockKind {
     /// A lone boulder a glacier left, half sunk in the ground.
@@ -84,6 +91,26 @@ fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
         // the steppe has only its outcrops, one now and then, more on crests and valley walls
         "steppe" => Some((RockKind::Erratic, 0.1)),
         "savanna" => Some((RockKind::Mound, 0.075)),
+        // ledges of the beds that weathered out of its mesas
+        "desert" => Some((RockKind::Erratic, 0.6)),
+        _ => None,
+    }
+}
+
+// The share of the small rocks' cells a biome holds one in.
+fn small_share(biome: Option<&str>) -> Option<f64> {
+    match biome? {
+        "tundra" => Some(SMALL_SHARE),
+        "desert" => Some(SMALL_SHARE * 0.4),
+        _ => None,
+    }
+}
+
+// The share of the giants' cells a biome holds one in.
+fn giant_share(biome: Option<&str>) -> Option<f64> {
+    match biome? {
+        "tundra" => Some(GIANT_SHARE),
+        "desert" => Some(GIANT_SHARE * 2.0),
         _ => None,
     }
 }
@@ -176,10 +203,11 @@ fn small_in_cell(
     let x = cx * SMALL_CELL + ((seed >> 16) % SMALL_CELL as u64) as i64;
     let z = cz * SMALL_CELL + ((seed >> 24) % SMALL_CELL as u64) as i64;
     let biome = heights.biome(x, z);
-    if noise.biomes().name(biome) != Some("tundra") || noise.biomes().modifier(biome) != Modifier::None {
+    let own = small_share(noise.biomes().name(biome))?;
+    if noise.biomes().modifier(biome) != Modifier::None {
         return None;
     }
-    let share = (SMALL_SHARE * field(noise.seed() as u64, x, z)).min(1.0);
+    let share = (own * field(noise.seed() as u64, x, z)).min(1.0);
     if frac(seed, 0) >= share {
         return None;
     }
@@ -220,13 +248,21 @@ fn giant_in_cell(
     let x = cx * GIANT_CELL + margin + ((seed >> 16) % span) as i64;
     let z = cz * GIANT_CELL + margin + ((seed >> 24) % span) as i64;
     let biome = heights.biome(x, z);
-    if frac(seed, 0) >= GIANT_SHARE
-        || noise.biomes().name(biome) != Some("tundra")
-        || noise.biomes().modifier(biome) != Modifier::None
-    {
+    let name = noise.biomes().name(biome);
+    let Some(own) = giant_share(name) else {
+        return Vec::new();
+    };
+    if frac(seed, 0) >= own || noise.biomes().modifier(biome) != Modifier::None {
         return Vec::new();
     }
-    let lumps = if frac(seed, 8) < GIANT_ARCH_SHARE { arch(x, z, seed) } else { vec![lone_giant(x, z, seed)] };
+    let hoodoos = name == Some("desert") && frac(seed, 8) < HOODOO_SHARE;
+    let lumps = if hoodoos {
+        hoodoo_cluster(x, z, seed)
+    } else if frac(seed, 16) < GIANT_ARCH_SHARE {
+        arch(x, z, seed)
+    } else {
+        vec![lone_giant(x, z, seed)]
+    };
     // each foot dry, over the sea's reach, and the lot on ground that doesn't vary too much to stand on
     let (mut low, mut high) = (i64::MAX, i64::MIN);
     let mut grounds = Vec::new();
@@ -250,16 +286,55 @@ fn giant_in_cell(
     }
     // a capstone stands over the lower pillar's ground, and a pillar or boulder on its own
     let capstone = grounds.iter().copied().min().unwrap_or(low);
+    // a hoodoo's cap follows the pillar before it
+    let mut pillar_ground = low;
     lumps
         .into_iter()
         .zip(grounds)
         .map(|(mut lump, ground)| {
-            let ground = if lump.lift > 0.0 { capstone } else { ground };
+            let ground = match (lump.lift > 0.0, hoodoos) {
+                (true, true) => pillar_ground,
+                (true, false) => capstone,
+                _ => ground,
+            };
+            pillar_ground = ground;
             lump.base.y = ground;
             lump.stone = stone_of(RockKind::Erratic, &mut *noise.rock_column(lump.base.x, lump.base.z), ground);
             lump
         })
         .collect()
+}
+
+// A cluster of pillars, each under its cap, in pairs; `base.y` is for the caller to set.
+fn hoodoo_cluster(x: i64, z: i64, seed: u64) -> Vec<Rock> {
+    let count = 1 + (frac(seed, 4) * 3.0) as u64;
+    let mut lumps = Vec::new();
+    for k in 0..count {
+        let h = hash(seed ^ (0x0040_0D00 + k), 0, 0);
+        let (dx, dz) = if k == 0 { (0.0, 0.0) } else { ((frac(h, 0) * 2.0 - 1.0) * HOODOO_SCATTER, (frac(h, 16) * 2.0 - 1.0) * HOODOO_SCATTER) };
+        let at = I64Vec3::new(x + dx.round() as i64, 0, z + dz.round() as i64);
+        let radius = HOODOO_RADIUS.0 + (HOODOO_RADIUS.1 - HOODOO_RADIUS.0) * frac(h, 32);
+        let squash = HOODOO_SQUASH.0 + (HOODOO_SQUASH.1 - HOODOO_SQUASH.0) * frac(h, 48);
+        let make = |radius: f64, squash: f64, lift: f64, aspect: f64| Rock {
+            kind: RockKind::Erratic,
+            base: at,
+            radius,
+            height: 0.0,
+            squash,
+            aspect,
+            direction: ((h >> 60) & 3) as u8,
+            lift,
+            stone: BlockType::Rock,
+            seed: h,
+        };
+        let cap = (radius * HOODOO_CAP, 0.28);
+        // the cap's middle sits half its thickness under the pillar's top
+        let top = radius * (0.25 + squash);
+        let lift = top - cap.0 * cap.1 * 0.5 - cap.0 * 0.25;
+        lumps.push(make(radius, squash, 0.0, 0.85));
+        lumps.push(make(cap.0, cap.1, lift, 1.0));
+    }
+    lumps
 }
 
 // A tall boulder: round, not squashed, as high as it is wide.
@@ -329,7 +404,7 @@ fn rock_in_cell(
     // a mountain's slopes and its screes are not where a glacier dropped one or termites build
     let share = match kind {
         // the tundra's `CELL` grid holds only the ledges now, a share of what it once held as boulders
-        RockKind::Erratic if noise.biomes().name(biome) == Some("tundra") => (share * OUTCROP_SHARE * field(noise.seed() as u64, x, z)).min(1.0),
+        RockKind::Erratic if matches!(noise.biomes().name(biome), Some("tundra" | "desert")) => (share * OUTCROP_SHARE * field(noise.seed() as u64, x, z)).min(1.0),
         RockKind::Erratic if noise.biomes().name(biome) == Some("steppe") => {
             let (exposure, wall) = (noise.exposure(x as f64, z as f64) as f64, noise.valley_wall(x as f64, z as f64) as f64);
             (share * OUTCROP_SHARE * (0.4 + 1.2 * exposure) * (1.0 + 8.0 * wall)).min(1.0)
@@ -355,7 +430,7 @@ fn rock_in_cell(
     let (mut low, mut high) = (i64::MAX, i64::MIN);
     let growth = ((seed >> 32) % 1000) as f64 / 1000.0;
     // an outcrop, where the biome has them: wide, low and on ground that may vary under it
-    let outcrop = kind == RockKind::Erratic && matches!(noise.biomes().name(biome), Some("tundra" | "steppe"));
+    let outcrop = kind == RockKind::Erratic && matches!(noise.biomes().name(biome), Some("tundra" | "steppe" | "desert"));
     let (spread, foot) = if outcrop {
         (OUTCROP_SPREAD, ((OUTCROP_RADIUS.0 + (OUTCROP_RADIUS.1 - OUTCROP_RADIUS.0) * growth) * 0.5).round() as i64)
     } else {
@@ -426,11 +501,13 @@ impl Rock {
         mut set: impl FnMut(IVec3, BlockType),
     ) {
         let reach = self.radius.ceil() as i64 + 1;
+        // a pillar is taller than it is wide
+        let tall = (self.radius * (self.squash + 0.25)).ceil() as i64 + 1;
         let up = match self.kind {
-            RockKind::Erratic => reach + self.lift.ceil() as i64,
+            RockKind::Erratic => reach.max(tall) + self.lift.ceil() as i64,
             RockKind::Mound => self.height.ceil() as i64 + 1,
         };
-        let low = self.base - I64Vec3::new(reach, reach, reach);
+        let low = self.base - I64Vec3::new(reach, reach.max(tall), reach);
         let high = self.base + I64Vec3::new(reach, up, reach);
         let first = ((low - origin).div_euclid(I64Vec3::splat(scale)))
             .as_ivec3()
@@ -675,6 +752,32 @@ mod tests {
         let boulder = Rock { stone: BlockType::Basalt, ..rock(RockKind::Erratic, 4.0, 0.0) };
         assert_eq!(BlockType::Basalt, boulder.block());
         assert_eq!(BlockType::Dirt, rock(RockKind::Mound, 3.0, 6.0).block());
+    }
+
+    #[test]
+    fn a_hoodoo_is_a_tall_pillar_under_a_wider_cap_that_rests_on_it() {
+        for seed in 0..40u64 {
+            let lumps: Vec<Rock> = hoodoo_cluster(40, -20, seed).into_iter().map(|l| Rock { base: I64Vec3::new(l.base.x, 100, l.base.z), ..l }).collect();
+            assert!(lumps.len().is_multiple_of(2) && (2..=6).contains(&lumps.len()), "{} lumps", lumps.len());
+            for pair in lumps.chunks(2) {
+                let (pillar, cap) = (blocks(&pair[0]), blocks(&pair[1]));
+                let span = |found: &[IVec3], f: fn(&IVec3) -> i32| found.iter().map(f).max().unwrap() - found.iter().map(f).min().unwrap() + 1;
+                assert!(span(&pillar, |p| p.y) as f64 >= 2.0 * span(&pillar, |p| p.x) as f64, "seed {seed}: a pillar {} tall, {} wide", span(&pillar, |p| p.y), span(&pillar, |p| p.x));
+                assert!(span(&cap, |p| p.x) > span(&pillar, |p| p.x), "seed {seed}: the cap is no wider than its pillar");
+                let top = pillar.iter().map(|p| p.y).max().unwrap();
+                assert!(cap.iter().any(|p| p.y <= top) && cap.iter().any(|p| p.y >= top), "seed {seed}: the cap does not rest on the pillar's top");
+            }
+            let widest = lumps.iter().map(|l| l.radius).fold(0.0, f64::max);
+            assert!(widest + HOODOO_SCATTER + 1.0 <= ROCK_REACH as f64, "a hoodoo reaches past what chunks look for");
+        }
+    }
+
+    #[test]
+    fn the_desert_has_ledges_small_rocks_and_giants_in_fewer_places_than_the_tundra() {
+        assert_eq!(RockKind::Erratic, share(Some("desert")).unwrap().0);
+        assert!(small_share(Some("desert")).unwrap() < small_share(Some("tundra")).unwrap());
+        assert!(giant_share(Some("desert")).unwrap() > giant_share(Some("tundra")).unwrap());
+        assert!(giant_share(Some("grassland")).is_none() && small_share(Some("steppe")).is_none());
     }
 
     #[test]

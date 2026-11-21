@@ -29,6 +29,8 @@ const SALT_KARST: u32 = 0xC4A0_000F;
 const SALT_CIRQUES: u32 = 0xC4A0_0010;
 const SALT_VALLEYS: u32 = 0xC4A0_0011;
 const SALT_LANDMARKS: u32 = 0xC4A0_0012;
+const SALT_CANYONS: u32 = 0xC4A0_0013;
+const CANYONS: (f64, f64) = (0.0, 5.0);
 const INSELBERGS: (f64, f64) = (0.0, 9.0);
 const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
 const CIRQUES: (f64, f64) = (0.0, 7.0);
@@ -76,6 +78,8 @@ pub(crate) struct LandformKnobs {
     pub valley_share: f64,
     /// Cells between steppe and tundra landmarks, 70 to 110.
     pub landmark_apart: f64,
+    /// How many canyons a desert world cuts, 0 to 4.
+    pub canyons: u32,
 }
 
 impl LandformKnobs {
@@ -91,6 +95,7 @@ impl LandformKnobs {
             cirques: draw(seed, SALT_CIRQUES, CIRQUES).floor() as u32,
             valley_share: round(draw(seed, SALT_VALLEYS, VALLEY_SHARE), 3),
             landmark_apart: draw(seed, SALT_LANDMARKS, LANDMARK_APART).floor(),
+            canyons: draw(seed, SALT_CANYONS, CANYONS).floor() as u32,
         }
     }
 }
