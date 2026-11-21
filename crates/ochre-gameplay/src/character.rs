@@ -2,9 +2,10 @@ use bevy::{
     ecs::component::Component,
     log::info,
     math::{BVec3, EulerRot, I64Vec3, Quat, Vec2, Vec3},
+    transform::components::Transform,
 };
 use ochre_base::block::BlockType;
-use ochre_terrain::{chunk::ChunkCoordinate, floor::Floor, lod::LodKey, world::World};
+use ochre_terrain::{chunk::ChunkCoordinate, floor::Floor, group::ChunkGroup, lod::LodKey, world::World};
 
 use crate::collision::{move_and_collide, move_and_step, Aabb};
 use crate::contact::{Body, Walker};
@@ -90,6 +91,20 @@ impl<'a> WorldEnvironment<'a> {
         let mut grounds: Vec<_> = grounds.into_iter().collect();
         grounds.sort_by_key(|(key, _, _)| (key.level, key.coord.to_array()));
         Self { world, grounds: grounds.into_iter().map(|(_, at, floor)| (at, floor)).collect() }
+    }
+}
+
+/// The group a body at `at` is in, whose ring of neighbours is where it can collide.
+pub fn home_group(at: Vec3) -> LodKey {
+    LodKey::containing(ChunkCoordinate::containing((at + BLOCK_CORNER).floor().as_i64vec3()), 1)
+}
+
+impl<'a> WorldEnvironment<'a> {
+    /// The environment of a body at `at`: the floors of the groups at its level within one of its home group.
+    pub fn around(world: &'a World, at: Vec3, groups: impl IntoIterator<Item = (&'a ChunkGroup, &'a Transform, &'a Floor)>) -> Self {
+        let home = home_group(at);
+        let near = groups.into_iter().filter(|(group, _, _)| group.key.level == home.level && (group.key.coord - home.coord).abs().max_element() <= 1);
+        Self::new(world, near.map(|(group, at, floor)| (group.key, at.translation, floor)))
     }
 }
 
@@ -435,5 +450,18 @@ mod tests {
         let at = Vec3::new(4.0, 8.0, 4.0);
         assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), Some(8.5));
         assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), reversed.ground(at, 1.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn around_takes_the_groups_touching_the_home_group_at_its_level() {
+        let world = flat_world();
+        let floor = quad(8.0);
+        let at = |x: f32| Transform::from_xyz(x, 0.0, 0.0);
+        let group = |level: u8, x: i64| ChunkGroup { key: LodKey { level, coord: I64Vec3::new(x, 0, 0) } };
+        // a body in group 0 of level 1, which spans 32 blocks
+        let groups = [(group(1, 0), at(0.0)), (group(1, 1), at(32.0)), (group(1, 2), at(64.0)), (group(2, 0), at(0.0)), (group(1, -2), at(-64.0))];
+        let env = WorldEnvironment::around(&world, Vec3::new(4.0, 8.0, 4.0), groups.iter().map(|(g, t)| (g, t, &floor)));
+        let found = env.triangles(Vec3::new(-200.0, 7.0, -1.0), Vec3::new(300.0, 9.0, 17.0));
+        assert_eq!(found.len(), 4, "two quads of two triangles: the home group and its neighbour");
     }
 }
