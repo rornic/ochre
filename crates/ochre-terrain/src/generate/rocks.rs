@@ -48,12 +48,14 @@ const ARCH_CLEARANCE: f64 = 4.5;
 // How far height may differ over a giant's feet.
 const GIANT_SPREAD: i64 = 8;
 
-// The desert's hoodoos: clusters of one to three tall pillars, each under a wide thin cap.
+// The desert's hoodoos: clusters of three to seven thick pillars of varied height, each under a small thick cap.
 const HOODOO_SHARE: f64 = 0.4;
-const HOODOO_RADIUS: (f64, f64) = (2.2, 3.6);
-const HOODOO_SQUASH: (f64, f64) = (3.0, 4.4);
-const HOODOO_CAP: f64 = 1.8;
-const HOODOO_SCATTER: f64 = 8.0;
+const HOODOO_RADIUS: (f64, f64) = (4.5, 6.5);
+const HOODOO_SQUASH: (f64, f64) = (2.4, 4.0);
+const HOODOO_CAP: f64 = 1.3;
+const HOODOO_SCATTER: f64 = 10.0;
+// How far height may differ over a hoodoo cluster's feet.
+const HOODOO_SPREAD: i64 = 12;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RockKind {
@@ -281,7 +283,8 @@ fn giant_in_cell(
         grounds.push(here);
     }
     let (gradient_x, gradient_z) = heights.gradient(x, z);
-    if high - low > GIANT_SPREAD || low < WATER_LEVEL + SEA_CLEARANCE || gradient_x.abs() + gradient_z.abs() > 1.2 {
+    let spread = if hoodoos { HOODOO_SPREAD } else { GIANT_SPREAD };
+    if high - low > spread || low < WATER_LEVEL + SEA_CLEARANCE || gradient_x.abs() + gradient_z.abs() > 1.2 {
         return Vec::new();
     }
     // a capstone stands over the lower pillar's ground, and a pillar or boulder on its own
@@ -307,7 +310,7 @@ fn giant_in_cell(
 
 // A cluster of pillars, each under its cap, in pairs; `base.y` is for the caller to set.
 fn hoodoo_cluster(x: i64, z: i64, seed: u64) -> Vec<Rock> {
-    let count = 1 + (frac(seed, 4) * 3.0) as u64;
+    let count = 3 + (frac(seed, 4) * 5.0) as u64;
     let mut lumps = Vec::new();
     for k in 0..count {
         let h = hash(seed ^ (0x0040_0D00 + k), 0, 0);
@@ -327,7 +330,7 @@ fn hoodoo_cluster(x: i64, z: i64, seed: u64) -> Vec<Rock> {
             stone: BlockType::Rock,
             seed: h,
         };
-        let cap = (radius * HOODOO_CAP, 0.28);
+        let cap = (radius * HOODOO_CAP, 0.4);
         // the cap's middle sits half its thickness under the pillar's top
         let top = radius * (0.25 + squash);
         let lift = top - cap.0 * cap.1 * 0.5 - cap.0 * 0.25;
@@ -758,7 +761,7 @@ mod tests {
     fn a_hoodoo_is_a_tall_pillar_under_a_wider_cap_that_rests_on_it() {
         for seed in 0..40u64 {
             let lumps: Vec<Rock> = hoodoo_cluster(40, -20, seed).into_iter().map(|l| Rock { base: I64Vec3::new(l.base.x, 100, l.base.z), ..l }).collect();
-            assert!(lumps.len().is_multiple_of(2) && (2..=6).contains(&lumps.len()), "{} lumps", lumps.len());
+            assert!(lumps.len().is_multiple_of(2) && (6..=14).contains(&lumps.len()), "{} lumps", lumps.len());
             for pair in lumps.chunks(2) {
                 let (pillar, cap) = (blocks(&pair[0]), blocks(&pair[1]));
                 let span = |found: &[IVec3], f: fn(&IVec3) -> i32| found.iter().map(f).max().unwrap() - found.iter().map(f).min().unwrap() + 1;
@@ -767,6 +770,8 @@ mod tests {
                 let top = pillar.iter().map(|p| p.y).max().unwrap();
                 assert!(cap.iter().any(|p| p.y <= top) && cap.iter().any(|p| p.y >= top), "seed {seed}: the cap does not rest on the pillar's top");
             }
+            let top = lumps.chunks(2).map(|pair| blocks(&pair[0]).iter().map(|p| p.y).max().unwrap() - 100).max().unwrap();
+            assert!((12..=30).contains(&top), "seed {seed}: a pillar stands {top} over the ground");
             let widest = lumps.iter().map(|l| l.radius).fold(0.0, f64::max);
             assert!(widest + HOODOO_SCATTER + 1.0 <= ROCK_REACH as f64, "a hoodoo reaches past what chunks look for");
         }
