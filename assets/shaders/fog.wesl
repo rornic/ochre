@@ -29,6 +29,12 @@ const THIN_FROM: f32 = 150.0;
 const THIN_FULL: f32 = 500.0;
 const THIN_TO: f32 = 0.25;
 
+// Looking steeply down from well above the ground the air in the way is thin: the haze fades over these look-down slopes (drop over distance) and
+// drops, in blocks, to `DOWN_TO` of itself, so it keeps to the horizon and doesn't wash the land under a high camera.
+const DOWN_SLOPE: vec2<f32> = vec2<f32>(0.08, 0.5);
+const DOWN_DROP: vec2<f32> = vec2<f32>(60.0, 250.0);
+const DOWN_TO: f32 = 0.2;
+
 // Mist: where the camera's ground is cold enough for frost, by the sum `frost.wesl` does, a low mist of its own lies over the fog's. Its
 // density is `MIST_PER_BLOCK` at the ground under the camera and falls by an e-fold every `MIST_HEIGHT` blocks above it, so it pools in
 // hollows and thins away as the camera climbs. `MIST_MAX` of the view is as much as it hides, and the haze goes `MIST_PALE` of the way
@@ -92,7 +98,9 @@ fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) ->
     let chill = mist(view_position);
     sky = mix(sky, MIST_COLOUR * dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722)), MIST_PALE * chill);
     let thin = mix(1.0, THIN_TO, smoothstep(THIN_FROM, THIN_FULL, view_position.y - f32(constants::WATER_LEVEL)));
-    let fog_opacity = mix(amount * fog.base_color.a * thin, 1.0, smoothstep(EDGE_FADE_START, 1.0, distance / end));
+    let drop = view_position.y - uncurved(world_position).y;
+    let down = smoothstep(DOWN_SLOPE.x, DOWN_SLOPE.y, drop / max(distance, 1.0)) * smoothstep(DOWN_DROP.x, DOWN_DROP.y, drop);
+    let fog_opacity = mix(amount * fog.base_color.a * thin * mix(1.0, DOWN_TO, down), 1.0, smoothstep(EDGE_FADE_START, 1.0, distance / end));
     let mist_opacity = mist_hides(view_position, uncurved(world_position).y, distance, chill);
     let opacity = 1.0 - (1.0 - fog_opacity) * (1.0 - mist_opacity);
     return vec4<f32>(mix(color.rgb, sky, opacity), color.a);

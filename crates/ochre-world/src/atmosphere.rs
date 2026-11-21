@@ -138,12 +138,13 @@ impl Atmosphere {
             shadow_tint: SHADOW,
             shadow_amount: SHADOW_AMOUNT,
         };
-        for (weight, row) in [(feel.cold, &COLD), (feel.hot, &HOT), (feel.jungle, &JUNGLE), (feel.forest, &FOREST), (feel.steppe, &STEPPE), (feel.mountain, &MOUNTAIN), (feel.volcanic, &VOLCANIC)] {
+        // the jungle's haze is raised to the fourth power of its weight, or the edge of a jungle, where it is a fraction of the way in, takes much of 15 times the haze
+        for (weight, haze_power, row) in [(feel.cold, 1, &COLD), (feel.hot, 1, &HOT), (feel.jungle, 4, &JUNGLE), (feel.forest, 1, &FOREST), (feel.steppe, 1, &STEPPE), (feel.mountain, 1, &MOUNTAIN), (feel.volcanic, 1, &VOLCANIC)] {
             a.sun += weight * row.sun;
             a.temperature += weight * row.temperature;
             a.saturation += weight * row.saturation;
             a.contrast += weight * row.contrast;
-            a.haze_density += weight * row.haze_density;
+            a.haze_density += weight.powi(haze_power) * row.haze_density;
             a.storm += weight * row.storm;
             a.shadow_amount += weight * row.shadow_amount;
             for (i, base) in SUN.into_iter().enumerate() {
