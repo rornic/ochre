@@ -172,6 +172,8 @@ pub struct WorldMap {
     pub valley: Vec<u8>,
     /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only, see `valleys::run_alpine`.
     pub alpine: Vec<u8>,
+    /// Each cell on a canyon's line: the way to the next (`NEIGHBOURS` index plus one) in the low nibble, its slot's depth in tens of blocks in the high.
+    pub canyon: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
     /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
@@ -245,6 +247,7 @@ impl WorldMap {
             ford: vec![0; cells],
             valley: vec![0; cells],
             alpine: vec![0; cells],
+            canyon: vec![0; cells],
             exposure: vec![128; cells],
             water_closeness: vec![0; cells],
             features: Vec::new(),

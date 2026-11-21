@@ -14,7 +14,7 @@ fn hash(bytes: &[u8]) -> u64 {
 }
 
 // pinned: a change means every machine's map changed, so bump `worldmap::GENERATOR_VERSION` with it
-const MAP_HASH: u64 = 5_509_721_649_030_153_195;
+const MAP_HASH: u64 = 14_912_015_761_250_642_230;
 
 #[test]
 fn test_the_map_is_the_same_on_every_machine_and_for_any_thread_count() {

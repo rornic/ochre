@@ -5,7 +5,7 @@ use super::detail::{detail, dunes, foothill_weight, gully_relief, Dunes, FOOTHIL
 use super::valleys::{self, Valley};
 use super::water::{freeboard, RiverHit, RiverProfiles};
 use super::FeatureKind;
-use super::{WaterCell, WorldMap};
+use super::{WaterCell, WorldMap, NEIGHBOURS};
 use ochre_base::biome::{BiomeId, Biomes, Climate, Modifier};
 use ochre_base::features::{offset, ReliefCtx, ReliefKind, MAX_OFFSET};
 use ochre_base::math::smoothstep_f64 as smoothstep;
@@ -252,6 +252,8 @@ pub struct WorldTerrain {
     // the valleys this world's map was cut with, see `valleys`, and its ranges'
     valley: Valley,
     alpine: Valley,
+    // the cells within two of a canyon's line, empty where the map has none, see `canyon_at`
+    canyon_zone: Vec<bool>,
     // tells this terrain's entries apart from another's in `HEIGHT_MEMO`
     id: u64,
 }
@@ -323,8 +325,10 @@ impl WorldTerrain {
             cliff_boost: knobs.cliff_boost,
             valley,
             alpine,
+            canyon_zone: Vec::new(),
             id: NEXT_TERRAIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
+        terrain.canyon_zone = terrain.canyon_zone();
         terrain.near_still = terrain.near_still();
         (terrain.lake_distance, terrain.lake_level) = terrain.lake_field();
         terrain.profiles = terrain.river_profiles();
@@ -623,7 +627,77 @@ impl WorldTerrain {
     // where the climate is desert.
     fn ground_dry(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         let ground = self.landform_ground(x, z, cell, base, calm);
-        ground + self.dune_height(x, z, cell, base, calm)
+        let (cut, flat) = self.canyon_at(x, z, cell, calm, ground);
+        ground + self.dune_height(x, z, cell, base, calm) * (1.0 - flat) - cut
+    }
+
+    // The cells within two of a canyon's line.
+    fn canyon_zone(&self) -> Vec<bool> {
+        let (map, dim) = (&self.map, self.map.dim());
+        if map.canyon.iter().all(|&b| b == 0) {
+            return Vec::new();
+        }
+        let mut zone = vec![false; dim * dim];
+        for i in (0..dim * dim).filter(|&i| map.canyon[i] != 0) {
+            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
+            for nz in (z - 2).max(0)..=(z + 2).min(dim as i64 - 1) {
+                for nx in (x - 2).max(0)..=(x + 2).min(dim as i64 - 1) {
+                    zone[nz as usize * dim + nx as usize] = true;
+                }
+            }
+        }
+        zone
+    }
+
+    // The depth of a canyon's slot at a point (blocks) and how flat it holds the ground, 0..1: see `meso::canyons`.
+    fn canyon_at(&self, x: f64, z: f64, cell: f64, calm: f64, ground: f64) -> (f64, f64) {
+        if self.canyon_zone.is_empty() {
+            return (0.0, 0.0);
+        }
+        let (map, dim) = (&self.map, self.map.dim());
+        let (u, v) = map.to_cell(x, z);
+        let (cx, cz) = (u.round() as i64, v.round() as i64);
+        if cx < 0 || cz < 0 || cx >= dim as i64 || cz >= dim as i64 || !self.canyon_zone[cz as usize * dim + cx as usize] {
+            return (0.0, 0.0);
+        }
+        // the line bends between the cells' centres
+        let seed = map.seed;
+        let (px, pz) = (x + 14.0 * perlin(seed ^ 0xCA17, x / 70.0, z / 70.0), z + 14.0 * perlin(seed ^ 0xCA18, x / 70.0, z / 70.0));
+        let slot_of = |cx: i64, cz: i64| (map.canyon[cz as usize * dim + cx as usize] >> 4) as f64 * 10.0;
+        let (mut distance, mut slot) = (f64::MAX, 0.0);
+        for nz in (cz - 2).max(0)..=(cz + 2).min(dim as i64 - 1) {
+            for nx in (cx - 2).max(0)..=(cx + 2).min(dim as i64 - 1) {
+                let byte = map.canyon[nz as usize * dim + nx as usize];
+                if byte == 0 {
+                    continue;
+                }
+                let (ax, az) = map.cell_centre(nx as usize, nz as usize);
+                let way = (byte & 15) as usize;
+                let (bx, bz, slot_b) = match way.checked_sub(1) {
+                    Some(d) => {
+                        let (dx, dz) = NEIGHBOURS[d];
+                        let (to_x, to_z) = ((nx + dx).clamp(0, dim as i64 - 1), (nz + dz).clamp(0, dim as i64 - 1));
+                        let (bx, bz) = map.cell_centre(to_x as usize, to_z as usize);
+                        (bx, bz, if map.canyon[to_z as usize * dim + to_x as usize] != 0 { slot_of(to_x, to_z) } else { slot_of(nx, nz) })
+                    }
+                    None => (ax, az, slot_of(nx, nz)),
+                };
+                let (sx, sz) = (bx - ax, bz - az);
+                let length2 = sx * sx + sz * sz;
+                let t = if length2 > 0.0 { (((px - ax) * sx + (pz - az) * sz) / length2).clamp(0.0, 1.0) } else { 0.0 };
+                let d = libm::sqrt((px - ax - t * sx).powi(2) + (pz - az - t * sz).powi(2));
+                if d < distance {
+                    distance = d;
+                    slot = slot_of(nx, nz) * (1.0 - t) + slot_b * t;
+                }
+            }
+        }
+        let map_cell = map.config.map_cell as f64;
+        let seen = calm * (1.0 - smoothstep(SHARPEN_CELL.0, SHARPEN_CELL.1, cell));
+        let half = 2.5 + 11.5 * smoothstep(-0.4, 0.5, perlin(seed ^ 0xCA19, x / 150.0, z / 150.0));
+        let sea = WATER_LEVEL as f64;
+        let cut = (slot * (1.0 - smoothstep(half, half + 4.0, distance)) * seen).min((ground - sea - 3.0).max(0.0));
+        (cut, calm * (1.0 - smoothstep(0.4 * map_cell, 1.5 * map_cell, distance)))
     }
 
     // How high the dunes rise over the ground at a point: only on desert, calmed at the shore.
@@ -1485,6 +1559,30 @@ mod river_bank_tests {
             moved += ((ground - base).abs() > 0.5) as usize;
         }
         assert!(moved > 50, "only {moved} of 400 points carry any detail");
+    }
+
+    #[test]
+    fn a_canyon_slot_cuts_a_narrow_way_along_its_marked_cells_and_holds_the_dunes_off() {
+        let config = super::super::WorldConfig { size: 128 * 32, map_cell: 32, ..Default::default() };
+        let mut map = WorldMap::empty(3, config);
+        let dim = map.dim();
+        map.height.fill(WATER_LEVEL as f32 + 300.0);
+        // a row of cells running east, 50 blocks deep
+        for x in 30..60 {
+            map.canyon[40 * dim + x] = 1 | 5 << 4;
+        }
+        let terrain = WorldTerrain::new(Arc::new(map));
+        let (cx, cz) = terrain.map.cell_centre(45, 40);
+        let ground = WATER_LEVEL as f64 + 300.0;
+        let across: Vec<(f64, f64)> = (-60..=60).map(|dz| terrain.canyon_at(cx, cz + dz as f64, 1.0, 1.0, ground)).collect();
+        let widest = across.iter().filter(|c| c.0 > 49.0).count();
+        assert!((1..=60).contains(&widest), "{widest} blocks of the 121 across are cut full");
+        assert!(across.iter().all(|c| c.0 <= 50.0 + 1e-9));
+        assert_eq!((0.0, 0.0), terrain.canyon_at(cx, cz + 400.0, 1.0, 1.0, ground), "cut far from the line");
+        assert!(across.iter().any(|c| c.1 > 0.99), "the dunes are not held off on the line");
+        // coarse cells see none of the slot, and it never cuts under the sea
+        assert!(terrain.canyon_at(cx, cz, 32.0, 1.0, ground).0 < 1e-9);
+        assert!(terrain.canyon_at(cx, cz, 1.0, 1.0, WATER_LEVEL as f64 + 10.0).0 <= 7.0 + 1e-9);
     }
 
     #[test]
