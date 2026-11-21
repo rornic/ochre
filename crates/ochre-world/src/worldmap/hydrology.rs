@@ -50,6 +50,10 @@ const DRY_FLOW_LOSS: f32 = 0.01;
 // And how many cells' worth of flow the driest ground evaporates from a river crossing it, so a
 // big river carries on across a desert that a stream can't.
 const DRY_EVAPORATION: f32 = 8.0;
+// What the desert adds on top of those, as the fourth power of how dry it is, so steppe and savanna keep their water: more runoff lost, more evaporated from a river, more from a lake's cell.
+const ARID_RUNOFF_LOSS: f32 = 0.08;
+const ARID_EVAPORATION: f32 = 12.0;
+const ARID_LAKE_EVAPORATION: f32 = 8.0;
 // A basin shallower than this, or with fewer cells, is drained: a flat or a pond, not worth a lake.
 const MIN_LAKE_DEPTH: f32 = 4.0;
 const MIN_LAKE_CELLS: usize = 300;
@@ -474,6 +478,10 @@ fn upstream_first(down: &[u32]) -> Vec<u32> {
     order
 }
 
+fn arid(dry: f32) -> f32 {
+    dry.powi(4)
+}
+
 // What rain does on each cell: the share of it shed as runoff, the share of the flow crossing it kept,
 // what it evaporates from a river over it, and how dry it is, 0..1.
 struct Rain {
@@ -520,11 +528,11 @@ fn rain(map: &WorldMap) -> Rain {
             .iter()
             .zip(&rock)
             .map(|(&d, &r)| {
-                (1.0 - DRY_RUNOFF_LOSS * d) * (SOIL_RUNOFF + (ROCK_RUNOFF - SOIL_RUNOFF) * r)
+                (1.0 - DRY_RUNOFF_LOSS * d - ARID_RUNOFF_LOSS * arid(d)) * (SOIL_RUNOFF + (ROCK_RUNOFF - SOIL_RUNOFF) * r)
             })
             .collect(),
         keep: dry.iter().map(|&d| 1.0 - DRY_FLOW_LOSS * d).collect(),
-        evaporated: dry.iter().map(|&d| DRY_EVAPORATION * d).collect(),
+        evaporated: dry.iter().map(|&d| DRY_EVAPORATION * d + ARID_EVAPORATION * arid(d)).collect(),
         dry,
     }
 }
@@ -542,8 +550,7 @@ fn balance(
 ) -> (f32, f32, bool) {
     let sea = WATER_LEVEL as f32;
     let floor = height[sorted[0]];
-    let evaporation =
-        |i: usize| LAKE_EVAPORATION.0 + (LAKE_EVAPORATION.1 - LAKE_EVAPORATION.0) * dry[i];
+    let evaporation = |i: usize| LAKE_EVAPORATION.0 + (LAKE_EVAPORATION.1 - LAKE_EVAPORATION.0) * dry[i] + ARID_LAKE_EVAPORATION * arid(dry[i]);
     let mut lost = 0.0;
     let mut level = basin.spill;
     for (k, &i) in sorted.iter().enumerate() {
