@@ -26,10 +26,8 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use ochre_terrain::{
-    chunk::ChunkCoordinate,
     floor::Floor,
     group::ChunkGroup,
-    lod::LodKey,
     horizon::update_horizon,
     settings::RendererSettings,
     world::World,
@@ -37,7 +35,7 @@ use ochre_terrain::{
 use ochre_world::ambience::SurroundingsPlugin;
 
 use crate::character::{
-    step_character, CharacterState, Movement, MovementInput, WorldEnvironment, BLOCK_CORNER, JUMP_SPEED, STEP_HEIGHT,
+    step_character, CharacterState, Movement, MovementInput, WorldEnvironment, JUMP_SPEED, STEP_HEIGHT,
 };
 use crate::footsteps::{Footstep, Surface, SPRINT_LOUDER};
 use crate::view::{
@@ -153,15 +151,7 @@ fn player_step(
     let Ok((mut transform, mut state, mut input, mut player)) = player_query.single_mut() else {
         return;
     };
-    // the sculpted ground of the groups round the player
-    let home = LodKey::containing(ChunkCoordinate::containing((transform.translation + BLOCK_CORNER).floor().as_i64vec3()), 1);
-    let env = WorldEnvironment::new(
-        &world,
-        floors
-            .iter()
-            .filter(|(group, _, _)| group.key.level == home.level && (group.key.coord - home.coord).abs().max_element() <= 1)
-            .map(|(group, at, floor)| (group.key, at.translation, floor)),
-    );
+    let env = WorldEnvironment::around(&world, transform.translation, floors.iter());
 
     let start = transform.translation;
     let mut position = start;
