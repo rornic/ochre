@@ -50,8 +50,8 @@ const GIANT_SPREAD: i64 = 8;
 
 // The desert's hoodoos: clusters of one to three tall pillars, each under a wide thin cap.
 const HOODOO_SHARE: f64 = 0.4;
-const HOODOO_RADIUS: (f64, f64) = (2.2, 3.6);
-const HOODOO_SQUASH: (f64, f64) = (3.0, 4.4);
+const HOODOO_RADIUS: (f64, f64) = (3.5, 5.0);
+const HOODOO_SQUASH: (f64, f64) = (3.8, 5.0);
 const HOODOO_CAP: f64 = 1.8;
 const HOODOO_SCATTER: f64 = 8.0;
 
@@ -767,6 +767,8 @@ mod tests {
                 let top = pillar.iter().map(|p| p.y).max().unwrap();
                 assert!(cap.iter().any(|p| p.y <= top) && cap.iter().any(|p| p.y >= top), "seed {seed}: the cap does not rest on the pillar's top");
             }
+            let top = lumps.chunks(2).map(|pair| blocks(&pair[0]).iter().map(|p| p.y).max().unwrap() - 100).max().unwrap();
+            assert!((12..=30).contains(&top), "seed {seed}: a pillar stands {top} over the ground");
             let widest = lumps.iter().map(|l| l.radius).fold(0.0, f64::max);
             assert!(widest + HOODOO_SCATTER + 1.0 <= ROCK_REACH as f64, "a hoodoo reaches past what chunks look for");
         }
