@@ -57,7 +57,7 @@ const KNOBS: Knobs = Knobs {
     plane_reach: PLANE_REACH,
     soft_spike: 0.3,
     rock_spike: 0.45,
-    ao: 3.5,
+    ao: 2.2,
     chisel_round: 6.0,
     chisel_up: 2.0,
 };
@@ -95,6 +95,10 @@ pub(super) const SKIRT_LEAN: f32 = 1.0 / 16.0;
 const ROW_LEAN: f32 = 0.5;
 // How far out along its normal a vertex's occlusion is read from the blurred blocks.
 const AO_OUT: f32 = 1.5;
+// Rock's occlusion: the openness it starts at (flat rock reads about 0.2), the most it takes, and the excess at which it has taken half of that.
+const ROCK_AO_FROM: f32 = 0.2;
+const ROCK_AO_MAX: f32 = 0.55;
+const ROCK_AO_KNEE: f32 = 0.12;
 // A vertex's occlusion, 0.2 to 1, rides in its cell's fraction, within the ±0.5 every reader rounds away, see `world.wesl`.
 const AO_MID: f32 = 0.6;
 const AO_SPREAD: f32 = 1.0;
@@ -777,7 +781,14 @@ fn sculpt<const MARGIN: i32>(
                 let position = (homes[v] + local(0, 0, 0)).as_vec3() + snapped - sunk - behind;
                 let open = sample(homes[v].as_vec3() + offsets[v] + normal * AO_OUT);
                 // the blocks round it, and the lie of the land over hundreds of blocks
-                let ao = ((1.0 - (open - 0.25).max(0.0) * k.ao) * grass_tint.shade_at(position)).clamp(0.2, 1.0);
+                let occluded = if soft(materials[v]) {
+                    ((open - 0.25).max(0.0) * k.ao).min(0.65)
+                } else {
+                    // rock starts to darken at a shallower crease, and eases off, so deep ones stay lighter
+                    let excess = (open - ROCK_AO_FROM).max(0.0);
+                    ROCK_AO_MAX * excess / (excess + ROCK_AO_KNEE)
+                };
+                let ao = ((1.0 - occluded) * grass_tint.shade_at(position)).clamp(0.2, 1.0);
                 // weight toward the second material, plus 2 if the second takes the tint or 4 if the first does
                 let toward_other = match (soft(main), soft(other)) {
                     (true, false) => rockiness[v],

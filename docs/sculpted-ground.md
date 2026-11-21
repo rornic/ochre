@@ -45,7 +45,7 @@ Sculpted vertices carry what the shader needs in attributes they don't otherwise
 | `uv.x` | -1024 less the second material's atlas cell, which marks the vertex as sculpted |
 | `uv.y` | the weight toward the second material, plus 2 if the second takes the tint or 4 if the first does |
 | colour rgb | the tint alone |
-| colour alpha | the main material's cell, with occlusion (0.2 to 1) in the fraction every reader rounds away |
+| colour alpha | the main material's cell, with occlusion (0.2 to 1) in the fraction every reader rounds away: soft ground takes up to 0.65 of its light from how enclosed it is (2.2 times the openness over 0.25), rock takes up to 0.55 starting at a shallower crease (0.2) and easing off |
 | `uv_b.y` | the facet amount (0 to 1) times 0.45, under the 0.5 that marks coarse cells; plus 1 in an untextured node (cells from 8 blocks), whose mode marks it coarse, so the facet is the fraction |
 
 The fragment shader projects each material three ways, or takes its mean colour in an untextured node, blended by the normal, mixes to the second material along a noise-ragged edge, tints only the side that takes the tint, and applies the occlusion. Occlusion comes from the counted blocks 1.5 out along each vertex's normal, so creases and hollows darken without printing block outlines.
