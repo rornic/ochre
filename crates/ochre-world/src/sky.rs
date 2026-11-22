@@ -14,7 +14,7 @@ use bevy::{
     input::{keyboard::KeyCode, ButtonInput},
     light::{
         atmosphere::ScatteringMedium, Atmosphere, AtmosphereEnvironmentMapLight,
-        CascadeShadowConfigBuilder, DirectionalLight, SimulationLightSystems, SunDisk,
+        CascadeShadowConfigBuilder, DirectionalLight, DirectionalLightShadowMap, SimulationLightSystems, SunDisk,
     },
     math::{Quat, UVec2, UVec3, Vec3},
     pbr::{AtmosphereSettings, DistanceFog, FogFalloff},
@@ -60,6 +60,11 @@ const SUN_BRIGHTNESS: f32 = 1.3;
 const SKY_GAIN: f32 = 4.0;
 const CAMERA_EV100: f32 = Exposure::EV100_SUNLIGHT;
 const FIRST_CASCADE_DISTANCE: f32 = 20.0;
+// Bevy scales both by a cascade's texel size, so Bevy's defaults (0.02 and 1.8) moved a far shadow's edge by blocks and it changed shape as the camera came near.
+const SHADOW_DEPTH_BIAS: f32 = 0.01;
+const SHADOW_NORMAL_BIAS: f32 = 0.6;
+// How much of each cascade blends into the next.
+const CASCADE_OVERLAP: f32 = 0.4;
 const ENVIRONMENT_MAP_SIZE: u32 = 64;
 // About twice the real sun's size; matches `DISC_SIZE` in `sun_glare.wesl`, which draws it so clouds can hide it.
 const SUN_DISC_SIZE: f32 = 0.02;
@@ -93,6 +98,8 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
             color: SUN_COLOR,
             illuminance: sun_illuminance(),
             shadow_maps_enabled: true,
+            shadow_depth_bias: SHADOW_DEPTH_BIAS,
+            shadow_normal_bias: SHADOW_NORMAL_BIAS,
             ..Default::default()
         },
         Sun,
@@ -107,6 +114,7 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
             num_cascades: cascades.max(1),
             first_cascade_far_bound: FIRST_CASCADE_DISTANCE,
             maximum_distance: shadow_distance,
+            overlap_proportion: CASCADE_OVERLAP,
             ..Default::default()
         }
         .build(),
@@ -331,13 +339,16 @@ pub struct SkySettings {
     pub shadow_distance: u32,
     /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
+    /// Width of each cascade's shadow map in texels, a power of two: 4096 halves the texel size and costs about 4 ms more on an RTX 2060.
+    pub shadow_resolution: usize,
 }
 
 impl Default for SkySettings {
     fn default() -> Self {
         Self {
             shadow_distance: 64,
-            shadow_cascades: 3,
+            shadow_cascades: 4,
+            shadow_resolution: 2048,
         }
     }
 }
@@ -377,6 +388,7 @@ fn spawn_sun_and_moon(
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.settings)
+            .insert_resource(DirectionalLightShadowMap { size: self.settings.shadow_resolution })
             .insert_resource(TimeOfDay::from_days(self.start))
             .insert_resource(TimeScale(self.time_scale))
             .add_systems(Startup, (spawn_atmosphere, spawn_sun_and_moon))

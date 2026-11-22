@@ -106,3 +106,21 @@ Shadow edges crawl a texel at a time as the sun moves, since turning the light m
 - The shadow map's sun angle holds for `SHADOW_STEP_TICKS` (3 s) and jumps to the next, with no slide. The earlier 20 Hz step moved 0.0008 degrees at a time, which is effectively continuous and so never held a shadow still. Between steps the maps are static. A step is a pop of about 0.4 texel in the near cascade, and under 1 in the far one.
 
 If flicker remains, the options still open are 4096 maps or tighter cascades (about 1 ms for 4096 on the RTX 2060), prefiltered shadow maps, and replacing the far cascades with a horizon map from the world heightmap, one sample per far fragment. Leaf shadows (alpha cut at a distance-dependent mip) and low-sun slope acne are separate causes this doesn't touch.
+
+## A shadow that changes shape as the camera nears it
+
+Bevy scales both shadow biases by a cascade's texel size, so its defaults (depth 0.02, normal 1.8) pushed a far shadow's edge blocks off, and the shadow came out a different shape once the camera was near enough for a finer cascade. The same two-texel-wide shapes also differed between cascades at 7x steps in texel size.
+
+Measured on seed 11's canyon plateau, 1 s stills of the shadow mask looking straight down from 30, 80 and 250 blocks, each against a 4 cascade 8192 map with biases 0.5 and 0.01 (mean absolute difference over the frame, 0 to 255):
+
+| config | 30 | 80 | 250 | GPU ms (savanna, 1080p, RTX 2060) |
+|---|---:|---:|---:|---:|
+| 3 cascades, 2048, Bevy biases (before) | 18.0 | 13.8 | 22.4 | 12.6 |
+| 4 cascades, 2048, biases 0.6 and 0.01, overlap 0.4 (now) | 7.0 | 8.9 | 11.9 | 13.5 |
+| the same at 4096 (`shadow_resolution = 4096`) | 4.2 | 5.3 | 7.6 | 16.9 |
+| 3 cascades, biases only | 9.4 | 5.4 | 13.2 | |
+| 4 cascades, biases 0.3 and 0.005 | 9.6 | 9.8 | 12.5 | |
+
+What did not matter, from frame to frame change over a slow camera path with and without shadow maps: the filtering method (Temporal, Gaussian, Hardware2x2), map size, cascade count and overlap, and the sun's 3 s stepping each moved it under 2%. Grass tufts' shadows account for all of the shadow-driven change over savanna, but that is moving content, not crawl. Lower biases (0.3, 0.005) came out worse than 0.6 and 0.01.
+
+Run the sandbox from the target directory `cargo metadata` names, not `target/` in a worktree, which can hold a stale binary.
