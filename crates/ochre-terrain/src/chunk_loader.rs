@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use bevy::prelude::Resource;
 use bevy::{
     asset::Handle,
-    camera::Camera,
+    camera::Camera3d,
     ecs::{
         component::Component,
         entity::Entity,
@@ -141,7 +141,7 @@ pub(crate) fn gather_chunks(
     mut commands: Commands,
     mut chunk_loader: ResMut<ChunkLoader>,
     world: Res<World>,
-    camera_query: Query<&GlobalTransform, With<Camera>>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
     generating_chunks_query: Query<(), With<GenerateChunkData>>,
 ) {
     let loader = &mut *chunk_loader;

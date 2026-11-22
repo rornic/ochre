@@ -2,7 +2,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use bevy::prelude::Resource;
 use bevy::{
-    math::{I64Vec3, Vec3},
+    math::{I64Vec3, U16Vec3, Vec3},
     platform::collections::{HashMap, HashSet},
 };
 
@@ -28,6 +28,8 @@ pub struct World {
     spawn: Vec3,
     // blocks changed since `take_edits` was last asked, whose chunks need meshing again
     edits: Vec<I64Vec3>,
+    // every change so far, put back over a chunk when it's generated again; memory only, not saved
+    changed: HashMap<ChunkCoordinate, HashMap<U16Vec3, (BlockType, Option<u8>)>>,
     // blocks whose water may flow differently since `take_stirred`: changed ones and those beside them
     stirred: HashSet<I64Vec3>,
 }
@@ -58,6 +60,7 @@ impl World {
                 spawn_z as f32,
             ),
             edits: Vec::new(),
+            changed: HashMap::new(),
             stirred: HashSet::new(),
         }
     }
@@ -73,6 +76,7 @@ impl World {
             region_store: self.region_store.clone(),
             spawn: self.spawn,
             edits: Vec::new(),
+            changed: HashMap::new(),
             stirred: HashSet::new(),
         }
     }
@@ -93,7 +97,14 @@ impl World {
         self.spawn
     }
 
-    pub fn insert_chunk(&mut self, coord: ChunkCoordinate, data: ChunkData) -> Arc<ChunkData> {
+    pub fn insert_chunk(&mut self, coord: ChunkCoordinate, mut data: ChunkData) -> Arc<ChunkData> {
+        for (&local, &(block, flow)) in self.changed.get(&coord).into_iter().flatten() {
+            if block == BlockType::Water {
+                data.set_flow_at(local, flow);
+            } else {
+                data.set_block_at(local, block);
+            }
+        }
         let data = Arc::new(data);
         self.chunks.insert(coord, data.clone());
         data
@@ -166,6 +177,7 @@ impl World {
         }
         // a copy, if meshing still holds this one
         Arc::make_mut(data).set_block_at(local, to);
+        self.remember(block, local, (to, None));
         self.changed(block);
         true
     }
@@ -189,8 +201,14 @@ impl World {
             return false;
         }
         Arc::make_mut(data).set_flow_at(local, level);
+        self.remember(block, local, (BlockType::Water, level));
         self.changed(block);
         true
+    }
+
+    fn remember(&mut self, block: I64Vec3, local: U16Vec3, to: (BlockType, Option<u8>)) {
+        let chunk = ChunkCoordinate::containing(block);
+        self.changed.entry(chunk).or_default().insert(local, to);
     }
 
     fn changed(&mut self, block: I64Vec3) {
@@ -316,6 +334,34 @@ mod tests {
         assert_eq!(None, world.break_block(I64Vec3::new(100, 0, 0)));
         assert_eq!(None, world.break_block(I64Vec3::new(0, -1, 0)));
         assert!(world.take_edits().is_empty());
+    }
+
+    #[test]
+    fn test_changes_survive_the_chunk_unloading_and_generating_again() {
+        let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
+        let coord = ChunkCoordinate(I64Vec3::ZERO);
+        let generated = || {
+            let mut data = ChunkData::default();
+            for x in 0..3 {
+                data.set_block_at(bevy::math::U16Vec3::new(x, 0, 0), BlockType::Rock);
+            }
+            data
+        };
+        world.insert_chunk(coord, generated());
+        let (broken, flowing, wet) = (I64Vec3::ZERO, I64Vec3::X, I64Vec3::new(2, 0, 0));
+        world.break_block(broken);
+        world.set_flow_at(flowing, Some(3));
+        world.set_flow_at(wet, Some(5));
+        // a later change to a block replaces the one before
+        world.set_block_at(wet, BlockType::Sand);
+
+        world.clear_chunk(coord);
+        world.insert_chunk(coord, generated());
+        assert_eq!(BlockType::Air, world.get_block_at(broken));
+        assert_eq!(BlockType::Water, world.get_block_at(flowing));
+        assert_eq!(Some(3), world.flow_at(flowing));
+        assert_eq!(BlockType::Sand, world.get_block_at(wet));
+        assert_eq!(None, world.flow_at(wet));
     }
 
     #[test]

@@ -5,13 +5,13 @@ description: Drive a running Ochre game over the Bevy Remote Protocol, to telepo
 
 # Game remote
 
-The sandbox starts `RemoteControlPlugin` by default (a flight recording leaves it off), and `OCHRE_REMOTE` sets it (`crates/ochre-gameplay/src/remote.rs`): a JSON-RPC server on `127.0.0.1`, port 15702 unless `OCHRE_REMOTE` is a port of 1024 or more (`OCHRE_REMOTE=1`, `on` and `true` all mean 15702; `0`, `off` and `false` mean off). It opens a game window, so ask the user before launching one on their desktop, and stop it when done.
+The sandbox starts `RemoteControlPlugin` only when `OCHRE_REMOTE` is set, so always launch it with `OCHRE_REMOTE=1` (`crates/ochre-gameplay/src/remote.rs`): a JSON-RPC server on `127.0.0.1`, port 15702 unless `OCHRE_REMOTE` is a port of 1024 or more (`OCHRE_REMOTE=1`, `on` and `true` all mean 15702; `0`, `off` and `false` mean off). It opens a game window, so ask the user before launching one on their desktop, and stop it when done.
 
 ## Start it
 
 ```
 cargo build --release --example sandbox
-(OCHRE_SEED=<seed> nohup cargo run --release --example sandbox > /tmp/game.log 2>&1 &)
+(OCHRE_REMOTE=1 OCHRE_SEED=<seed> nohup cargo run --release --example sandbox > /tmp/game.log 2>&1 &)
 until curl -s -o /dev/null -X POST http://127.0.0.1:15702; do sleep 3; done
 ```
 

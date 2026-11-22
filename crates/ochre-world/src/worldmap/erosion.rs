@@ -468,9 +468,7 @@ mod tests {
         let mut map = mountain();
         let dim = map.dim();
         // some sea around the edge
-        for i in 0..dim {
-            map.height[i] = -48.0;
-        }
+        map.height[..dim].fill(-48.0);
         let sea_row: Vec<f32> = map.height[..dim].to_vec();
         let before: f64 = map.height.iter().map(|&h| h as f64).sum();
         run(&mut map);

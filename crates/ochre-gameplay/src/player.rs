@@ -3,7 +3,7 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use bevy::{
     app::{App, FixedUpdate, Plugin, RunFixedMainLoop, RunFixedMainLoopSystems, Startup, Update},
-    camera::{Camera, Projection},
+    camera::{Camera3d, Projection},
     ecs::hierarchy::ChildOf,
     ecs::{
         component::Component,
@@ -128,7 +128,7 @@ type PlayerCamera<'a> = (&'a ChildOf, &'a mut Transform);
 fn capture_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut player: Query<(&mut MovementInput, &Transform, &Player)>,
-    camera: Query<&Transform, (With<Camera>, Without<Player>)>,
+    camera: Query<&Transform, (With<Camera3d>, Without<Player>)>,
 ) {
     let (Ok((mut input, body, player)), Ok(eye)) = (player.single_mut(), camera.single()) else {
         return;
@@ -182,9 +182,9 @@ fn player_present(
     fixed: Res<Time<Fixed>>,
     world: Res<World>,
     mut player_query: Query<(&Transform, &CharacterState, &MovementInput, &mut Player)>,
-    mut camera_query: Query<(&ChildOf, &mut Transform), (With<Camera>, Without<Player>)>,
+    mut camera_query: Query<(&ChildOf, &mut Transform), (With<Camera3d>, Without<Player>)>,
     mut steps: MessageWriter<Footstep>,
-    mut projection: Query<&mut Projection, With<Camera>>,
+    mut projection: Query<&mut Projection, With<Camera3d>>,
 ) {
     let (parent, mut camera) = camera_query.single_mut().expect("camera does not exist");
     let (transform, state, input, mut player) = player_query
@@ -297,7 +297,7 @@ pub(crate) fn grab_cursor(
 fn player_look(
     time: Res<Time>,
     mut player_query: Query<(&mut Transform, &mut Player)>,
-    mut camera_query: Query<PlayerCamera, (With<Camera>, Without<Player>)>,
+    mut camera_query: Query<PlayerCamera, (With<Camera3d>, Without<Player>)>,
     mut motion_evr: MessageReader<MouseMotion>,
     cursor: Query<&CursorOptions, With<PrimaryWindow>>,
 ) {

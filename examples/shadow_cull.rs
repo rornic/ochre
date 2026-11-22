@@ -48,7 +48,7 @@ fn setup(mut commands: Commands, world: Res<World>) {
     let camera = commands
         .spawn((
             SimCamera,
-            Camera::default(),
+            Camera3d::default(),
             Transform::from_translation(Vec3::Y * EYE_HEIGHT).looking_to(Vec3::X, Vec3::Y),
         ))
         .id();

@@ -17,11 +17,7 @@ fn main() {
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
     // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell
-    let mut dev = DevEnv::from_env();
-    // on unless OCHRE_REMOTE says otherwise, so the game can be read and shot without a restart; a recording leaves it off
-    if !flight && std::env::var_os("OCHRE_REMOTE").is_none() {
-        dev.remote = Some(bevy::remote::http::DEFAULT_PORT);
-    }
+    let dev = DevEnv::from_env();
     let game_world = load_world(&settings, &dev.world);
     let mut app = App::new();
     app.add_plugins((

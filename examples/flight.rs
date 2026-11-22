@@ -34,7 +34,7 @@ fn setup(mut commands: Commands, world: Res<World>) {
     let camera = commands
         .spawn((
             FlightCamera,
-            Camera::default(),
+            Camera3d::default(),
             GlobalTransform::from_translation(spawn),
         ))
         .id();

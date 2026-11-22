@@ -27,7 +27,7 @@ fn put_config(out: &mut Vec<u8>, config: WorldConfig) {
     }
 }
 
-fn checksum(bytes: &[u8]) -> u64 {
+pub(super) fn checksum(bytes: &[u8]) -> u64 {
     // FNV-1a, to catch a truncated or damaged file
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
         (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)

@@ -47,12 +47,12 @@ pub(super) fn sense_haze(
         rings.since = 0.0;
         let eye = camera.translation();
         let terrain = world.region_store.terrain();
-        for point in 0..POINTS {
+        for (point, target) in rings.target.iter_mut().enumerate() {
             // the shader's turn is 0 at -pi round to 16 at pi, see `haze_toward`
             let angle = (point as f32 / POINTS as f32 - 0.5) * TAU;
             for (ring, distance) in RINGS.into_iter().enumerate() {
                 let (x, z) = ((eye.x + angle.cos() * distance) as f64, (eye.z + angle.sin() * distance) as f64);
-                rings.target[point][ring] = haze_of(&Atmosphere::of(&Feel::at(terrain, x, z)));
+                target[ring] = haze_of(&Atmosphere::of(&Feel::at(terrain, x, z)));
             }
         }
         if !rings.started {
