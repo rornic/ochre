@@ -19,7 +19,7 @@ use ochre_world::weather::Weather;
 /// - `ochre.teleport {x, z, y?, height?, yaw?, pitch?}`: eyes at `y`, else `height` (default 3) over the ground; compass degrees, 0 north, 90 east.
 /// - `ochre.time {day}`: the time of day, 0 midnight, 0.25 sunrise, 0.5 noon.
 /// - `ochre.state`: seed, position, view, biome, time, weather, fps, loaded counts, whether loading has settled, the last shot saved.
-/// - `ochre.screenshot {path?}`: saves the window once loading settles, as `path` (a bare .png file name) in `target/remote`, and returns the path; poll `ochre.state` for `last_shot`.
+/// - `ochre.screenshot {path?, settle?}`: saves the window on the next frame, as `path` (a bare .png file name) in `target/remote`, and returns the path; poll `ochre.state` for `last_shot`. With `settle` true it waits for loading to settle first, so ground just teleported to is drawn.
 ///
 /// Does nothing without a port. The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
 #[derive(Default)]
@@ -51,8 +51,8 @@ struct Remote {
     // frames in a row with no chunk or LOD work pending, and real seconds since the camera was last moved by a method
     quiet_frames: u32,
     since_move: f32,
-    // shots waiting for loading to settle, and the last one written
-    queued: Vec<String>,
+    // shots waiting for the next frame, or for loading to settle if they ask to, and the last one written
+    queued: Vec<(String, bool)>,
     last_shot: Option<String>,
 }
 
@@ -83,10 +83,10 @@ fn track_settling(time: Res<Time<Real>>, pending: Query<(), Pending>, mut remote
 }
 
 fn take_shots(mut commands: Commands, mut remote: ResMut<Remote>) {
-    if remote.queued.is_empty() || !(remote.settled() || remote.since_move > MAX_SETTLE_SECONDS) {
-        return;
-    }
-    for path in std::mem::take(&mut remote.queued) {
+    let ready = remote.settled() || remote.since_move > MAX_SETTLE_SECONDS;
+    let (now, later): (Vec<_>, Vec<_>) = std::mem::take(&mut remote.queued).into_iter().partition(|&(_, settle)| ready || !settle);
+    remote.queued = later;
+    for (path, _) in now {
         let mut save = save_to_disk(path.clone());
         commands
             .spawn(Screenshot::primary_window())
@@ -212,7 +212,12 @@ fn screenshot(In(params): In<Option<Value>>, mut remote: ResMut<Remote>) -> BrpR
     }
     std::fs::create_dir_all(dir).map_err(|e| invalid(e.to_string()))?;
     let path = dir.join(name).to_string_lossy().into_owned();
-    remote.queued.push(path.clone());
+    let settle = match params.as_ref().and_then(|p| p.get("settle")) {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(settle)) => *settle,
+        Some(_) => return Err(invalid("`settle` must be true or false".into())),
+    };
+    remote.queued.push((path.clone(), settle));
     Ok(json!({ "path": path }))
 }
 

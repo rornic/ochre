@@ -4168,3 +4168,36 @@ fn test_lake_and_river_beds_take_the_ground_round_them_and_the_sea_keeps_its_san
     assert!(fresh.len() >= 3 && share(&fresh) < 0.5, "fresh beds are mostly sand or all one block: {fresh:?}");
     assert!(share(&sea) > 0.9, "the shallow sea's beds aren't sand: {sea:?}");
 }
+
+#[test]
+fn test_trunks_far_into_the_negative_world_are_not_read_by_the_shader_as_sculpted_ground() {
+    use crate::generate::trees::trees_near;
+    use bevy::math::I64Vec2;
+    use bevy::render::mesh::VertexAttributeValues;
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
+    let mut heights = regions.sampler();
+    // the shader takes a vertex whose `uv.x` is under -512 as sculpted ground, which a bark phase worked from a negative world position once gave it
+    let trees = trees_near(regions.terrain(), &mut heights, I64Vec2::new(-7000, -3000), I64Vec2::new(-1600, 3000));
+    let tree = trees.iter().find(|t| t.trunk >= 6 && t.base.x < -1600).expect("no tree far into the negative world");
+    let mid = tree.base + I64Vec3::new(0, tree.trunk / 2, 0);
+    let coord = ChunkCoordinate(mid.div_euclid(I64Vec3::splat(16)));
+    let mut neighbours = vec![None; 26];
+    for dx in -1..=1i64 {
+        for dy in -1..=1i64 {
+            for dz in -1..=1i64 {
+                if (dx, dy, dz) != (0, 0, 0) {
+                    neighbours[neighbor_26_index(dx as i32, dy as i32, dz as i32)] = Some(Arc::new(generate_chunk(regions.clone(), ChunkCoordinate(coord.0 + I64Vec3::new(dx, dy, dz)))));
+                }
+            }
+        }
+    }
+    let meshes = generate_chunk_mesh_with(Arc::new(generate_chunk(regions.clone(), coord)), neighbours, coord, &regions, true);
+    let (Some(VertexAttributeValues::Float32x2(uvs)), Some(VertexAttributeValues::Float32x4(colours))) =
+        (meshes.opaque.attribute(Mesh::ATTRIBUTE_UV_0), meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR))
+    else {
+        panic!("no uvs");
+    };
+    let bark: Vec<f32> = uvs.iter().zip(colours).filter(|(_, c)| c[3].round() as u8 == Tile::LogBark as u8 || c[3].round() as u8 == Tile::LogEnd as u8).map(|(uv, _)| uv[0]).collect();
+    assert!(bark.len() > 8, "{} bark vertices", bark.len());
+    assert!(bark.iter().all(|&u| u > -512.0), "bark at uv.x {}", bark.iter().cloned().fold(f32::MAX, f32::min));
+}
