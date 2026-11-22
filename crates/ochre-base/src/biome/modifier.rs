@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::{Biome, TreeScale, BASE_TREE_DENSITY};
 use crate::block::BlockType;
+use crate::features::ReliefKind;
 use crate::math::smoothstep_f64;
 
 /// What the ground has become on top of its climate biome: high steep ground, or a volcanic province's.
@@ -39,6 +40,10 @@ pub(super) struct Grassland;
 impl Biome for Grassland {
     fn name(&self) -> &'static str {
         "grassland"
+    }
+
+    fn relief(&self) -> &'static [ReliefKind] {
+        &[ReliefKind::Knolls]
     }
 }
 

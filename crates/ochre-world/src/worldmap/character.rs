@@ -30,6 +30,24 @@ const SALT_CIRQUES: u32 = 0xC4A0_0010;
 const SALT_VALLEYS: u32 = 0xC4A0_0011;
 const SALT_LANDMARKS: u32 = 0xC4A0_0012;
 const SALT_CANYONS: u32 = 0xC4A0_0013;
+const SALT_ESKERS: u32 = 0xC4A0_0014;
+const SALT_GORGES: u32 = 0xC4A0_0015;
+const SALT_STACKS: u32 = 0xC4A0_0016;
+const SALT_WADIS: u32 = 0xC4A0_0019;
+const WADIS: (f64, f64) = (0.0, 9.0);
+const SALT_CANYON_DEPTH: u32 = 0xC4A0_001A;
+const SALT_CANYON_WIDTH: u32 = 0xC4A0_001B;
+const CANYON_DEPTH: (f64, f64) = (0.7, 1.3);
+const CANYON_WIDTH: (f64, f64) = (0.8, 1.5);
+const SALT_PONDS: u32 = 0xC4A0_001C;
+const PONDS: (f64, f64) = (0.0, 1500.0);
+const SALT_DUNE_BEND: u32 = 0xC4A0_0017;
+const SALT_DUNE_WINDWARD: u32 = 0xC4A0_0018;
+const DUNE_BEND: (f64, f64) = (0.3, 1.8);
+const DUNE_WINDWARD: (f64, f64) = (0.5, 0.78);
+const STACKS: (f64, f64) = (0.0, 61.0);
+const GORGES: (f64, f64) = (0.0, 4.0);
+const ESKERS: (f64, f64) = (0.0, 7.0);
 const CANYONS: (f64, f64) = (0.0, 5.0);
 const INSELBERGS: (f64, f64) = (0.0, 9.0);
 const KARST_GROUPS: (f64, f64) = (0.0, 5.0);
@@ -80,6 +98,24 @@ pub(crate) struct LandformKnobs {
     pub landmark_apart: f64,
     /// How many canyons a desert world cuts, 0 to 4.
     pub canyons: u32,
+    /// How many eskers a glaciated world raises, 0 to 6.
+    pub eskers: u32,
+    /// How many gorges the wetter plateaus are cut with, 0 to 3.
+    pub gorges: u32,
+    /// How many sea stacks cliffed coasts are given, 0 to 60.
+    pub stacks: u32,
+    /// How many wadis, dry beds, dry country is cut with, 0 to 8.
+    pub wadis: u32,
+    /// How many ponds thaw out of frozen ground, 0 to 1500.
+    pub ponds: u32,
+    /// How deep a seed's canyons and gorges cut against the table, 0.7 to 1.3 times.
+    pub canyon_depth: f64,
+    /// How wide a seed's canyons, gorges and wadis run against the table, 0.8 to 1.5 times.
+    pub canyon_width: f64,
+    /// How far dune rows bend, in dunes, 0.3 (near straight ridges) to 1.8 (wandering crests).
+    pub dune_bend: f64,
+    /// The share of a dune that is its gentle windward slope, 0.5 to 0.78.
+    pub dune_windward: f64,
 }
 
 impl LandformKnobs {
@@ -96,6 +132,15 @@ impl LandformKnobs {
             valley_share: round(draw(seed, SALT_VALLEYS, VALLEY_SHARE), 3),
             landmark_apart: draw(seed, SALT_LANDMARKS, LANDMARK_APART).floor(),
             canyons: draw(seed, SALT_CANYONS, CANYONS).floor() as u32,
+            eskers: draw(seed, SALT_ESKERS, ESKERS).floor() as u32,
+            gorges: draw(seed, SALT_GORGES, GORGES).floor() as u32,
+            stacks: draw(seed, SALT_STACKS, STACKS).floor() as u32,
+            wadis: draw(seed, SALT_WADIS, WADIS).floor() as u32,
+            ponds: draw(seed, SALT_PONDS, PONDS).floor() as u32,
+            canyon_depth: round(draw(seed, SALT_CANYON_DEPTH, CANYON_DEPTH), 2),
+            canyon_width: round(draw(seed, SALT_CANYON_WIDTH, CANYON_WIDTH), 2),
+            dune_bend: round(draw(seed, SALT_DUNE_BEND, DUNE_BEND), 2),
+            dune_windward: round(draw(seed, SALT_DUNE_WINDWARD, DUNE_WINDWARD), 2),
         }
     }
 }

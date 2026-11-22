@@ -77,6 +77,10 @@ pub fn detail(seed: u32, x: f64, z: f64, cell: f64, roughness: f64, above_sea: f
 pub struct Dunes {
     pub scale: f64,
     pub wind: (f64, f64),
+    /// How far, in dunes, the rows bend: straight transverse ridges at the low end, wandering crests at the high.
+    pub bend: f64,
+    /// The share of each dune that is the gentle windward slope.
+    pub windward: f64,
 }
 
 impl Default for Dunes {
@@ -84,19 +88,21 @@ impl Default for Dunes {
         Self {
             scale: 1.0,
             wind: (1.0, 0.0),
+            bend: CREST_BEND,
+            windward: WINDWARD,
         }
     }
 }
 
 // 0..1 along the rows of dunes, 1 on each crest.
 fn dune(seed: u32, x: f64, z: f64, style: Dunes) -> f64 {
-    let bend = perlin(seed, x / CREST_BEND_WAVELENGTH, z / CREST_BEND_WAVELENGTH) * CREST_BEND;
+    let bend = perlin(seed, x / CREST_BEND_WAVELENGTH, z / CREST_BEND_WAVELENGTH) * style.bend;
     let along = x * style.wind.0 + z * style.wind.1;
     let t = (along / (DUNE_SPACING * style.scale) + bend).rem_euclid(1.0);
-    if t < WINDWARD {
-        smoothstep(0.0, WINDWARD, t)
+    if t < style.windward {
+        smoothstep(0.0, style.windward, t)
     } else {
-        smoothstep(1.0, WINDWARD, t)
+        smoothstep(1.0, style.windward, t)
     }
 }
 
@@ -126,6 +132,17 @@ pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64, style: Dunes)
     shape * DUNE_HEIGHT * style.scale * (0.4 + 0.6 * field) * room
 }
 
+// How much rougher than the plain a seed makes the open ground of each biome, 0 to 0.22 of the roughness scale (about 0 to 8 blocks of detail), so one seed's
+// grassland is billiard flat and another's rolls. Steppe and desert keep their own flatness and dunes.
+fn rolling_by_biome(seed: u32) -> [f32; 11] {
+    use super::climate::BiomeKind::{Glacier, Grassland, Forest, Jungle, Savanna, Taiga, Tundra};
+    let mut rolling = [0.0f32; 11];
+    for kind in [Grassland, Forest, Taiga, Tundra, Savanna, Jungle, Glacier] {
+        rolling[kind as usize] = (0.22 * libm::pow(ochre_base::noise::unit(seed ^ 0x80C1, kind as i32, 5), 1.5)) as f32;
+    }
+    rolling
+}
+
 /// Fills the roughness layer: steep and high ground is rough, plains and flat biomes are not.
 pub(crate) fn roughness_layer(map: &mut WorldMap) {
     let dim = map.dim();
@@ -142,6 +159,7 @@ pub(crate) fn roughness_layer(map: &mut WorldMap) {
         .iter()
         .map(|&v| ((v * 2.5).clamp(0.0, 1.0) * 255.0).round() as u8)
         .collect();
+    let rolling = rolling_by_biome(map.seed);
     let mut out = vec![0u8; dim * dim];
     par_rows(dim, &mut out, |row, cells| {
         let h = |x: usize, z: usize| map.height[z * dim + x];
@@ -155,6 +173,7 @@ pub(crate) fn roughness_layer(map: &mut WorldMap) {
             let mut r = (0.75 * smoothstep(0.1, 0.6, slope)
                 + 0.35 * smoothstep(60.0, 300.0, above_sea))
             .clamp(0.08, 1.0);
+            r = (r + rolling[map.biome[row * dim + col] as usize % rolling.len()] as f64).min(1.0);
             if map.landform[row * dim + col] == super::landform::MOUNTAIN {
                 r = r.max(0.75);
             }
@@ -175,6 +194,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_seeds_roll_the_open_ground_by_different_amounts_but_not_steppe_or_desert() {
+        use super::super::climate::BiomeKind;
+        let grassland: Vec<f32> = (0..100).map(|seed| rolling_by_biome(seed)[BiomeKind::Grassland as usize]).collect();
+        let (low, high) = grassland.iter().fold((f32::MAX, 0.0f32), |(l, h), &r| (l.min(r), h.max(r)));
+        assert!(low < 0.03 && high > 0.15 && high <= 0.22, "{low} to {high}");
+        for seed in 0..20 {
+            let rolling = rolling_by_biome(seed);
+            assert_eq!(0.0, rolling[BiomeKind::Steppe as usize] + rolling[BiomeKind::Desert as usize] + rolling[BiomeKind::Sea as usize]);
+        }
+    }
+
+    #[test]
     fn test_dunes_rise_inland_but_not_on_beaches_or_mountains() {
         let rise = |above_sea: f64| {
             (0..200)
@@ -189,6 +220,21 @@ mod tests {
             rise(30.0)
         );
         assert!(rise(30.0) <= DUNE_HEIGHT);
+    }
+
+    #[test]
+    fn test_dune_rows_bend_or_run_straight_and_lean_by_the_seeds_style() {
+        // along the crest (z, with the wind along x) a straight row never changes and a bent one does
+        let along_crest = |style: Dunes| (0..200).map(|i| (dune(1, 100.0, i as f64 * 9.0, style) - dune(1, 100.0, 0.0, style)).abs()).fold(0.0, f64::max);
+        let straight = Dunes { bend: 0.0, ..Dunes::default() };
+        let bent = Dunes { bend: 1.8, ..Dunes::default() };
+        assert!(along_crest(straight) < 1e-9 && along_crest(bent) > 0.3, "{} {}", along_crest(straight), along_crest(bent));
+        // the crest sits at the windward share of the way along a dune
+        for windward in [0.5, 0.78] {
+            let style = Dunes { bend: 0.0, windward, ..Dunes::default() };
+            let at = |t: f64| dune(1, t * DUNE_SPACING, 0.0, style);
+            assert!(at(windward) > 0.999 && at(windward - 0.2) < at(windward) && at(windward + 0.1) < at(windward));
+        }
     }
 
     #[test]

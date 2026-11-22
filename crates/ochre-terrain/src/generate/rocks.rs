@@ -95,6 +95,10 @@ fn share(biome: Option<&str>) -> Option<(RockKind, f64)> {
         "savanna" => Some((RockKind::Mound, 0.075)),
         // ledges of the beds that weathered out of its mesas
         "desert" => Some((RockKind::Erratic, 0.6)),
+        // a few boulders in the woods and the meadows, and more where the ice left them
+        "forest" => Some((RockKind::Erratic, 0.02)),
+        "grassland" => Some((RockKind::Erratic, 0.03)),
+        "glacier" => Some((RockKind::Erratic, 0.3)),
         _ => None,
     }
 }
@@ -104,6 +108,8 @@ fn small_share(biome: Option<&str>) -> Option<f64> {
     match biome? {
         "tundra" => Some(SMALL_SHARE),
         "desert" => Some(SMALL_SHARE * 0.4),
+        "taiga" => Some(SMALL_SHARE * 0.3),
+        "grassland" | "forest" => Some(SMALL_SHARE * 0.1),
         _ => None,
     }
 }
@@ -113,8 +119,18 @@ fn giant_share(biome: Option<&str>) -> Option<f64> {
     match biome? {
         "tundra" => Some(GIANT_SHARE),
         "desert" => Some(GIANT_SHARE * 2.0),
+        // standing stones and the odd arch in the open country, fewer under trees
+        "taiga" => Some(GIANT_SHARE * 0.5),
+        "grassland" | "steppe" | "savanna" => Some(GIANT_SHARE * 0.5),
+        "forest" => Some(GIANT_SHARE * 0.3),
         _ => None,
     }
+}
+
+// How much of its rocks a seed puts in a biome, 0.4 to 1.8 times, so one seed's taiga is strewn with boulders and another's nearly bare.
+fn flavour(seed: u64, biome: Option<&str>) -> f64 {
+    let name = biome.map_or(0, |n| n.bytes().fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64)));
+    0.4 + 1.4 * frac(hash(seed ^ 0xF1A7_0A00 ^ name, 7, 11), 0)
 }
 
 // Boulders come in fields: the share of cells that hold one is scaled by a factor that varies over patches this many blocks
@@ -209,7 +225,7 @@ fn small_in_cell(
     if noise.biomes().modifier(biome) != Modifier::None {
         return None;
     }
-    let share = (own * field(noise.seed() as u64, x, z)).min(1.0);
+    let share = (own * flavour(noise.seed() as u64, noise.biomes().name(biome)) * field(noise.seed() as u64, x, z)).min(1.0);
     if frac(seed, 0) >= share {
         return None;
     }
@@ -254,7 +270,7 @@ fn giant_in_cell(
     let Some(own) = giant_share(name) else {
         return Vec::new();
     };
-    if frac(seed, 0) >= own || noise.biomes().modifier(biome) != Modifier::None {
+    if frac(seed, 0) >= (own * flavour(noise.seed() as u64, name)).min(1.0) || noise.biomes().modifier(biome) != Modifier::None {
         return Vec::new();
     }
     let hoodoos = name == Some("desert") && frac(seed, 8) < HOODOO_SHARE;
@@ -418,6 +434,7 @@ fn rock_in_cell(
         }
         RockKind::Mound => share,
     };
+    let share = (share * flavour(noise.seed() as u64, noise.biomes().name(biome))).min(1.0);
     if chance >= share || noise.biomes().modifier(biome) != Modifier::None {
         return None;
     }
@@ -782,7 +799,20 @@ mod tests {
         assert_eq!(RockKind::Erratic, share(Some("desert")).unwrap().0);
         assert!(small_share(Some("desert")).unwrap() < small_share(Some("tundra")).unwrap());
         assert!(giant_share(Some("desert")).unwrap() > giant_share(Some("tundra")).unwrap());
-        assert!(giant_share(Some("grassland")).is_none() && small_share(Some("steppe")).is_none());
+        assert!(giant_share(Some("jungle")).is_none() && small_share(Some("steppe")).is_none());
+    }
+
+    #[test]
+    fn seeds_put_different_amounts_of_rock_in_a_biome_and_every_open_biome_has_some() {
+        let amounts: Vec<f64> = (0..200u64).map(|seed| flavour(seed, Some("taiga"))).collect();
+        let (low, high) = amounts.iter().fold((f64::MAX, 0.0f64), |(l, h), &a| (l.min(a), h.max(a)));
+        assert!(low >= 0.4 && high <= 1.8 && high > 2.5 * low, "{low} to {high}");
+        for biome in ["tundra", "taiga", "steppe", "desert", "grassland", "forest", "glacier"] {
+            assert!(share(Some(biome)).is_some(), "{biome} has no boulders");
+        }
+        for biome in ["taiga", "grassland", "forest", "steppe", "savanna", "desert", "tundra"] {
+            assert!(giant_share(Some(biome)).is_some(), "{biome} has no giants");
+        }
     }
 
     #[test]

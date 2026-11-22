@@ -11,7 +11,7 @@ use super::super::{WorldMap, NEIGHBOURS};
 use super::landmarks::biomes;
 
 const SALT: u32 = 0x1A4D_00C1;
-const MAX_LEN: usize = 900;
+const MAX_LEN: usize = 4000;
 // Cells each way the drainage line's bends are averaged over.
 const SMOOTH: usize = 3;
 // A canyon's head rises from the plateau over this many cells, and its floor falls at least this many blocks a cell.
@@ -28,6 +28,9 @@ const SHARE: f64 = 0.5;
 // Cells between canyon heads.
 const APART: f64 = 150.0;
 const EDGE: usize = 60;
+// Wadis, the dry beds of desert, savanna and steppe: ground this high over the sea, and cells between heads.
+const WADI_ABOVE: f64 = 30.0;
+const WADI_APART: f64 = 60.0;
 
 // A canyon's stretch of floor, as (x, z, height, half width in cells, slot depth in blocks): the map's trench floor, with the slot to be cut below it.
 type Floor = Vec<(f64, f64, f64, f64, f64)>;
@@ -105,7 +108,7 @@ fn fork(flood: &Flood, dim: usize, main: &Floor, k: usize, side: f64, (depth, ha
 }
 
 // Lowers `map.height` along `floor` to a trench of its half width, flat in its middle and rising in a steep wall, from the ground as it stood.
-fn stamp(map: &mut WorldMap, before: &[f32], floor: &Floor, keep: &[f32]) {
+fn stamp(map: &mut WorldMap, before: &[f32], floor: &Floor, shield: &mut [f32]) {
     let dim = map.dim();
     for &(px, pz, level, half, _) in floor {
         let reach = half.ceil() as i64 + 1;
@@ -114,8 +117,9 @@ fn stamp(map: &mut WorldMap, before: &[f32], floor: &Floor, keep: &[f32]) {
                 let t = libm::sqrt((x as f64 - px).powi(2) + (z as f64 - pz).powi(2)) / half;
                 let i = z as usize * dim + x as usize;
                 let wanted = level + (before[i] as f64 - level) * smoothstep(0.5, 1.0, t);
-                let cut = (before[i] as f64 - wanted).max(0.0) * (1.0 - keep[i] as f64);
+                let cut = (before[i] as f64 - wanted).max(0.0);
                 map.height[i] = map.height[i].min((before[i] as f64 - cut) as f32);
+                shield[i] = shield[i].max(1.0 - smoothstep(1.0, 1.4, t) as f32);
             }
         }
     }
@@ -144,54 +148,81 @@ fn cells_of(floor: &Floor, dim: usize) -> Vec<((usize, usize), f64)> {
     cells
 }
 
-/// Cuts up to `count` canyons into desert plateau, each a drop of 90 to 200 blocks (less where the plateau is low), swelling and pinching, with forks off its
-/// deeper reaches, leaving `keep` (landmarks) alone. The map's trench holds 60% of the depth, and `map.canyon` marks the line for a slot at block level.
-pub(crate) fn run(map: &mut WorldMap, count: u32, keep: &[f32]) {
+/// Cuts up to `count` canyons into desert plateau and `gorges` into the plateaus of the wetter biomes, each a drop of 90 to 200 blocks (less where the
+/// plateau is low), swelling and pinching, with forks off its deeper reaches, and adds the trenches to `keep` (landmarks), so the flattening and the valleys leave them be. The map's trench holds 60% of the depth,
+/// and `map.canyon` marks the line for a slot at block level. A gorge is a canyon with rain on it, so the water the last run routes puts a river through it.
+pub(crate) fn run(map: &mut WorldMap, count: u32, gorges: u32, wadis: u32, keep: &mut [f32]) {
     let dim = map.dim();
-    if count == 0 || dim <= 2 * EDGE {
+    if (count == 0 && gorges == 0 && wadis == 0) || dim <= 2 * EDGE {
         return;
     }
     let sea = WATER_LEVEL as f32;
-    let eligible: Vec<usize> = biomes(map)
-        .iter()
-        .enumerate()
-        .filter(|&(i, b)| *b == Some(BiomeKind::Desert) && (map.height[i] - sea) as f64 >= START_ABOVE)
-        .map(|(i, _)| i)
+    let biome = biomes(map);
+    let high = |i: usize| (map.height[i] - sea) as f64 >= START_ABOVE;
+    let wet = |b: &Option<BiomeKind>| matches!(b, Some(BiomeKind::Savanna | BiomeKind::Grassland | BiomeKind::Forest | BiomeKind::Jungle | BiomeKind::Taiga | BiomeKind::Steppe));
+    let desert: Vec<usize> = (0..dim * dim).filter(|&i| biome[i] == Some(BiomeKind::Desert) && high(i)).collect();
+    let wetter: Vec<usize> = (0..dim * dim).filter(|&i| wet(&biome[i]) && high(i)).collect();
+    let dry: Vec<usize> = (0..dim * dim)
+        .filter(|&i| matches!(biome[i], Some(BiomeKind::Desert | BiomeKind::Savanna | BiomeKind::Steppe)) && (map.height[i] - sea) as f64 >= WADI_ABOVE)
         .collect();
-    if eligible.is_empty() {
+    if desert.is_empty() && wetter.is_empty() && dry.is_empty() {
         return;
     }
     let flood = priority_flood(&map.height, dim, &flood_ties(map));
     let before = map.height.clone();
-    for (sx, sz) in sites_apart(map, eligible, count as usize, SALT, APART) {
-        let h = hash(map.seed ^ SALT, sx as i32, sz as i32);
-        let above = before[sz * dim + sx] as f64 - sea as f64;
-        // never deeper than the plateau leaves room for over the sea
-        let (half, total) = (1.2 + 1.0 * unit(h, 2, 0), (90.0 + 110.0 * unit(h, 3, 0)).min((above - SEA_MARGIN) * 0.85));
-        let floor = trace(&flood, dim, (sx, sz), total * SOFT, half, h);
-        stamp(map, &before, &smoothed(&floor), keep);
-        // forks off the deeper reaches, upstream to either side
-        let mut forks = Vec::new();
-        let mut k = 30;
-        while k + 5 < floor.len() {
-            let hk = hash(h, k as i32, 7);
-            if unit(hk, 1, 0) < 0.7 && flood.filled[floor[k].1 as usize * dim + floor[k].0 as usize] as f64 - floor[k].2 > 25.0 {
-                let side = if unit(hk, 2, 0) < 0.5 { -1.0 } else { 1.0 };
-                let ratio = |(lo, hi): (f64, f64), n: i32| lo + (hi - lo) * unit(hk, n, 0);
-                let branch = fork(&flood, dim, &floor, k, side, (total * SOFT * ratio(FORK_DEPTH, 3), floor[k].3 * ratio(FORK_HALF, 4)), hk);
-                stamp(map, &before, &branch, keep);
-                forks.push(branch);
-            }
-            k += 35 + (40.0 * unit(hk, 8, 0)) as usize;
+    // where a trench is cut, so the steppe's flattening and the valleys leave it alone, as they do a landmark
+    let mut shield = vec![0.0f32; dim * dim];
+    for (sites, number, salt, wadi) in [(desert, count, SALT, false), (wetter, gorges, SALT ^ 0x6, false), (dry, wadis, SALT ^ 0x7, true)] {
+        for (sx, sz) in sites_apart(map, sites, number as usize, salt, if wadi { WADI_APART } else { APART }) {
+            cut(map, &flood, &before, (sx, sz), hash(map.seed ^ salt, sx as i32, sz as i32), &mut shield, wadi);
         }
-        // the main line first, so a fork never takes one of its cells
-        mark(&mut map.canyon, dim, &cells_of(&floor, dim));
-        for branch in &forks {
-            // pointing downstream, to the canyon it joins
-            let mut cells = cells_of(branch, dim);
-            cells.reverse();
-            mark(&mut map.canyon, dim, &cells);
+    }
+    for (k, s) in keep.iter_mut().zip(&shield) {
+        *k = k.max(*s);
+    }
+}
+
+// One canyon from `site`: the trench, the slot's marks and the forks.
+fn cut(map: &mut WorldMap, flood: &Flood, before: &[f32], (sx, sz): (usize, usize), h: u32, shield: &mut [f32], wadi: bool) {
+    let dim = map.dim();
+    let sea = WATER_LEVEL as f64;
+    let above = before[sz * dim + sx] as f64 - sea;
+    // never deeper than the plateau leaves room for over the sea
+    let knobs = super::super::character::LandformKnobs::from_seed(map.seed);
+    let (half, total) = if wadi {
+        (1.4 + 1.0 * unit(h, 2, 0), 18.0 + 22.0 * unit(h, 3, 0))
+    } else {
+        (1.2 + 1.0 * unit(h, 2, 0), ((90.0 + 110.0 * unit(h, 3, 0)) * knobs.canyon_depth).min((above - SEA_MARGIN) * 0.85))
+    };
+    let half = half * knobs.canyon_width;
+    // a wadi is all in the map's trench: shallow, wide and open, with no slot and no forks
+    let floor = trace(flood, dim, (sx, sz), if wadi { total } else { total * SOFT }, half, h);
+    stamp(map, before, &smoothed(&floor), &mut *shield);
+    if wadi {
+        return;
+    }
+    // forks off the deeper reaches, upstream to either side
+    let mut forks = Vec::new();
+    let mut k = 30;
+    while k + 5 < floor.len() {
+        let hk = hash(h, k as i32, 7);
+        if unit(hk, 1, 0) < 0.7 && flood.filled[floor[k].1 as usize * dim + floor[k].0 as usize] as f64 - floor[k].2 > 25.0 {
+            let side = if unit(hk, 2, 0) < 0.5 { -1.0 } else { 1.0 };
+            let ratio = |(lo, hi): (f64, f64), n: i32| lo + (hi - lo) * unit(hk, n, 0);
+            let branch = fork(flood, dim, &floor, k, side, (total * SOFT * ratio(FORK_DEPTH, 3), floor[k].3 * ratio(FORK_HALF, 4)), hk);
+            stamp(map, before, &branch, &mut *shield);
+            forks.push((k, branch));
         }
+        k += 35 + (40.0 * unit(hk, 8, 0)) as usize;
+    }
+    // the main line first, so a fork never takes one of its cells
+    mark(&mut map.canyon, dim, &cells_of(&floor, dim));
+    for (k, branch) in &forks {
+        // pointing downstream, to the cell of the canyon it joins
+        let mut cells = cells_of(branch, dim);
+        cells.reverse();
+        cells.push(((floor[*k].0 as usize, floor[*k].1 as usize), 0.0));
+        mark(&mut map.canyon, dim, &cells);
     }
 }
 
@@ -214,13 +245,13 @@ mod tests {
 
     #[test]
     fn a_canyon_is_a_trench_whose_floor_only_falls_and_whose_walls_stand() {
-        let (mut map, keep) = slope();
+        let (mut map, _) = slope();
         let (dim, before) = (map.dim(), map.height.clone());
         let floor = trace(&priority_flood(&map.height, dim, &flood_ties(&map)), dim, (100, 200), 90.0, 1.5, 5);
         assert!(floor.len() > 40, "{} cells long", floor.len());
         assert!(floor.windows(2).all(|w| w[1].2 < w[0].2), "the floor rises");
         let line = smoothed(&floor);
-        stamp(&mut map, &before, &line, &keep);
+        stamp(&mut map, &before, &line, &mut vec![0.0; dim * dim]);
         let (mx, mz, level, ..) = line[line.len() / 2];
         let mid = map.height[mz as usize * dim + mx as usize] as f64;
         assert!((mid - level).abs() < 1.0, "the middle is {mid}, the floor {level}");
@@ -257,12 +288,30 @@ mod tests {
     }
 
     #[test]
-    fn landmarks_are_left_standing() {
-        let (mut map, mut keep) = slope();
+    fn a_wadi_is_a_shallow_open_bed_with_no_slot_and_a_canyon_is_deep_with_one() {
+        let (mut wadi, _) = slope();
+        let (dim, before) = (wadi.dim(), wadi.height.clone());
+        let flood = priority_flood(&wadi.height, dim, &flood_ties(&wadi));
+        cut(&mut wadi, &flood, &before, (100, 200), 5, &mut vec![0.0; dim * dim], true);
+        let deepest = (0..dim * dim).map(|i| before[i] - wadi.height[i]).fold(0.0, f32::max);
+        assert!((8.0..=45.0).contains(&deepest), "a wadi {deepest} deep");
+        assert!(wadi.canyon.iter().all(|&b| b == 0), "a wadi marked a slot");
+        let (mut canyon, _) = slope();
+        cut(&mut canyon, &flood, &before, (100, 200), 5, &mut vec![0.0; dim * dim], false);
+        let deepest = (0..dim * dim).map(|i| before[i] - canyon.height[i]).fold(0.0, f32::max);
+        assert!(deepest > 45.0 && canyon.canyon.iter().any(|&b| b != 0), "a canyon {deepest} deep");
+    }
+
+    #[test]
+    fn a_trench_is_shielded_and_cuts_through_whatever_stands_in_its_way() {
+        let (mut map, _) = slope();
         let (dim, before) = (map.dim(), map.height.clone());
-        keep.fill(1.0);
         let floor = trace(&priority_flood(&map.height, dim, &flood_ties(&map)), dim, (100, 200), 90.0, 1.5, 5);
-        stamp(&mut map, &before, &smoothed(&floor), &keep);
-        assert_eq!(before, map.height);
+        let mut shield = vec![0.0f32; dim * dim];
+        stamp(&mut map, &before, &smoothed(&floor), &mut shield);
+        let (x, z, level, ..) = floor[floor.len() / 2];
+        let at = z as usize * dim + x as usize;
+        assert_eq!(1.0, shield[at], "the middle of the trench is not shielded");
+        assert!(map.height[at] as f64 - level < 1.0 && shield.contains(&0.0));
     }
 }

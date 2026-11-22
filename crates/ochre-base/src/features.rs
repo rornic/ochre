@@ -2,7 +2,7 @@
 //! the position that returns blocks to add to the height, at most `MAX_OFFSET` either way.
 
 use crate::math::smoothstep_f64 as smoothstep;
-use crate::noise::{fbm, hash, perlin};
+use crate::noise::{fbm, hash, perlin, ridged};
 use std::f64::consts::FRAC_PI_2;
 
 /// The most any feature raises or cuts the ground, in blocks.
@@ -20,6 +20,10 @@ pub enum ReliefKind {
     Kopjes,
     Gullies,
     Hummocks,
+    Knolls,
+    Mogotes,
+    Dells,
+    Ledges,
 }
 
 /// What a feature reads about the ground it lies on.
@@ -52,6 +56,10 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
         ReliefKind::Kopjes => kopjes(seed, x, z, ctx),
         ReliefKind::Gullies => gullies(seed, x, z, ctx),
         ReliefKind::Hummocks => hummocks(seed, x, z, ctx),
+        ReliefKind::Knolls => knolls(seed, x, z, ctx),
+        ReliefKind::Mogotes => mogotes(seed, x, z, ctx),
+        ReliefKind::Dells => dells(seed, x, z, ctx),
+        ReliefKind::Ledges => ledges(seed, x, z, ctx),
     };
     (raw * detail).clamp(-MAX_OFFSET, MAX_OFFSET)
 }
@@ -385,12 +393,98 @@ fn hummocks(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * flat
 }
 
+// Round bumps scattered on a grid of `size` block cells, each cell holding one with `chance` times what its 1200 block province scales it to, so
+// a seed has thick and thin country: radius and height between the pairs, rolling (a smooth cap) or peaked (a cone with a rounded top).
+struct Bumps {
+    salt: u32,
+    size: f64,
+    chance: f64,
+    radius: (f64, f64),
+    height: (f64, f64),
+    peaked: bool,
+}
+
+fn bumps(seed: u32, x: f64, z: f64, b: &Bumps) -> f64 {
+    const PROVINCE: f64 = 1200.0;
+    let (gx, gz) = ((x / b.size).floor() as i64, (z / b.size).floor() as i64);
+    let mut best: f64 = 0.0;
+    for cz in gz - 1..=gz + 1 {
+        for cx in gx - 1..=gx + 1 {
+            let h = cell_hash(seed ^ b.salt, cx, cz);
+            // the most a province scales the chance, for the cheap reject before the place is worked out
+            if unit_of(h, 1) >= b.chance * 1.6 {
+                continue;
+            }
+            let px = (cx as f64 + 0.2 + 0.6 * unit_of(h, 2)) * b.size;
+            let pz = (cz as f64 + 0.2 + 0.6 * unit_of(h, 3)) * b.size;
+            let province = cell_hash(seed ^ b.salt ^ 0x9408, (px / PROVINCE).floor() as i64, (pz / PROVINCE).floor() as i64);
+            if unit_of(h, 1) >= b.chance * (0.25 + 1.35 * unit_of(province, 1)) {
+                continue;
+            }
+            let radius = b.radius.0 + (b.radius.1 - b.radius.0) * unit_of(h, 4);
+            let d2 = ((x - px).powi(2) + (z - pz).powi(2)) / (radius * radius);
+            if d2 < 1.0 {
+                let t = 1.0 - d2;
+                let shape = if b.peaked { t.sqrt() } else { t * t * (3.0 - 2.0 * t) };
+                best = best.max((b.height.0 + (b.height.1 - b.height.0) * unit_of(h, 5)) * shape);
+            }
+        }
+    }
+    best
+}
+
+// Low rounded hills 5 to 11 high and 45 to 100 across, in drifts, on the open ground of the grassland.
+fn knolls(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let gentle = 1.0 - smoothstep(0.2, 0.4, ctx.gradient);
+    if gentle <= 0.0 {
+        return 0.0;
+    }
+    bumps(seed, x, z, &Bumps { salt: 0x40C1, size: 150.0, chance: 0.5, radius: (22.0, 50.0), height: (5.0, 11.0), peaked: false }) * gentle
+}
+
+// Small steep hills of limestone, 10 to 18 high and 16 to 32 across, in clusters, standing out of the jungle's floor.
+fn mogotes(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let gentle = 1.0 - smoothstep(0.35, 0.6, ctx.gradient);
+    if gentle <= 0.0 {
+        return 0.0;
+    }
+    bumps(seed, x, z, &Bumps { salt: 0x40C2, size: 90.0, chance: 0.35, radius: (8.0, 16.0), height: (10.0, 18.0), peaked: true }) * gentle
+}
+
+// Shallow hollows 3 to 7 deep and 28 to 56 across in the forest floor, where an old tree's roots lifted the ground and rotted.
+fn dells(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    let flat = 1.0 - smoothstep(0.15, 0.3, ctx.gradient);
+    if flat <= 0.0 {
+        return 0.0;
+    }
+    -bumps(seed, x, z, &Bumps { salt: 0x40C3, size: 110.0, chance: 0.4, radius: (14.0, 28.0), height: (3.0, 7.0), peaked: false }) * flat
+}
+
+// `rise` cut into ledges `step` blocks high: flat for the first of each, then a steep riser to the next.
+fn stepped(rise: f64, step: f64) -> f64 {
+    let along = rise / step;
+    let base = along.floor();
+    (base + smoothstep(0.65, 1.0, along - base)) * step
+}
+
+// The jungle floor broken into ledges, as a slope under thick forest is, so no stretch of it is smooth: ridged noise 90 blocks across and up to 13 high cut
+// into ledges of 3.5, which need a scramble and not a jump, one 28 across and 4.5 high cut into ledges of 2 that can be scrambled up, and one 9 across and 0.6 high
+// that roughens every tread. A seed makes them its own taller or shorter and longer or shorter.
+fn ledges(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
+    // a little less on the level, and none on cliffs, which are steep enough already
+    let room = (0.6 + 0.4 * smoothstep(0.0, 0.15, ctx.gradient)) * (1.0 - smoothstep(1.0, 1.5, ctx.gradient));
+    let (tall, long) = (0.8 + 0.4 * unit_of(seed, 0x1ED0), 0.8 + 0.4 * unit_of(seed, 0x1ED1));
+    let layer = |salt: u32, wavelength: f64, amp: f64| (ridged(seed ^ salt, x, z, wavelength * long, 2) - 0.45) * 2.0 * amp * tall;
+    let rough = (ridged(seed ^ 0x1ED8, x, z, 9.0 * long, 1) - 0.5) * 1.2;
+    (stepped(layer(0x1ED6, 90.0, 13.0), 3.5) + stepped(layer(0x1ED7, 28.0, 4.5), 2.0) + rough) * room
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::noise::unit;
 
-    const KINDS: [ReliefKind; 10] = [
+    const KINDS: [ReliefKind; 14] = [
         ReliefKind::Crevasses,
         ReliefKind::Seracs,
         ReliefKind::Pingos,
@@ -401,6 +495,10 @@ mod tests {
         ReliefKind::Kopjes,
         ReliefKind::Gullies,
         ReliefKind::Hummocks,
+        ReliefKind::Knolls,
+        ReliefKind::Mogotes,
+        ReliefKind::Dells,
+        ReliefKind::Ledges,
     ];
 
     fn ctx(gradient: f64) -> ReliefCtx {
