@@ -14,7 +14,7 @@ use bevy::{
     input::{keyboard::KeyCode, ButtonInput},
     light::{
         atmosphere::ScatteringMedium, Atmosphere, AtmosphereEnvironmentMapLight,
-        CascadeShadowConfigBuilder, DirectionalLight, SimulationLightSystems, SunDisk,
+        CascadeShadowConfig, CascadeShadowConfigBuilder, DirectionalLight, DirectionalLightShadowMap, SimulationLightSystems, SunDisk,
     },
     math::{Quat, UVec2, UVec3, Vec3},
     pbr::{AtmosphereSettings, DistanceFog, FogFalloff},
@@ -31,6 +31,7 @@ use crate::godrays::shining;
 use ochre_terrain::chunk::CHUNK_SIZE;
 use ochre_terrain::curvature::WORLD_CURVE;
 use ochre_terrain::settings::RendererSettings;
+use ochre_terrain::world::World;
 use serde::Deserialize;
 
 /// How opaque fog gets at its far end.
@@ -60,6 +61,14 @@ const SUN_BRIGHTNESS: f32 = 1.3;
 const SKY_GAIN: f32 = 4.0;
 const CAMERA_EV100: f32 = Exposure::EV100_SUNLIGHT;
 const FIRST_CASCADE_DISTANCE: f32 = 20.0;
+// Bevy's defaults, which clear the stripes of self-shadowing on gentle slopes that lower normal biases leave, see `FAR_NORMAL_BIAS` in `world_light.wesl` for the far shadows.
+const SHADOW_DEPTH_BIAS: f32 = 0.02;
+const SHADOW_NORMAL_BIAS: f32 = 1.8;
+// How much of the camera's height over the ground the first cascade starts at, and the start under which cascades stay as at the ground.
+const CASCADE_START_SHARE: f32 = 0.5;
+const CASCADE_START_FROM: f32 = 16.0;
+// How much of each cascade blends into the next.
+const CASCADE_OVERLAP: f32 = 0.4;
 const ENVIRONMENT_MAP_SIZE: u32 = 64;
 // About twice the real sun's size; matches `DISC_SIZE` in `sun_glare.wesl`, which draws it so clouds can hide it.
 const SUN_DISC_SIZE: f32 = 0.02;
@@ -93,6 +102,8 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
             color: SUN_COLOR,
             illuminance: sun_illuminance(),
             shadow_maps_enabled: true,
+            shadow_depth_bias: SHADOW_DEPTH_BIAS,
+            shadow_normal_bias: SHADOW_NORMAL_BIAS,
             ..Default::default()
         },
         Sun,
@@ -107,6 +118,7 @@ pub fn sun(shadow_distance: f32, cascades: usize) -> impl Bundle {
             num_cascades: cascades.max(1),
             first_cascade_far_bound: FIRST_CASCADE_DISTANCE,
             maximum_distance: shadow_distance,
+            overlap_proportion: CASCADE_OVERLAP,
             ..Default::default()
         }
         .build(),
@@ -232,6 +244,50 @@ fn move_sky(
     }
 }
 
+// A cascade's bounds are distances from the camera, so high over the land the fine ones would cover empty air: this starts them half as far as the ground.
+fn fit_cascades_to_ground(
+    world: Option<Res<World>>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
+    mut sun: Query<&mut CascadeShadowConfig, With<Sun>>,
+    // the start distance now fitted to, in steps of root two so the cascades' texels only change size a few times in a climb
+    mut fitted: Local<f32>,
+) {
+    let (Some(world), Ok(camera), Ok(mut config)) = (world, camera.single(), sun.single_mut()) else {
+        return;
+    };
+    let eye = camera.translation();
+    let ground = world.region_store.terrain().sample(eye.x as f64, eye.z as f64).height as f32;
+    let wanted = ((eye.y - ground) * CASCADE_START_SHARE).max(0.0);
+    let start = fitted_start(wanted, *fitted);
+    if start == *fitted {
+        return;
+    }
+    *fitted = start;
+    let Some(&reach) = config.bounds.last() else {
+        return;
+    };
+    let min = start.min(reach * 0.4);
+    *config = CascadeShadowConfigBuilder {
+        num_cascades: config.bounds.len(),
+        minimum_distance: min.max(0.1),
+        first_cascade_far_bound: (min * 3.0).max(FIRST_CASCADE_DISTANCE).min(reach * 0.6),
+        maximum_distance: reach,
+        overlap_proportion: CASCADE_OVERLAP,
+    }
+    .build();
+}
+
+// The distance the cascades start at for a `wanted` one, kept at `fitted` while within 20% of it so hovering on a step's edge doesn't flip them back and forth, and 0 under `CASCADE_START_FROM`.
+fn fitted_start(wanted: f32, fitted: f32) -> f32 {
+    if wanted < CASCADE_START_FROM {
+        0.0
+    } else if fitted > 0.0 && (wanted / fitted - 1.0).abs() < 0.2 {
+        fitted
+    } else {
+        2.0_f32.powf((wanted.log2() * 2.0).round() / 2.0)
+    }
+}
+
 /// The day fraction the sun's shadows follow: held at the last step until the next.
 fn shadow_days(ticks: u64) -> f32 {
     let step = ticks.div_euclid(SHADOW_STEP_TICKS) * SHADOW_STEP_TICKS;
@@ -331,13 +387,16 @@ pub struct SkySettings {
     pub shadow_distance: u32,
     /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
+    /// Width of each cascade's shadow map in texels, a power of two: 4096 halves the texel size and costs about 4 ms more on an RTX 2060.
+    pub shadow_resolution: usize,
 }
 
 impl Default for SkySettings {
     fn default() -> Self {
         Self {
             shadow_distance: 64,
-            shadow_cascades: 3,
+            shadow_cascades: 4,
+            shadow_resolution: 2048,
         }
     }
 }
@@ -377,10 +436,11 @@ fn spawn_sun_and_moon(
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.settings)
+            .insert_resource(DirectionalLightShadowMap { size: self.settings.shadow_resolution })
             .insert_resource(TimeOfDay::from_days(self.start))
             .insert_resource(TimeScale(self.time_scale))
             .add_systems(Startup, (spawn_atmosphere, spawn_sun_and_moon))
-            .add_systems(Update, move_sky)
+            .add_systems(Update, (move_sky, fit_cascades_to_ground))
         // once the camera's moved, see `TransformSystems::Propagate`
         .add_systems(
             PostUpdate,
@@ -433,6 +493,17 @@ mod tests {
         // a second of `]` winds a tenth of a day, and a locked clock stays where it was
         assert!(clock_after(false) > 1000 + DAY_TICKS / 20);
         assert_eq!(clock_after(true), 1000);
+    }
+
+    #[test]
+    fn test_cascades_start_at_the_ground_in_steps_that_hold() {
+        assert_eq!(fitted_start(5.0, 0.0), 0.0);
+        let high = fitted_start(100.0, 0.0);
+        assert!(high > 80.0 && high < 120.0, "{high}");
+        assert_eq!(fitted_start(105.0, high), high);
+        assert_eq!(fitted_start(95.0, high), high);
+        assert!(fitted_start(200.0, high) > 1.3 * high);
+        assert_eq!(fitted_start(3.0, high), 0.0);
     }
 
     #[test]
