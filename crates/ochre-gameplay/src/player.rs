@@ -35,7 +35,7 @@ use ochre_terrain::{
 use ochre_world::ambience::SurroundingsPlugin;
 
 use crate::character::{
-    step_character, CharacterState, Movement, MovementInput, WorldEnvironment, JUMP_SPEED, STEP_HEIGHT,
+    step_character, CharacterState, Movement, MovementInput, StepEvents, WorldEnvironment, JUMP_SPEED, STEP_HEIGHT,
 };
 use crate::footsteps::{Footstep, Surface, SPRINT_LOUDER};
 use crate::view::{
@@ -45,7 +45,7 @@ use crate::view::{
 
 /// The player's body, at its feet, with the camera at its eyes. What the body does is `CharacterState`; this is what it shows.
 #[derive(Component, Default)]
-pub(crate) struct Player {
+pub struct Player {
     // how far through its stride the head's bob is, in radians a pair of steps, and how big the bob is now
     bob_phase: f32,
     bob: f32,
@@ -64,6 +64,21 @@ pub(crate) struct Player {
     fov_speed: f32,
     // how far the last step moved the body, so the camera can trail it between steps
     moved: Vec3,
+}
+
+impl Player {
+    /// What a step of `events` that moved the body from `start` to `end` adds to the view.
+    pub fn after_step(&mut self, world: &World, start: Vec3, end: Vec3, events: &StepEvents) {
+        self.moved = end - start;
+        // a step up moves the body a block in one go, so the eyes start where they were and ease up
+        self.eye_lag = (self.eye_lag + events.rose).min(STEP_HEIGHT);
+        if events.landed > 0.0 {
+            self.landed = events.landed;
+        }
+        if let Some(at) = events.jumped {
+            self.jumped = Surface::under(world, at);
+        }
+    }
 }
 
 const FLY_TOGGLE_KEY: KeyCode = KeyCode::KeyF;
@@ -158,15 +173,7 @@ fn player_step(
     let events = step_character(&mut state, &mut position, &input, &env, time.delta_secs());
     input.toggle_fly = false;
     transform.translation = position;
-    player.moved = position - start;
-    // a step up moves the body a block in one go, so the eyes start where they were and ease up
-    player.eye_lag = (player.eye_lag + events.rose).min(STEP_HEIGHT);
-    if events.landed > 0.0 {
-        player.landed = events.landed;
-    }
-    if let Some(at) = events.jumped {
-        player.jumped = Surface::under(&world, at);
-    }
+    player.after_step(&world, start, position, &events);
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -321,11 +328,13 @@ pub struct PlayerPlugin {
     pub look: Vec3,
     /// Starts flying, so the player hovers where it spawns.
     pub fly: bool,
+    /// Leaves the stepping to the game, which sets the body's `Transform` and `CharacterState` and calls `Player::after_step` itself.
+    pub driven: bool,
 }
 
 impl Default for PlayerPlugin {
     fn default() -> Self {
-        Self { look: Vec3::Z, fly: false }
+        Self { look: Vec3::Z, fly: false, driven: false }
     }
 }
 
@@ -347,7 +356,6 @@ impl Plugin for PlayerPlugin {
             .init_resource::<ColdGrade>()
             .add_systems(Startup, spawn_player)
             .add_systems(RunFixedMainLoop, capture_input.in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop))
-            .add_systems(FixedUpdate, player_step)
             .add_systems(
                 Update,
                 (
@@ -361,6 +369,9 @@ impl Plugin for PlayerPlugin {
                 )
                     .chain(),
             );
+        if !self.driven {
+            app.add_systems(FixedUpdate, player_step);
+        }
     }
 }
 
@@ -390,6 +401,20 @@ fn spawn_player(
 mod tests {
     use super::*;
     use crate::character::BODY;
+
+    #[test]
+    fn after_step_trails_the_view_and_eases_a_step_up_and_keeps_a_landing() {
+        let world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
+        let mut player = Player::default();
+        let events = StepEvents { rose: 1.0, landed: 3.0, jumped: None };
+        player.after_step(&world, Vec3::ZERO, Vec3::new(0.0, 1.0, 0.5), &events);
+        assert_eq!(player.moved, Vec3::new(0.0, 1.0, 0.5));
+        assert_eq!(player.eye_lag, STEP_HEIGHT.min(1.0));
+        assert_eq!(player.landed, 3.0);
+        // a step with no landing leaves the last one for the view to take
+        player.after_step(&world, Vec3::ZERO, Vec3::X, &StepEvents { rose: 0.0, landed: 0.0, jumped: None });
+        assert_eq!(player.landed, 3.0);
+    }
 
     #[test]
     fn two_footfalls_a_stride_where_the_head_is_lowest() {
