@@ -44,6 +44,9 @@ pub enum BlockType {
     // the steppe's grass and flower, flora like the rest, see `BlockType::is_flora`: last so no stored block's number moves
     FeatherGrass,
     SteppeFlower,
+    // the jungle's tall ferns and the savanna's long grass, drawn with the fern's and the tall grass's sprites at a larger size, see `mesh_flora`: last again
+    BigFern,
+    LongGrass,
 }
 
 impl BlockType {
@@ -142,6 +145,8 @@ impl BlockType {
             BlockType::Heath => "heath",
             BlockType::FeatherGrass => "feather grass",
             BlockType::SteppeFlower => "steppe flower",
+            BlockType::BigFern => "big fern",
+            BlockType::LongGrass => "long grass",
             BlockType::CompactedRock => "compacted rock",
             BlockType::Limestone => "limestone",
             BlockType::Clay => "clay",
@@ -174,6 +179,8 @@ impl BlockType {
                 | BlockType::SteppeFlower
                 | BlockType::Shrub
                 | BlockType::Heath
+                | BlockType::BigFern
+                | BlockType::LongGrass
         )
     }
 }
@@ -410,6 +417,8 @@ impl BlockType {
             (BlockType::SteppeFlower, _) => Tile::SteppeFlower,
             (BlockType::Shrub, _) => Tile::Shrub,
             (BlockType::Heath, _) => Tile::Heath,
+            (BlockType::BigFern, _) => Tile::Fern,
+            (BlockType::LongGrass, _) => Tile::TallGrass,
         }
     }
 
@@ -567,6 +576,8 @@ mod tests {
             BlockType::SteppeFlower,
             BlockType::Shrub,
             BlockType::Heath,
+            BlockType::BigFern,
+            BlockType::LongGrass,
         ] {
             assert!(flora.is_flora() && !flora.is_opaque());
             assert_eq!(0, flora.light_opacity());

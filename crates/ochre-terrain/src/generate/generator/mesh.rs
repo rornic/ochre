@@ -565,6 +565,12 @@ const SHRUB_HEIGHT: (f32, f32) = (1.8, 2.5);
 const SHRUB_HALF_WIDTH: (f32, f32) = (1.3, 1.8);
 const HEATH_HEIGHT: (f32, f32) = (1.6, 2.2);
 const HEATH_HALF_WIDTH: (f32, f32) = (1.2, 1.6);
+// The jungle's big fern, in the shrub's way of three crossed pairs, and the savanna's long grass, which keeps the grasses' way and grows over two blocks.
+const BIG_FERN_HEIGHT: (f32, f32) = (1.9, 3.3);
+const BIG_FERN_HALF_WIDTH: (f32, f32) = (1.1, 1.8);
+const LONG_GRASS_HEIGHT: (f32, f32) = (1.7, 2.7);
+// What the long grass's tint is multiplied by: the savanna's grass goes gold in the sun.
+const LONG_GRASS_GOLD: Vec3 = Vec3::new(1.18, 1.0, 0.62);
 // Between 0 and 1 for the block at `coord`, the same every time it's meshed, so what grows where
 // doesn't change when the chunk is meshed again.
 pub(super) fn hash01(coord: IVec3, salt: u32) -> f32 {
@@ -723,14 +729,18 @@ fn mesh_flora(
         let jitter = |salt: u32| hash01(world, salt);
         let grass = matches!(
             block,
-            BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass | BlockType::FeatherGrass
+            BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass | BlockType::FeatherGrass | BlockType::LongGrass
         );
         let shorten = if grass { GRASS_SHORTEN } else { FLORA_SHORTEN };
         // grasses may stand a little over a block, where the cell above is open
         let room = !source.block(coord + IVec3::Y).is_opaque();
-        let tallest = if grass && room { SIZE_RANGE.1 } else { 1.0 };
-        let base_height =
-            ((1.0 - jitter(3) * shorten) * between(SIZE_RANGE, jitter(4))).min(tallest);
+        let long = block == BlockType::LongGrass;
+        let tallest = if long && room { LONG_GRASS_HEIGHT.1 } else if grass && room { SIZE_RANGE.1 } else { 1.0 };
+        let base_height = if long {
+            between(LONG_GRASS_HEIGHT, jitter(4)).min(tallest)
+        } else {
+            ((1.0 - jitter(3) * shorten) * between(SIZE_RANGE, jitter(4))).min(tallest)
+        };
         let reach = (0.5 - FLORA_INSET) * std::f32::consts::SQRT_2;
         let tile = block.tile(Face::Side);
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
@@ -750,7 +760,7 @@ fn mesh_flora(
                 BlockType::SeedGrass => grass_tint.cotton(grass_tint.mosaic(tint, ground), ground),
                 _ => tint,
             };
-            tint * source.forest_shade(ground)
+            tint * source.forest_shade(ground) * if long { LONG_GRASS_GOLD } else { Vec3::ONE }
         } else {
             Vec3::ONE
         };
@@ -758,6 +768,7 @@ fn mesh_flora(
         let big = match block {
             BlockType::Shrub => Some((SHRUB_HEIGHT, SHRUB_HALF_WIDTH)),
             BlockType::Heath => Some((HEATH_HEIGHT, HEATH_HALF_WIDTH)),
+            BlockType::BigFern => Some((BIG_FERN_HEIGHT, BIG_FERN_HALF_WIDTH)),
             _ => None,
         };
         if let Some((heights, widths)) = big {
@@ -788,6 +799,8 @@ fn mesh_flora(
         }
         // the first plant is where it always was, the rest stand round it
         let extras = match block {
+            // a clump of long grass is thick, and each blade as tall
+            BlockType::LongGrass => 2 + (jitter(10) < 0.6) as u32,
             _ if grass => 1 + (jitter(10) < 0.55) as u32,
             BlockType::Fern => (jitter(10) < 0.5) as u32,
             _ => (jitter(10) < 0.4) as u32,

@@ -38,6 +38,11 @@ const FERN_DENSITY: f64 = 0.25;
 const SHORT_SHARE: f64 = 0.45;
 const SHADED_SHORT_SHARE: f64 = 0.65;
 const SEED_SHARE: f64 = 0.15;
+// The share of a jungle's ferns that are big ones, and how much thicker than other open grass the savanna's grows and the shares of it that are long and short.
+const JUNGLE_BIG_FERNS: f64 = 0.22;
+const SAVANNA_GRASS: f64 = 1.5;
+const SAVANNA_LONG: f64 = 0.55;
+const SAVANNA_SHORT: f64 = 0.2;
 // How much thicker (or thinner) a biome's floor under trees is in ferns and shaded grass than a forest's.
 const JUNGLE_UNDERSTORY: f64 = 2.0;
 const TAIGA_UNDERSTORY: f64 = 0.5;
@@ -203,6 +208,8 @@ pub(super) fn flora_at(
         FOREST_GRASS_DENSITY * understory
     } else if steppe {
         STEPPE_GRASS.0 + (STEPPE_GRASS.1 - STEPPE_GRASS.0) * thickness
+    } else if biome == Some("savanna") {
+        GRASS_DENSITY * SAVANNA_GRASS
     } else {
         GRASS_DENSITY
     };
@@ -218,7 +225,9 @@ pub(super) fn flora_at(
             BlockType::Dandelion
         })
     } else if roll < flowers + ferns {
-        Some(BlockType::Fern)
+        // a jungle's floor has big ferns among the small
+        let big = biome == Some("jungle") && unit(hash(seed ^ KIND_SALT ^ 0xB16F, x, z)) < JUNGLE_BIG_FERNS;
+        Some(if big { BlockType::BigFern } else { BlockType::Fern })
     } else if roll < flowers + ferns + grass {
         let kind = unit(hash(seed ^ KIND_SALT, x, z));
         // steppe's crests are close-cropped and its thick patches tall, fine-stemmed and going to seed
@@ -229,8 +238,13 @@ pub(super) fn flora_at(
         } else {
             (SHORT_SHARE, SEED_SHARE, 0.0)
         };
+        let savanna = !shaded && biome == Some("savanna");
+        let short = if savanna { SAVANNA_SHORT } else { short };
         Some(if kind < short {
             BlockType::ShortGrass
+        } else if savanna && kind > 1.0 - SAVANNA_LONG {
+            // the savanna's grass is long and gold
+            BlockType::LongGrass
         } else if kind > 1.0 - seeded {
             BlockType::SeedGrass
         } else if kind > 1.0 - seeded - feather {
@@ -246,6 +260,26 @@ pub(super) fn flora_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jungle_ferns_are_a_fifth_big_and_savanna_grass_is_long_and_thick_and_nowhere_else_has_either() {
+        let count = |biome: Option<&str>, shaded: bool, wanted: BlockType| {
+            (0..200).flat_map(|x| (0..200).map(move |z| (x, z))).filter(|&(x, z)| flora_at(7, x, z, shaded, 0.8, biome, 0.5) == Some(wanted)).count()
+        };
+        let (big, small) = (count(Some("jungle"), true, BlockType::BigFern), count(Some("jungle"), true, BlockType::Fern));
+        assert!(big * 10 > (big + small) * 15 / 10 && big * 100 < (big + small) * 35, "{big} big of {} ferns", big + small);
+        let long = count(Some("savanna"), false, BlockType::LongGrass);
+        let tall = count(Some("savanna"), false, BlockType::TallGrass);
+        assert!(long > tall && long > 4000, "{long} long, {tall} tall");
+        // a savanna holds more grass than the grassland, and none of it is long under a tree's shade
+        let grass = |biome: Option<&str>| (0..200).flat_map(|x| (0..200).map(move |z| (x, z))).filter(|&(x, z)| flora_at(7, x, z, false, 0.8, biome, 0.5).is_some()).count();
+        assert!(grass(Some("savanna")) > grass(Some("grassland")));
+        assert_eq!(0, count(Some("savanna"), true, BlockType::LongGrass));
+        for biome in [Some("grassland"), Some("forest"), Some("taiga"), Some("steppe"), None] {
+            assert_eq!(0, count(biome, true, BlockType::BigFern) + count(biome, false, BlockType::LongGrass), "{biome:?}");
+        }
+        assert_eq!(0, count(Some("savanna"), true, BlockType::BigFern));
+    }
 
     #[test]
     fn jungle_floor_has_bush_and_ferns_in_shade_and_in_the_open_and_a_forest_has_less() {
