@@ -125,4 +125,6 @@ What did not matter, from frame to frame change over a slow camera path with and
 
 Those low biases left fine stripes of self-shadowing over gentle sand slopes within about 100 blocks. Raising the depth bias to 0.06 or 0.1 barely helped, and a normal bias of 1.0 left some, so only Bevy's 1.8 cleared them. The sun's biases are Bevy's again, and `world_light.wesl` scales the normal passed to the shadow lookup down to a third of itself between 60 and 400 blocks, where a texel is wide enough for the bias to move an edge by blocks. The cascades are four, overlapping by 40%, as measured above.
 
+The stripes that stayed were along shadow edges on faces the sun grazes: teeth about a block wide, which jumped each time the sun stepped. They are the ground mesh's own facets (about a block across, tilted a little differently) shadowing each other, so a lift in texels did nothing, and a lift in blocks did. `FACET_LIFT` in `world_light.wesl` moves the lookup 0.6 blocks toward the sun. Teeth in a 1920x1080 crop at the canyon, mean absolute step between neighbouring pixels (lower is smoother): 1.36 with no lift, 1.21 at 0.3, 1.15 at 0.6, 1.10 at 1.0, which also shrank shadows visibly.
+
 Run the sandbox from the target directory `cargo metadata` names, not `target/` in a worktree, which can hold a stale binary.
