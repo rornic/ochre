@@ -58,9 +58,7 @@ mod tests {
     fn the_sea_reads_half_and_does_not_pull_the_coast_up() {
         let mut map = tiny();
         let dim = map.dim();
-        for i in 0..dim * dim / 2 {
-            map.height[i] = WATER_LEVEL as f32 - 50.0;
-        }
+        map.height[..dim * dim / 2].fill(WATER_LEVEL as f32 - 50.0);
         run(&mut map);
         assert_eq!(128, map.exposure[10 * dim + 10], "sea");
         assert_eq!(128, map.exposure[(dim / 2 + 1) * dim + 100], "land by the sea");

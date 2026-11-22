@@ -6,13 +6,6 @@ use std::path::{Path, PathBuf};
 use super::*;
 use std::sync::atomic::Ordering;
 
-// FNV-1a
-fn hash(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
-        (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
-    })
-}
-
 // pinned: a change means every machine's map changed, so bump `worldmap::GENERATOR_VERSION` with it
 const MAP_HASH: u64 = 16_965_992_609_991_710_733;
 
@@ -21,7 +14,7 @@ fn test_the_map_is_the_same_on_every_machine_and_for_any_thread_count() {
     let mut seen = Vec::new();
     for threads in [1usize, 7] {
         THREADS_FOR_TEST.0.store(threads, Ordering::Relaxed);
-        seen.push(hash(&generate(1, WorldConfig::default()).to_bytes()));
+        seen.push(io::checksum(&generate(1, WorldConfig::default()).to_bytes()));
     }
     assert_eq!(seen[0], seen[1], "the map depends on the thread count");
     assert_eq!(MAP_HASH, seen[0], "map hash changed");

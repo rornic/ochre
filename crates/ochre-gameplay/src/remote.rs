@@ -61,6 +61,8 @@ const QUIET_FRAMES: u32 = 30;
 const MIN_SETTLE_SECONDS: f32 = 2.0;
 // A shot is taken anyway after this long, as moving water can keep chunks remeshing.
 const MAX_SETTLE_SECONDS: f32 = 90.0;
+// a page in the user's browser can reach this server, so it may not queue shots without end
+const MAX_QUEUED_SHOTS: usize = 16;
 
 impl Remote {
     fn settled(&self) -> bool {
@@ -204,6 +206,9 @@ fn screenshot(In(params): In<Option<Value>>, mut remote: ResMut<Remote>) -> BrpR
     };
     if !is_shot_name(&name) {
         return Err(invalid("`path` must be a bare .png file name, saved in target/remote".into()));
+    }
+    if remote.queued.len() >= MAX_QUEUED_SHOTS {
+        return Err(invalid(format!("{MAX_QUEUED_SHOTS} shots are queued already")));
     }
     std::fs::create_dir_all(dir).map_err(|e| invalid(e.to_string()))?;
     let path = dir.join(name).to_string_lossy().into_owned();

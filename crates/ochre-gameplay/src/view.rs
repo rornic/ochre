@@ -231,7 +231,7 @@ pub(crate) fn update_underwater_effects(
             &mut DepthOfField,
             &mut ColorGrading,
         ),
-        With<Camera>,
+        With<Camera3d>,
     >,
     mut dry_defaults: Local<Option<DryDefaults>>,
     mut murk_shown: Local<Option<bool>>,
@@ -314,7 +314,7 @@ pub(crate) struct ColdGrade {
 const COLD_GRADE_EASE: f32 = 2.0;
 
 // Puts back the grade under the cold's, before `update_underwater_effects` snapshots or sets it, so it sees only its own.
-pub(crate) fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mut ColorGrading, With<Camera>>) {
+pub(crate) fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
     if let (Some(clean), Ok(mut grading)) = (cold.clean.take(), camera.single_mut()) {
         *grading = clean;
     }
@@ -326,7 +326,7 @@ pub(crate) fn apply_cold_grade(
     feel: Option<Res<EasedFeel>>,
     time: Res<Time>,
     mut cold: ResMut<ColdGrade>,
-    mut camera: Query<&mut ColorGrading, With<Camera>>,
+    mut camera: Query<&mut ColorGrading, With<Camera3d>>,
 ) {
     let target = around.map_or(0.0, |around| 1.0 - around.warmth);
     let step = 1.0 - (-time.delta_secs() / COLD_GRADE_EASE).exp();
@@ -361,7 +361,7 @@ mod tests {
     struct Wet(bool);
 
     // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade put back once on leaving the water.
-    fn fake_underwater(wet: Res<Wet>, mut was: Local<bool>, mut camera: Query<&mut ColorGrading, With<Camera>>) {
+    fn fake_underwater(wet: Res<Wet>, mut was: Local<bool>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
         let mut grading = camera.single_mut().unwrap();
         if wet.0 {
             grading.global.post_saturation = 0.85;
@@ -378,7 +378,7 @@ mod tests {
             .init_resource::<Wet>()
             .init_resource::<Time>()
             .add_systems(Update, (lift_cold_grade, fake_underwater, apply_cold_grade).chain());
-        app.world_mut().spawn((Camera::default(), dry_color_grading()));
+        app.world_mut().spawn((Camera3d::default(), dry_color_grading()));
         app
     }
 

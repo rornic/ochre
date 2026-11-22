@@ -712,12 +712,11 @@ impl WorldMap {
                         continue;
                     }
                     let mut lowered = false;
-                    for k in 0..=PROFILE_POINTS {
+                    for (k, here) in profiles.data[n].iter_mut().enumerate() {
                         let back = run + (1.0 - k as f32 / PROFILE_POINTS as f32) * cell;
                         let ramp = target + back * MOUTH_SLOPE;
-                        let here = profiles.data[n][k];
-                        if here > ramp && here - ramp <= MOUTH_DROP {
-                            profiles.data[n][k] = ramp;
+                        if *here > ramp && *here - ramp <= MOUTH_DROP {
+                            *here = ramp;
                             lowered = true;
                         }
                     }
