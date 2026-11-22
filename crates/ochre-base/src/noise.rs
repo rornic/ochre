@@ -71,7 +71,7 @@ pub(crate) fn perlin3(seed: u32, x: f64, y: f64, z: f64) -> f64 {
     let (dx, dy, dz) = (x - fx, y - fy, z - fz);
     let corner = |cx: i32, cy: i32, cz: i32| {
         let h = hash(
-            seed.wrapping_add((iy + cy) as u32 * 0x9E37_79B1),
+            seed.wrapping_add(((iy + cy) as u32).wrapping_mul(0x9E37_79B1)),
             ix + cx,
             iz + cz,
         );
@@ -177,6 +177,13 @@ pub fn ridged(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_perlin3_does_not_overflow_at_height() {
+        for y in [-3.0, 0.5, 5.5, 400.5] {
+            assert!(perlin3(1, 0.5, y, 0.5).abs() <= 1.0001);
+        }
+    }
 
     #[test]
     fn test_perlin_is_continuous_and_bounded() {
