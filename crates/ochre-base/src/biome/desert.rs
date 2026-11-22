@@ -20,7 +20,7 @@ impl Biome for Desert {
     }
 
     fn relief(&self) -> &'static [ReliefKind] {
-        &[ReliefKind::Yardangs]
+        &[ReliefKind::Yardangs, ReliefKind::Gullies]
     }
 
     fn block(&self, base: BlockType, _above_sea: i64, _gradient: f64) -> BlockType {

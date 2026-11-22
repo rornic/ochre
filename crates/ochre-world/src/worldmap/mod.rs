@@ -31,7 +31,7 @@ pub use source::WorldTerrain;
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
-pub const GENERATOR_VERSION: u32 = 114;
+pub const GENERATOR_VERSION: u32 = 116;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize)]
@@ -529,9 +529,16 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     shapes::karst(&mut map, knobs.karst_groups);
     shapes::cirques(&mut map, knobs.cirques);
     // with the other shapes, so the passes connect round them; the steppe's flattening leaves them alone
-    let (placed, landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
-    meso::canyons::run(&mut map, knobs.canyons, &landmarks);
-    let bowls = meso::landmarks::bowl_cells(map.dim(), &placed);
+    let (placed, mut landmarks) = meso::landmarks::run(&mut map, knobs.landmark_apart);
+    meso::relief::run(&mut map, &landmarks);
+    meso::canyons::run(&mut map, knobs.canyons, knobs.gorges, knobs.wadis, &mut landmarks);
+    meso::eskers::run(&mut map, knobs.eskers, &landmarks);
+    meso::stacks::run(&mut map, knobs.stacks);
+    let ponds = meso::ponds::run(&mut map, knobs.ponds);
+    let mut bowls = meso::landmarks::bowl_cells(map.dim(), &placed);
+    for (bowl, pond) in bowls.iter_mut().zip(ponds) {
+        *bowl |= pond;
+    }
     lap("landmarks");
     // ranges get their passes before the rivers settle into the ground they leave
     gameplay::carve_passes(&mut map);

@@ -4,7 +4,11 @@
 //! Every number here is a first pass, provisional until the baseline (`docs/meso-baseline.csv`) shows what the world gives.
 
 pub mod canyons;
+pub mod eskers;
 pub mod landmarks;
+pub mod ponds;
+pub mod relief;
+pub mod stacks;
 mod rank;
 mod terms;
 

@@ -39,12 +39,11 @@ Slice 1 of `docs/designs/meso-scale-geography.md` built a scorer of distinctive 
 ## Slice 2, second part: built
 
 - **Rock picks the form.** A butte needs a hard cap (sedimentary or volcanic), a ridge needs dipping beds (sedimentary or metamorphic), and a massif and a bowl form on any rock, so every site has a row.
-- **Every biome is a candidate** through the climate's own classification, and a biome has landmarks if the table has rows for it. Enabled: steppe, tundra, taiga, forest, grassland, desert. Left out until their base terrain is worked out, by the owner's call: jungle, savanna, glacier, swamp.
+- **Every biome is a candidate** through the climate's own classification, and a biome has landmarks if the table has rows for it. Enabled: steppe, tundra, taiga, forest, grassland, desert, and since the owner's go-ahead to carry on with the other biomes, jungle, savanna and glacier. Swamp has none: it is flat and wet.
 
 ## Deferred
 
-- **Micro formations beyond the desert** (standing rocks, boulder fields, small arches) for grassland, taiga and forest in `rocks.rs`. The desert now has ledges, small rocks, standing rocks, arches and hoodoos (clusters of tall pillars under wide caps) by extending the tundra's tables.
-- **Glacial forms on tundra and taiga** at their real proportions (eskers, kettles).
+- **Judge the new variety by eye.** Landmarks for jungle, savanna and glacier, per-seed forms, sizes and crowding, ranges, butte groups and ridge scarps, eskers, gorges, wadis, sinkholes, sea stacks, the rock tables for more biomes, the knoll, dell and mogote relief, and the seed's own rolling ground and dunes were built together and checked only on map exports (`worldview`), not flown in the game. Every one is a table or constant to tune.
 - **Shelter:** exposure over wider windows feeding temperature and humidity (design item 14).
 - **A seam check** at the flattening's edge round each landmark (design item 12).
 - **Landmark spacing.** Dart throwing alone packed steppe landmarks into a near lattice (nearest-neighbour spread 6%). Sites are now thrown closer by the square root of the mean chance, then each is kept with a chance of 0.35 to 1.0 that swells and thins over patches 2.5 spacings wide (`SPAWN` and `PATCH` in `meso/landmarks.rs`), so landmarks clump and leave open country. Judge the patch strength by eye.

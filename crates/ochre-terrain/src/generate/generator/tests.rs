@@ -793,9 +793,11 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
             let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
             let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
             assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
-            Some((tree, super::lod::generate_lod_mesh(regions.clone(), key)?))
+            let mesh = super::lod::generate_lod_mesh(regions.clone(), key)?;
+            // and one that holds a textured box, which a node whose ground is bare of trees round the crown does not
+            (untextured_flags(&mesh.opaque).last() == Some(&0.0)).then_some((tree, mesh))
         })
-        .expect("no tree has a mesh");
+        .expect("no tree has a mesh with a textured box");
     let opaque = mesh.opaque;
     let flags = untextured_flags(&opaque);
     let VertexAttributeValues::Float32x2(uvs) = opaque.attribute(Mesh::ATTRIBUTE_UV_0).unwrap()
@@ -1211,13 +1213,15 @@ fn test_a_lone_tree_is_still_there_in_every_cell_under_sixteen_wide() {
 fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
     use crate::generate::trees::trees_near;
     use bevy::math::I64Vec2;
-    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(6)));
+    // the first test world with open country and a few lone trees: which one has it moves with the ground
+    let seed = (1..24).find(|&s| try_sparse_at(s).is_some()).expect("no test world has open country with lone trees");
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(seed)));
     let mut heights = regions.sampler();
     let trees = trees_near(
         regions.terrain(),
         &mut heights,
-        sparse_at(6) - I64Vec2::splat(700),
-        sparse_at(6) + I64Vec2::splat(700),
+        sparse_at(seed) - I64Vec2::splat(700),
+        sparse_at(seed) + I64Vec2::splat(700),
     );
     let near = |a: &crate::generate::trees::Tree, b: &crate::generate::trees::Tree| {
         (a.base.x - b.base.x).abs() < 70 && (a.base.z - b.base.z).abs() < 70
@@ -2187,32 +2191,40 @@ fn test_meadow_clings_to_a_mountain_face_where_the_rest_is_rock() {
 #[test]
 fn test_pines_grow_on_a_mountains_lower_slopes() {
     use crate::generate::trees::{trees_near, TreeKind};
-    let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
-        ochre_world::worldmap::generate(
-            3,
-            ochre_world::worldmap::WorldConfig {
-                size: 32_768,
-                map_cell: 32,
-                ..Default::default()
-            },
-        ),
-    ));
+    // the first small world with a stretch of mountain in the upper conifer belt: which one has it moves with the ground
+    let (terrain, belt) = (1..16u32)
+        .find_map(|seed| {
+            let terrain = ochre_world::worldmap::WorldTerrain::new(std::sync::Arc::new(
+                ochre_world::worldmap::generate(
+                    seed,
+                    ochre_world::worldmap::WorldConfig {
+                        size: 32_768,
+                        map_cell: 32,
+                        ..Default::default()
+                    },
+                ),
+            ));
+            let map = terrain.map().clone();
+            let dim = map.dim();
+            // the middle of a stretch of mountain in the upper conifer belt, whatever the climate
+            let belt = (20..dim - 20)
+                .step_by(5)
+                .flat_map(|z| (20..dim - 20).step_by(5).map(move |x| (x, z)))
+                .find(|&(x, z)| {
+                    (-4..=4).step_by(2).all(|dz| {
+                        (-4..=4).step_by(2).all(|dx| {
+                            let i = map.index((x as i64 + dx) as usize, (z as i64 + dz) as usize);
+                            map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
+                                && (130.0..260.0).contains(&(map.height[i] - WATER_LEVEL as f32))
+                                && map.water_kind[i] == 0
+                        })
+                    })
+                })?;
+            Some((terrain, belt))
+        })
+        .expect("no mountain slopes in the conifer belt");
     let map = terrain.map().clone();
-    let dim = map.dim();
-    // the middle of a stretch of mountain in the upper conifer belt, whatever the climate
-    let belt = (20..dim - 20)
-        .step_by(5)
-        .flat_map(|z| (20..dim - 20).step_by(5).map(move |x| (x, z)))
-        .find(|&(x, z)| {
-            (-4..=4).step_by(2).all(|dz| {
-                (-4..=4).step_by(2).all(|dx| {
-                    let i = map.index((x as i64 + dx) as usize, (z as i64 + dz) as usize);
-                    map.landform[i] == ochre_world::worldmap::landform::MOUNTAIN
-                        && (130.0..260.0).contains(&(map.height[i] - WATER_LEVEL as f32))
-                        && map.water_kind[i] == 0
-                })
-            })
-        });
+    let belt = Some(belt);
     let (cx, cz) = belt.expect("no mountain slopes in the conifer belt");
     let (x, z) = map.cell_centre(cx, cz);
     let regions = RegionStore::new(std::sync::Arc::new(terrain));

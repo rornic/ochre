@@ -54,13 +54,15 @@ const CLUSTER_RADIUS: (f64, f64) = (2.2, 3.2);
 const CLUSTER_DENSITY: f64 = 0.5;
 
 /// The big plant a biome has in its open ground, by name, and the share of its `CLUSTER` cells that hold a cluster of them:
-/// shrubs in warm grassland, and low heath where it is cold. Forests, jungles and deserts have none, and the shade has none.
+/// shrubs in warm grassland and in the jungle's shade too, and low heath where it is cold. Forests and deserts have none, and the shade has none but the jungle's.
 fn shrubs(biome: Option<&str>) -> Option<(BlockType, f64)> {
     match biome {
         Some("grassland") => Some((BlockType::Shrub, 0.35)),
         Some("savanna") => Some((BlockType::Shrub, 0.4)),
         Some("steppe") => Some((BlockType::Shrub, 0.08)),
         Some("swamp") => Some((BlockType::Shrub, 0.25)),
+        // bush all round on a jungle's floor, in its shade and out of it
+        Some("jungle") => Some((BlockType::Shrub, 0.6)),
         Some("taiga") => Some((BlockType::Heath, 0.25)),
         _ => None,
     }
@@ -168,7 +170,7 @@ pub(super) fn flora_at(
     if !shaded && biome == Some("tundra") && tundra_heath(seed, x, z) {
         return Some(BlockType::Heath);
     }
-    if let Some((plant, cells)) = shrubs(biome).filter(|_| !shaded) {
+    if let Some((plant, cells)) = shrubs(biome).filter(|_| !shaded || biome == Some("jungle")) {
         // scrub shelters in hollows
         let cells = if steppe { cells * (0.4 + 1.2 * (1.0 - exposure as f64)) } else { cells };
         if in_cluster(seed, x, z, cells) {
@@ -191,7 +193,8 @@ pub(super) fn flora_at(
     } else {
         0.0
     };
-    let ferns = if shaded {
+    // a jungle's clearings are ferned as well as its shade, since no ground of it is bare
+    let ferns = if shaded || biome == Some("jungle") {
         FERN_DENSITY * understory
     } else {
         0.0
@@ -243,6 +246,30 @@ pub(super) fn flora_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jungle_floor_has_bush_and_ferns_in_shade_and_in_the_open_and_a_forest_has_less() {
+        let cover = |biome: &str, shaded: bool| {
+            let mut plants = (0usize, 0usize, 0usize);
+            for x in 0..200 {
+                for z in 0..200 {
+                    match flora_at(7, x, z, shaded, 0.8, Some(biome), 0.5) {
+                        Some(BlockType::Shrub) => plants.0 += 1,
+                        Some(BlockType::Fern) => plants.1 += 1,
+                        Some(_) => plants.2 += 1,
+                        None => {}
+                    }
+                }
+            }
+            plants
+        };
+        for shaded in [true, false] {
+            let jungle = cover("jungle", shaded);
+            assert!(jungle.0 > 500 && jungle.1 > 3000, "{shaded}: {jungle:?}");
+            let forest = cover("forest", shaded);
+            assert!(jungle.0 + jungle.1 + jungle.2 > forest.0 + forest.1 + forest.2, "{shaded}: {jungle:?} against {forest:?}");
+        }
+    }
 
     // how many of each grass (all three kinds), fern, poppy and dandelion grow over a patch
     fn count(shaded: bool, temperature: f32) -> [usize; 4] {
@@ -315,11 +342,12 @@ mod tests {
         let tundra = big(Some("tundra"), false);
         assert!(share(&tundra) > share(&grassland) && tundra.iter().all(|p| p.2 == BlockType::Heath));
         assert!(!big(Some("taiga"), false).is_empty());
-        // none in the shade, a desert, a jungle or a forest, or where the biome is unknown
-        for none in [Some("desert"), Some("jungle"), Some("forest"), None] {
+        // none in the shade, a desert or a forest, or where the biome is unknown, but a jungle has them both in the open and in its shade
+        for none in [Some("desert"), Some("forest"), None] {
             assert!(big(none, false).is_empty(), "{none:?}");
         }
         assert!(big(Some("grassland"), true).is_empty());
+        assert!(share(&big(Some("jungle"), false)) > share(&grassland) && !big(Some("jungle"), true).is_empty());
         // they stand together: each in a cluster has its own cell's others, and most clusters hold several
         let mut clusters = std::collections::HashMap::new();
         for &(x, z, _) in &grassland {
