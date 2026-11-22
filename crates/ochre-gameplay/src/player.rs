@@ -298,6 +298,7 @@ pub(crate) fn grab_cursor(
 
 fn player_look(
     time: Res<Time>,
+    limit: Res<LookLimit>,
     mut player_query: Query<(&mut Transform, &mut Player)>,
     mut camera_query: Query<PlayerCamera, (With<Camera3d>, Without<Player>)>,
     mut motion_evr: MessageReader<MouseMotion>,
@@ -317,10 +318,10 @@ fn player_look(
     let mut pitch = tipped - player.nudge;
     for ev in motion_evr.read() {
         body.rotate_axis(Dir3::Y, -ev.delta.x * turn);
-        pitch = (pitch - ev.delta.y * turn).clamp(-MAX_PITCH, MAX_PITCH);
+        pitch = (pitch - ev.delta.y * turn).clamp(-limit.0, limit.0);
     }
     let tip = JUMP_PITCH * player.kick - LAND_PITCH * player.thud;
-    let shown = (pitch + tip.to_radians()).clamp(-MAX_PITCH, MAX_PITCH);
+    let shown = (pitch + tip.to_radians()).clamp(-limit.0, limit.0);
     player.nudge = shown - pitch;
     camera.rotation = Quat::from_rotation_x(shown);
 }
@@ -332,13 +333,18 @@ pub struct PlayerPlugin {
     pub fly: bool,
     /// Leaves the stepping to the game, which sets the body's `Transform` and `CharacterState` and calls `Player::after_step` itself.
     pub driven: bool,
+    /// How far the view turns up or down from level, in radians, at most 89 degrees.
+    pub max_pitch: f32,
 }
 
 impl Default for PlayerPlugin {
     fn default() -> Self {
-        Self { look: Vec3::Z, fly: false, driven: false }
+        Self { look: Vec3::Z, fly: false, driven: false, max_pitch: MAX_PITCH }
     }
 }
+
+#[derive(Resource)]
+struct LookLimit(f32);
 
 #[derive(Resource)]
 struct PlayerSpawn {
@@ -348,6 +354,8 @@ struct PlayerSpawn {
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
+        // past 89 degrees the view would flip over the top, and the camera's near plane would reach through a two-block gap's ceiling
+        app.insert_resource(LookLimit(self.max_pitch.clamp(0.0, MAX_PITCH)));
         // the cold grade follows the climate it senses
         if !app.is_plugin_added::<SurroundingsPlugin>() {
             app.add_plugins(SurroundingsPlugin);
