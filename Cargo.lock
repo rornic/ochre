@@ -4254,6 +4254,7 @@ name = "ochre-gameplay"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "libm",
  "ochre-base",
  "ochre-terrain",
  "ochre-world",
