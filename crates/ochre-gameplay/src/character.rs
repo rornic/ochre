@@ -1,7 +1,7 @@
 use bevy::{
     ecs::component::Component,
     log::info,
-    math::{BVec3, EulerRot, I64Vec3, Quat, Vec2, Vec3},
+    math::{BVec3, I64Vec3, Quat, Vec2, Vec3},
     transform::components::Transform,
 };
 use ochre_base::block::BlockType;
@@ -54,6 +54,17 @@ pub struct MovementInput {
     /// Radians. The body faces `yaw`, and flying goes the way `yaw` and `pitch` face.
     pub yaw: f32,
     pub pitch: f32,
+}
+
+// Turns about an axis through libm, as the platform's own sine and cosine differ in the last bit and a server and a client must step on the same.
+fn about_y(angle: f32) -> Quat {
+    let (sin, cos) = libm::sincosf(angle * 0.5);
+    Quat::from_xyzw(0.0, sin, 0.0, cos)
+}
+
+fn about_x(angle: f32) -> Quat {
+    let (sin, cos) = libm::sincosf(angle * 0.5);
+    Quat::from_xyzw(sin, 0.0, 0.0, cos)
 }
 
 /// What a step did that the player sees or hears, for the presentation to turn into bob, sound and view kick.
@@ -199,7 +210,7 @@ pub fn step_character(
     match state.movement {
         Movement::Fly => {
             let speed = MOVE_SPEED * dt * if input.sprint { SPRINT_MULTIPLIER } else { 1.0 };
-            let facing = Quat::from_euler(EulerRot::YXZ, input.yaw, input.pitch, 0.0);
+            let facing = about_y(input.yaw) * about_x(input.pitch);
             *position += (facing * across + Vec3::Y * input.lift) * speed;
             StepEvents::default()
         }
@@ -232,7 +243,7 @@ fn walk(
         speed *= SWIM_MULTIPLIER;
     }
     // where the body faces, not the camera, so looking down doesn't slow it
-    let wanted = Quat::from_rotation_y(input.yaw) * across.normalize_or_zero() * speed;
+    let wanted = about_y(input.yaw) * across.normalize_or_zero() * speed;
     // in the air the player keeps its way and only steers toward where it's heading, as the air holds it back
     let grip = if state.grounded || swimming || wading {
         1.0
@@ -450,6 +461,16 @@ mod tests {
         let at = Vec3::new(4.0, 8.0, 4.0);
         assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), Some(8.5));
         assert_eq!(forward.ground(at, 1.0, 1.0, 0.0), reversed.ground(at, 1.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn the_libm_quaternions_match_glams_to_rounding() {
+        use bevy::math::EulerRot;
+        for tenths in -400..400 {
+            let (yaw, pitch) = (tenths as f32 * 0.1, tenths as f32 * 0.037);
+            assert!(about_y(yaw).abs_diff_eq(Quat::from_rotation_y(yaw), 1e-5), "yaw {yaw}");
+            assert!((about_y(yaw) * about_x(pitch)).abs_diff_eq(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0), 1e-5), "yaw {yaw} pitch {pitch}");
+        }
     }
 
     #[test]

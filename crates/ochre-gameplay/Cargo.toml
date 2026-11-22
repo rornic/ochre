@@ -15,6 +15,7 @@ ochre-world.workspace = true
 bevy.workspace = true
 serde_json.workspace = true
 rand.workspace = true
+libm.workspace = true
 serde = { workspace = true, optional = true }
 
 [features]
