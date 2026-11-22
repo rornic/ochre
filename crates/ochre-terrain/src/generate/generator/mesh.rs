@@ -569,8 +569,8 @@ const HEATH_HALF_WIDTH: (f32, f32) = (1.2, 1.6);
 const BIG_FERN_HEIGHT: (f32, f32) = (1.9, 3.3);
 const BIG_FERN_HALF_WIDTH: (f32, f32) = (1.1, 1.8);
 const LONG_GRASS_HEIGHT: (f32, f32) = (1.7, 2.7);
-// What the long grass's tint is multiplied by: the savanna's grass goes gold in the sun.
-const LONG_GRASS_GOLD: Vec3 = Vec3::new(1.18, 1.0, 0.62);
+// What the long grass's tint is multiplied by: the savanna's grass bleaches to straw in the sun.
+const LONG_GRASS_GOLD: Vec3 = Vec3::new(1.06, 0.97, 0.80);
 // Between 0 and 1 for the block at `coord`, the same every time it's meshed, so what grows where
 // doesn't change when the chunk is meshed again.
 pub(super) fn hash01(coord: IVec3, salt: u32) -> f32 {

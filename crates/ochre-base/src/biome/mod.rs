@@ -304,8 +304,8 @@ impl Biomes {
 }
 
 // Grass at the four corners of the climate square, in sRGB: hot and dry is parched
-// yellow, hot and wet lush green, and the cold side duller versions of both.
-const GRASS_HOT_DRY: [f32; 3] = [200.0, 170.0, 60.0];
+// straw, hot and wet lush green, and the cold side duller versions of both.
+const GRASS_HOT_DRY: [f32; 3] = [184.0, 164.0, 96.0];
 const GRASS_HOT_WET: [f32; 3] = [40.0, 130.0, 12.0];
 const GRASS_COLD_DRY: [f32; 3] = [140.0, 128.0, 88.0];
 const GRASS_COLD_WET: [f32; 3] = [30.0, 96.0, 24.0];
