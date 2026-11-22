@@ -138,7 +138,6 @@ fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
-// The tundra has no poppies or dandelions, only its grass and heath.
 
 // How thick steppe's grass grows at (x, z), 0..1: hollows and broad patches thick, crests thin, with variation inside a patch.
 fn steppe_thickness(seed: u32, x: i64, z: i64, exposure: f32) -> f64 {
@@ -193,7 +192,8 @@ pub(super) fn flora_at(
     } else {
         (DRIFT_SHARE, DRIFT_DENSITY)
     };
-    let flowers = if in_drift < drift_share && biome != Some("tundra") {
+    // the tundra has no poppies or dandelions, and the savanna, dry and gold, none either
+    let flowers = if in_drift < drift_share && !matches!(biome, Some("tundra" | "savanna")) {
         drift_density * (1.0 - in_drift / drift_share)
     } else {
         0.0
@@ -279,6 +279,10 @@ mod tests {
             assert_eq!(0, count(biome, true, BlockType::BigFern) + count(biome, false, BlockType::LongGrass), "{biome:?}");
         }
         assert_eq!(0, count(Some("savanna"), true, BlockType::BigFern));
+        // and a savanna has no poppies or dandelions
+        for flower in [BlockType::Poppy, BlockType::Dandelion] {
+            assert_eq!(0, count(Some("savanna"), false, flower) + count(Some("savanna"), true, flower));
+        }
     }
 
     #[test]
