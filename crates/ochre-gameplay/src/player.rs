@@ -212,7 +212,7 @@ fn player_present(
     if striding && footfall(before, player.bob_phase) {
         if let Some(surface) = Surface::under(&world, transform.translation) {
             let loudness = if sprinting { SPRINT_LOUDER } else { 1.0 };
-            steps.write(Footstep { surface, loudness });
+            steps.write(Footstep { surface, loudness, at: None });
         }
     }
     let rushing = sprinting
@@ -232,6 +232,7 @@ fn player_present(
         steps.write(Footstep {
             surface,
             loudness: TAKEOFF_LOUDNESS,
+            at: None,
         });
         player.kick = 1.0;
     }
@@ -246,6 +247,7 @@ fn player_present(
             steps.write(Footstep {
                 surface,
                 loudness: hardness,
+                at: None,
             });
         }
     }
