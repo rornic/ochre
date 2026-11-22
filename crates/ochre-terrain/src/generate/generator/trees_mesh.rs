@@ -1,4 +1,9 @@
 use super::buffers::{GrassTint, MeshBuffers, UNFOLDED};
+
+// Bark's texture coordinates along a trunk are worked out from the world's, which are negative for half of it, and a vertex whose `uv.x` is under -512 is
+// drawn by the shader as sculpted ground, with a second material read from the coordinates: bands of dirt up the trunk. So they are taken mod this, which every
+// power of two a material's period can be, up to 64, divides.
+const PERIOD_WRAP: f32 = 64.0;
 use super::mesh::{between, hash01};
 use super::shading::face_light;
 use super::source::{BlockSource, BoxShape, TreeBox, TreeFaces};
@@ -168,11 +173,11 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
             let at = origin + p;
             let (x, y, z) = (axis.x.abs(), axis.y.abs(), axis.z.abs());
             if y >= x && y >= z {
-                [UNFOLDED + at.x, at.z]
+                [UNFOLDED + at.x.rem_euclid(PERIOD_WRAP), at.z]
             } else if x >= z {
-                [UNFOLDED + at.y, at.z]
+                [UNFOLDED + at.y.rem_euclid(PERIOD_WRAP), at.z]
             } else {
-                [UNFOLDED + at.x, at.y]
+                [UNFOLDED + at.x.rem_euclid(PERIOD_WRAP), at.y]
             }
         };
         for (corners, outward, capped) in [(to, long, caps[1]), (from, -long, caps[0])] {
@@ -451,8 +456,7 @@ pub(super) fn mesh_trees<S: BlockSource>(
                     to: ring(at(centre.y + 0.5), Vec3::Y, radius),
                     axis: Vec3::Y,
                     radius,
-                    phase: ((origin.x + look.base.x) * 0.618 + (origin.z + look.base.z) * 0.382)
-                        * 4.0,
+                    phase: (((origin.x + look.base.x) * 0.618 + (origin.z + look.base.z) * 0.382) * 4.0).rem_euclid(PERIOD_WRAP),
                     caps: [
                         grounded && !faces.block(coord - IVec3::Y).is_opaque(),
                         !faces.is_log(coord + IVec3::Y),
