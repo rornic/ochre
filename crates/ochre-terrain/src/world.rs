@@ -62,6 +62,21 @@ impl World {
         }
     }
 
+    /// A world over the same terrain and region cache with no chunks loaded and no edits, for a second reader of the same map.
+    pub fn sharing(&self) -> Self {
+        Self {
+            seed: self.seed,
+            bounds: self.bounds,
+            chunks: HashMap::new(),
+            below: self.below.clone(),
+            above: self.above.clone(),
+            region_store: self.region_store.clone(),
+            spawn: self.spawn,
+            edits: Vec::new(),
+            stirred: HashSet::new(),
+        }
+    }
+
     /// This world with the player spawning over `x`, `z`, `lift` blocks above the ground.
     pub fn with_spawn(mut self, x: f64, z: f64, lift: Option<f64>) -> Self {
         let height = self.region_store.terrain().sample(x, z).height;
@@ -220,6 +235,18 @@ mod tests {
     use super::World;
     use crate::chunk::{ChunkCoordinate, ChunkData, CHUNK_SIZE};
     use ochre_base::block::BlockType;
+
+    #[test]
+    fn a_sharing_world_has_the_same_map_and_region_cache_but_none_of_the_chunks() {
+        let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
+        let at = ChunkCoordinate(I64Vec3::new(3, 40, 5));
+        world.insert_chunk(at, ChunkData::default());
+        let other = world.sharing();
+        assert!(std::sync::Arc::ptr_eq(&world.region_store, &other.region_store));
+        assert_eq!((other.seed(), other.spawn(), other.bounds), (world.seed(), world.spawn(), world.bounds));
+        assert!(world.is_chunk_generated(at));
+        assert!(!other.is_chunk_generated(at), "a chunk loaded in one world appeared in the other");
+    }
 
     #[test]
     fn test_chunk_is_buried_only_when_it_and_its_face_neighbours_are_opaque() {

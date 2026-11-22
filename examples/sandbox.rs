@@ -58,6 +58,7 @@ fn main() {
                 look: look_direction(),
                 // OCHRE_FLY starts flying, so the camera hovers at the spawn for framing a view
                 fly: std::env::var_os("OCHRE_FLY").is_some(),
+                ..default()
             }),
     )
     .insert_resource(winit_settings())

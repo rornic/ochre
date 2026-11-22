@@ -41,7 +41,7 @@ pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.45, 0.8, 0.4);
 /// Seconds in a full day/night cycle: six hours, giving three hours of daylight.
 pub(crate) const DAY_SECONDS: f32 = 21_600.0;
 /// The clock counts whole ticks, so it stays exact however long the game runs.
-pub(crate) const TICKS_PER_SECOND: u64 = 20;
+pub const TICKS_PER_SECOND: u64 = 20;
 pub const DAY_TICKS: u64 = DAY_SECONDS as u64 * TICKS_PER_SECOND;
 /// Days of the clock the world starts at: 0 is midnight, 0.5 is noon.
 pub const START_TIME: f32 = 0.4;
