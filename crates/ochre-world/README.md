@@ -18,7 +18,7 @@ Typical use, per the root `AGENTS.md`: add `SkyPlugin` and `AmbiencePlugin`, the
 ## Global Invariants
 - A seed makes the same world on every machine and thread count; generation uses `libm`, never platform maths, and the saved-map hash is pinned (`src/worldmap/portable_maths.rs`, `src/worldmap/mod.rs:GENERATOR_VERSION`). Bump `GENERATOR_VERSION` whenever generation output changes.
 - Sky constants shared with shaders in `assets/shaders/` (cloud heights, sun disc size, moon boost, sun path basis, rain box) must stay equal on both sides (comments in `src/clouds.rs`, `src/sky.rs`, `src/weather.rs`).
-- Game time is the integer `TimeOfDay` tick count; weather follows it, lightning does not (`src/sky.rs:TimeOfDay`, `src/weather.rs:run_weather`).
+- Game time is the integer `TimeOfDay` tick count; weather and lightning follow it, and a game can lock it against winding (`src/sky.rs:TimeOfDay`, `ClockLocked`, `src/weather.rs:run_weather`).
 - Docs for the water and landform rules referenced by code live in `docs/water.md`, `docs/landforms.md`, `docs/climate.md`, `docs/clouds.md` at the repo root; read `docs/water.md` before changing water.
 
 ## Global Side Effects
