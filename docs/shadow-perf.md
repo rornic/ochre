@@ -116,11 +116,13 @@ Measured on seed 11's canyon plateau, 1 s stills of the shadow mask looking stra
 | config | 30 | 80 | 250 | GPU ms (savanna, 1080p, RTX 2060) |
 |---|---:|---:|---:|---:|
 | 3 cascades, 2048, Bevy biases (before) | 18.0 | 13.8 | 22.4 | 12.6 |
-| 4 cascades, 2048, biases 0.6 and 0.01, overlap 0.4 (now) | 7.0 | 8.9 | 11.9 | 13.5 |
+| 4 cascades, 2048, biases 0.6 and 0.01, overlap 0.4 (tried, striped) | 7.0 | 8.9 | 11.9 | 13.5 |
 | the same at 4096 (`shadow_resolution = 4096`) | 4.2 | 5.3 | 7.6 | 16.9 |
 | 3 cascades, biases only | 9.4 | 5.4 | 13.2 | |
 | 4 cascades, biases 0.3 and 0.005 | 9.6 | 9.8 | 12.5 | |
 
 What did not matter, from frame to frame change over a slow camera path with and without shadow maps: the filtering method (Temporal, Gaussian, Hardware2x2), map size, cascade count and overlap, and the sun's 3 s stepping each moved it under 2%. Grass tufts' shadows account for all of the shadow-driven change over savanna, but that is moving content, not crawl. Lower biases (0.3, 0.005) came out worse than 0.6 and 0.01.
+
+Those low biases left fine stripes of self-shadowing over gentle sand slopes within about 100 blocks. Raising the depth bias to 0.06 or 0.1 barely helped, and a normal bias of 1.0 left some, so only Bevy's 1.8 cleared them. The sun's biases are Bevy's again, and `world_light.wesl` scales the normal passed to the shadow lookup down to a third of itself between 60 and 400 blocks, where a texel is wide enough for the bias to move an edge by blocks. The cascades are four, overlapping by 40%, as measured above.
 
 Run the sandbox from the target directory `cargo metadata` names, not `target/` in a worktree, which can hold a stale binary.

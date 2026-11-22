@@ -61,9 +61,9 @@ const SUN_BRIGHTNESS: f32 = 1.3;
 const SKY_GAIN: f32 = 4.0;
 const CAMERA_EV100: f32 = Exposure::EV100_SUNLIGHT;
 const FIRST_CASCADE_DISTANCE: f32 = 20.0;
-// Bevy scales both by a cascade's texel size, so Bevy's defaults (0.02 and 1.8) moved a far shadow's edge by blocks and it changed shape as the camera came near.
-const SHADOW_DEPTH_BIAS: f32 = 0.01;
-const SHADOW_NORMAL_BIAS: f32 = 0.6;
+// Bevy's defaults, which clear the stripes of self-shadowing on gentle slopes that lower normal biases leave, see `FAR_NORMAL_BIAS` in `world_light.wesl` for the far shadows.
+const SHADOW_DEPTH_BIAS: f32 = 0.02;
+const SHADOW_NORMAL_BIAS: f32 = 1.8;
 // How much of the camera's height over the ground the first cascade starts at, and the start under which cascades stay as at the ground.
 const CASCADE_START_SHARE: f32 = 0.5;
 const CASCADE_START_FROM: f32 = 16.0;

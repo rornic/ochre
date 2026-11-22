@@ -27,6 +27,10 @@ fn sky_ambient(sky: f32, normal: vec3<f32>) -> vec3<f32> {
     return CAVE_AMBIENT + open_sky(normal) * pow(clamp(sky, 0.0, 1.0), SKY_LIGHT_CURVE);
 }
 
+// The normal bias is a share of a cascade's texel size, so it moves a far shadow's edge by blocks: it eases down to this share of itself between these distances.
+const FAR_NORMAL_BIAS: f32 = 0.33;
+const NORMAL_BIAS_FADE: vec2<f32> = vec2<f32>(60.0, 400.0);
+
 fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32>) -> f32 {
     let sun = &view_bindings::lights.directional_lights[SUN_LIGHT];
     if ((*sun).flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) == 0u {
@@ -38,7 +42,7 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     if -view_z >= reach {
         return FAR_VISIBILITY;
     }
-    let shadow = fetch_directional_shadow(SUN_LIGHT, world_position, normal, view_z, frag_coord);
+    let shadow = fetch_directional_shadow(SUN_LIGHT, world_position, normal * mix(1.0, FAR_NORMAL_BIAS, smoothstep(NORMAL_BIAS_FADE.x, NORMAL_BIAS_FADE.y, -view_z)), view_z, frag_coord);
     return mix(shadow, FAR_VISIBILITY, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
 }
 
