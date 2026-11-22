@@ -71,8 +71,12 @@ mod tests {
     #[test]
     fn test_world_shader_imports_painterly_light() {
         let world = std::fs::read_to_string("assets/shaders/world.wesl").unwrap();
+        let world_light = std::fs::read_to_string("assets/shaders/world_light.wesl").unwrap();
         let painterly = std::fs::read_to_string("assets/shaders/painterly.wesl").unwrap();
-        assert!(world.contains("import super::painterly::{FAR_VISIBILITY, Painterly, painterly_light, painterly_saturation};"));
+        // the land's light is world_light.wesl's, which other materials share
+        assert!(world.contains("import super::world_light::painterly_world_light;"));
+        assert!(world.contains("import super::painterly::painterly_saturation;"));
+        assert!(world_light.contains("import super::painterly::{FAR_VISIBILITY, Painterly, painterly_light};"));
         assert!(painterly.contains("const FAR_VISIBILITY"));
         assert!(painterly.contains("fn painterly_light("));
     }
