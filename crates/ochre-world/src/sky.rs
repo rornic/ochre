@@ -197,19 +197,25 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TimeScale(pub f32);
 
+/// Stops `[` and `]` winding the clock, for a game that sets it from somewhere else.
+#[derive(Resource)]
+pub struct ClockLocked;
+
 /// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
 /// the sky, fog and light all follow them.
+#[allow(clippy::too_many_arguments)]
 fn move_sky(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     scale: Res<TimeScale>,
+    locked: Option<Res<ClockLocked>>,
     mut clock: ResMut<TimeOfDay>,
     mut sun: Query<(&mut Transform, &mut SunShadows), Without<Moon>>,
     mut moon: Query<&mut Transform, (With<Moon>, Without<Sun>)>,
     // the part of a tick not yet counted
     mut carry: Local<f32>,
 ) {
-    let wound = keys.pressed(SCRUB_FORWARD_KEY) as i32 - keys.pressed(SCRUB_BACK_KEY) as i32;
+    let wound = if locked.is_some() { 0 } else { keys.pressed(SCRUB_FORWARD_KEY) as i32 - keys.pressed(SCRUB_BACK_KEY) as i32 };
     *carry += time.delta_secs()
         * (scale.0 * TICKS_PER_SECOND as f32 + wound as f32 * SCRUB_SPEED * DAY_TICKS as f32);
     let whole = carry.floor();
@@ -404,6 +410,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn test_a_locked_clock_ignores_the_winding_keys() {
+        use bevy::ecs::system::RunSystemOnce;
+        let clock_after = |locked: bool| {
+            let mut world = bevy::ecs::world::World::new();
+            let mut keys = ButtonInput::<KeyCode>::default();
+            keys.press(SCRUB_FORWARD_KEY);
+            world.insert_resource(keys);
+            let mut time = Time::<()>::default();
+            time.advance_by(std::time::Duration::from_secs(1));
+            world.insert_resource(time);
+            world.insert_resource(TimeScale(0.0));
+            world.insert_resource(TimeOfDay(1000));
+            if locked {
+                world.insert_resource(ClockLocked);
+            }
+            world.run_system_once(move_sky).unwrap();
+            world.resource::<TimeOfDay>().0
+        };
+        // a second of `]` winds a tenth of a day, and a locked clock stays where it was
+        assert!(clock_after(false) > 1000 + DAY_TICKS / 20);
+        assert_eq!(clock_after(true), 1000);
+    }
 
     #[test]
     fn test_sun_rises_peaks_and_sets_on_its_path() {
