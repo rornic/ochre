@@ -785,7 +785,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             let key = ochre_terrain::lod::LodKey { level: lod, coord: I64Vec3::new(x, y, z) };
             let cell = key.cell_size() as f32;
             let origin = key.min_block().as_vec3() + Vec3::splat(0.5 * cell - 0.5);
-            if let Some(meshes) = ochre_terrain::generate::generator::generate_lod_mesh(regions.clone(), key) {
+            if let Some(meshes) = ochre_terrain::generate::generator::generate_lod_mesh(regions.clone(), key, None) {
                 add(&meshes.opaque, origin, cell, false);
                 if let Some(water) = &meshes.water {
                     add(water, origin, cell, true);

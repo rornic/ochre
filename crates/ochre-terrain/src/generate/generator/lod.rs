@@ -3,7 +3,7 @@ use super::canopy::{
     Canopy, BOX_CROWN_CELL, CANOPY_CELL, CANOPY_SHADE, CANOPY_SHADE_SPAN,
     FOREST_COVER, FOREST_DARKEN, TREE_MAX_CELL, TRUNK_MAX_CELL,
 };
-use super::chunk::{sky_above, trees_may_reach};
+use super::chunk::{plant_at, sky_above, trees_may_reach};
 use super::mesh::mesh_blocks;
 use super::source::{water_depth, BlockSource, BoxFaces, BoxShape, TreeBox};
 use super::terrain::{
@@ -14,14 +14,14 @@ use crate::chunk::CHUNK_SIZE;
 use crate::generate::columns::ColumnGrid;
 use crate::generate::columns::COARSE_CELL;
 use crate::generate::light::SkyLight;
-use crate::generate::region_store::RegionStore;
-use crate::generate::rocks::{rocks_near, ROCK_MAX_CELL};
+use crate::generate::region_store::{HeightSampler, RegionStore};
+use crate::generate::rocks::{rocks_near, Rock, ROCK_MAX_CELL};
 use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::Tree;
 use crate::generate::trees::TreeGround;
 use crate::generate::trees::TreeTints;
-use crate::lod::LodKey;
+use crate::lod::{FloraFade, LodKey};
 use bevy::math::I64Vec2;
 use bevy::math::I64Vec3;
 use bevy::math::IVec3;
@@ -32,6 +32,7 @@ use crate::generate::region_store::{bed_top, water_block_top};
 use ochre_base::terrain_source::{TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 // A skirt hangs this many cells under its edge's ground on gentle ground, and as many more as the ground is steep, up to
@@ -63,6 +64,8 @@ pub(super) struct LodBlocks {
     pub(super) boxes: Vec<TreeBox>,
     // the trees whose leaves are among the cells
     pub(super) trees: TreeTints,
+    // the flora full detail grows over the node, see `BlockSource::plants`
+    pub(super) plants: Vec<(IVec3, BlockType)>,
 }
 
 // The ground a coarse node's trees stand on, read from its grid of columns.
@@ -153,11 +156,17 @@ impl LodBlocks {
         Self::column(self.size, column(position.x), column(position.z))
     }
 
+    #[cfg(test)]
     pub(super) fn sample(regions: &RegionStore, key: LodKey) -> Self {
+        Self::sample_with(regions, key, false)
+    }
+
+    // With the plants full detail grows over it, when `plants` and its cells are narrow enough to draw them, see `FLORA_MAX_CELL`.
+    pub(super) fn sample_with(regions: &RegionStore, key: LodKey, plants: bool) -> Self {
         if key.cell_size() >= COARSE_CELL {
             Self::sample_coarse(regions, key)
         } else {
-            Self::sample_regions(regions, key)
+            Self::sample_regions(regions, key, plants && key.cell_size() <= FLORA_MAX_CELL)
         }
     }
 
@@ -323,7 +332,7 @@ impl LodBlocks {
     }
 
     // From full-detail regions, with real trees.
-    pub(super) fn sample_regions(regions: &RegionStore, key: LodKey) -> Self {
+    pub(super) fn sample_regions(regions: &RegionStore, key: LodKey, plants: bool) -> Self {
         let size = CHUNK_SIZE as i32;
         let padded = (size + 2) as usize;
         let cell = key.cell_size();
@@ -406,6 +415,7 @@ impl LodBlocks {
 
         let span = (size + 1) as i64 * cell;
         let mut trees = Vec::new();
+        let mut rocks = Vec::new();
         if trees_may_reach(base.y - cell, base.y + span, lowest, highest) {
             let min = I64Vec2::new(base.x, base.z) - cell;
             trees = trees_near(regions.terrain(), &mut heights, min, min + span + cell);
@@ -423,7 +433,8 @@ impl LodBlocks {
                 );
             }
             if cell <= ROCK_MAX_CELL {
-                for rock in rocks_near(regions.terrain(), &mut heights, min, min + span + cell, cell) {
+                rocks = rocks_near(regions.terrain(), &mut heights, min, min + span + cell, cell);
+                for rock in &rocks {
                     rock.plant(
                         base,
                         cell,
@@ -452,11 +463,13 @@ impl LodBlocks {
         } else {
             Vec::new()
         };
+        let plants = if plants { far_plants(regions, &mut heights, key, &trees, &rocks) } else { Vec::new() };
         Self {
             ground_heights,
             water_tops,
             trees: TreeTints::new(&trees, base, cell),
             boxes,
+            plants,
             ..Self::new(size, cells, tops, base.y, cell)
         }
     }
@@ -482,6 +495,7 @@ impl LodBlocks {
             forest: Vec::new(),
             boxes: Vec::new(),
             trees: TreeTints::default(),
+            plants: Vec::new(),
         };
         blocks.surface_tops = vec![None; blocks.cells.len()];
         for x in -1..=size {
@@ -565,6 +579,10 @@ impl LodBlocks {
 }
 
 impl BlockSource for LodBlocks {
+    fn plants(&self) -> &[(IVec3, BlockType)] {
+        &self.plants
+    }
+
     fn terrain(&self, coord: IVec3) -> BlockType {
         self.raw(coord)
     }
@@ -706,12 +724,13 @@ impl BlockSource for LodBlocks {
     }
 }
 
-pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<ChunkMeshes> {
+/// The node's meshes, with the tallest of full detail's flora where `flora` says it lasts out into the node.
+pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey, flora: Option<FloraFade>) -> Option<ChunkMeshes> {
     let cell_size = key.cell_size();
     // matches `lod_transform`
     let origin = key.min_block().as_vec3() + Vec3::splat(0.5 * cell_size as f32 - 0.5);
     let tint = GrassTint::new(regions.terrain(), origin, cell_size as f32);
-    let blocks = LodBlocks::sample(&regions, key);
+    let blocks = LodBlocks::sample_with(&regions, key, flora.is_some());
     let top = key.min_block().y + (blocks.size as i64 + 1) * cell_size;
     // the padded cells are already in `SkyLight::index` order
     let light = LazyCell::new(|| {
@@ -734,11 +753,52 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey) -> Option<Chunk
             textured,
             // lone trees are drawn from their boxes, and the cells they are planted in only shade the ground
             tree_shapes: true,
+            far_flora: flora,
         },
         &tint,
         &light,
     );
     meshes.has_geometry().then_some(meshes)
+}
+
+// The widest cells a node draws flora in: level 1's, since `FloraFade::end` falls within its reach.
+const FLORA_MAX_CELL: i64 = 2;
+
+// The plants full detail grows over the node `key`, from the same columns, each a block in the world and its plant.
+fn far_plants(regions: &RegionStore, heights: &mut HeightSampler, key: LodKey, trees: &[Tree], rocks: &[Rock]) -> Vec<(IVec3, BlockType)> {
+    let size = CHUNK_SIZE as i64;
+    let (min, blocks) = (key.min_block(), size * key.cell_size());
+    let noise = regions.terrain();
+    // shortcut: a trunk's footprint and a rock's blocks are bare, but a low bough over the ground isn't, as it is in full detail
+    let mut taken = HashSet::new();
+    // a trunk's footprint takes its whole column, under a height no block has
+    const TRUNK: i64 = i64::MIN;
+    for tree in trees {
+        let width = tree.width();
+        taken.extend((0..width * width).map(|i| I64Vec3::new(tree.base.x + i % width, TRUNK, tree.base.z + i / width)));
+    }
+    let bounds = (IVec3::ZERO, IVec3::splat(blocks as i32 - 1));
+    for rock in rocks {
+        rock.plant(min, 1, bounds, |coord, _| {
+            taken.insert(min + coord.as_i64vec3());
+        });
+    }
+    let mut plants = Vec::new();
+    for chunk in 0..key.cell_size() * key.cell_size() {
+        let (cx, cz) = (min.x.div_euclid(size) + chunk % key.cell_size(), min.z.div_euclid(size) + chunk / key.cell_size());
+        let columns = regions.chunk_columns(heights, cx, cz);
+        let origin = (cx * size, cz * size);
+        for (x, z) in (0..size).flat_map(|x| (0..size).map(move |z| (x, z))) {
+            let at = I64Vec3::new(origin.0 + x, columns.height(x, z), origin.1 + z);
+            if !(min.y..min.y + blocks).contains(&at.y) || taken.contains(&at.with_y(TRUNK)) || taken.contains(&at) {
+                continue;
+            }
+            if let Some(plant) = plant_at(&columns, noise.biomes(), noise.seed(), trees, origin, (x, z)) {
+                plants.push((at.as_ivec3(), plant));
+            }
+        }
+    }
+    plants
 }
 
 // What a lone tree is drawn as in a node whose lowest block is `base` and whose cells are `cell` blocks wide: a prism for its trunk (to

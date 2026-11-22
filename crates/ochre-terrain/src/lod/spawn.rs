@@ -83,12 +83,13 @@ pub(crate) fn spawn_lods(
         }
 
         let regions = world.region_store.clone();
+        let flora = Some(lods.layout.flora_fade());
         let entity = commands
             .spawn((
                 LodNode { key },
                 GenerateLodMesh {
                     task: task_pool.spawn(async move {
-                        generate_lod_mesh(regions, key).map(crate::group::pack_group)
+                        generate_lod_mesh(regions, key, flora).map(crate::group::pack_group)
                     }),
                 },
                 lod_transform(key),

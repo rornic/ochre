@@ -217,7 +217,7 @@ fn setup_terrain(
         curvature: sources.curvature.map(|c| c.buffer.clone()).unwrap_or_default(),
         wind: bevy::math::Vec2::from(world.region_store.terrain().prevailing_wind()),
     };
-    let materials = TerrainMaterials::new(*debug, renderer.material_period(), &inputs, &mut assets);
+    let materials = TerrainMaterials::new(*debug, renderer.material_period(), layout.flora_fade(), &inputs, &mut assets);
     commands.insert_resource(materials.clone());
     commands.insert_resource(FadeMaterials::new(
         renderer.lod_fade_seconds,

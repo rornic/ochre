@@ -16,6 +16,9 @@ use crate::generate::rocks::rocks_near;
 use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::TreeTints;
+use crate::generate::trees::Tree;
+use crate::generate::columns::ChunkColumns;
+use ochre_base::biome::Biomes;
 use crate::generate::trees::TREE_HEIGHT;
 use bevy::math::I64Vec2;
 use bevy::math::IVec3;
@@ -274,62 +277,48 @@ pub fn generate_chunk_with(
     }
     for x in 0..size {
         for z in 0..size {
-            let column_height = columns.height(x, z);
-            let local_y = column_height - world_y;
-            if !(0..size).contains(&local_y)
-                || columns.rocky(x, z)
-                || cliff_reach_boosted(columns.gradient(x, z), columns.cliff_boost(x, z)) > 0.0
-            {
+            let local_y = columns.height(x, z) - world_y;
+            if !(0..size).contains(&local_y) {
                 continue;
             }
-            let (gradient, biome, temperature) = (
-                columns.gradient(x, z),
-                columns.biome(x, z),
-                columns.temperature(x, z),
-            );
-            let gradient = block_gradient(
-                biomes,
-                biome,
-                seed,
-                chunk_pos.0.x * size + x,
-                chunk_pos.0.z * size + z,
-                gradient,
-                columns.wall(x, z),
-            );
-            let ground = column_block(
-                biomes,
-                biome,
-                column_height - 1,
-                column_height,
-                gradient,
-                temperature,
-                columns.shore_top(x, z),
-            );
             let coord = bevy::math::U16Vec3::new(x as u16, local_y as u16, z as u16);
-            if ground != BlockType::Grass || chunk_data.get_block_at(coord) != BlockType::Air {
+            if chunk_data.get_block_at(coord) != BlockType::Air {
                 continue;
             }
-            let (world_x, world_z) = (origin.x + x, origin.z + z);
-            // ferns grow on the forest floor, and in the shade of a lone tree's crown
-            let shaded = matches!(biomes.name(biome), Some("forest" | "jungle"))
-                || trees
-                    .iter()
-                    .any(|tree| tree.shades(world_x as f64 + 0.5, world_z as f64 + 0.5));
-            if let Some(plant) = flora_at(
-                seed,
-                world_x,
-                world_z,
-                shaded,
-                temperature,
-                biomes.name(biome),
-                columns.exposure(x, z),
-            ) {
+            if let Some(plant) = plant_at(&columns, biomes, seed, &trees, (origin.x, origin.z), (x, z)) {
                 chunk_data.set_block_at(coord, plant);
             }
         }
     }
 
     chunk_data
+}
+
+// The plant on the grass atop column (x, z) of `columns`, whose first column is at `origin` in the world, if any: in the
+// air just over the ground, which the caller makes sure is empty. `trees` are those that may shade it.
+pub(super) fn plant_at(
+    columns: &ChunkColumns,
+    biomes: &Biomes,
+    seed: u32,
+    trees: &[Tree],
+    origin: (i64, i64),
+    (x, z): (i64, i64),
+) -> Option<BlockType> {
+    if columns.rocky(x, z) || cliff_reach_boosted(columns.gradient(x, z), columns.cliff_boost(x, z)) > 0.0 {
+        return None;
+    }
+    let column_height = columns.height(x, z);
+    let (biome, temperature) = (columns.biome(x, z), columns.temperature(x, z));
+    let (world_x, world_z) = (origin.0 + x, origin.1 + z);
+    let gradient = block_gradient(biomes, biome, seed, world_x, world_z, columns.gradient(x, z), columns.wall(x, z));
+    let ground = column_block(biomes, biome, column_height - 1, column_height, gradient, temperature, columns.shore_top(x, z));
+    if ground != BlockType::Grass {
+        return None;
+    }
+    // ferns grow on the forest floor, and in the shade of a lone tree's crown
+    let shaded = matches!(biomes.name(biome), Some("forest" | "jungle"))
+        || trees.iter().any(|tree| tree.shades(world_x as f64 + 0.5, world_z as f64 + 0.5));
+    flora_at(seed, world_x, world_z, shaded, temperature, biomes.name(biome), columns.exposure(x, z))
 }
 
 // Blocks from fresh water within which ground's cliffs are cut but not built up.
@@ -400,6 +389,7 @@ pub fn generate_chunk_mesh_with(
             ambient_occlusion: true,
             textured: true,
             tree_shapes,
+            far_flora: None,
         },
         &tint,
         &light,

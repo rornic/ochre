@@ -21,6 +21,8 @@ pub(crate) use chunk::LIGHT_MARGIN;
 pub use chunk::{generate_chunk, generate_chunk_mesh_with, generate_chunk_with, ChunkPasses};
 pub(crate) use chunk::generate_chunk_mesh;
 pub use lod::generate_lod_mesh;
+#[cfg(test)]
+pub(crate) use mesh::{FLORA_HEIGHT_CODE, FLORA_HEIGHT_SPAN, FLORA_HEIGHT_STEP};
 pub(crate) use lod::MAX_SKIRT_CELLS;
 pub(super) use shading::FACE_NORMAL_OFFSET;
 pub(super) use terrain::{block_gradient, column_block};
