@@ -95,8 +95,6 @@ pub struct Weather {
     pub rainbow: f32,
     /// The way storms drift, in blocks a game second, x and z.
     pub wind: Vec2,
-    // seconds until the next lightning strike
-    strike_in: f32,
     // whether the sky's held clear, see `WeatherPlugin`
     calm: bool,
 }
@@ -111,7 +109,6 @@ impl Default for Weather {
             thunder: 0.0,
             rainbow: 0.0,
             wind: Vec2::X,
-            strike_in: 6.0,
             calm: false,
         }
     }
@@ -231,6 +228,8 @@ struct Flash {
     // seconds since the strike, and when the second, fainter flicker comes
     age: f32,
     flicker: f32,
+    // how much of a full flash it is, 0..1, less the farther off the bolt
+    strength: f32,
 }
 
 impl Flash {
@@ -244,7 +243,7 @@ impl Flash {
                 (1.0 - t).powf(2.5)
             }
         };
-        (FLASH_STOPS * dying(self.age)).max(FLICKER_STOPS * dying(self.age - self.flicker))
+        self.strength * (FLASH_STOPS * dying(self.age)).max(FLICKER_STOPS * dying(self.age - self.flicker))
     }
 }
 
@@ -653,23 +652,31 @@ fn fall_rain(
     );
 }
 
-// Lightning strikes this often in the heaviest rain, at the least and most, in seconds, from
-// this far off, in blocks (a metre each), and its thunder rolls in at the speed of sound.
+// A thunderstorm's core strikes lightning every 7 to 22 seconds at its edge, soon as it grows harder to
+// this many times as often at its heart, from this far off, in blocks (a metre each), and its thunder
+// rolls in at the speed of sound.
 const STRIKE_SECONDS: (f32, f32) = (7.0, 22.0);
-// How many times faster lightning strikes in the heart of a storm, thunder at 1, than at the edge of one, thunder at 0.4.
 const STRIKE_FRENZY: f32 = 3.0;
 const STRIKE_DISTANCE: (f32, f32) = (30.0, 520.0);
 const THUNDER_SPEED: f32 = 343.0;
-// Now and then a strike lands close, within this many blocks; the rest are farther off.
-const CLOSE_STRIKE_CHANCE: f64 = 0.25;
-const CLOSE_STRIKE_WITHIN: f32 = 110.0;
 // How long a bolt shows, in seconds.
 const BOLT_SECONDS: f32 = 0.3;
-// Out of a thunderstorm's core, lightning is seen in thunderstorms this far off, in blocks, as
-// often as this, in seconds, and heard only from the nearer ones.
+// Lightning is seen in thunderstorms this far off, in blocks, and heard only from the nearer ones.
 const FAR_STRIKE_REACH: f32 = 28_000.0;
-const FAR_STRIKE_SECONDS: (f32, f32) = (4.0, 14.0);
 const FAR_THUNDER_HEARD: f32 = 12_000.0;
+// A strike lights the sky this far off, in blocks, at full strength within the near range.
+const FLASH_REACH: f32 = 2_500.0;
+// Strikes are decided a slot of this many game seconds at a time, from the seed and the storms alone, so every
+// client decides the same ones. A strike lands within this many blocks of its core, where the sky thunders at
+// least this hard.
+const STRIKE_SLOT: f64 = 4.0;
+const CORE_SCATTER: f64 = 1_500.0;
+const STRIKE_THUNDER_MIN: f32 = 0.4;
+// How many slots behind the clock is caught up on, and how long past its moment a bolt is still shown, in seconds.
+const STRIKE_CATCH_UP: i64 = 3;
+const LATE_STRIKE: f64 = 3.0;
+// How many times faster than real time the clock may run for lightning to show, or it would strobe.
+const MAX_STRIKE_PACE: f64 = 8.0;
 
 #[derive(Component)]
 struct Bolt {
@@ -680,36 +687,88 @@ struct Bolt {
 struct ThunderDue {
     in_seconds: f32,
     distance: f32,
+    seed: u64,
 }
 
-// Where lightning strikes in a thunderstorm's core round `camera`: mostly somewhere ahead, where
-// it's seen, and now and then close by. With how far off that is.
-fn near_strike(camera: &GlobalTransform) -> (Vec3, f32) {
-    let facing = camera.forward().with_y(0.0).normalize_or(Vec3::Z);
-    let angle = ops::atan2(facing.z, facing.x) + rand::random_range(-0.55..0.55);
-    let distance = if rand::random_bool(CLOSE_STRIKE_CHANCE) {
-        rand::random_range(STRIKE_DISTANCE.0..CLOSE_STRIKE_WITHIN)
-    } else {
-        rand::random_range(CLOSE_STRIKE_WITHIN..STRIKE_DISTANCE.1)
-    };
-    let foot = camera.translation() + Vec3::new(ops::cos(angle), 0.0, ops::sin(angle)) * distance;
-    (foot, distance)
+// One bolt of lightning: when it strikes, in game seconds, where it lands, and a seed for what is only for show,
+// its wander, its flicker and how its thunder sounds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Strike {
+    at: f64,
+    foot: Vec2,
+    seed: u64,
 }
 
-// Where lightning strikes in a thunderstorm seen from afar, `reach` blocks round `eye` at most,
-// at `t` game seconds: somewhere in one's core, with how far off that is. None while none's in sight.
-fn far_strike(forecast: &Forecast, eye: Vec3, t: f64, reach: f32) -> Option<(Vec3, f32)> {
-    let here = DVec2::new(eye.x as f64, eye.z as f64);
-    let cores = forecast.thunderstorms_near(here, reach as f64, t);
-    if cores.is_empty() {
-        return None;
+// A stream of draws from a seed: the same seed gives the same draws on every machine, unlike `rand`'s.
+struct Draws(u64);
+
+impl Draws {
+    fn new(seed: u32, a: i64, b: i64, c: i64) -> Self {
+        Self([a, b, c].into_iter().fold(mix(seed as u64 ^ 0x9E37_79B9_7F4A_7C15), |h, x| mix(h ^ x as u64)))
     }
-    let core = cores[rand::random_range(0..cores.len())].as_vec2();
-    let scatter = Vec2::new(rand::random_range(-1.0..1.0), rand::random_range(-1.0..1.0));
-    let spot = core + scatter * 1_500.0;
-    let foot = Vec3::new(spot.x, 0.0, spot.y);
-    let distance = foot.with_y(eye.y).distance(eye);
-    (distance > STRIKE_DISTANCE.1 && distance < reach).then_some((foot, distance))
+
+    // From 0 up to but not including 1.
+    fn next(&mut self) -> f64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        (mix(self.0) >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    // From -1 up to but not including 1.
+    fn signed(&mut self) -> f32 {
+        self.next() as f32 * 2.0 - 1.0
+    }
+}
+
+// SplitMix64's finalizer.
+fn mix(mut x: u64) -> u64 {
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
+
+// The bolts of the thunderstorms within `reach` blocks of `eye` that strike in the slot of game seconds beginning at
+// `slot * STRIKE_SLOT`. A pure function of the world's seed, its storms and the slot, so two players see the same
+// bolts wherever they stand.
+fn strikes_in_slot(forecast: &Forecast, seed: u32, slot: i64, eye: DVec2, reach: f64) -> Vec<Strike> {
+    let t = slot as f64 * STRIKE_SLOT;
+    let wind = forecast.wind();
+    let mut strikes = Vec::new();
+    for core in forecast.thunderstorms_near(eye, reach, t) {
+        // a core drifts with the wind, so where it began, to the nearest few blocks, names it from one slot to the next
+        let began = core - wind * t;
+        let mut draws = Draws::new(seed, (began.x / 8.0).round() as i64, (began.y / 8.0).round() as i64, slot);
+        let at = (slot as f64 + draws.next()) * STRIKE_SLOT;
+        let spot = core + DVec2::new(draws.next() * 2.0 - 1.0, draws.next() * 2.0 - 1.0) * CORE_SCATTER;
+        let thunder = forecast.sky(spot.x, spot.y, (at * TICKS_PER_SECOND as f64) as u64).thunder;
+        if thunder < STRIKE_THUNDER_MIN {
+            continue;
+        }
+        // the harder the storm, the sooner the next bolt: this slot's share of the mean wait
+        let pace = 1.0 + STRIKE_FRENZY * ((thunder - STRIKE_THUNDER_MIN) / (1.0 - STRIKE_THUNDER_MIN)).clamp(0.0, 1.0);
+        let wait = (STRIKE_SECONDS.0 + STRIKE_SECONDS.1) as f64 / 2.0 / pace as f64;
+        if draws.next() < STRIKE_SLOT / wait {
+            strikes.push(Strike { at, foot: spot.as_vec2(), seed: draws.0 });
+        }
+    }
+    strikes
+}
+
+// Which slots to decide when the clock is in `now` and the last decided was `last`: those since, or only `now` and a
+// clean start if the clock jumped, forward past a catch-up or back.
+fn slots_to_decide(last: Option<i64>, now: i64) -> (bool, std::ops::RangeInclusive<i64>) {
+    match last {
+        Some(last) if now >= last && now - last <= STRIKE_CATCH_UP => (false, last + 1..=now),
+        _ => (true, now..=now),
+    }
+}
+
+#[derive(Default)]
+struct Strikes {
+    // the last slot decided, and the bolts decided but not yet due
+    slot: Option<i64>,
+    due: Vec<Strike>,
+    // the clock when last seen, in game seconds
+    seen: Option<f64>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -717,7 +776,7 @@ fn strike_lightning(
     mut commands: Commands,
     time: Res<Time>,
     clock: Res<TimeOfDay>,
-    mut weather: ResMut<Weather>,
+    weather: Res<Weather>,
     world: Res<World>,
     forecast: Option<Res<Forecast>>,
     handles: Option<Res<WeatherHandles>>,
@@ -726,6 +785,7 @@ fn strike_lightning(
     mut thunders: ResMut<Assets<Thunder>>,
     mut bolts: Query<(Entity, &mut Bolt, &mut Visibility)>,
     mut due: Query<(Entity, &mut ThunderDue)>,
+    mut strikes: Local<Strikes>,
 ) {
     let dt = time.delta_secs();
     for (entity, mut bolt, mut visibility) in &mut bolts {
@@ -749,90 +809,97 @@ fn strike_lightning(
             commands.spawn((
                 AudioPlayer(thunders.add(Thunder {
                     distance: thunder.distance,
-                    seed: rand::random(),
+                    seed: thunder.seed,
                 })),
                 PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
             ));
         }
     }
 
-    let (Some(handles), Ok((camera, projection))) = (handles, camera.single()) else {
+    let (Some(handles), Some(forecast), Ok((camera, projection))) = (handles, forecast, camera.single()) else {
         return;
     };
-    // in a thunderstorm's core, or watching one from afar
-    let near = weather.thunder >= 0.4;
-    if !near && (forecast.is_none() || weather.calm) {
+    let t = seconds(clock.0);
+    // a clock that is wound, or runs far faster than real time, would only strobe, so it gets no lightning and starts afresh once it settles
+    let pace = strikes.seen.replace(t).map_or(1.0, |before| if dt > 0.0 { (t - before).abs() / dt as f64 } else { 0.0 });
+    if weather.calm || pace > MAX_STRIKE_PACE {
+        strikes.slot = None;
+        strikes.due.clear();
         return;
     }
-    weather.strike_in -= dt;
-    if weather.strike_in > 0.0 {
-        return;
+    let slot = (t / STRIKE_SLOT).floor() as i64;
+    let (fresh, slots) = slots_to_decide(strikes.slot, slot);
+    if fresh {
+        strikes.due.clear();
     }
-    let (soonest, latest) = if near {
-        STRIKE_SECONDS
-    } else {
-        FAR_STRIKE_SECONDS
-    };
-    // the harder the storm, the sooner the next bolt
-    let pace = if near { 1.0 + STRIKE_FRENZY * ((weather.thunder - 0.4) / 0.6).clamp(0.0, 1.0) } else { 1.0 };
-    weather.strike_in = rand::random_range(soonest..latest) / pace;
-
     let eye = camera.translation();
-    let strike = match forecast {
-        Some(forecast) if !near => {
-            // drawn short of the far plane, or it's cut off
-            let far = match projection {
-                Projection::Perspective(perspective) => perspective.far * 0.9,
-                _ => FAR_STRIKE_REACH,
-            };
-            far_strike(&forecast, eye, seconds(clock.0), FAR_STRIKE_REACH.min(far))
-        }
-        _ => Some(near_strike(camera)),
+    // drawn short of the far plane, or it's cut off
+    let far = match projection {
+        Projection::Perspective(perspective) => perspective.far * 0.9,
+        _ => FAR_STRIKE_REACH,
     };
-    let Some((foot, distance)) = strike else {
-        return;
-    };
-    // from the noise, as the region there may not be worked out, and working it out here
-    // would stall the frame the bolt strikes on
-    let ground = world
-        .region_store
-        .terrain()
-        .sample(foot.x.floor() as f64, foot.z.floor() as f64)
-        .height
-        .max(ochre_base::WATER_LEVEL as f64) as f32;
-    // far off, drawn dropped with the land and clouds round the world's curve
-    let drop = WORLD_CURVE.drop_at(distance, eye.y);
-    let foot = foot.with_y(ground - drop);
-    let top = foot.with_y(crate::clouds::CLOUD_BASE - drop);
-    commands.spawn((
-        Bolt { age: 0.0 },
-        Mesh3d(meshes.add(bolt_mesh(top, foot, eye, distance))),
-        MeshMaterial3d(handles.bolt.clone()),
-        Transform::default(),
-        Visibility::Visible,
-        NoFrustumCulling,
-        NotShadowCaster,
-        NotShadowReceiver,
-    ));
-    // only a near strike lights everything up
-    if near {
-        commands.spawn(Flash {
-            age: 0.0,
-            flicker: rand::random_range(0.12..0.22),
-        });
+    let reach = FAR_STRIKE_REACH.min(far);
+    for slot in slots {
+        let found = strikes_in_slot(&forecast, world.seed(), slot, DVec2::new(eye.x as f64, eye.z as f64), reach as f64);
+        strikes.due.extend(found);
     }
-    if distance < FAR_THUNDER_HEARD {
-        commands.spawn(ThunderDue {
-            in_seconds: distance / THUNDER_SPEED,
-            distance,
-        });
+    strikes.slot = Some(slot);
+
+    // the bolts whose moment has come, less any long past, which a stall left behind
+    let (ready, waiting): (Vec<Strike>, Vec<Strike>) = std::mem::take(&mut strikes.due).into_iter().partition(|strike| strike.at <= t);
+    strikes.due = waiting;
+    for strike in ready.into_iter().filter(|strike| t - strike.at < LATE_STRIKE) {
+        let foot = Vec3::new(strike.foot.x, 0.0, strike.foot.y);
+        let distance = foot.with_y(eye.y).distance(eye);
+        if distance > reach {
+            continue;
+        }
+        // from the noise, as the region there may not be worked out, and working it out here
+        // would stall the frame the bolt strikes on
+        let ground = world
+            .region_store
+            .terrain()
+            .sample(foot.x.floor() as f64, foot.z.floor() as f64)
+            .height
+            .max(ochre_base::WATER_LEVEL as f64) as f32;
+        // far off, drawn dropped with the land and clouds round the world's curve
+        let drop = WORLD_CURVE.drop_at(distance, eye.y);
+        let foot = foot.with_y(ground - drop);
+        let top = foot.with_y(crate::clouds::CLOUD_BASE - drop);
+        commands.spawn((
+            Bolt { age: 0.0 },
+            Mesh3d(meshes.add(bolt_mesh(top, foot, eye, distance, strike.seed))),
+            MeshMaterial3d(handles.bolt.clone()),
+            Transform::default(),
+            Visibility::Visible,
+            NoFrustumCulling,
+            NotShadowCaster,
+            NotShadowReceiver,
+        ));
+        let mut draws = Draws(strike.seed);
+        // a strike lights everything up, fully within the near range and less the farther off, to nothing at the flash's reach
+        if distance < FLASH_REACH {
+            commands.spawn(Flash {
+                age: 0.0,
+                flicker: 0.12 + 0.10 * draws.next() as f32,
+                strength: ((FLASH_REACH - distance) / (FLASH_REACH - STRIKE_DISTANCE.1)).clamp(0.0, 1.0),
+            });
+        }
+        if distance < FAR_THUNDER_HEARD {
+            commands.spawn(ThunderDue {
+                in_seconds: distance / THUNDER_SPEED,
+                distance,
+                seed: strike.seed,
+            });
+        }
     }
 }
 
 // A forked bolt from `top` down to `foot`, as quads turned to face `eye`: a jagged trunk and a
 // branch or two off it. Close up it's drawn thinner and wanders less, so it isn't a fat zigzag
 // filling the view; kilometres off, wider, so it's still a few pixels across.
-fn bolt_mesh(top: Vec3, foot: Vec3, eye: Vec3, distance: f32) -> Mesh {
+fn bolt_mesh(top: Vec3, foot: Vec3, eye: Vec3, distance: f32, seed: u64) -> Mesh {
+    let mut draws = Draws(seed);
     let scale = (distance / 160.0).clamp(0.4, 1.0).max(distance / 450.0);
     let mut positions = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -846,32 +913,24 @@ fn bolt_mesh(top: Vec3, foot: Vec3, eye: Vec3, distance: f32) -> Mesh {
         positions.extend([a - across, a + across, b - across, b + across].map(|p| p.to_array()));
         indices.extend([0, 2, 1, 1, 2, 3].map(|i| k + i));
     };
-    let jagged = |from: Vec3, to: Vec3, steps: usize, wander: f32| {
+    let jagged = |draws: &mut Draws, from: Vec3, to: Vec3, steps: usize, wander: f32| {
         let mut points = vec![from];
         for i in 1..steps {
             let t = i as f32 / steps as f32;
-            let jitter = Vec3::new(
-                rand::random_range(-1.0..1.0),
-                0.0,
-                rand::random_range(-1.0..1.0),
-            ) * wander;
+            let jitter = Vec3::new(draws.signed(), 0.0, draws.signed()) * wander;
             points.push(from.lerp(to, t) + jitter);
         }
         points.push(to);
         points
     };
-    let trunk = jagged(top, foot, 18, 14.0 * scale);
+    let trunk = jagged(&mut draws, top, foot, 18, 14.0 * scale);
     for pair in trunk.windows(2) {
         segment(pair[0], pair[1], 1.4 * scale);
     }
-    for _ in 0..rand::random_range(1..4) {
-        let from = trunk[rand::random_range(3..trunk.len() - 4)];
-        let reach = Vec3::new(
-            rand::random_range(-60.0..60.0),
-            -rand::random_range(40.0..110.0),
-            rand::random_range(-60.0..60.0),
-        ) * scale.max(1.0).sqrt();
-        let branch = jagged(from, from + reach, 7, 8.0 * scale);
+    for _ in 0..1 + (draws.next() * 3.0) as usize {
+        let from = trunk[3 + (draws.next() * (trunk.len() - 7) as f64) as usize];
+        let reach = Vec3::new(draws.signed() * 60.0, -(40.0 + draws.next() as f32 * 70.0), draws.signed() * 60.0) * scale.max(1.0).sqrt();
+        let branch = jagged(&mut draws, from, from + reach, 7, 8.0 * scale);
         for pair in branch.windows(2) {
             segment(pair[0], pair[1], 0.7 * scale);
         }
@@ -963,6 +1022,77 @@ mod tests {
         }
         most
     }
+
+    fn jungle(humidity: f32) -> Forecast {
+        Forecast::new(4, [1.0, 0.0], move |_, _| ochre_base::biome::Climate { temperature: 0.8, humidity })
+    }
+
+    // The first slot, looking every ten minutes of game time over six days, with a thunderstorm in reach of the origin.
+    fn stormy_slot(forecast: &Forecast) -> i64 {
+        let slots_in_ten_minutes = (600.0 / STRIKE_SLOT) as usize;
+        (0..(6.0 * crate::sky::DAY_SECONDS as f64 / STRIKE_SLOT) as i64)
+            .step_by(slots_in_ten_minutes)
+            .find(|slot| !forecast.thunderstorms_near(DVec2::ZERO, 28_000.0, *slot as f64 * STRIKE_SLOT).is_empty())
+            .expect("no thunderstorm in six days of a stormy jungle's weather")
+    }
+
+    fn strikes_over(forecast: &Forecast, seed: u32, eye: DVec2, slots: std::ops::Range<i64>) -> Vec<Strike> {
+        slots.flat_map(|slot| strikes_in_slot(forecast, seed, slot, eye, 28_000.0)).collect()
+    }
+
+    #[test]
+    fn test_the_same_slot_strikes_the_same_bolts_wherever_the_viewer_stands() {
+        let forecast = jungle(0.95);
+        let from = stormy_slot(&forecast);
+        let slots = from..from + 400;
+        let here = strikes_over(&forecast, 4, DVec2::ZERO, slots.clone());
+        assert!(here.len() >= 10, "only {} bolts in {} slots", here.len(), slots.end - slots.start);
+        // a block away sees the same storms, so the same bolts, and asking again changes nothing
+        assert_eq!(here, strikes_over(&forecast, 4, DVec2::new(1.0, -1.0), slots.clone()));
+        assert_eq!(here, strikes_over(&forecast, 4, DVec2::ZERO, slots.clone()));
+        // and each falls in its slot, in the thunder it was drawn for
+        for strike in &here {
+            let slot = (strike.at / STRIKE_SLOT).floor() as i64;
+            assert!(slots.contains(&slot));
+        }
+        // another seed, which draws differently, strikes elsewhere and at other moments
+        assert_ne!(here, strikes_over(&forecast, 5, DVec2::ZERO, slots));
+    }
+
+    #[test]
+    fn test_a_dry_climate_is_struck_by_nothing() {
+        let forecast = jungle(0.02);
+        let struck: usize = (0..2000).map(|slot| strikes_in_slot(&forecast, 4, slot * 15, DVec2::ZERO, 28_000.0).len()).sum();
+        assert_eq!(struck, 0);
+    }
+
+    #[test]
+    fn test_a_clock_that_jumps_or_is_wound_back_starts_afresh_and_one_that_runs_is_followed() {
+        assert_eq!(slots_to_decide(None, 10), (true, 10..=10));
+        assert!(slots_to_decide(Some(10), 10).1.is_empty());
+        assert_eq!(slots_to_decide(Some(10), 12), (false, 11..=12));
+        assert_eq!(slots_to_decide(Some(10), 10 + STRIKE_CATCH_UP), (false, 11..=10 + STRIKE_CATCH_UP));
+        assert_eq!(slots_to_decide(Some(10), 11 + STRIKE_CATCH_UP), (true, 11 + STRIKE_CATCH_UP..=11 + STRIKE_CATCH_UP));
+        assert_eq!(slots_to_decide(Some(10), 5), (true, 5..=5));
+    }
+
+    #[test]
+    fn test_draws_are_a_fixed_stream_of_a_seed_spread_over_0_to_1() {
+        // integer arithmetic throughout, so these are the same on every platform
+        assert_eq!(Draws::new(7, 1, 2, 3).0, GOLDEN_STATE);
+        let mut draws = Draws::new(7, 1, 2, 3);
+        let mut sum = 0.0;
+        for _ in 0..20_000 {
+            let draw = draws.next();
+            assert!((0.0..1.0).contains(&draw));
+            sum += draw;
+        }
+        assert!((sum / 20_000.0 - 0.5).abs() < 0.01, "{}", sum / 20_000.0);
+        assert_ne!(Draws::new(7, 1, 2, 3).0, Draws::new(7, 1, 2, 4).0);
+        assert_ne!(Draws::new(7, 1, 2, 3).0, Draws::new(8, 1, 2, 3).0);
+    }
+
+    const GOLDEN_STATE: u64 = 12470662751008037559;
 
     #[test]
     fn test_a_calm_sky_stays_clear_through_days_of_weather() {
