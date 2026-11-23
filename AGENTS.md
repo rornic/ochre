@@ -14,7 +14,7 @@ cargo clippy --workspace --all-targets
 
 Always `--release`: debug generation is unusably slow. Run from the repo root, since assets and shaders load by relative path. Rust 1.97.1+ (Bevy 0.20), plus `libudev-dev` and `pkg-config` on Linux. Wayland is deliberately off (X11 only).
 
-Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see the `record-flythrough` skill), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at), `OCHRE_REMOTE` (serve the remote control on localhost, `1` for the default port or a port number; off unless set, since any web page can reach it; see the `game-remote` skill). The sandbox also reads `OCHRE_FLY` (start flying, to hover at the spawn), `OCHRE_SHOT=seconds[,path]` (save the window that far in, whatever covers it on the desktop), `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
+Env vars, read by `ochre_engine::DevEnv` for the sandbox and tools (the plugins read none): `OCHRE_SEED` (fix the world seed), `OCHRE_WORLD_DIR` (saved maps, default `worlds/`, gitignored), `OCHRE_SPAWN`, `OCHRE_FLIGHT` (with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`, see `flythrough.rs`), `OCHRE_CLEAR_SKY` (no weather, so no storm), `OCHRE_STATS`, `OCHRE_TIME`, `OCHRE_TIMESCALE` (game seconds per real second, for watching weather as a timelapse), `OCHRE_LOOK` (a direction `x,y,z`, not a point to look at), `OCHRE_REMOTE` (serve the remote control on localhost, `1` for the default port or a port number; off unless set, since any web page can reach it; see the `game-remote` skill). The sandbox also reads `OCHRE_FLY` (start flying, to hover at the spawn), `OCHRE_SHOT=seconds[,path]` (save the window that far in, whatever covers it on the desktop), `OCHRE_RESOLUTION=WxH` and `OCHRE_NOVSYNC` (uncapped, so it can starve the compositor: keep runs short).
 
 ## Crates
 
@@ -60,7 +60,7 @@ Every plugin but the terrain's can be left out: one that reads another's resourc
 - World generation takes `exp`, `powf`, `sin`, `cos` and the like from the `libm` crate, never `f32::exp` and friends, so a seed gives the same world on x86-64 and ARM64 (`worldmap/portable_maths.rs` scans for it).
 - Perf work follows the `profile` skill and is logged in `docs/terrain-perf.md`. A phase that regresses p99 frame time needs a recorded reason.
 - Debug the world with the `worldview` skill, not ad hoc probe scripts. To see a spot in the running game, use the `game-remote` skill.
-- Record the game with the `record-flythrough` skill, not a screen capture, which drops most frames.
+- Record the game with `OCHRE_FLIGHT_FRAMES`, which saves every frame on a fixed clock, not a screen capture, which drops most frames.
 - Large test modules (`generator/tests.rs`, `lod/tests.rs`) run real generation, so expect slow `cargo test`.
 - Commit messages and PR titles are lowercase conventional commits. PRs target `main`. See `CONTRIBUTING.md`.
 - Always launch the sandbox with `OCHRE_REMOTE=1`, so the running game can be read and shot without a restart.
