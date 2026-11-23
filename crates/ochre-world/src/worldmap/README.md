@@ -14,7 +14,7 @@ Pipeline, in the order of `mod.rs:generate`:
 | landforms | `shapes.rs:fjords, cones, inselbergs, cold_uplands, karst, cirques` | `height` |
 | passes | `gameplay.rs:carve_passes` | `height`, `Pass` features |
 | beds | `landform.rs:run`, `landform.rs:terrace` | `landform`, terraced `height` |
-| valleys | `valleys.rs:run` (`generate_with(.., false)` skips it) | `height`, `valley` |
+| valleys | `valleys.rs:run` | `height`, `valley` |
 | scatter | `hydrology.rs:scatter` | `height` |
 | hydrology 2 | `hydrology.rs:run(map, true)` | `flow`, `down`, `water_kind`, `water_surface`, `river_width`, carved `height` |
 | landform again | `landform.rs:run` | `landform` |
@@ -28,7 +28,7 @@ Pipeline, in the order of `mod.rs:generate`:
 
 ## Interface
 - `generate(seed, WorldConfig) -> WorldMap` (`mod.rs:generate`); `io.rs:load_or_generate(dir, seed, config)` is the cached entry point that `../lib.rs:load_world` uses.
-- `WorldConfig` with `validate`, `dim`, `half_size` (`mod.rs`); `WorldMap` with `empty`, `cell_centre`, `to_cell`, `index`, `dim`, `bilinear`, `bilinear_bytes`, `bicubic`, `height_at` (monotone cubic), `shared`; `WaterCell`; `NEIGHBOURS`; `NO_FLOW`; `GENERATOR_VERSION`; `SoftCache` (`mod.rs`).
+- `WorldConfig` with `validate`, `dim`, `half_size` (`mod.rs`); `WorldMap` with `empty`, `cell_centre`, `to_cell`, `index`, `dim`, `bilinear`, `bilinear_bytes`, `height_at` (monotone cubic), `shared`; `WaterCell`; `NEIGHBOURS`; `NO_FLOW`; `GENERATOR_VERSION`; `SoftCache` (`mod.rs`).
 - `WorldTerrain` (`source.rs`): `new(Arc<WorldMap>)`, `map`, `dry_ground`, `relief_at`, and the `TerrainSource` impl (`bounds`, `seed`, `biomes`, `sample_for_cell`, `rock_column`, `climate`, `temperature`, `tree_bound`, `cliff_boost`, `find_spawn`).
 - `Feature`, `FeatureKind` (`Pass`, `Ford`, `BridgeSite`, `Spawn`, `Iron`, `Coal`, `Clay`, `Salt`, `Cave`, `Hotspot`) (`features.rs`), re-exported from `mod.rs`.
 - `tectonics.rs`: `TectonicConfig`, `Plate`, `Tectonics`, `Sample`, boundary codes `COLLISION`, `SUBDUCTION`, `EXTENSION`, `SHEAR`, plate rock codes `ROCK_BASIN`, `ROCK_SHIELD`, `ROCK_VOLCANIC`, `Tectonics::plate_rocks`.
