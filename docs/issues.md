@@ -80,6 +80,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** 49 to 117 pixels of about a million drawn still z-fight at 0.001 blocks on seed 1 (10816, -6784) and seed 4 (-6076, 5236), levels 1 to 3, against 1,748 to 22,854 before. The samples are the row past the bottom near its top, where it meets the row below, and the flat crossings both nodes draw in that one cell row, which can't lean.
 - **Not known:** whether the rest shows in the game. The renderer is orthographic with no depth precision limit, so the counts are geometry, not the GPU's depth test. Level n beside level n + 1, and a chunk beside a node at the hand-over, were not measured.
 - **To fix:** make the two nodes' vertices on their shared row agree (`docs/sculpted-ground.md`, Open).
+- **Tried, 2026-11-23:** reading 13 rows of real ground past a node's top and bottom makes the shared row agree (332 of 332 vertices) and cuts the counts from 13 to 88 pixels to 1 to 8, but LOD meshing in `bench` went from 175 to 259 ms and the level 1 ring from 1.8 to 2.3 s, measured with other builds running. Held: too dear for a fight not noticed in play. A cheaper way would share only the vertices of the row itself.
 
 ## Rock's facets turn at every vertex in 8-block cells
 
