@@ -296,10 +296,8 @@ impl Tile {
     pub fn material_layer(self) -> Option<u8> {
         match self {
             Tile::Dirt => Some(0),
-            // a grass block's sides are the same grass as its top
             Tile::GrassTop | Tile::GrassSide => Some(1),
             Tile::Sand => Some(2),
-            // a snow block is snow on every face, so a snow side is the snow layer
             Tile::Snow | Tile::SnowSide => Some(3),
             Tile::Limestone => Some(4),
             Tile::Clay => Some(5),
@@ -308,7 +306,6 @@ impl Tile {
             Tile::Granite => Some(8),
             // the placeholder rock draws as shale, whose flagstone was stone's
             Tile::Shale | Tile::Stone => Some(9),
-            // a sandstone block's sides are the same rock as its top
             Tile::SandstoneTop | Tile::SandstoneSide => Some(10),
             Tile::Gravel => Some(11),
             Tile::Ice => Some(12),

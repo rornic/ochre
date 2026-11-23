@@ -45,7 +45,6 @@ impl Plain {
         self
     }
 
-    /// Lays `relief` over the biome's ground.
     pub fn with_relief(mut self, relief: &'static [ReliefKind]) -> Self {
         self.relief = relief;
         self

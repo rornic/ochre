@@ -1,6 +1,5 @@
 //! Gradient noise from an integer hash and only `+ - * /` and `floor`, so x86 and ARM agree to the last bit.
 
-/// A well-mixed 32-bit hash of a seed and a lattice point.
 pub fn hash(seed: u32, x: i32, z: i32) -> u32 {
     let mut h = seed ^ (x as u32).wrapping_mul(0x85EB_CA6B) ^ (z as u32).wrapping_mul(0xC2B2_AE35);
     h ^= h >> 16;

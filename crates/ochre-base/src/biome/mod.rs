@@ -59,7 +59,6 @@ pub trait Biome: Send + Sync {
         (0.0, 0.0)
     }
 
-    // How big the biome's trees grow against the usual.
     fn tree_scale(&self) -> TreeScale {
         TreeScale::default()
     }
@@ -69,7 +68,6 @@ pub trait Biome: Send + Sync {
         1.0
     }
 
-    // The relief features the biome lays over its ground.
     fn relief(&self) -> &'static [ReliefKind] {
         &[]
     }
@@ -191,7 +189,6 @@ impl Biomes {
         Self { entries }
     }
 
-    // Adds each biome, and the base terrain, under the mountain and volcanic modifiers.
     fn with_modifiers(mut self) -> Self {
         let plain: Vec<(u8, Arc<dyn Biome>)> =
             std::iter::once((0, Arc::new(modifier::Grassland) as Arc<dyn Biome>))
@@ -238,7 +235,6 @@ impl Biomes {
             .expect("every biome has each modifier")
     }
 
-    /// What the ground has become on top of `biome`.
     pub fn modifier(&self, biome: BiomeId) -> Modifier {
         self.entry(biome).map_or(Modifier::None, |e| e.modifier)
     }
@@ -256,7 +252,6 @@ impl Biomes {
             .map_or((0.0, 0.0), |e| e.biome.climate_shift())
     }
 
-    /// How big trees grow in `biome` against the usual.
     pub fn tree_scale(&self, biome: BiomeId) -> TreeScale {
         self.entry(biome)
             .map_or_else(TreeScale::default, |e| e.biome.tree_scale())
@@ -267,12 +262,10 @@ impl Biomes {
         self.entry(biome).map_or(1.0, |e| e.biome.frost())
     }
 
-    /// The relief features `biome` lays over its ground.
     pub fn relief(&self, biome: BiomeId) -> &'static [ReliefKind] {
         self.entry(biome).map_or(&[], |e| e.biome.relief())
     }
 
-    /// What a spring's rim and pool bed are made of in `biome`.
     pub fn spring_block(&self, biome: BiomeId) -> BlockType {
         self.entry(biome)
             .map_or(BlockType::Gravel, |e| e.biome.spring_block())
@@ -285,7 +278,6 @@ impl Biomes {
             .map(|e| e.biome.name())
     }
 
-    // The block `biome` uses in place of the base terrain's `base`.
     pub fn block(
         &self,
         biome: BiomeId,

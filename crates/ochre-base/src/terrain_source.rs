@@ -1,6 +1,5 @@
 use crate::biome::{BiomeId, Biomes, Climate};
 
-/// What covers a column's ground with water.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum WaterKind {
     #[default]
@@ -82,7 +81,6 @@ pub trait TerrainSource: Send + Sync {
         Box::new(StoneColumn)
     }
 
-    /// How hot and wet the column at (x, z) is.
     fn climate(&self, x: f64, z: f64) -> Climate;
 
     /// How hot the column at (x, z) is, 0..1.

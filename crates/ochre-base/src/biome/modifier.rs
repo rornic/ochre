@@ -21,7 +21,6 @@ const ROCK_GRADIENT: (f64, f64) = (1.6, 1.0);
 const ROCK_ABOVE: (f64, f64) = (150.0, 600.0);
 // Volcanic ground steeper than this is bare rock.
 const BARE_GRADIENT: f64 = 0.5;
-// How thickly trees grow on mountain and on volcanic ground.
 const MOUNTAIN_TREES: f64 = 0.04;
 const VOLCANIC_TREES: f64 = 0.01;
 
