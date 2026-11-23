@@ -22,7 +22,6 @@ pub struct Feel {
 }
 
 impl Feel {
-    /// The feel of the country at (x, z) of `terrain`.
     pub fn at(terrain: &dyn TerrainSource, x: f64, z: f64) -> Self {
         let biome = terrain.biome(x, z);
         Self {

@@ -586,7 +586,6 @@ fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     out
 }
 
-// The cells sharing an edge with cell `i`, within the map.
 fn edge_neighbours(i: usize, dim: usize) -> impl Iterator<Item = usize> {
     let (x, z) = ((i % dim) as i64, (i / dim) as i64);
     [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]

@@ -43,7 +43,6 @@ impl Rng {
     }
 }
 
-// A window of the height grid a tile's droplets run on.
 struct Window<'a> {
     w: usize,
     h: usize,

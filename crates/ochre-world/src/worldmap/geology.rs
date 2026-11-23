@@ -47,7 +47,6 @@ impl Rock {
         }
     }
 
-    /// The block this rock is drawn as.
     pub fn block(self) -> BlockType {
         match self {
             Self::Stone => BlockType::Rock,
@@ -318,7 +317,6 @@ fn stepped(height: f64, phase: f64, weight: f64, bounds: (f64, f64), riser: f64)
 }
 
 impl WorldMap {
-    /// Rock at a map cell and elevation, including beds below the surface.
     pub fn rock_at_cell(&self, i: usize, y: f32) -> Rock {
         let soft = self.soft.0.get(i).map_or_else(
             || {
@@ -423,7 +421,6 @@ impl WorldMap {
         (i, self.bilinear(&self.strata_offset, x, z))
     }
 
-    /// The rocks down the column at (`x`, `z`), as blocks.
     pub fn rock_column(&self, x: f64, z: f64) -> RockColumn<'_> {
         let (i, phase) = self.rock_cell(x, z);
         let soft = base_soft(self.seed, x, z);

@@ -72,7 +72,6 @@ impl WorldConfig {
         Ok(())
     }
 
-    /// Cells across the map.
     pub fn dim(&self) -> usize {
         (self.size / self.map_cell) as usize
     }
@@ -326,7 +325,6 @@ impl WorldMap {
         monotone_cubic(rows, tz)
     }
 
-    /// An `Arc`ed map, as every chunk task shares it.
     pub fn shared(self) -> Arc<Self> {
         Arc::new(self)
     }
@@ -452,7 +450,6 @@ pub(crate) fn par_rows<T: Send>(dim: usize, layer: &mut [T], f: impl Fn(usize, &
     });
 }
 
-/// Makes the whole map for `seed`.
 pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     config.validate().expect("invalid world config");
     let timed = std::env::var_os("OCHRE_STAGE_TIMES").is_some();

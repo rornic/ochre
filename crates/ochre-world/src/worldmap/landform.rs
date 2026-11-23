@@ -20,7 +20,6 @@ const PEAK_REACH: usize = 10;
 const TABLE_WINDOW: (f64, f64, f64, f64) = (40.0, 90.0, 300.0, 360.0);
 const TABLE_WAVELENGTH: f64 = 20000.0;
 
-/// Fills `map.landform` from the ground in `map.height`.
 pub fn run(map: &mut WorldMap) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;

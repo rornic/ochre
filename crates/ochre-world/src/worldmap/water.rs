@@ -5,7 +5,6 @@ use super::{WaterCell, WorldMap, NEIGHBOURS, NO_FLOW};
 // Straight pieces a river's curve between two cells is measured as.
 const CURVE_PIECES: usize = 8;
 
-/// The nearest river to a point.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RiverHit {
     /// Blocks from the river's centre line.
@@ -140,7 +139,6 @@ pub struct RiverProfiles {
     lips: Vec<[f32; PROFILE_POINTS]>,
     // how far along the stretch, 0..1, a river into a lake reaches: its curve runs past the shore, leaving a stub
     ends: Vec<f32>,
-    // each profile's course
     stretches: Vec<Stretch>,
     // the course's points `CURVE_PIECES` ways along it, which `river_hits` joins with straight pieces
     curves: Vec<[(f64, f64); CURVE_PIECES + 1]>,
@@ -159,7 +157,6 @@ impl RiverProfiles {
         self.ends[self.index[cell] as usize]
     }
 
-    /// The reach, levels and course of the stretch that starts in `cell`, if one does.
     pub(super) fn course(&self, cell: usize) -> Option<(f32, [f32; PROFILE_POINTS + 1], Stretch)> {
         let n = *self.index.get(cell).filter(|&&n| n != Self::NONE)? as usize;
         Some((self.ends[n], self.data[n], self.stretches[n]))
@@ -309,7 +306,6 @@ impl WorldMap {
         still_beside(self.dim(), &self.water_kind, &self.water_surface, i)
     }
 
-    // The cell a river cell drains into, if it has one.
     pub(super) fn downstream(&self, cx: usize, cz: usize) -> Option<(usize, usize)> {
         match self.down[self.index(cx, cz)] {
             NO_FLOW => None,
@@ -383,7 +379,6 @@ impl WorldMap {
         })
     }
 
-    /// The cells round (`x`, `z`) that drain into it.
     pub(super) fn feeders(&self, x: usize, z: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
         let dim = self.dim() as i64;
         NEIGHBOURS

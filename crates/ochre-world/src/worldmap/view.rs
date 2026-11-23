@@ -11,7 +11,6 @@ const RAYS: usize = 16;
 const OPEN_FROM: f64 = 1500.0;
 /// How high over the ground the eye is.
 const EYE: f64 = 2.0;
-/// The most sites listed.
 pub(crate) const MOST_SITES: usize = 20;
 
 /// A spawn region and what can be seen from it.

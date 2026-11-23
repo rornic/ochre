@@ -34,7 +34,6 @@ use ochre_terrain::settings::RendererSettings;
 use ochre_terrain::world::World;
 use serde::Deserialize;
 
-/// How opaque fog gets at its far end.
 pub const FOG_MAX_OPACITY: f32 = 0.8;
 
 /// Where the sun is at noon: its path is the great circle through this and the horizon; see `path_basis`.
@@ -82,7 +81,6 @@ pub(crate) fn sun_illuminance() -> f32 {
     SUN_BRIGHTNESS * SKY_GAIN / camera_exposure().exposure()
 }
 
-/// The moon's illuminance in clear air, see `sun_illuminance`.
 pub(crate) fn moon_illuminance() -> f32 {
     MOON_BRIGHTNESS * SKY_GAIN / MOON_BOOST / camera_exposure().exposure()
 }

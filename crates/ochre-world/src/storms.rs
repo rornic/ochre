@@ -126,7 +126,6 @@ impl std::fmt::Debug for Forecast {
     }
 }
 
-/// A game tick as game seconds.
 pub fn seconds(tick: u64) -> f64 {
     tick as f64 / TICKS_PER_SECOND as f64
 }
@@ -260,7 +259,6 @@ fn fair_cloud(moisture: f64) -> f64 {
 }
 
 impl Storm {
-    /// Where its centre is at `t`.
     pub fn centre(&self, t: f64) -> DVec2 {
         self.origin + self.wind * t
     }
@@ -281,7 +279,6 @@ impl Storm {
         shield_reach(self.radius, self.aspect)
     }
 
-    /// Whether it's alive at `t`.
     pub fn alive(&self, t: f64) -> bool {
         (self.born..=self.born + self.life).contains(&t)
     }
@@ -499,7 +496,6 @@ impl Forecast {
         cores
     }
 
-    /// The weather at (x, z) at game tick `tick`.
     pub fn sky(&self, x: f64, z: f64, tick: u64) -> Sky {
         let t = seconds(tick);
         let p = DVec2::new(x, z);
@@ -606,7 +602,6 @@ impl Forecast {
     }
 }
 
-// The larger of each of storm values `a` and `b`.
 fn strongest(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
     [
         a[0].max(b[0]),

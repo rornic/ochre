@@ -133,7 +133,6 @@ impl Weather {
     }
 }
 
-// How hard rain falls, and snow, out of `sky`'s precipitation.
 fn rain_and_snow(sky: &crate::storms::Sky) -> (f32, f32) {
     (sky.precipitation * (1.0 - sky.snow), sky.precipitation * sky.snow)
 }
@@ -146,7 +145,6 @@ const SHELTER_GLOOM: f32 = 0.3;
 const GLOOM_BEFORE_RAIN: f32 = 0.8;
 // A rainbow shows after rain: how far back to look, in game seconds, for how hard it rained at the most.
 const RAINBOW_LOOK_BACK: f32 = 1200.0;
-// Moments sampled in that look back.
 const RAINBOW_LOOKS: u32 = 8;
 
 /// How strong a rainbow is when it rained `was` hard lately and rains `now` hard now, both 0..1.

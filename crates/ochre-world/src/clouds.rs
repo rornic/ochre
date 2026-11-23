@@ -331,7 +331,6 @@ fn target_size(size: UVec2) -> UVec2 {
 #[derive(Component)]
 pub struct CloudDome;
 
-/// Spawns the dome over the main camera blending the clouds' target up over the scene.
 fn spawn_cloud_dome(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

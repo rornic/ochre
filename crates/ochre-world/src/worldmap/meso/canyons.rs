@@ -72,7 +72,6 @@ fn trace(flood: &Flood, dim: usize, start: (usize, usize), depth: f64, half: f64
     floor
 }
 
-// `floor` with its bends averaged over a few cells, for the map's trench.
 fn smoothed(floor: &Floor) -> Floor {
     (0..floor.len())
         .map(|i| {

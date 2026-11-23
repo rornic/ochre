@@ -55,7 +55,6 @@ fn tonemap_curve(v: f32) -> f32 {
     1.0 - (-v).exp()
 }
 
-// Bevy's somewhat boring display transform, on an exposed colour.
 fn somewhat_boring_display_transform(colour: Vec3) -> Vec3 {
     let ycbcr = RGB_TO_YCBCR * colour;
     let bt = tonemap_curve(Vec3::new(0.0, ycbcr.y, ycbcr.z).length() * 2.4);

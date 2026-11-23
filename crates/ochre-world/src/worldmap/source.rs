@@ -629,7 +629,6 @@ impl WorldTerrain {
         ground + self.dune_height(x, z, cell, base, calm) * (1.0 - flat) - cut
     }
 
-    // The cells within two of a canyon's line.
     fn canyon_zone(&self) -> Vec<bool> {
         let (map, dim) = (&self.map, self.map.dim());
         if map.canyon.iter().all(|&b| b == 0) {
@@ -794,7 +793,6 @@ impl WorldTerrain {
             .fold(1.0, f64::min)
     }
 
-    /// The ground at a point with no river or lake water on it.
     pub fn dry_ground(&self, x: f64, z: f64, cell: f64) -> f64 {
         let base = self.map.height_at(x, z) as f64;
         let (round, by) = (self.still_round(x, z), self.still_by(x, z));
@@ -932,7 +930,6 @@ impl WorldTerrain {
             .collect()
     }
 
-    // The map cell nearest a point.
     fn nearest_cell(&self, x: f64, z: f64) -> usize {
         let (u, v) = self.map.to_cell(x, z);
         let max = (self.map.dim() - 1) as f64;

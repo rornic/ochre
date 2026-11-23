@@ -108,7 +108,6 @@ pub(crate) fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>,
     ));
 }
 
-/// The wind's strength from the camera's height over the ground or sea and its flying speed.
 pub fn wind_strength(altitude: f32, speed: f32) -> f32 {
     // slow to pick up off the ground, so even treetop height is calm
     let height = (altitude / FULL_WIND_ALTITUDE).clamp(0.0, 1.0).powf(1.5);
