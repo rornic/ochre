@@ -225,6 +225,26 @@ fn test_desert_ground_is_sand_and_other_lowland_grass() {
 }
 
 #[test]
+fn test_a_chunk_knows_its_neighbours_steppe_columns() {
+    // the sculpted mesh's margin draws grass from the neighbours' columns, so the steppe's must be known there or a strip
+    // of plain grass runs along the chunk's border
+    let regions = RegionStore::new(ochre_world::worldmap::test_terrain(13));
+    let terrain = regions.terrain();
+    let size = CHUNK_SIZE as i32;
+    let origin = (-200..200)
+        .flat_map(|cx| (-200..200).map(move |cz| IVec3::new(cx * size, 0, cz * size)))
+        .find(|o| terrain.steppe(o.x as f64 - 0.5, o.z as f64 + 0.5))
+        .expect("no steppe on seed 13");
+    let chunk = ChunkData::default();
+    let source = ChunkNeighbourhood::new(&chunk, &no_neighbors()).with_water(&regions, origin);
+    for (x, z) in [(-1, 0), (-1, 5), (size, 3), (4, -2), (7, size + 1)] {
+        let want = terrain.steppe((origin.x + x) as f64 + 0.5, (origin.z + z) as f64 + 0.5);
+        assert_eq!(want, source.steppe(x, z), "column {x},{z} past the chunk at {origin}");
+    }
+    assert!(source.steppe(-1, 0));
+}
+
+#[test]
 fn test_trees_across_chunk_borders_are_whole() {
     use crate::generate::trees::trees_near;
     use bevy::math::I64Vec2;

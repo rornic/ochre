@@ -193,7 +193,7 @@ pub(super) struct ChunkNeighbourhood<'a> {
     blocks: Vec<BlockType>,
     water: Option<(&'a RegionStore, IVec3)>,
     levels: OnceCell<Vec<Option<FreshColumn>>>,
-    // whether each of the chunk's own columns is steppe, by `x * CHUNK_SIZE + z`
+    // whether each of the chunk's own columns is steppe, by `x * CHUNK_SIZE + z`; a neighbour's are looked up uncached
     steppes: OnceCell<Vec<bool>>,
     // the surface of the flowing water in each column it's in, from the chunk's lowest block, see `flow`
     flowing: HashMap<(i32, i32), f32>,
@@ -416,8 +416,9 @@ impl BlockSource for ChunkNeighbourhood<'_> {
         let Some((regions, origin)) = self.water else {
             return false;
         };
+        // the sculpted mesh's margin reaches into the neighbours' columns, which are looked up as they're asked for
         if !(0..size).contains(&x) || !(0..size).contains(&z) {
-            return false;
+            return regions.terrain().steppe((origin.x + x) as f64 + 0.5, (origin.z + z) as f64 + 0.5);
         }
         self.steppes.get_or_init(|| {
             let terrain = regions.terrain();
