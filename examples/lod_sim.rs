@@ -421,7 +421,6 @@ fn main() {
             }
             break;
         }
-        // let the start area load first
         if t > settle && moving_from.is_none() {
             moving_from = Some(t);
         }

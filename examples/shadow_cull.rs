@@ -241,7 +241,6 @@ fn main() {
         total as f32 / 1e6
     );
 
-    // the camera, as the game's
     let (camera, eye) = {
         let world = app.world_mut();
         let (entity, transform) = world

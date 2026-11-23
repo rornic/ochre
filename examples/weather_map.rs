@@ -346,7 +346,6 @@ const STORM_ABOVE: f32 = 0.5;
         ask * 9
     );
 
-    // maps of the weather at a few moments
     let cell = 2.0 * half / PIXELS as f64;
     let ground: Vec<[f32; 3]> = (0..PIXELS * PIXELS)
         .map(|k| {

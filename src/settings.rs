@@ -106,7 +106,6 @@ mod tests {
         assert_eq!(64, settings.renderer.mesh_slab_mb);
         assert!(settings.renderer.mesh_slab_growth > 1.0);
         assert_eq!(8, settings.renderer.material_period());
-        // Full detail reaches 12 chunks, with the LOD base at 16.
         let layout = settings.renderer.lod_layout();
         assert_eq!(12.0, layout.reach(0));
         assert_eq!([32.0, 64.0], [layout.reach(1), layout.reach(2)]);
