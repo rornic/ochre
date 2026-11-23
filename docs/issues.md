@@ -50,7 +50,9 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 - **Seen:** 2026-11-17, reading the sculpted-ground change. Full-detail chunks cut the water surface along the sculpted ground (`push_shore`, `mesh.rs`); the water of a node uses the old block edges.
 - **Known:** by reading the code. Nodes of cells 1 and 2 now lay a bank's sand as chunks do (`columns::shore_top`), and trees no longer root on it; coarse cells (4 and up) are wider than the 2-block beach and keep the column's own water.
-- **Not known:** how visible the water's edge is at the hand-over from chunk to node.
+- **Since, 2026-11-23:** it does show. `OCHRE_RENDER_LOD=0, 1, 2 worldview 1 render 6052 520 24` (a lake bank at 0.3 slope) draws the waterline smooth from chunks, in steps of 2 blocks from level 1 and 4 from level 2, with a strip of bed up to a cell wide that chunks cover with water. On the flat shelf at 6962,-4064 the node's edge is a straight cell line up to about 3 blocks from the chunks' contour. A node's cells have no water cut because its water is whole cells (`water_tops` per cell) and `push_shore` needs the block-resolution reach and fresh-water levels that only chunks have.
+- **Not known:** how visible it is in play. The hand-over lies 192 blocks out, where a 2-block step is about 8 px, and a shot that put a shore there under `full_detail_distance` of 1 and of 12 came out the same, so the game's own hand-over was not isolated.
+- **To fix:** give nodes of cells 1 and 2 a water edge at block resolution, from the region's water tops, cut along the node's own ground, not a bigger `SHORE_CUTS`.
 
 ## Near-flat banks leave a saw-tooth waterline
 
