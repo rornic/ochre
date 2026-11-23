@@ -254,7 +254,7 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
     var means = array<vec3<f32>, 40>(
         vec3<f32>(0.1612, 0.1542, 0.1649), // stone
-        vec3<f32>(0.4981, 0.4981, 0.4981), // grass top
+        vec3<f32>(0.4989, 0.4989, 0.4989), // grass top
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
         vec3<f32>(0.6173, 0.7140, 0.8183), // snow
