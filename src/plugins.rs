@@ -30,8 +30,7 @@ pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     )
 }
 
-/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins`, which it needs added first with `task_pool_plugin()` set.
-/// Only `TerrainPlugin` is needed by the rest; `settings.plugins` starts `FrostPlugin` and `GodrayPlugin` disabled.
+/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins` (added first, with `task_pool_plugin()`); `settings.plugins` starts `FrostPlugin` and `GodrayPlugin` disabled.
 pub struct OchrePlugins {
     pub settings: Settings,
     world: World,

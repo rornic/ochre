@@ -64,8 +64,7 @@ impl Plugin for FlythroughPlugin {
     }
 }
 
-/// A flight read from `OCHRE_FLIGHT`: a key a line, `seconds x z height yaw pitch day`, `#` comments; yaw is compass degrees and may pass 360, day 0 is midnight, 0.5 noon.
-/// It holds the first key for `OCHRE_FLIGHT_WARMUP` seconds while the world loads, logs `flythrough: flying`, then runs in real time or, with `OCHRE_FLIGHT_FRAMES=<dir>`, saves `frame_NNNNN.png`s.
+/// A flight read from `OCHRE_FLIGHT`: a key a line, `seconds x z height yaw pitch day`, `#` comments; yaw is compass degrees and may pass 360, day 0 is midnight and 0.5 noon.
 #[derive(Resource)]
 struct Flight {
     keys: Vec<Key>,

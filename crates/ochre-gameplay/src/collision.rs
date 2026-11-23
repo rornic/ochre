@@ -13,8 +13,7 @@ pub struct Aabb {
     pub max: Vec3,
 }
 
-/// Moves `aabb` at `position` by `delta` an axis at a time, up first, stopping each against the first `solid` block.
-/// Returns where it ends up and which axes were stopped; blocks it already overlaps are ignored so it can get out.
+/// Moves `aabb` at `position` by `delta` an axis at a time, up first, stopping each against the first `solid` block; returns where it ends up and the axes stopped.
 pub(crate) fn move_and_collide(
     position: Vec3,
     delta: Vec3,

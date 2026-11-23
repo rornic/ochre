@@ -15,8 +15,7 @@ use ochre_terrain::world::World;
 use ochre_world::sky::TimeOfDay;
 use ochre_world::weather::Weather;
 
-/// With a port, serves BRP's built-in methods plus `ochre.teleport`, `ochre.time`, `ochre.state` and `ochre.screenshot` on `127.0.0.1` only (see the `game-remote` skill).
-/// The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
+/// With a port, serves BRP's built-in methods plus `ochre.teleport`, `ochre.time`, `ochre.state` and `ochre.screenshot` on `127.0.0.1` only (see the `game-remote` skill); the render sub-app's fixed port 15703 allows one such game at a time.
 #[derive(Default)]
 pub struct RemoteControlPlugin {
     pub port: Option<u16>,

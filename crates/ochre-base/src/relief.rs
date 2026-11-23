@@ -22,8 +22,7 @@ pub fn cliff_reach_boosted(gradient: f64, boost: f64) -> f64 {
 
 const VERTICAL_SQUASH: f64 = 0.7;
 
-/// Noise in -1..1 that cliffs are cut from: the surface is where `height - y + reach * cliff_density` crosses zero, so ledges overhang.
-/// It varies `VERTICAL_SQUASH` as fast with height round `ground`, since full speed folds the surface over and pits it.
+/// Noise in -1..1 that cliffs are cut from, where `height - y + reach * cliff_density` crosses zero; it varies `VERTICAL_SQUASH` as fast with height round `ground`, or the surface folds over and pits.
 pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
     let squashed = ground as f64 + (y - ground) as f64 * VERTICAL_SQUASH;
     let (fx, fy, fz) = (x as f64 + 0.5, squashed + 0.5, z as f64 + 0.5);
