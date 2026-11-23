@@ -6,7 +6,7 @@ use super::{WaterCell, WorldMap};
 // Cells round any river, lake or pond that its green reaches, 3 cells being about 100 blocks.
 const REACH: u8 = 3;
 
-/// Fills `map.water_closeness`: 0..1 as a byte, 255 on fresh water and falling to 0 at `REACH` cells, squared so the green hugs the bank.
+/// Fills `map.water_closeness`: 0..1 as a byte, 255 on fresh water to 0 at `REACH` cells, squared so green hugs banks
 pub fn run(map: &mut WorldMap) {
     let near = closeness_within(map, REACH, |i| {
         map.water_kind[i] == WaterCell::Lake as u8 || map.water_kind[i] == WaterCell::River as u8

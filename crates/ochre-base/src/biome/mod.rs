@@ -35,19 +35,16 @@ impl Default for Climate {
     }
 }
 
-// What a biome changes about the ground and what grows on it: the blocks it uses in place of
-// the base terrain's, and how thickly trees grow.
+// What a biome changes about the ground: its blocks in place of the base terrain's, and tree density.
 pub trait Biome: Send + Sync {
     fn name(&self) -> &'static str;
 
-    // The chance, 0..1, of a tree on each spot one could grow, or None to leave the base
-    // terrain's. Trees only grow on grass.
+    // The chance, 0..1, of a tree on each spot that could grow one, or None for the base terrain's.
     fn tree_density(&self) -> Option<f64> {
         None
     }
 
-    // The block to use where the base terrain would put `base`, `above_sea` blocks up, on
-    // ground with the given gradient (see `terrain_block`).
+    // The block to use where the base terrain would put `base`, `above_sea` blocks up, on this gradient.
     fn block(&self, base: BlockType, _above_sea: i64, _gradient: f64) -> BlockType {
         base
     }
@@ -57,23 +54,20 @@ pub trait Biome: Send + Sync {
         BlockType::Gravel
     }
 
-    // Added to the temperature and humidity grass and flora are tinted by, so a biome reads lusher or
-    // drier than its climate.
+    // Added to the temperature and humidity that tint grass and flora, so a biome reads lusher or drier.
     fn climate_shift(&self) -> (f32, f32) {
         (0.0, 0.0)
     }
 
-    // How big the biome's trees grow against the usual.
     fn tree_scale(&self) -> TreeScale {
         TreeScale::default()
     }
 
-    // How much of the frost the cold would give its ground it keeps, 0..1: a tundra or taiga thaws what the climate alone would freeze.
+    // Share of the frost the cold would give its ground that it keeps, 0..1: tundra and taiga thaw it.
     fn frost(&self) -> f32 {
         1.0
     }
 
-    // The relief features the biome lays over its ground.
     fn relief(&self) -> &'static [ReliefKind] {
         &[]
     }
@@ -130,8 +124,7 @@ pub struct Biomes {
     entries: Vec<Entry>,
 }
 
-// The tundra is bare ground, tan grass and scree, below this height over the sea, not snow as the cold would make it, and the
-// ground is scree from this gradient.
+// Below this height over the sea the tundra is bare ground, not snow as the cold would make it.
 const TUNDRA_THAW_LINE: i64 = 350;
 const TUNDRA_SCREE_GRADIENT: f64 = 0.38;
 // Keep taiga lowlands forested and green, with snow remaining on higher ground.
@@ -196,7 +189,6 @@ impl Biomes {
         Self { entries }
     }
 
-    // Adds each biome, and the base terrain, under the mountain and volcanic modifiers.
     fn with_modifiers(mut self) -> Self {
         let plain: Vec<(u8, Arc<dyn Biome>)> =
             std::iter::once((0, Arc::new(modifier::Grassland) as Arc<dyn Biome>))
@@ -243,7 +235,6 @@ impl Biomes {
             .expect("every biome has each modifier")
     }
 
-    /// What the ground has become on top of `biome`.
     pub fn modifier(&self, biome: BiomeId) -> Modifier {
         self.entry(biome).map_or(Modifier::None, |e| e.modifier)
     }
@@ -261,7 +252,6 @@ impl Biomes {
             .map_or((0.0, 0.0), |e| e.biome.climate_shift())
     }
 
-    /// How big trees grow in `biome` against the usual.
     pub fn tree_scale(&self, biome: BiomeId) -> TreeScale {
         self.entry(biome)
             .map_or_else(TreeScale::default, |e| e.biome.tree_scale())
@@ -272,12 +262,10 @@ impl Biomes {
         self.entry(biome).map_or(1.0, |e| e.biome.frost())
     }
 
-    /// The relief features `biome` lays over its ground.
     pub fn relief(&self, biome: BiomeId) -> &'static [ReliefKind] {
         self.entry(biome).map_or(&[], |e| e.biome.relief())
     }
 
-    /// What a spring's rim and pool bed are made of in `biome`.
     pub fn spring_block(&self, biome: BiomeId) -> BlockType {
         self.entry(biome)
             .map_or(BlockType::Gravel, |e| e.biome.spring_block())
@@ -290,7 +278,6 @@ impl Biomes {
             .map(|e| e.biome.name())
     }
 
-    // The block `biome` uses in place of the base terrain's `base`.
     pub fn block(
         &self,
         biome: BiomeId,
@@ -303,17 +290,14 @@ impl Biomes {
     }
 }
 
-// Grass at the four corners of the climate square, in sRGB: hot and dry is parched
-// straw, hot and wet lush green, and the cold side duller versions of both.
+// Grass at the climate square's four corners, sRGB: parched straw hot and dry, lush green hot and wet, duller cold.
 const GRASS_HOT_DRY: [f32; 3] = [184.0, 164.0, 96.0];
 const GRASS_HOT_WET: [f32; 3] = [40.0, 130.0, 12.0];
 const GRASS_COLD_DRY: [f32; 3] = [140.0, 128.0, 88.0];
 const GRASS_COLD_WET: [f32; 3] = [30.0, 96.0, 24.0];
 
-// The mean linear value of the greyscale grass and leaves tiles in their materials, which vertex
-// colours tint: leaves share grass's tint, and their darker tile makes them a deeper green.
+// The mean linear value of the greyscale grass tile, which vertex colours tint.
 const GRASS_TEXTURE_MEAN: f32 = 0.5;
-const LEAF_TEXTURE_MEAN: f32 = 0.25;
 
 // Linear colour of grass in this climate.
 pub fn grass_colour(climate: Climate) -> Vec3 {
@@ -326,11 +310,6 @@ pub fn grass_colour(climate: Climate) -> Vec3 {
     let wet = srgb(GRASS_COLD_WET).lerp(srgb(GRASS_HOT_WET), t);
     let colour = dry.lerp(wet, h);
     LinearRgba::from(Srgba::rgb(colour.x, colour.y, colour.z)).to_vec3()
-}
-
-// Linear colour of leaves in this climate.
-pub fn leaf_colour(climate: Climate) -> Vec3 {
-    grass_tint(climate) * LEAF_TEXTURE_MEAN
 }
 
 // What to multiply the grass texture by to draw `grass_colour`.

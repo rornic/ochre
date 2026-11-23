@@ -7,21 +7,21 @@ const WRAP: f32 = 0.35;
 // The shadow's visibility, 0..1, is remapped over this range so shadow edges read as soft shapes.
 const SHADOW_FROM: f32 = 0.1;
 const SHADOW_TO: f32 = 0.9;
-// Faces turned this far from the sun, as a cosine, go from ignoring the shadow map, which shadows them by themselves, to trusting it.
+// Faces turned this far from the sun, as a cosine, go from ignoring the shadow map (self-shadowed) to trusting it
 const SHADOW_TRUST_FROM: f32 = -0.05;
 const SHADOW_TRUST_TO: f32 = 0.1;
-// What the sky's light is pushed toward in shadow, and how far, keeping its brightness, comes from the camera's country, see `ochre_world::atmosphere`:
+// What the sky's light is pushed toward in shadow, and how far, keeping brightness; from the country (`atmosphere`):
 // (0.55, 0.63, 1.0) and 0.3 with no feel.
 // The least shadow is lit to, as a share of a fully lit face's brightness, and leaves', which light passes through.
 const SHADOW_FLOOR: f32 = 0.35;
 const LEAF_SHADOW_FLOOR: f32 = 0.55;
-// The floor rises by this share while the sun is near the horizon, when the light it's a share of is dim, up to `MAX_SHADOW_FLOOR`.
+// The floor rises by this share while the sun is near the horizon, when its light is dim, up to `MAX_SHADOW_FLOOR`.
 const LOW_SUN_FLOOR: f32 = 0.6;
 const MAX_SHADOW_FLOOR: f32 = 0.85;
-// Terrain past the shadows' reach is lit as if this much of the sun gets through, so it isn't brighter than shadowed land nearer.
+// Terrain past the shadows' reach is lit as if this much sun gets through, so it isn't brighter than nearer shadow.
 const FAR_VISIBILITY: f32 = 0.8;
 
-// Saturation gain on the lit colour, in the light and in shadow, so mids are rich and shadows coloured rather than grey.
+// Saturation gain on the lit colour, in the light and in shadow, so mids are rich and shadows coloured, not grey.
 const SAT_LIT: f32 = 1.1;
 const SAT_SHADOW: f32 = 1.1;
 
@@ -35,7 +35,7 @@ struct Painterly {
     lit: f32,
 }
 
-// The light on a face turned to `normal`, from `sun` (its colour at normal incidence, gated by sky light) coming from `to_sun`
+// The light on a face turned to `normal`, from `sun` (its colour at normal incidence, gated by sky light) at `to_sun`
 // and shadowed to `visibility`, the sky's `ambient`, and the `moon`, which isn't shadowed or wrapped.
 fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibility: f32, ambient: vec3<f32>, moon: vec3<f32>, leaf: bool) -> Painterly {
     let along = dot(normal, to_sun);

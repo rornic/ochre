@@ -1,4 +1,4 @@
-//! Valleys: long troughs cut into inland ground before water is routed, a pure function of seed and place so block level reads the same field.
+//! Valleys: long troughs cut into inland ground before water is routed, a pure function of seed and place.
 
 use super::climate::{blur_box, closeness, moisture_field, FIELD_BLUR, LAPSE_PER_BLOCK};
 use super::hydrology::{basins, fill_levels, fill_where};
@@ -25,18 +25,17 @@ const ALPINE_EDGE: usize = 5;
 // A basin the ranges' valleys made this many blocks deep or less is filled; a deeper one is left a mountain lake.
 const ALPINE_SHALLOW_BASIN: f32 = 45.0;
 
-// Cells each way steppe is smoothed over, how far toward that it is pulled, the heights over the sea it is pulled between,
-// the cells each way a mountain keeps it off, and the cells each way the zone's edge is softened over.
-const PLAIN_EDGE: usize = 40;
+// Steppe is smoothed over RADIUS cells, pulled PULL toward that between ABOVE heights, MOUNTAIN cells off mountains.
 const PLAIN_RADIUS: usize = 60;
 const PLAIN_PULL: f64 = 0.9;
 const PLAIN_ABOVE: (f64, f64) = (20.0, 80.0);
 const PLAIN_MOUNTAIN: usize = 8;
+const PLAIN_EDGE: usize = 40;
 // Slopes above this are mountain faces, and no valley is cut into them.
 const FLAT_BELOW: (f64, f64) = (0.2, 0.4);
 // A basin with this many cells, a third of it, that no basin held before the cut was made by the valleys.
 const NEW_CELLS: usize = 30;
-// A basin with this many cells, two thirds of them in a valley, is the valley's trough, taken whether or not it was a basin before.
+// A basin with this many cells, two thirds in a valley, is the valley's trough, whether or not it was a basin before.
 const VALLEY_BASIN_CELLS: usize = 8;
 // A valley basin this many blocks deep or less, or this many cells or fewer, is filled; a deeper one is left.
 const SHALLOW_BASIN: f32 = 12.0;
@@ -64,7 +63,7 @@ pub struct ValleyProfile {
     pub coarse: [(f64, f64); 2],
     pub fine: [(f64, f64); 2],
     pub depth: (f64, f64),
-    /// Blocks along an axis between the shallow and deep reaches of a valley, and the share of depth the shallow ones keep.
+    /// Blocks along an axis between a valley's shallow and deep reaches, and the share of depth the shallow ones keep.
     pub fade_wavelength: f64,
     pub fade_min: f64,
     /// Blocks over the sea a valley never cuts down to, and the height over the sea above which none is cut.
@@ -90,8 +89,7 @@ pub const STEPPE: ValleyProfile = ValleyProfile {
     base: 0.25,
 };
 
-/// The valleys cut through ranges: long, deep, wide-floored troughs a few kilometres apart, a meadow and a river on the floor to rest and cross by, walls that
-/// rise over several hundred blocks with cliff bands, and the ridges between left standing.
+/// The valleys cut through ranges: deep, wide-floored troughs a few km apart, walls hundreds of blocks high.
 pub const ALPINE: ValleyProfile = ValleyProfile {
     period: 5200.0,
     stretch: 2.5,
@@ -108,7 +106,7 @@ pub const ALPINE: ValleyProfile = ValleyProfile {
     base: 0.0,
 };
 
-/// A valley's depth in blocks and its wall's rise, 0..1, as the map (`soft`) and a block (`sharp`) see it; `cliff` is how much of the slope is a face.
+/// A valley's depth in blocks and wall rise, 0..1, as the map (`soft`) and a block (`sharp`) see it; `cliff` is face
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cut {
     pub depth: f64,
@@ -271,12 +269,12 @@ pub fn sharpening(cut: &Cut, weight: f64) -> f64 {
     cut.depth * weight * cut.cliff * (cut.soft - cut.sharp)
 }
 
-/// How much of a wall a point is, 0..1: the weight where the wall's rise is half over, and none on the floor or plateau.
+/// How much of a wall a point is, 0..1: the weight where the wall's rise is half over, none on the floor or plateau.
 pub fn wall(cut: &Cut, weight: f64) -> f64 {
     weight * cut.cliff * 4.0 * cut.sharp * (1.0 - cut.sharp)
 }
 
-// How steppe-like ground this warm (at its height) and this wet is: 1 inside classify's steppe band, easing off outside it.
+// How steppe-like ground this warm (at its height) and wet is: 1 inside classify's steppe band, easing off outside.
 pub(super) fn steppe_likeness(warmth: f64, moisture: f64) -> f64 {
     smoothstep(0.22, 0.30, warmth)
         * (1.0 - smoothstep(0.54, 0.62, warmth))
@@ -373,8 +371,7 @@ fn siting(map: &WorldMap, share: f64, favoured: &[f32]) -> (Vec<u8>, Vec<bool>) 
     (weights, held)
 }
 
-/// Flattens steppe ground but where `keep` holds a landmark, then cuts the valleys into `map.height` and stores their siting weight in
-/// `map.valley`. A `share` of 0 changes nothing.
+/// Flattens steppe except at `keep` landmarks, cuts valleys into `map.height`, stores siting weight in `map.valley`.
 pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     if share <= 0.0 {
         return;
@@ -401,8 +398,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
             *cell -= (cut.depth * cut.soft * weight) as f32;
         }
     });
-    // Fill each shallow basin the valleys made up to its dam, or it becomes a lake that floods the flat ground round it. A deep one is left alone: filling it would
-    // plug the valley, and a channel cut out of it leaves a dry slot across the plain.
+    // Fill each shallow basin the valleys made up to its dam, or it floods the plain; a deep one is left, to not plug it
     fill_where(&mut heights, dim, |basin| {
         let new = basin.cells.iter().filter(|&&i| !held[i]).count();
         let inside = basin.cells.iter().filter(|&&i| map.valley[i] > 0).count();
@@ -412,8 +408,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     map.height = heights;
 }
 
-/// Cuts the ranges' valleys into `map.height` and stores their siting weight in `map.alpine`: mountain ground only, fading toward the foothills, never
-/// deep enough to leave less than the profile's margin over the sea.
+/// Cuts the ranges' valleys into `map.height` and stores siting weight in `map.alpine`: mountain ground only.
 pub fn run_alpine(map: &mut WorldMap) {
     let dim = map.dim();
     let p = ALPINE;
@@ -450,7 +445,7 @@ pub fn run_alpine(map: &mut WorldMap) {
             *cell -= (cut.depth * cut.soft * weight) as f32;
         }
     });
-    // Fill each shallow basin the cut made up to its dam, so the water runs down the floor and does not stand in a chain of lakes; a deep one is left as a tarn.
+    // Fill each shallow basin the cut made up to its dam, so water runs down the floor, not a chain of lakes
     fill_where(&mut heights, dim, |basin| {
         let new = basin.cells.iter().filter(|&&i| !held[i]).count();
         let inside = basin.cells.iter().filter(|&&i| map.alpine[i] > 0).count();

@@ -2,12 +2,10 @@
 
 use super::super::climate::blur_box;
 
-/// Half-widths of the three relief windows, in grid cells: with the default 64-block step, about 128, 512 and 1,536 blocks. The first is the scale of a
-/// landmark (a few map cells), the second of a massif or a bowl, the third of a range or a basin.
+/// Half-widths of the three relief windows in cells (128, 512, 1,536 blocks by default): landmark, massif/bowl, range
 pub(super) const WINDOWS: [usize; 3] = [2, 8, 24];
 
-/// Half-width, in grid cells, the ground is smoothed over before anything is measured: a feature has to be about three cells (190 blocks at the default step)
-/// across to count, so a thin spike a few blocks wide, which a landmark is not, does not score as a peak.
+/// Half-width in cells the ground is smoothed over before measuring: a feature needs ~3 cells across to score a peak
 pub(super) const FOOTPRINT: usize = 1;
 
 pub(super) struct Terms {
@@ -38,7 +36,7 @@ pub(super) fn from_heights(raw: &[f32], dim: usize, step: f64) -> Terms {
     Terms { ground: heights.to_vec(), relief, steep }
 }
 
-/// Half-width, in grid cells, within which a fall counts for a cell (512 blocks at the default step), and the half-width the lake share is taken over.
+/// Half-width, in cells, within which a fall counts for a cell (512 blocks by default), and for the lake share.
 const FALL_REACH: i64 = 8;
 const LAKE_WINDOW: usize = 4;
 /// What a lake filling a whole window counts for, in blocks of fall.
@@ -46,7 +44,7 @@ const LAKE_WORTH: f32 = 40.0;
 /// Falls under this many blocks are not worth a place.
 const MIN_FALL: f32 = 10.0;
 
-/// The water near each cell: the tallest fall within `FALL_REACH` cells, in blocks, plus up to `LAKE_WORTH` for a lake covering its window.
+/// The water near each cell: the tallest fall within `FALL_REACH` cells, plus up to `LAKE_WORTH` for a lake.
 pub(super) fn water(terrain: &super::super::WorldTerrain, dim: usize, step: f64, at: impl Fn(usize) -> (f64, f64)) -> Vec<f32> {
     use super::super::WaterCell;
     let map = terrain.map();

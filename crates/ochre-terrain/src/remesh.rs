@@ -1,7 +1,4 @@
-//! Meshing chunks again once their blocks change, see `World::set_block_at`. A group is drawn
-//! as one mesh, see `group::ChunkGroup`, so the whole group around a changed block is meshed
-//! again and its mesh swapped for the new one where it stands, without the fade a group loading
-//! in gets.
+//! Meshes chunks again after block edits (`World::set_block_at`): the whole group round the block, swapped in, no fade.
 
 use std::sync::Arc;
 
@@ -46,13 +43,10 @@ pub(crate) struct RemeshedGroup {
     drawn: Vec<(ChunkCoordinate, bool)>,
 }
 
-/// What meshing a chunk reads: the chunk, and its 26 neighbours. None where there's nothing to
-/// mesh, it being empty or buried.
+/// What meshing a chunk reads: the chunk and its 26 neighbours, None where it is empty or buried.
 type ChunkInputs = Option<(Arc<ChunkData>, Vec<Option<Arc<ChunkData>>>)>;
 
-/// The chunks whose meshes read the block at `block`, as faces and their corners' shade, or as
-/// the light reaching them, which `neighbourhood_light` takes from a box reaching `LIGHT_MARGIN`
-/// out across, a block down, and up to the top of the chunk above.
+/// The chunks whose meshes read `block`, as faces, corner shade or light (see `LIGHT_MARGIN` in `neighbourhood_light`).
 pub(crate) fn chunks_reading(block: I64Vec3) -> impl Iterator<Item = ChunkCoordinate> {
     let size = CHUNK_SIZE as i64;
     let margin = LIGHT_MARGIN as i64;
@@ -110,8 +104,7 @@ pub(crate) fn mesh_group(
 
 // What becomes of a group waiting to be meshed again.
 enum Remesh {
-    // its chunks are still loading, or it's still being built from what they held: what they
-    // mesh to may be from before the change
+    // its chunks are still loading or being rebuilt, so what they mesh to may predate the change
     Wait,
     // some of it isn't loaded, so there's no group to draw: it meshes as it loads
     Drop,
@@ -159,8 +152,7 @@ fn remesh_inputs(
     Remesh::Ready(chunks)
 }
 
-/// Starts meshing again the groups that read blocks changed since last time, and any still
-/// waiting from before.
+/// Starts meshing again the groups that read blocks changed since last time, and any still waiting.
 pub(crate) fn remesh_edits(
     mut commands: Commands,
     mut world: ResMut<World>,
@@ -376,8 +368,7 @@ mod tests {
         );
     }
 
-    // The chunks around one, meshed before and after a block in it is broken, change only where
-    // `chunks_reading` says they read it.
+    // Chunks round one, meshed before and after a break, differ only where `chunks_reading` says they read it.
     #[test]
     fn test_breaking_a_block_changes_only_the_meshes_reading_it() {
         let mut world = world();
@@ -463,7 +454,7 @@ mod tests {
                 .opaque
                 .count_vertices()
         };
-        // how many faces a vertical line through the dug column crosses: the floor's top and underside, then none once the hole is through
+        // faces a vertical line through the dug column crosses: floor top and underside, then none once the hole is through
         let crossings = |world: &World| {
             let mesh = mesh_group(key, inputs(world), &regions).meshes.opaque;
             let positions: Vec<Vec3> = mesh.attribute(Mesh::ATTRIBUTE_POSITION).and_then(VertexAttributeValues::as_float3).unwrap().iter().map(|&p| Vec3::from(p)).collect();

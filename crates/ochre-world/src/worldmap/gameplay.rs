@@ -1,8 +1,4 @@
-//! The gameplay pass: reads the finished geography once and makes it playable. Ranges get passes
-//! so lowlands are not walled off from each other, rivers get crossings at reasonable intervals,
-//! and spawn regions, resources, caves and encounters are scattered across the land. What it
-//! finds is stored as `Feature`s on the map. `validate` reports remaining geography issues for
-//! diagnostics; they do not prevent loading a seed.
+//! The gameplay pass: passes, river crossings, spawn regions, resources, caves and encounters, stored as `Feature`s.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -25,8 +21,7 @@ const PASS_RADIUS: i64 = 3;
 const WADE_WIDTH: f32 = 8.0;
 // The widest river that gets a ford; wider ones get a bridge site.
 const FORD_MAX_WIDTH: f32 = 36.0;
-// A river that can't be waded gets a crossing once this many blocks of it have gone by, at the
-// first good spot, and in any case by `CROSSING_MAX`.
+// A river that can't be waded gets a crossing at the first good spot after this many blocks, and by `CROSSING_MAX`.
 const CROSSING_SPACING: f32 = 1_800.0;
 const CROSSING_MAX: f32 = 3_000.0;
 
@@ -69,8 +64,7 @@ fn slope_from(map: &WorldMap, height: impl Fn(usize) -> f32 + Sync) -> Vec<f32> 
 
 const NONE: u32 = u32::MAX;
 
-// Connected runs of cells where `mask` holds, 8-connected: each cell's run, or NONE, and the
-// runs' sizes.
+// 8-connected runs of cells where `mask` holds: each cell's run (or NONE) and the runs' sizes.
 pub(super) fn components(mask: &[bool], dim: usize) -> (Vec<u32>, Vec<usize>) {
     let mut comp = vec![NONE; mask.len()];
     let mut sizes = Vec::new();
@@ -123,9 +117,7 @@ fn walk_mask(map: &WorldMap, slope: &[f32]) -> Vec<bool> {
         .collect()
 }
 
-// Which big regions of walkable ground share a landmass without a walkable way between them:
-// the first landmass's, as (landmass, the regions' ids, the biggest first), or None if there's
-// none.
+// The first landmass whose big walkable regions have no walkable way between: (landmass, region ids biggest first).
 struct Split {
     walk: Vec<u32>,
     land: Vec<u32>,
@@ -134,9 +126,7 @@ struct Split {
 
 fn find_split(map: &WorldMap) -> Option<Split> {
     let dim = map.dim();
-    // This checks mountain barriers. River/lake beds are below the travel surface and
-    // their cuts must not be mistaken for a new range; crossings are validated separately.
-    // Retaining actual surface gradients still rejects a steep waterfall as an uphill route.
+    // mountain barriers only: river and lake beds sit below the travel surface; real gradients still reject a waterfall
     let slope = slope_from(map, |i| {
         if matches!(
             WaterCell::from_u8(map.water_kind[i]),
@@ -178,8 +168,7 @@ fn find_split(map: &WorldMap) -> Option<Split> {
         })
 }
 
-// The cheapest way over the land from the biggest region to any other of the split's: steep
-// ground costs, high ground costs a little, so the way found goes through the lowest saddle.
+// The cheapest way from the biggest region to another of the split's: steep ground costs most, so it takes a saddle.
 fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     let dim = map.dim();
     let slope = slope_layer(map);
@@ -255,8 +244,7 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     None
 }
 
-// Grades the ground along `path` so it never climbs steeper than WALK_SLOPE, and opens a valley
-// round it, then labels the highest point left as the pass.
+// Grades `path` to never climb steeper than WALK_SLOPE, opens a valley round it, labels its highest point the pass.
 fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     let dim = map.dim();
     let cell = map.config.map_cell as f32;
@@ -320,9 +308,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     changed
 }
 
-/// Joins the lowlands a range walls off from each other by carving a pass at the lowest saddle
-/// between them, one pass at a time until every big region of walkable ground on a landmass can
-/// be walked to from every other.
+/// Carves a pass at the lowest saddle between walled-off lowlands until a landmass's big regions all connect.
 pub(crate) fn carve_passes(map: &mut WorldMap) {
     map.features.retain(|f| f.kind != FeatureKind::Pass);
     for _ in 0..MAX_PASSES {
@@ -350,10 +336,7 @@ fn push(map: &mut WorldMap, kind: FeatureKind, i: usize, value: f32) {
     map.features.push(Feature { kind, x, z, value });
 }
 
-// Which river cells are crossings, given those already marked: walks every river from its
-// source down, adding up the blocks of a river too wide to wade since the last crossing.
-// `place` is called with each cell that needs one and the blocks since the last, or the longest
-// stretch left without is returned.
+// Walks each river from its source, summing blocks too wide to wade since the last crossing; `place` gets each cell.
 fn river_gaps(
     map: &WorldMap,
     slope: &[f32],
@@ -427,8 +410,7 @@ fn crossings(map: &mut WorldMap, slope: &[f32]) {
                     let n = nz as usize * dim + nx as usize;
                     if map.water_kind[n] == WaterCell::None as u8 {
                         let d = ((dx * dx + dz * dz) as f32).sqrt();
-                        // never under the lake or sea beside it, whose rim it would cut, as this is
-                        // after the lakes are filled
+                        // never under the lake or sea beside it: lakes are filled by now, and its rim would be cut
                         let held = map.still_beside(n) + 1.0;
                         let flat = map.height[n].min(surface + 2.0 + 0.8 * d);
                         map.height[n] = flat.max(held.min(map.height[n]));
@@ -473,8 +455,7 @@ fn water_distance(map: &WorldMap, bound: u8) -> Vec<u8> {
     dist
 }
 
-// Takes candidates in an order fixed by the seed and keeps each that is `spacing` blocks from
-// every one kept before it, which spreads them evenly with no pattern.
+// Keeps each candidate, in a seed-fixed order, that is `spacing` blocks from every one kept before.
 fn scatter(
     map: &WorldMap,
     mut candidates: Vec<usize>,
@@ -518,8 +499,7 @@ fn kind_at(map: &WorldMap, i: usize) -> BiomeKind {
     BiomeKind::from_u8(map.biome[i])
 }
 
-// How good a place to start the cell is, or None if it is no place to. `relaxed` takes any
-// open, gentle land, for a landmass with nowhere better.
+// How good a place to start the cell is, or None; `relaxed` takes any open, gentle land.
 fn spawn_score(
     map: &WorldMap,
     i: usize,
@@ -783,8 +763,7 @@ mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
 
-    // A sea round two plains and a ridge between them, as steep as a range: the plains are
-    // walkable and the ridge is not, so one pass is needed.
+    // two walkable plains in a sea with a range-steep ridge between them, needing one pass
     fn walled(ridge: f32) -> WorldMap {
         let config = WorldConfig {
             size: 160 * 32,

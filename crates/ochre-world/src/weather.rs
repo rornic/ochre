@@ -1,6 +1,4 @@
-//! The weather where the camera is, from the world's `storms::Forecast`: darker skies and
-//! clouds as a storm comes over, rain and its sound, quiet snow where it's cold, a stronger wind,
-//! lightning and thunder in a thunderstorm's core, and a rainbow once the rain clears in sunshine.
+//! The weather at the camera, from `storms::Forecast`: darker skies, rain, snow, wind, lightning, thunder, rainbows.
 use std::f32::consts::{PI, TAU};
 
 mod thunder;
@@ -38,8 +36,7 @@ use bevy::math::DVec2;
 use ochre_base::{block::BlockType, math::smoothstep};
 use ochre_terrain::{curvature::WORLD_CURVE, world::World};
 
-/// Rain, snow, storms and rainbows. `clear_sky` holds the sky clear: no storms, rain, snow, lightning or rainbow, and
-/// only fair-weather cloud, so a recording that winds the clock on doesn't drive into a storm.
+/// Rain, snow, storms and rainbows. `clear_sky` keeps only fair-weather cloud, so a wound-on recording avoids storms.
 #[derive(Default)]
 pub struct WeatherPlugin {
     pub clear_sky: bool,
@@ -130,14 +127,12 @@ impl Weather {
         self.precipitation() > SHELTER_RAIN || self.gloom() > SHELTER_GLOOM
     }
 
-    /// How much the storm overhead darkens the day, 0..1: its cloud before the rain or snow
-    /// arrives, and what falls.
+    /// How much the storm overhead darkens the day, 0..1: its cloud before the rain or snow arrives, then what falls.
     pub fn gloom(&self) -> f32 {
         self.precipitation().max(GLOOM_BEFORE_RAIN * self.storm)
     }
 }
 
-// How hard rain falls, and snow, out of `sky`'s precipitation.
 fn rain_and_snow(sky: &crate::storms::Sky) -> (f32, f32) {
     (sky.precipitation * (1.0 - sky.snow), sky.precipitation * sky.snow)
 }
@@ -148,8 +143,7 @@ const SHELTER_RAIN: f32 = 0.2;
 const SHELTER_GLOOM: f32 = 0.3;
 // How dark a storm's cloud makes the day before its rain arrives, as a share of the rain's gloom.
 const GLOOM_BEFORE_RAIN: f32 = 0.8;
-// A rainbow shows after rain: looking back this many game seconds at this many moments, how
-// hard it rained at the most, and how little it rains now.
+// A rainbow shows after rain: how far back to look, in game seconds, for how hard it rained at the most.
 const RAINBOW_LOOK_BACK: f32 = 1200.0;
 const RAINBOW_LOOKS: u32 = 8;
 
@@ -176,8 +170,7 @@ fn start_forecast(
     }
 }
 
-// The weather where the camera is. It keeps the game's time, so winding the clock on winds it
-// on too and back winds it back. Lightning keeps real time, or a wound-on storm would strobe.
+// The weather at the camera, on game time so winding the clock winds it; lightning keeps real time, or it'd strobe.
 fn run_weather(
     clock: Res<TimeOfDay>,
     forecast: Option<Res<Forecast>>,
@@ -212,12 +205,11 @@ fn run_weather(
     weather.wind = forecast.wind().as_vec2();
 }
 
-// How much of the sun's and moon's light gets through the storm's clouds, and how dark the
-// clouds themselves get, at the heaviest rain.
+// How much of the sun's and moon's light gets through the storm's clouds at the heaviest rain.
 const STORM_LIGHT: f32 = 0.3;
+// How dark the clouds themselves get at the heaviest rain.
 const STORM_CLOUD: f32 = 0.42;
-// Lightning's flash, in stops brighter: held, then dying away, in seconds, with a fainter
-// flicker after.
+// Lightning's flash, in stops brighter, held then dying away over seconds, with a fainter flicker after.
 const FLASH_STOPS: f32 = 3.2;
 const FLASH_HOLD_SECONDS: f32 = 0.08;
 const FLASH_SECONDS: f32 = 0.5;
@@ -316,8 +308,7 @@ fn set_params<M: Effect>(materials: &mut Assets<M>, handle: &Handle<M>, params: 
     }
 }
 
-// A see-through effect drawn from both sides by its own shaders, which casts nothing and
-// takes one uniform: what it needs to know this frame.
+// A see-through effect drawn from both sides by its own shaders, casting nothing, taking one uniform of what it needs
 macro_rules! effect_material {
     ($(#[$doc:meta])* $material:ident, vertex: $vertex:expr, fragment: $fragment:literal) => {
         $(#[$doc])*
@@ -390,19 +381,17 @@ effect_material!(
     fragment: "shaders/rainbow.wesl"
 );
 
-// The box of rain round the camera, in blocks, matching `BOX` in `rain.wesl`, and how many
-// streaks fill it in the heaviest rain.
+// The box of rain round the camera, in blocks; matches `BOX` in `rain.wesl`.
 const RAIN_BOX: Vec3 = Vec3::new(48.0, 32.0, 48.0);
+// Streaks filling it in the heaviest rain.
 const STREAKS: usize = 14_000;
 // How hard the rain slants with the storm's wind, in blocks a second, in light rain and in the heaviest.
 const RAIN_SLANT: (f32, f32) = (2.0, 4.5);
-// The box of snow round the camera, in blocks, matching `BOX` in `snow.wesl`, and how many
-// flakes fill it in the heaviest snow: a smaller box than the rain's, as flakes far off are
-// lost in the white anyway.
+// The box of snow round the camera, in blocks, smaller than the rain's as far flakes are lost; matches `snow.wesl`.
 const SNOW_BOX: Vec3 = Vec3::new(40.0, 24.0, 40.0);
+// Flakes filling it in the heaviest snow.
 const FLAKES: usize = 18_000;
-// How fast snow drifts with the storm's wind, in blocks a second, in light snow and in the
-// heaviest: about as fast as it falls (`FALL` in `snow.wesl`), so it slants well over.
+// How fast snow drifts with the storm's wind, in blocks a second, light to heaviest: about its fall speed (`FALL`).
 const SNOW_DRIFT: (f32, f32) = (0.8, 2.4);
 // How much of the daylight the flakes lose in the heaviest snow, and the drops in the heaviest rain.
 const SNOW_GLOOM: f32 = 0.35;
@@ -427,8 +416,7 @@ struct RainCurtain;
 #[derive(Component)]
 struct SnowCurtain;
 
-// Shows or hides an effect, leaving it be when it's already so, as change detection would
-// otherwise re-extract it every frame.
+// Shows or hides an effect only when it differs, or change detection re-extracts it every frame.
 fn show_if(visibility: &mut Mut<Visibility>, shown: bool) {
     visibility.set_if_neq(if shown {
         Visibility::Inherited
@@ -501,7 +489,7 @@ fn spawn_weather(
 #[derive(Component)]
 struct RainLoop;
 
-// The rain loop's loudness as recorded and as wanted at full rain, in LUFS, as `ambience::Loop::loudness` does for the others: its drips stand 25 dB over its bed, so it can't be levelled much louder than it is without clipping them.
+// Rain loop loudness as recorded and wanted at full rain, in LUFS: its drips stand 25 dB over its bed.
 const RAIN_LOUDNESS: (f32, f32) = (-31.3, -31.5);
 // How long the rain's sound takes to follow the rain, in seconds, and the volume below which a loop is paused.
 const RAIN_FOLLOW_SECONDS: f32 = 1.5;
@@ -531,8 +519,7 @@ fn mix_rain(time: Res<Time>, weather: Res<Weather>, mut rain: Query<&mut AudioSi
     }
 }
 
-// `count` streaks or flakes scattered through a box of `size`, each four corners at one spot,
-// told apart by their uv.
+// `count` streaks or flakes scattered through a box of `size`, each quad's four corners at one spot, told apart by uv
 fn scatter_mesh(count: usize, size: Vec3) -> Mesh {
     let mut positions = Vec::with_capacity(count * 4);
     let mut uvs = Vec::with_capacity(count * 4);
@@ -598,9 +585,7 @@ fn unlit_light(clock: &TimeOfDay) -> f32 {
     ((sun_direction(clock.days()).y + 0.1) / 0.4).clamp(0.05, 1.0)
 }
 
-/// How fast and which way rain or snow falling `amount` hard (0..1) is blown across the ground
-/// by a storm drifting along `wind`, in blocks a second, from `light` in the lightest to `heavy`
-/// in the heaviest.
+/// How fast and which way falling rain or snow (`amount` 0..1) is blown, in blocks a second, `light` to `heavy`.
 fn blown(wind: Vec2, amount: f32, (light, heavy): (f32, f32)) -> Vec2 {
     wind.normalize_or(Vec2::X) * (light + (heavy - light) * amount.clamp(0.0, 1.0))
 }
@@ -652,12 +637,13 @@ fn fall_rain(
     );
 }
 
-// A thunderstorm's core strikes lightning every 7 to 22 seconds at its edge, soon as it grows harder to
-// this many times as often at its heart, from this far off, in blocks (a metre each), and its thunder
-// rolls in at the speed of sound.
+// Seconds between strikes at a thunderstorm core's edge.
 const STRIKE_SECONDS: (f32, f32) = (7.0, 22.0);
+// How many times as often it strikes at the heart.
 const STRIKE_FRENZY: f32 = 3.0;
+// Strikes land from this far off, in blocks (a metre each).
 const STRIKE_DISTANCE: (f32, f32) = (30.0, 520.0);
+// Blocks a second thunder rolls in at, the speed of sound.
 const THUNDER_SPEED: f32 = 343.0;
 // How long a bolt shows, in seconds.
 const BOLT_SECONDS: f32 = 0.3;
@@ -666,14 +652,15 @@ const FAR_STRIKE_REACH: f32 = 28_000.0;
 const FAR_THUNDER_HEARD: f32 = 12_000.0;
 // A strike lights the sky this far off, in blocks, at full strength within the near range.
 const FLASH_REACH: f32 = 2_500.0;
-// Strikes are decided a slot of this many game seconds at a time, from the seed and the storms alone, so every
-// client decides the same ones. A strike lands within this many blocks of its core, where the sky thunders at
-// least this hard.
+// Strikes are decided a slot of game seconds at a time, from seed and storms alone, so every client agrees.
 const STRIKE_SLOT: f64 = 4.0;
+// A strike lands within this many blocks of its core.
 const CORE_SCATTER: f64 = 1_500.0;
+// ...where the sky thunders at least this hard.
 const STRIKE_THUNDER_MIN: f32 = 0.4;
-// How many slots behind the clock is caught up on, and how long past its moment a bolt is still shown, in seconds.
+// How many slots behind the clock are caught up on.
 const STRIKE_CATCH_UP: i64 = 3;
+// How long past its moment a bolt is still shown, in seconds.
 const LATE_STRIKE: f64 = 3.0;
 // How many times faster than real time the clock may run for lightning to show, or it would strobe.
 const MAX_STRIKE_PACE: f64 = 8.0;
@@ -690,8 +677,7 @@ struct ThunderDue {
     seed: u64,
 }
 
-// One bolt of lightning: when it strikes, in game seconds, where it lands, and a seed for what is only for show,
-// its wander, its flicker and how its thunder sounds.
+// One bolt of lightning: when it strikes (game seconds), where, and a seed for the show: wander, flicker, thunder.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Strike {
     at: f64,
@@ -726,9 +712,7 @@ fn mix(mut x: u64) -> u64 {
     x ^ (x >> 31)
 }
 
-// The bolts of the thunderstorms within `reach` blocks of `eye` that strike in the slot of game seconds beginning at
-// `slot * STRIKE_SLOT`. A pure function of the world's seed, its storms and the slot, so two players see the same
-// bolts wherever they stand.
+// Bolts of thunderstorms within `reach` of `eye` in the slot at `slot * STRIKE_SLOT`: pure, so players see the same.
 fn strikes_in_slot(forecast: &Forecast, seed: u32, slot: i64, eye: DVec2, reach: f64) -> Vec<Strike> {
     let t = slot as f64 * STRIKE_SLOT;
     let wind = forecast.wind();
@@ -753,8 +737,7 @@ fn strikes_in_slot(forecast: &Forecast, seed: u32, slot: i64, eye: DVec2, reach:
     strikes
 }
 
-// Which slots to decide when the clock is in `now` and the last decided was `last`: those since, or only `now` and a
-// clean start if the clock jumped, forward past a catch-up or back.
+// Which slots to decide when the clock is in `now` and `last` was last decided: those since, or just `now` on a jump
 fn slots_to_decide(last: Option<i64>, now: i64) -> (bool, std::ops::RangeInclusive<i64>) {
     match last {
         Some(last) if now >= last && now - last <= STRIKE_CATCH_UP => (false, last + 1..=now),
@@ -820,7 +803,7 @@ fn strike_lightning(
         return;
     };
     let t = seconds(clock.0);
-    // a clock that is wound, or runs far faster than real time, would only strobe, so it gets no lightning and starts afresh once it settles
+    // a wound clock, or one far faster than real time, would only strobe, so it gets no lightning until it settles
     let pace = strikes.seen.replace(t).map_or(1.0, |before| if dt > 0.0 { (t - before).abs() / dt as f64 } else { 0.0 });
     if weather.calm || pace > MAX_STRIKE_PACE {
         strikes.slot = None;
@@ -854,8 +837,7 @@ fn strike_lightning(
         if distance > reach {
             continue;
         }
-        // from the noise, as the region there may not be worked out, and working it out here
-        // would stall the frame the bolt strikes on
+        // from the noise, as the region there may not be worked out and doing so here would stall the strike's frame
         let ground = world
             .region_store
             .terrain()
@@ -877,7 +859,7 @@ fn strike_lightning(
             NotShadowReceiver,
         ));
         let mut draws = Draws(strike.seed);
-        // a strike lights everything up, fully within the near range and less the farther off, to nothing at the flash's reach
+        // a strike lights everything up, fully within the near range and less farther off, to nothing at the flash's reach
         if distance < FLASH_REACH {
             commands.spawn(Flash {
                 age: 0.0,
@@ -895,9 +877,7 @@ fn strike_lightning(
     }
 }
 
-// A forked bolt from `top` down to `foot`, as quads turned to face `eye`: a jagged trunk and a
-// branch or two off it. Close up it's drawn thinner and wanders less, so it isn't a fat zigzag
-// filling the view; kilometres off, wider, so it's still a few pixels across.
+// A forked bolt from `top` to `foot` as quads facing `eye`: a jagged trunk and a branch or two, thinner close up.
 fn bolt_mesh(top: Vec3, foot: Vec3, eye: Vec3, distance: f32, seed: u64) -> Mesh {
     let mut draws = Draws(seed);
     let scale = (distance / 160.0).clamp(0.4, 1.0).max(distance / 450.0);
@@ -945,9 +925,9 @@ fn bolt_mesh(top: Vec3, foot: Vec3, eye: Vec3, distance: f32, seed: u64) -> Mesh
     .with_inserted_indices(Indices::U32(indices))
 }
 
-// How far off the rainbow hangs, in blocks: near enough to be in front of the far hills'
-// fog, and how wide it is from the point opposite the sun, as real ones are.
+// How far off the rainbow hangs, in blocks, near enough to sit in front of the far hills' fog.
 const RAINBOW_DISTANCE: f32 = 700.0;
+// How far the bow is from the point opposite the sun, as real ones are.
 const RAINBOW_ANGLE: f32 = 42.0 * PI / 180.0;
 
 fn show_rainbow(
@@ -963,8 +943,7 @@ fn show_rainbow(
     };
     let eye = camera.translation();
     let away = -sun_direction(clock.days());
-    // only by day, with the sun low enough that some of the bow clears the horizon: once
-    // it's higher than the bow is wide, all of it's below
+    // only by day, with the sun low enough that some of the bow clears the horizon: any higher, all of it is below
     let sun_height = -away.y;
     let strength = weather.rainbow
         * smoothstep(-0.02, 0.08, sun_height)
@@ -992,8 +971,7 @@ fn show_rainbow(
 mod tests {
     use super::*;
 
-    // The most of any weather (rain, snow, storm cloud, thunder or rainbow) at the camera over six
-    // game days of a stormy jungle's, as `run_weather` has it, with the sky held clear or not.
+    // The most of any weather at the camera over six game days of a stormy jungle, with the sky held clear or not.
     fn most_weather(calm: bool) -> f32 {
         use bevy::ecs::system::RunSystemOnce;
         let mut world = bevy::ecs::world::World::new();

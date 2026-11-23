@@ -17,18 +17,13 @@ use ochre_base::WATER_LEVEL;
 
 /// The farthest terrain is drawn, in chunks, however high up.
 pub(crate) const MAX_RENDER_DISTANCE: f32 = 2048.0;
-// How far above the sea the top of the world is.
 const ABOVE_SEA_AT_TOP: f32 = 2048.0;
-// Smaller changes than this, as a share of the render distance, are let be, so bobbing up
-// and down doesn't keep selecting LOD nodes afresh.
+// Changes smaller than this share of render distance are ignored so bobbing doesn't keep reselecting LOD nodes.
 const RESELECT_CHANGE: f32 = 0.1;
-// Roughly how long fog takes to follow a new render distance, so it eases out as the
-// further terrain loads in rather than jumping ahead of it.
+// Roughly how long fog takes to follow a new render distance, so it eases out as terrain loads in.
 const FOG_FOLLOW_SECONDS: f32 = 2.0;
 
-/// How far terrain is drawn, in chunks, from `height` blocks up with `set_distance` set: the
-/// set distance from the ground, growing to twice it at the top of the world, but never past
-/// the horizon, where the curve hides the rest, see `WORLD_CURVE`.
+/// How far terrain is drawn, in chunks, at `height`: `set_distance` on the ground, twice it at world top, horizon cap.
 pub fn render_distance_at(set_distance: f32, height: f32) -> f32 {
     let above_sea = (height - WATER_LEVEL as f32).max(0.0);
     let climbed = set_distance * (1.0 + (above_sea / ABOVE_SEA_AT_TOP).sqrt());
@@ -39,9 +34,7 @@ pub fn render_distance_at(set_distance: f32, height: f32) -> f32 {
         .max(set_distance)
 }
 
-/// Draws terrain out to the horizon, further the higher the camera climbs, and moves the fog
-/// with it: half fogged where the farthest LOD level starts, fully fogged at the edge, see
-/// `fog.wesl`.
+/// Draws terrain out to the horizon, further the higher the camera climbs, and moves the fog with it (`fog.wesl`).
 pub fn update_horizon(
     time: Res<Time>,
     world: Res<crate::world::World>,

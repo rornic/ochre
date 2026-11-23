@@ -31,8 +31,7 @@ use std::time::Instant;
 
 pub(super) const LOD_APPLY_TIME_BUDGET: Duration = Duration::from_millis(2);
 
-// From this level up, water draws with the opaque meshes. Blended meshes are drawn one at a time,
-// where Bevy batches opaque ones into a few draws, and water this far out is nearly opaque anyway.
+// From this level up, water draws with the opaque meshes: nearly opaque this far out, and blended draws aren't batched.
 pub(crate) const SOLID_WATER_LEVEL: u8 = 2;
 
 pub(crate) fn load_lods(
@@ -162,8 +161,7 @@ pub(crate) fn refresh_lod_visibility(
     all_groups: Query<(Entity, &ChunkGroup), With<BuiltGroup>>,
     new_groups: Query<(Entity, &ChunkGroup), Added<BuiltGroup>>,
     built_groups: Query<(), With<BuiltGroup>>,
-    // only nodes with something to draw, as those meshed to nothing are despawned - nodes still
-    // loading are shown when their mesh lands
+    // meshed-to-nothing nodes are despawned; loading ones show once their mesh lands
     all_nodes: Query<(Entity, &LodNode), Without<GenerateLodMesh>>,
     mut visibility: Query<(&mut Visibility, Option<&Fade>)>,
 ) {

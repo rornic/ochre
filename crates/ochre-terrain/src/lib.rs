@@ -53,9 +53,7 @@ use material::{
 use world::World;
 use remesh::{apply_remeshes, remesh_edits};
 
-/// The world's terrain: inserts the `World`, then loads, meshes and unloads full-detail chunks and LOD terrain
-/// around the camera. Headless-safe: with no renderer the materials are blank. Needs the material assets
-/// registered, which `TerrainRenderPlugin` does and a headless run does with `init_asset`.
+/// Loads, meshes and unloads chunks and LODs around the camera; headless runs must register material assets.
 pub struct TerrainPlugin {
     pub renderer: RendererSettings,
     pub debug: DebugSettings,
@@ -102,8 +100,7 @@ impl Plugin for TerrainPlugin {
                         .chain()
                         .after(gather_chunks)
                         .before(unload_chunks),
-                    // after the groups loading this frame, so one built from meshes made before a
-                    // change is meshed again
+                    // after this frame's group loads, so a group built from meshes made before an edit is meshed again
                     (flow_water, remesh_edits, apply_remeshes)
                         .chain()
                         .after(load_groups)
@@ -114,8 +111,7 @@ impl Plugin for TerrainPlugin {
     }
 }
 
-/// Draws the terrain: its textures and materials, and the renderer's mesh buffers. Needs a window and GPU, so a
-/// headless run goes without. `CurvaturePlugin` and `FrostPlugin` are separate.
+/// Draws the terrain: textures, materials and mesh buffers. Needs a window and GPU.
 pub struct TerrainRenderPlugin {
     pub renderer: RendererSettings,
 }
@@ -200,8 +196,7 @@ struct ShaderSources<'w> {
     curvature: Option<Res<'w, Curvature>>,
 }
 
-/// Builds the materials and loaders `TerrainPlugin`'s systems run on. The shaders sample the textures, clouds and curvature
-/// of the plugins that provide them, and a blank where one is left out.
+/// Builds the materials and loaders `TerrainPlugin` runs on; shaders get blanks for left-out clouds or curvature.
 fn setup_terrain(
     mut commands: Commands,
     world: Res<World>,

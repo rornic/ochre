@@ -1,7 +1,5 @@
-//! Gradient noise from an integer hash and nothing but `+ - * /` and `floor`, so every machine
-//! computes the same value: no libm call whose last bit differs between x86 and ARM.
+//! Gradient noise from an integer hash and only `+ - * /` and `floor`, so x86 and ARM agree to the last bit.
 
-/// A well-mixed 32-bit hash of a seed and a lattice point.
 pub fn hash(seed: u32, x: i32, z: i32) -> u32 {
     let mut h = seed ^ (x as u32).wrapping_mul(0x85EB_CA6B) ^ (z as u32).wrapping_mul(0xC2B2_AE35);
     h ^= h >> 16;
@@ -63,8 +61,7 @@ const GRADIENTS_3D: [(f64, f64, f64); 12] = [
     (0.0, -1.0, -1.0),
 ];
 
-/// Perlin noise in three dimensions, about -1..1. The lattice's third coordinate is hashed in with
-/// the seed, so layers of it differ.
+/// Perlin noise in three dimensions, about -1..1; the third coordinate is hashed in with the seed.
 pub(crate) fn perlin3(seed: u32, x: f64, y: f64, z: f64) -> f64 {
     let (fx, fy, fz) = (x.floor(), y.floor(), z.floor());
     let (ix, iy, iz) = (fx as i32, fy as i32, fz as i32);
@@ -111,9 +108,7 @@ pub fn fbm(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32) -> f64 {
     total / norm
 }
 
-/// How much of a feature `wavelength` blocks across survives in cells `cell` blocks wide, 0..1:
-/// what averaging a wave over a cell leaves of it, and nothing once the cell is as wide as the
-/// wave. Single blocks see everything, with no `sin` call, so full detail stays portable.
+/// How much of a `wavelength` feature survives in cells `cell` wide, 0..1, with no `sin` so blocks stay portable.
 pub fn resolved(wavelength: f64, cell: f64) -> f64 {
     if cell <= 1.0 {
         return 1.0;
@@ -126,9 +121,7 @@ pub fn resolved(wavelength: f64, cell: f64) -> f64 {
     libm::sin(angle) / angle
 }
 
-/// `fbm`, with each octave faded by `resolved` for cells `cell` blocks wide, so wide cells see
-/// the mean of what they cover rather than aliasing fine features into bumps that differ from
-/// one LOD level to the next. The same as `fbm` for single blocks.
+/// `fbm` with each octave faded by `resolved`, so wide cells see a mean, not aliasing that differs per LOD.
 pub fn fbm_filtered(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32, cell: f64) -> f64 {
     let (mut frequency, mut amplitude, mut total, mut norm) = (1.0 / wavelength, 1.0, 0.0, 0.0);
     let mut octave_wavelength = wavelength;
@@ -151,8 +144,7 @@ pub fn fbm_filtered(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32, ce
     total / norm
 }
 
-/// Ridged multifractal, 0..1: sharp crests where the noise crosses zero, each octave weighted by
-/// the last so fine detail gathers on the ridges.
+/// Ridged multifractal, 0..1: sharp crests where the noise crosses zero, fine detail gathering on the ridges.
 pub fn ridged(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32) -> f64 {
     let (mut frequency, mut amplitude, mut weight) = (1.0 / wavelength, 1.0, 1.0);
     let (mut total, mut norm) = (0.0, 0.0);

@@ -13,7 +13,7 @@ fn window_size() -> Option<(u32, u32)> {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("Failed to read settings.toml");
-    // a flight is 1080p, and unsynced only when its frames are saved, as its real-time run keeps the desktop's compositor its share of the GPU
+    // a flight is 1080p, unsynced only when saving frames, so a real-time run leaves the compositor its GPU share
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
     // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell
@@ -26,8 +26,7 @@ fn main() {
             .set(task_pool_plugin())
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    // uncapped, the GPU runs flat out and can starve the desktop's compositor until the PC stalls
-                    // a recording runs unsynced, as the desktop throttles a hidden vsynced window to a crawl
+                    // uncapped can starve the compositor, but a recording needs it: a hidden vsynced window is throttled to a crawl
                     present_mode: if flight_frames || std::env::var_os("OCHRE_NOVSYNC").is_some()
                     {
                         bevy::window::PresentMode::AutoNoVsync

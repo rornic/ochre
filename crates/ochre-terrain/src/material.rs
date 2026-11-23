@@ -41,8 +41,7 @@ pub fn push_shader_defs(descriptor: &mut RenderPipelineDescriptor, defs: &[Shade
 /// Each painted material's square side in texels, see `material_array`.
 pub(crate) const MATERIAL_SIZE: u32 = 512;
 
-/// The painted materials as a 2D array, one layer per `MATERIAL_FILES` entry read from
-/// `<dir>/<name>.png`, each with its own mips down to one texel. They repeat in both axes.
+/// The painted materials as a 2D array: a layer per `MATERIAL_FILES` entry from `<dir>/<name>.png`, repeating, mipped.
 pub(crate) fn material_array(dir: &str, anisotropy: u16) -> Image {
     let levels = MATERIAL_SIZE.ilog2() + 1;
     let mut data = Vec::new();
@@ -93,10 +92,7 @@ pub(crate) fn material_array(dir: &str, anisotropy: u16) -> Image {
     image
 }
 
-// Appends `levels` - 1 box-filtered mip levels to an RGBA8 sRGB image, averaging in linear
-// light and weighting colour by alpha so cut-out texels don't darken what's left. Texels with no
-// cover anywhere under them keep the plain average of the colour painted there, which a sprite
-// fills out past its edge, so a smooth lookup near it blends in that and not black.
+// Appends `levels` - 1 box-filtered mips, averaged in linear light and alpha-weighted; uncovered texels average plain.
 fn mip_tiles(image: &mut Image, levels: u32) {
     let (mut width, mut height) = (image.width() as usize, image.height() as usize);
     let data = image.data.get_or_insert_with(Vec::new);
@@ -205,8 +201,7 @@ impl From<&ChunkMaterial> for ChunkMaterialKey {
 }
 
 impl ChunkMaterial {
-    /// Whether this draws solid faces wholly, with no leaf holes and no fade, so it can be opaque: a shader that may
-    /// discard loses the GPU's early depth test, so every hidden ground pixel was lit before being thrown away.
+    /// Whether faces draw wholly solid (no leaf holes or fade) so it can be opaque: a discarding shader loses early Z.
     pub fn opaque(&self) -> bool {
         self.non_cutout && self.fade == crate::fade::FULLY_VISIBLE
     }
@@ -259,7 +254,7 @@ impl Material for ChunkMaterial {
             "FIRST_FLORA_CELL".into(),
             Tile::FIRST_FLORA.atlas_cell() as u32,
         );
-        // shrubs and heath are broad solid sprites, which the blur that suits thin grass would draw as slabs, see `block_alpha_at`
+        // shrubs and heath are broad solid sprites; the blur that suits thin grass would draw them as slabs
         let first_big_flora_cell = ShaderDefVal::UInt(
             "FIRST_BIG_FLORA_CELL".into(),
             Tile::Shrub.atlas_cell() as u32,
@@ -403,8 +398,7 @@ pub struct CloudLayer {
     pub target: Handle<Image>,
     /// The clouds over the whole sky, unlit, for water to reflect, see `sky_disc` in `cloud_march.wesl`.
     pub reflection: Handle<Image>,
-    /// The weather round the camera, how cloudy and stormy and wet each cell of a grid is, which
-    /// thickens the pattern's clouds into storms, see `weather_at` in `cloud_bindings.wesl`.
+    /// How cloudy, stormy and wet each cell of a grid round the camera is, thickening clouds into storms (`weather_at`).
     pub weather: Handle<ShaderBuffer>,
 }
 
@@ -439,7 +433,7 @@ pub(crate) struct ShaderInputs {
     pub materials: Option<Handle<Image>>,
     pub clouds: CloudLayer,
     pub curvature: Handle<ShaderBuffer>,
-    /// The prevailing wind's direction in x and z, any length: the way gusts cross the land. Zero keeps the old fixed direction.
+    /// Prevailing wind direction in x and z, any length: the way gusts cross the land. Zero keeps the old fixed one.
     pub wind: Vec2,
 }
 
@@ -545,8 +539,7 @@ impl Material for WaterMaterial {
         }
     }
 
-    // fresh water shows the scene under it through ripples and reflects the world about it, so reads
-    // a copy of the opaque scene, and is drawn after it
+    // fresh water reads a copy of the opaque scene for ripples and reflection, so it draws after it
     fn reads_view_transmission_texture(&self) -> bool {
         !self.solid
     }
@@ -557,8 +550,7 @@ impl Material for WaterMaterial {
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        // unlike ChunkMaterial, water has no back-face culling: the player can swim
-        // underneath the lowered surface and must still see it rendered from below.
+        // unlike ChunkMaterial, water isn't back-face culled: a swimmer under the lowered surface must still see it
         descriptor.primitive.cull_mode = None;
         push_shader_defs(descriptor, &[water_level()]);
         Ok(())
@@ -570,8 +562,7 @@ mod tests {
     use bevy::color::{LinearRgba, Srgba};
     use ochre_base::block::{Tile, MATERIAL_FILES, MATERIAL_LAYERS};
 
-    // A mip texel with no cover under it keeps the colour painted there, so a smooth lookup near a sprite's edge doesn't
-    // blend black in: that was a dark rim round every big shrub at a distance.
+    // An uncovered mip texel keeps its painted colour so smooth lookups near a sprite's edge don't blend black (dark rim)
     #[test]
     fn test_a_clear_mip_texel_keeps_the_colour_painted_there() {
         use bevy::{
@@ -779,7 +770,6 @@ mod tests {
             .collect()
     }
 
-    // The mean linear colour of the texels an image draws, those the shaders don't cut out.
     // `GrassTop` as `grass_top`, the name of its file.
     fn snake_case(name: &str) -> String {
         let mut out = String::new();
@@ -792,6 +782,7 @@ mod tests {
         out
     }
 
+    // The mean linear colour of the texels an image draws, those the shaders don't cut out.
     fn image_mean(image: &image::RgbaImage, x0: u32, tile: u32) -> [f32; 3] {
         let drawn: Vec<LinearRgba> = (0..tile)
             .flat_map(|y| (0..tile).map(move |x| (x, y)))
@@ -832,7 +823,6 @@ mod tests {
             .collect()
     }
 
-    // A foliage layer's RGBA texels.
     fn foliage(tile: Tile) -> image::RgbaImage {
         let name = MATERIAL_FILES[tile.foliage_layer().unwrap() as usize];
         image::open(asset(&format!("textures/materials/{name}.png")))
@@ -886,8 +876,7 @@ mod tests {
         }
     }
 
-    // The shader cuts a shrub or heath at no more than mip level 5 and a coverage of 0.3 (`block_alpha_at`), as a blurrier cut at the
-    // threshold that keeps thin grass from vanishing draws the whole quad solid above the mound: this replays that on the layers.
+    // The shader cuts shrubs and heath at mip 5, coverage 0.3 at most (`block_alpha_at`); a blurrier cut draws solid.
     #[test]
     fn test_big_plants_keep_their_silhouette_at_the_blur_they_are_cut_at() {
         for tile in [Tile::Shrub, Tile::Heath] {
@@ -913,7 +902,7 @@ mod tests {
         }
     }
 
-    // Replays `block_alpha_at` on a layer at mip `level`: the share of the sprite drawn, after the lowered cut that keeps thin grass from vanishing.
+    // Replays `block_alpha_at` on a layer at mip `level`: the share of the sprite drawn, after the lowered cut.
     fn drawn_at(tile: Tile, level: u32) -> f32 {
         let layer = foliage(tile);
         let size = layer.width() as usize;
@@ -934,8 +923,7 @@ mod tests {
         passed as f32 / texels as f32
     }
 
-    // The shader blurs alpha by distance and cuts it at a lower coverage, so a strand much under a dozen texels wide merges into a blob a
-    // few blocks away: strands drawn hair-thin made the feather grass's plumes a lumpy mass and its stems dashes.
+    // Strands under ~12 texels wide blob together at distance in the shader: hair-thin ones made feather grass lumpy.
     #[test]
     fn test_thin_plants_stay_apart_at_the_blur_they_are_cut_at() {
         for tile in [Tile::FeatherGrass, Tile::TallGrass] {

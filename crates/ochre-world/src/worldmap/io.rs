@@ -163,8 +163,7 @@ impl WorldMap {
         out
     }
 
-    /// Refuses a map made by another generator version, which would not match the terrain
-    /// players' edits were made against.
+    /// Refuses a map made by another generator version, which would not match the terrain edits were made against.
     pub(crate) fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
         if bytes.len() < 8 {
             return Err(bad("map file is truncated"));
@@ -287,8 +286,7 @@ pub(crate) fn cache_path(dir: &Path, seed: u32, config: WorldConfig) -> PathBuf 
     ))
 }
 
-/// The cached map for `seed`, or a freshly generated one, cached for next time. A cache file that
-/// won't load (another version, damaged) is made again.
+/// The cached map for `seed`, or a fresh one, cached for next time; a cache file that won't load is regenerated.
 pub fn load_or_generate(dir: &Path, seed: u32, config: WorldConfig) -> WorldMap {
     let path = cache_path(dir, seed, config);
     match WorldMap::load(&path) {

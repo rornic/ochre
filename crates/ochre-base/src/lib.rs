@@ -1,5 +1,4 @@
-//! The types every Ochre crate shares: blocks, biomes, what a terrain source answers, and the
-//! world's sea level and supported vertical bounds.
+//! The types every Ochre crate shares: blocks, biomes, terrain sources, sea level and vertical bounds.
 
 pub mod biome;
 pub mod block;
@@ -52,8 +51,7 @@ impl WorldBounds {
     }
 }
 
-/// Sky light under open sky. Each block it spreads sideways or up loses one level, and
-/// blocks it passes through take their `light_opacity` too.
+/// Sky light under open sky; each block it spreads sideways or up loses one level, plus `light_opacity`.
 pub const MAX_LIGHT: u8 = 15;
 
 #[cfg(test)]

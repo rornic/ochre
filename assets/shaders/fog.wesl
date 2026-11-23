@@ -1,61 +1,52 @@
-// Fog for ChunkMaterial, WaterMaterial and CloudMaterial, which replace Bevy's PBR fragment
-// stage and so must fog themselves. Each carries the curvature buffer, see `horizon.wesl`.
+// Fog for ChunkMaterial, WaterMaterial and CloudMaterial, which replace Bevy's PBR fragment stage; see `horizon.wesl`
 
 import bevy_pbr::render::{mesh_view_bindings as view_bindings, pbr_functions::apply_fog};
 import super::curvature::{cold, haze_toward, uncurved};
 import super::horizon::horizon_haze;
 import super::sky::SUN_LIGHT;
 
-// Over this last share of the way to the fog's end, the land fades out altogether into the
-// haze just over its edge, past the fog's opacity: the square edge of the farthest LOD nodes
-// never shows against the sky, and nodes coming into reach fade in as the fog eases out.
+// Over this last share of the way to the fog's end, land fades into the haze so the farthest LOD nodes' edge hides.
 const EDGE_FADE_START: f32 = 0.9;
 
-// The haze thickens exponentially with distance, `FOG_SCALE` of the way to the fog's end for each e-fold,
-// so mountains a few kilometres off are already softened: it's 1 - exp(-d / scale), stretched to just
-// reach full at the end. A quadratic ramp to half at the farthest LOD level's start left all but the
-// last stretch looking crisp.
+// The haze thickens as 1 - exp(-d / scale), `FOG_SCALE` of the way to the fog's end per e-fold, stretched to reach
+// full at the end; a quadratic ramp left all but the last stretch crisp.
 const FOG_SCALE: f32 = 0.16;
 
-// The haze's own colour is a pale grey at the horizon, so over the land it is given more colour, easing back to the sky's own by the fog's end, where the land fades into it.
+// The haze is pale grey at the horizon, so over land it gets more colour, easing to the sky's by the fog's end.
 const HAZE_SATURATION: f32 = 1.6;
 
-// The haze is warmed toward the sun, more as the sun sinks: how much of the haze's own brightness the glow adds there.
+// The haze is warmed toward the sun, more as it sinks: how much of the haze's brightness the glow adds there.
 const SUN_HAZE: f32 = 0.08;
 const SUN_HAZE_COLOUR: vec3<f32> = vec3<f32>(1.0, 0.62, 0.32);
 
-// The haze thins as the camera climbs, as the air does: from `THIN_FROM` blocks over the sea it eases to `THIN_TO` of its density by `THIN_FULL`.
+// The haze thins as the camera climbs: from `THIN_FROM` over the sea it eases to `THIN_TO` by `THIN_FULL`.
 const THIN_FROM: f32 = 150.0;
 const THIN_FULL: f32 = 500.0;
 const THIN_TO: f32 = 0.25;
 
-// Looking steeply down from well above the ground the air in the way is thin: the haze fades over these look-down slopes (drop over distance) and
-// drops, in blocks, to `DOWN_TO` of itself, so it keeps to the horizon and doesn't wash the land under a high camera.
+// Looking steeply down from well above the ground the air is thin: haze fades over these slopes to `DOWN_TO`.
 const DOWN_SLOPE: vec2<f32> = vec2<f32>(0.08, 0.5);
 const DOWN_DROP: vec2<f32> = vec2<f32>(60.0, 250.0);
 const DOWN_TO: f32 = 0.2;
 
-// Mist: where the camera's ground is cold enough for frost, by the sum `frost.wesl` does, a low mist of its own lies over the fog's. Its
-// density is `MIST_PER_BLOCK` at the ground under the camera and falls by an e-fold every `MIST_HEIGHT` blocks above it, so it pools in
-// hollows and thins away as the camera climbs. `MIST_MAX` of the view is as much as it hides, and the haze goes `MIST_PALE` of the way
-// to a cool white.
+// Mist over the fog where the camera's ground can frost (`frost.wesl`): `MIST_PER_BLOCK` at the ground,
+// an e-fold thinner every `MIST_HEIGHT` blocks up; hides at most `MIST_MAX`; the haze goes `MIST_PALE` white.
 const MIST_PER_BLOCK: f32 = 0.02;
 const MIST_HEIGHT: f32 = 28.0;
 const MIST_MAX: f32 = 0.85;
 const MIST_PALE: f32 = 0.5;
 const MIST_COLOUR: vec3<f32> = vec3<f32>(0.80, 0.87, 0.95);
 
-// How misty the air at `view_position` is, 0 to 1: none with frost off, and not thinned by the biome's thaw, which only bares the ground.
+// How misty the air at `view_position` is, 0 to 1: none with frost off, not thinned by the biome's thaw.
 fn mist(view_position: vec3<f32>) -> f32 {
     let about = cold();
     let ground = about.camera.x - (view_position.y - f32(constants::WATER_LEVEL)) / about.rule.x;
     return (1.0 - smoothstep(about.rule.y, about.rule.y + about.rule.z, ground)) * step(0.5, about.camera.z);
 }
 
-// How much of the view the mist hides over `across` blocks from `view_position` to the real `height`, `chill` being `mist`: the
-// density, which falls with height over the ground, averaged along the way up or down the line of sight.
+// How much of the view the mist hides over `across` blocks to the real `height` (`chill` is `mist`): its mean density
 fn mist_hides(view_position: vec3<f32>, height: f32, across: f32, chill: f32) -> f32 {
-    // lower ground than the camera's has its own mist lying on it, not the camera's ground's: from a ridge the lowlands aren't under a sheet of it
+    // lower ground than the camera's has its own mist on it: from a ridge the lowlands aren't under a sheet of it
     let base = min(cold().camera.w, height);
     let up_here = max(view_position.y - base, 0.0) / MIST_HEIGHT;
     let up_there = max(height - base, 0.0) / MIST_HEIGHT;
@@ -65,11 +56,8 @@ fn mist_hides(view_position: vec3<f32>, height: f32, across: f32, chill: f32) ->
     return MIST_MAX * (1.0 - exp(-MIST_PER_BLOCK * chill * across * mean));
 }
 
-// `color` at `world_position` behind the camera's fog. Above water it thickens only with
-// distance across the land, not up or down, so it hides the far edge of the world in the
-// haze along the horizon without greying out the ground below when flying high.
-// Underwater, Bevy's linear murk closes in every way. `WATER_LEVEL` comes from the
-// material's `specialize`.
+// `color` at `world_position` behind the fog: above water it thickens across the land only, so high flight
+// doesn't grey the ground. Underwater, Bevy's linear murk closes in every way. `WATER_LEVEL` comes from `specialize`.
 fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) -> vec4<f32> {
     let fog = view_bindings::fog;
     let view_position = view_bindings::view.world_position.xyz;

@@ -1,4 +1,4 @@
-// The aurora: curtains of light that ripple and drift across the northern night sky over cold ground, for `stars.wesl`.
+// The aurora: curtains of light rippling and drifting across the northern night sky over cold ground, for stars.wesl
 
 import bevy_pbr::render::mesh_view_bindings as view_bindings;
 import super::cloud_cover::aurora_chill;
@@ -12,18 +12,19 @@ const CYAN: vec3<f32> = vec3<f32>(0.1, 0.75, 0.85);
 // The curtains, and how far round from north they reach in radians: whole to the first, gone by the second.
 const CURTAINS: i32 = 2;
 const REACH: vec2<f32> = vec2<f32>(0.9, 1.8);
-// How tall a curtain stands where its rays are shortest and where they're longest, in the view's y above its lower edge.
+// How tall a curtain stands where its rays are shortest and where longest, in the view's y above its lower edge.
 const TALL: vec2<f32> = vec2<f32>(0.1, 0.55);
 
-// One curtain's light at `along` radians round from north and `up` the sky (the view's y), `layer` apart from its neighbours.
+// One curtain's light at `along` radians round from north and `up` the sky (the view's y), `layer` apart.
 fn curtain(along: f32, up: f32, layer: f32, time: f32) -> vec3<f32> {
-    // nothing travels: time is a noise axis, so features brighten, fray and fade where they are, a slow warp sways the broad shapes (not the fine rays) a few degrees, and everything drifts under 0.1 degrees a second
+    // nothing travels: time is a noise axis, so features brighten, fray and fade in place; a slow warp sways
+    // broad shapes a few degrees, and everything drifts under 0.1 degrees a second
     let sway = 0.1 * (value_noise(vec2<f32>(along * 1.3 + layer * 5.0, time * 0.03 + layer)) - 0.5);
     let fixed = along + layer * 3.1 + time * 0.0015;
     let slide = fixed + sway;
     // the lower edge hangs steadily, drifting only a little
     let base = 0.08 + 0.07 * layer + 0.05 * value_noise(vec2<f32>(slide * 1.6, time * 0.03 + layer * 7.0)) + 0.012 * sin(slide * 11.0) * sin(time * 0.4 + layer * 2.0);
-    // how far the rays reach up from it: stretches of the curtain, a few tens of degrees across, lengthen and retract on two slow clocks, out of step with each other
+    // how far the rays reach up: stretches tens of degrees across lengthen and retract on slow out-of-step clocks
     let reach_now = smoothstep(0.2, 0.8, 0.6 * value_noise(vec2<f32>(slide * 2.4 + 9.0, time * 0.035 + layer * 3.0)) + 0.4 * value_noise(vec2<f32>(slide * 5.0 + 31.0, time * 0.06 + layer * 8.0)));
     let tall = mix(TALL.x, TALL.y, reach_now);
     // 0 along the lower edge, 1 along the upper
@@ -32,7 +33,8 @@ fn curtain(along: f32, up: f32, layer: f32, time: f32) -> vec3<f32> {
     if v <= 0.0 || v > 1.5 {
         return vec3<f32>(0.0);
     }
-    // each streak ends at its own height, so the edges follow no line: the lower fades in from a ragged start that wanders along the curtain and over tens of seconds, and the upper dissolves from a height that does too
+    // each streak ends at its own height: the lower fades in from a ragged start that wanders,
+    // and the upper dissolves from a wandering height
     let column = value_noise(vec2<f32>(fixed * 26.0, time * 0.045 + layer * 5.0));
     let lo = 0.4 * value_noise(vec2<f32>(slide * 4.0 + 3.0, time * 0.037 + layer * 2.0)) * column + 0.12 * column;
     let hi = 0.7 + 0.45 * value_noise(vec2<f32>(slide * 2.6 + 21.0, time * 0.029 + layer * 9.0)) + 0.3 * (value_noise(vec2<f32>(fixed * 15.0 + 5.0, time * 0.05 + layer * 4.0)) - 0.5);

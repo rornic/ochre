@@ -7,8 +7,7 @@ use ochre_base::block::BlockType;
 use ochre_base::terrain_source::TerrainSource;
 use ochre_base::WATER_LEVEL;
 
-/// What trees need to know about the ground to take root, from the full-detail heightmap or
-/// from the coarser grid a distant LOD node samples.
+/// What trees need to know about the ground to take root: the full-detail heightmap or a distant node's coarser grid.
 pub trait TreeGround {
     fn trees(&mut self, x: i64, z: i64) -> f64;
     fn height(&mut self, x: i64, z: i64) -> f64;
@@ -39,14 +38,12 @@ pub trait TreeGround {
         false
     }
 
-    /// The water the ground at `x`, `z` is chosen by, as chunks lay it (`columns::shore_top`): a bank's river or
-    /// lake beside it, so no tree stands on the sand a chunk lays there.
+    /// The water the ground at `x`, `z` is chosen by (`columns::shore_top`), so no tree stands on a bank's sand.
     fn shore_top(&mut self, _x: i64, _z: i64) -> i64 {
         WATER_LEVEL
     }
 
-    /// The height a tree's base stands at, which a coarse node sets to the ground it draws, so
-    /// trees sit on it, while the rest above stay exact, so the same trees grow at every level.
+    /// Height of a tree's base: a coarse node uses the ground it draws, so every level grows the same trees.
     fn base_height(&mut self, x: i64, z: i64) -> i64 {
         self.height(x, z).round() as i64
     }
@@ -88,42 +85,42 @@ const CELL: i64 = 10;
 pub(crate) const TREE_REACH: i64 = 14;
 /// How far above its ground any tree reaches.
 pub(crate) const TREE_HEIGHT: i64 = 48;
-// An emergent giant is this many times as tall and as wide in the crown as the biome's trees.
+// An emergent giant is this many times as tall as the biome's trees.
 const GIANT_HEIGHT: f64 = 2.3;
+// An emergent giant's crown is this many times as wide as the biome's trees'.
 const GIANT_SPREAD: f64 = 1.35;
-// Colder than this, trees are pines.
-// Trees growing where it is cooler than this, at their height, are pines: cold lowlands, and
-// the slopes of any range higher up, where the air has cooled.
+// Trees where it is cooler than this at their height are pines: cold lowlands, and a range's higher slopes.
 const PINE_TEMPERATURE: f32 = 0.46;
 // Higher than this above the sea, a mountain's trees are pines whatever the climate below.
 const ALPINE_PINES_ABOVE: i64 = 120;
 // Ground steeper than this (see `terrain_block`) is too steep to take root on.
 const MAX_GRADIENT: f64 = 1.5;
-// Broadleaf crowns are a big round crown with smaller lobes hanging off it on branches.
+// A broadleaf crown is a big ball with up to this many smaller lobes hanging off it on branches.
 const LOBES: usize = 5;
-// A broadleaf has this many lobes at the least, up to `LOBES`, and its crown stands off the trunk by up to this share of its spread.
 const LOBES_LEAST: u64 = 3;
+// A broadleaf's crown stands off the trunk by up to this share of its spread.
 const CROWN_LEAN: f64 = 0.2;
-// A pine puts out this many boughs at the foot of each tier, which stand this many blocks apart up the trunk, each reaching this share of the crown's radius there.
+// A pine puts out this many boughs at the foot of each tier.
 const PINE_BOUGHS: usize = 4;
+// Pine tiers stand this many blocks apart up the trunk.
 const PINE_WHORL: f64 = 3.0;
 // The first whorl stands this far above the crown's foot, so its boughs start inside the leaves.
 const PINE_FIRST_WHORL: f64 = 1.0;
+// Each bough reaches this share of the crown's radius there.
 const PINE_BOUGH_REACH: f64 = 0.7;
 // Every trunk is one block thick in the voxels, however thick it is drawn, see `Tree::trunk_radius`.
 const TRUNK_WIDTH: i64 = 1;
-// Cells this wide or wider judge leaves by coverage: a quarter of a 3 x 3 x 3 spread of points
-// inside, or small crowns would fall between cell centres.
+// Cells this wide or wider judge leaves by coverage, or small crowns would fall between cell centres.
 const COVERAGE_CELL: i64 = 4;
+// Points of a 3 x 3 x 3 spread inside a cell that must be leaves, a quarter of them.
 const COVERAGE_POINTS: usize = 7;
-/// Cells this wide or wider leave out the trunk, which would stand a pillar far thicker than it
-/// is. Meshing draws it as a thin box instead, see `generator::TreeBox`.
+/// Cells this wide or wider leave out the trunk, which would stand a far-too-thick pillar (`generator::TreeBox`).
 pub(crate) const THIN_TRUNK_CELL: i64 = 4;
 // How far in leaves are nibbled from the edge of a crown.
 const NIBBLE: f64 = 0.9;
-// How far each tree's leaves stray from the grass's tint, so a forest isn't one flat green:
-// brighter or darker by up to this much, and warmer or cooler by up to this much.
+// Each tree's leaves stray from the grass tint by up to this much, so a forest isn't one flat green.
 const TINT_BRIGHTNESS: f32 = 0.22;
+// Each tree's leaves stray from the grass's tint by up to this much warmer or cooler.
 const TINT_WARMTH: f32 = 0.18;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -132,7 +129,7 @@ pub enum TreeKind {
     Broadleaf,
     // tiers of leaves narrowing up a tall trunk
     Pine,
-    // a flat plate of leaves on a tall bare trunk that forks toward it: the savanna's acacia, and the jungle's emergent giant
+    // a flat plate of leaves on a tall bare trunk that forks toward it: savanna acacia and jungle emergent giant
     Umbrella,
     // a narrow crown on a tall, straight trunk: the jungle's canopy
     Slender,
@@ -156,7 +153,6 @@ pub struct Tree {
     exposure: f64,
 }
 
-// A ball of leaves, squashed by `squash` vertically.
 #[derive(Debug, Copy, Clone)]
 struct Blob {
     centre: DVec3,
@@ -248,9 +244,7 @@ impl Tree {
         self
     }
 
-    /// A far tree's crown as a few big cards over its surface, for levels of detail whose cells are too wide for the voxels: where each is,
-    /// in blocks from the trunk's base, which way it faces and how wide it is. A broadleaf's are spread over its ball and, from `detail`
-    /// 0.75, each lobe's, a pine's in rings up its cone. `detail` is 1 for 2-block cells and falls as they widen, so fewer, bigger cards.
+    /// A far tree's crown as big cards for cells too wide for voxels; `detail` is 1 at 2-block cells, less as they widen.
     pub fn far_cards(&self, detail: f64) -> Vec<FarCard> {
         let mut cards = Vec::new();
         if self.kind == TreeKind::Pine {
@@ -358,7 +352,7 @@ impl Tree {
         TRUNK_WIDTH
     }
 
-    /// How thick the trunk is drawn, as a radius in blocks: a quarter of a block across on the smallest tree, a whole block on the tallest.
+    /// Trunk radius in blocks: a quarter of a block across on the smallest tree, a whole block on the tallest.
     pub fn trunk_radius(&self) -> f32 {
         let size = ((self.trunk - 6) as f32 / 24.0).clamp(0.0, 1.0);
         0.125 + 0.375 * size
@@ -390,12 +384,7 @@ impl Tree {
         )
     }
 
-    // The tree's block in the cell `size` blocks across with `min` its lowest block, if any:
-    // leaves if its centre is among them, a log if the trunk or a branch runs through it. Cells
-    // one block across are just blocks, where wood runs up through the leaves; in coarser cells
-    // the leaves win, or a whole cell's width of trunk would stand in for the crown. Cells this
-    // wide or wider hold leaves if a quarter of them would be, or small crowns would fall between
-    // cell centres, and from `THIN_TRUNK_CELL` they leave out the trunk.
+    // The tree's block in a cell: leaves if its centre is in them, log if wood runs through; wood wins at 1 block.
     pub(crate) fn block_in_cell(&self, min: I64Vec3, size: i64) -> Option<BlockType> {
         let overlaps = |lo: i64, from: i64, to: i64| lo < to && lo + size > from;
         let width = self.width();
@@ -418,8 +407,7 @@ impl Tree {
         }
     }
 
-    // Whether enough of the cell centred `offset` from the trunk's base is among the leaves, judged
-    // from a 3 x 3 x 3 spread of points through it.
+    // Whether enough of the cell at `offset` from the trunk's base is in the leaves, from 3 x 3 x 3 sample points.
     fn leaf_coverage(&self, offset: DVec3, size: i64) -> bool {
         let step = size as f64 / 3.0;
         let mut inside = 0;
@@ -436,9 +424,7 @@ impl Tree {
         inside >= COVERAGE_POINTS
     }
 
-    /// The crown as `layers` stacked boxes, in blocks from `base`'s lower corner, for cells too
-    /// wide to hold it: each layer is as wide as the leaves reach there, so a crown keeps its dome
-    /// or tiers instead of being one cuboid.
+    /// The crown as `layers` stacked boxes from `base`, for cells too wide to hold it, each as wide as the leaves.
     pub fn crown_boxes(&self, layers: i64) -> Vec<(DVec3, DVec3)> {
         let (low, high) = self.leaf_bounds();
         // one box is the bounds themselves, and a scan for the leaves' tighter ones is the dearest part of far LODs
@@ -550,13 +536,12 @@ impl Tree {
         }
     }
 
-    // Whether the point `offset` from the trunk's base is on a branch: out to a lobe on a broadleaf, a whorl of boughs at each tier on a pine.
+    // Whether `offset` from the trunk's base is on a branch: a lobe on a broadleaf, a whorl of boughs per tier on a pine.
     fn in_branch(&self, offset: DVec3) -> bool {
         if self.kind == TreeKind::Pine {
             return self.in_bough(offset);
         }
-        // an umbrella's branches leave the trunk's top flat and turn up for their last block, into the plate; a broadleaf's rise
-        // from 60% of the way up to its lobes
+        // an umbrella's branches leave the trunk's top flat, turning up for the last block; a broadleaf's rise from 60% up
         let umbrella = self.kind == TreeKind::Umbrella;
         let fork_y = if umbrella {
             self.crown.centre.y - self.crown.radius * self.crown.squash - 0.5
@@ -580,8 +565,7 @@ impl Tree {
         })
     }
 
-    // Whether the point `offset` from the trunk's base is on one of the boughs a pine puts out, drooping, at the foot of each tier, which
-    // reach most of the way to the crown's edge there so the inside of the crown is not an empty trunk.
+    // Whether `offset` from the trunk's base is on a pine bough: drooping at each tier's foot, most of the way out.
     fn in_bough(&self, offset: DVec3) -> bool {
         let across = offset - self.axis();
         if across.x * across.x + across.z * across.z > (self.spread + 1.6).powi(2) {
@@ -604,8 +588,7 @@ impl Tree {
         })
     }
 
-    // Puts the tree into a grid of `size`-block cells whose cell 0 has `origin` as its lowest
-    // block, calling `place` with each cell index in `first..=last` that the tree fills.
+    // Puts the tree in `size`-block cells, cell 0's lowest block at `origin`, calling `place` per cell index it fills.
     pub fn plant(
         &self,
         origin: I64Vec3,
@@ -679,8 +662,7 @@ struct CrownBall {
 }
 
 impl TreeLook {
-    /// Which way the crown's surface faces at `at`, in cells, as a ball's would: out from the middle of the ball it is nearest the edge of.
-    /// Zero for a pine, and at a ball's very middle.
+    /// Crown surface facing at `at` in cells, out from the nearest ball's middle; zero for a pine and at a ball's middle.
     pub fn crown_normal(&self, at: Vec3) -> Vec3 {
         let nearest = self
             .crown
@@ -701,7 +683,7 @@ impl TreeLook {
         Vec3::new(d.x, d.y / (ball.squash * ball.squash), d.z).normalize_or_zero()
     }
 
-    /// The reach from the trunk's axis of each bough that starts at the trunk's log at `coord`, in blocks: a pine's whorl is at some of its heights.
+    /// Reach in blocks from the trunk axis of the bough starting at the log at `coord`; pine whorls are at some heights.
     pub fn boughs_from(&self, coord: IVec3) -> Vec<Vec3> {
         if !self.pine {
             return Vec::new();
@@ -732,15 +714,12 @@ impl TreeLook {
     }
 }
 
-/// Which tree each block belongs to, for blocks placed one at a time, where which tree put
-/// them is lost: the one whose trunk is nearest across, which is the one they belong to
-/// but where crowns meet.
+/// Which tree each block belongs to, for blocks placed one at a time: the nearest trunk; wrong only where crowns meet.
 #[derive(Default, Debug, Clone)]
 pub struct TreeTints(Vec<TreeLook>);
 
 impl TreeTints {
-    /// Every tree in `trees`, placed by its trunk's axis less `origin`, in cells `cell` blocks
-    /// wide whose centres are whole numbers.
+    /// Every tree in `trees`, placed by trunk axis less `origin`, in `cell`-block cells whose centres are whole numbers.
     pub fn new<'a>(trees: impl IntoIterator<Item = &'a Tree>, origin: I64Vec3, cell: i64) -> Self {
         let cells = cell as f32;
         Self(
@@ -812,10 +791,7 @@ pub(crate) fn grows_into(existing: BlockType, block: BlockType) -> bool {
     existing == BlockType::Air || (existing == BlockType::Leaves && block == BlockType::Log)
 }
 
-/// Which tree grows on ground `above_sea` blocks up in the biome called `biome`, where the air is
-/// `warmth` warm up there. Pines in the cold, and on a mountain's upper slopes even in the tropics;
-/// the hot biomes keep their broadleaf trees however high the ground or cool the water's edge, so no
-/// savanna has pines in it.
+/// Which tree grows `above_sea` blocks up in `biome` at `warmth`: pines in cold and on high slopes, not in hot biomes.
 pub(crate) fn tree_kind(
     biome: Option<&str>,
     mountain: bool,
@@ -877,8 +853,7 @@ fn tree_in_cell(
 
     // the biome before the slope, which samples elsewhere, while the ground here is to hand
     let height = heights.height(x, z).round() as i64;
-    // a trunk is more than a column wide, and stands on ground level with its foot: not across a
-    // step or a cliff's edge, where its far side would be buried or hang in the air
+    // a trunk is wider than a column: it needs ground level with its foot, else a side would bury or hang
     for (dx, dz) in [(1, 0), (0, 1), (1, 1)] {
         let beside = heights.height(x + dx, z + dz).round() as i64;
         if !(height - 1..=height).contains(&beside) {
@@ -952,9 +927,7 @@ fn tree_in_cell(
     ))
 }
 
-// The kind, trunk height, crown spread and crown squash of a tree that grew `growth` (0..1) of the way to its
-// largest, in a biome that scales trees by `scale`: held to `TREE_HEIGHT` and `TREE_REACH`, which the chunk and
-// LOD code size their boxes by. A giant is a jungle's slender tree grown into an umbrella standing over the canopy.
+// Kind, trunk height, crown spread and squash at `growth` (0..1), held to `TREE_HEIGHT` and `TREE_REACH`.
 pub(crate) fn scaled_tree(
     kind: TreeKind,
     growth: f64,
@@ -986,7 +959,7 @@ pub(crate) fn scaled_tree(
     (shape, trunk, spread, squash)
 }
 
-// The trunk height, crown spread and crown squash of a `kind` that grew `growth` of the way to its largest, in the usual biome.
+// Trunk height, crown spread and squash of a `kind` at `growth` of the way to its largest, in the usual biome.
 fn grown(kind: TreeKind, growth: f64) -> (i64, f64, f64) {
     match kind {
         TreeKind::Pine => (16 + (growth * 9.0) as i64, 4.5 + growth * 1.5, 0.7),
@@ -1002,7 +975,7 @@ pub(crate) fn whorl_height(trunk: i64, k: i64) -> Option<f64> {
     (k >= 0 && y <= (trunk + 1) as f64 - 2.0).then_some(y)
 }
 
-/// The `j`th bough of the `k`th whorl of a pine: how far it reaches from the trunk's axis, down a third of its length.
+/// Reach from the trunk's axis of the `j`th bough of the `k`th pine whorl, down a third of its length.
 pub(crate) fn bough_reach(seed: u64, trunk: i64, spread: f64, k: i64, j: usize) -> DVec3 {
     let (bottom, top) = ((trunk / 4) as f64, (trunk + 1) as f64);
     let y = bottom + PINE_FIRST_WHORL + k as f64 * PINE_WHORL;

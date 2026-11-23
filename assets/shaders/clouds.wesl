@@ -19,7 +19,7 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
 const SUN_TINT: f32 = 0.5;
 const SHADE_TINT: vec3<f32> = vec3<f32>(0.85, 0.92, 1.05);
 const LUMINANCE: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
-// Light through a thick cloud has scattered too often to keep `phase`'s forward peak, so it evens out over this cover, or the sun would glow through as a bright spot.
+// Light through a thick cloud has scattered too often to keep `phase`'s forward peak, so it evens out over this cover
 const DIFFUSED: vec2<f32> = vec2<f32>(0.6, 1.0);
 
 // `marched` lit and premultiplied, light in rgb and cover in a, dimmed by `shade` in storms.

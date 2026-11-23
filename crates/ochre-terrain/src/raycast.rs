@@ -1,6 +1,5 @@
 use bevy::math::{I64Vec3, Vec3};
 
-/// A block a ray stopped at.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RayHit {
     pub block: I64Vec3,
@@ -10,9 +9,7 @@ pub struct RayHit {
     pub distance: f32,
 }
 
-/// The first block along the ray from `origin` towards `direction`, no farther than `reach`,
-/// that `hits` stops at, stepping block by block (Amanatides & Woo). Blocks are centred on their
-/// coordinates, so block `c` spans `c - 0.5` to `c + 0.5`.
+/// The first block along the ray within `reach` that `hits` stops at (Amanatides & Woo); block `c` spans `c` +- 0.5.
 pub fn raycast(
     origin: Vec3,
     direction: Vec3,
@@ -27,8 +24,7 @@ pub fn raycast(
     let start = origin + Vec3::splat(0.5);
     let mut block = start.floor().as_i64vec3();
     let mut step = I64Vec3::ZERO;
-    // how far along the ray it next crosses into the block beyond on each axis, and how far
-    // apart those crossings are
+    // how far along the ray it next crosses into the next block on each axis, and the spacing of those crossings
     let mut next = Vec3::INFINITY;
     let mut apart = Vec3::INFINITY;
     for axis in 0..3 {

@@ -1,4 +1,4 @@
-//! Ponds: the shallow round pools that thaw out of frozen ground, dotted over tundra and taiga on flat ground, each marked so hydrology keeps its water.
+//! Ponds: shallow round pools thawed out of frozen ground on flat tundra and taiga, marked so hydrology keeps them.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{hash, unit};
@@ -27,8 +27,7 @@ fn sink(map: &mut WorldMap, (sx, sz): (usize, usize), radius: f64, depth: f64) {
     }
 }
 
-/// Sinks up to `count` ponds, 1 to 2.2 cells across and 4 to 10 blocks deep, into flat tundra and taiga ground, and returns the cells of their middles
-/// for hydrology to keep a lake in however small.
+/// Sinks up to `count` ponds, 1 to 2.2 cells across and 4 to 10 blocks deep; returns their middle cells.
 pub(crate) fn run(map: &mut WorldMap, count: u32) -> Vec<bool> {
     let dim = map.dim();
     let mut kept = vec![false; dim * dim];

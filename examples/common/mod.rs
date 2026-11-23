@@ -1,5 +1,4 @@
-//! What the headless examples (no window or GPU) share: the terrain systems on `MinimalPlugins`, with the assets they build
-//! materials and meshes into registered by hand.
+//! What the headless examples share: the terrain systems on `MinimalPlugins`, with asset types registered by hand.
 use bevy::prelude::*;
 use ochre_engine::settings::{DebugSettings, Settings};
 use ochre_engine::DevEnv;

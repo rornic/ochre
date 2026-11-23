@@ -1,7 +1,4 @@
-//! Scores a generated world for distinctive places, from the ground a player sees at 4 km: relief of either sign at three scales, and steepness, ranked
-//! within each biome. It only reads. It adds no layer to the map, never runs in `generate`, and so never moves `MAP_HASH`. See `docs/designs/meso-scale-geography.md`.
-//!
-//! Every number here is a first pass, provisional until the baseline (`docs/meso-baseline.csv`) shows what the world gives.
+//! Meso-scale geography: landmarks, canyons, eskers, stacks, ponds, relief, and `score`, a read-only ranking.
 
 pub mod canyons;
 pub mod eskers;
@@ -18,7 +15,7 @@ use super::climate::BiomeKind;
 use super::WorldTerrain;
 use ochre_base::terrain_source::TerrainSource;
 
-/// The most distinctive places of `terrain`'s world, per biome, best first within each biome, biomes in a fixed order.
+/// The most distinctive places of `terrain`'s world, per biome, best first, biomes in a fixed order.
 pub fn score(terrain: &WorldTerrain, params: &Params) -> Vec<Place> {
     let map = terrain.map();
     let half = map.config.half_size() as f64;

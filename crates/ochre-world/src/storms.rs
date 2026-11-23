@@ -1,24 +1,5 @@
-//! The weather as a pure function of the world's seed, where and when: no state is stored or
-//! stepped, so any moment anywhere can be asked for, by a client drawing the sky, a server
-//! catching a chunk up, or a test, and they all agree.
-//!
-//! It's a map of precipitation, cloud and thunder. Storms drift with the seed's prevailing wind
-//! (the same wind the world map carries its rain on). They're laid on a lattice that moves with
-//! that wind: each lattice cell may hold a storm for each slot of time, decided by an integer hash
-//! of the seed, the cell and the slot. A storm grows, matures and dies over a fraction of a day or
-//! two, and its cloud shield reaches farther ahead of it than behind, so the sky clouds over
-//! before the rain arrives.
-//!
-//! The climate has its say in one place, `air_mass`: slow air masses that drift with the storms
-//! and last a day or two. Storms are only born inside one, and their rain only lands inside one
-//! strong enough for the ground there, which almost everywhere is rarely, in jungle often, and in
-//! desert never. So rain comes in short runs of showery days with dry ones between. Cloud follows
-//! the same air masses a little more loosely: it builds before the rain and thins out after it,
-//! and between spells the sky is completely clear. Where grass lies under snow,
-//! precipitation falls as snow, and never thunders.
-//!
-//! Every value comes from `+ - * / sqrt floor` and integer hashing, which give the same answer
-//! on every machine, so a server and its clients see the same weather.
+//! The weather as a pure function of seed, place and time, from integer hashing and `+ - * / sqrt floor`.
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -46,8 +27,7 @@ pub struct Sky {
     pub precipitation: f32,
     /// The share of it that falls as snow, 0 for rain to 1: snow wherever grass lies under snow.
     pub snow: f32,
-    /// The share of the sky with cloud over it, 0..1: the clear-sky clouds of the climate, and
-    /// up to full cover under a storm's shield.
+    /// Share of the sky with cloud over it, 0..1: the climate's clear-sky cloud, up to full cover under a storm's shield.
     pub cloud: f32,
     /// How much of a storm's thick, dark cloud is overhead, 0..1.
     pub storm: f32,
@@ -55,8 +35,7 @@ pub struct Sky {
     pub thunder: f32,
 }
 
-/// One storm: where it was in the wind's frame, when it was born and for how long it lives, in
-/// game seconds, how wide its core is in blocks, and how strong it is.
+/// One storm: where in the wind's frame, when born, how long it lives (game seconds), core width in blocks, strength.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Storm {
     /// Where it sits in the frame drifting with its wind: its centre is `origin + wind * t`.
@@ -75,9 +54,9 @@ pub struct Storm {
     id: u32,
 }
 
-// The lattice storms are born on: cells this many blocks across, drifting with the wind, and
-// slots of this many game seconds. At most one storm per cell and slot.
+// The lattice storms are born on, drifting with the wind, at most one storm per cell and slot: cell width in blocks.
 const CELL: f64 = 12_000.0;
+// Slot length in game seconds.
 const SLOT: f64 = 3.0 * 3600.0;
 // How long a storm lives, in game seconds, at the least and most (a game day is six hours).
 const LIFE: (f64, f64) = (4.0 * 3600.0, 10.0 * 3600.0);
@@ -98,15 +77,14 @@ const DRIFT: (f64, f64) = (2.5, 5.0);
 // Climate is looked up on a lattice this many blocks across, and blended between.
 const CLIMATE_CELL: f64 = 1_000.0;
 
-// The farthest the shield of a storm `radius` wide and `aspect` times longer than wide reaches
-// from its centre, ahead of it along its long side at its most ragged, with room to spare.
+// The farthest a storm's shield (`radius` wide, `aspect` times longer) reaches from its centre, at its most ragged.
 fn shield_reach(radius: f64, aspect: f64) -> f64 {
     radius * SHIELD * AHEAD * aspect.sqrt() * (1.0 + RAGGED) * 1.02
 }
 
-// Wet spells: air masses this many blocks across, drifting with the storms, which change over
-// this many game seconds (a game day and a half). Storms are only born inside one.
+// Wet spells are air masses drifting with the storms, and storms are only born inside one: width in blocks.
 const SPELL_CELL: f64 = 100_000.0;
+// How long an air mass takes to change, in game seconds (a day and a half).
 const SPELL_SLOT: f64 = 1.5 * DAY_SECONDS as f64;
 
 // Salts for the hashes, so the draws don't line up.
@@ -148,7 +126,6 @@ impl std::fmt::Debug for Forecast {
     }
 }
 
-/// A game tick as game seconds.
 pub fn seconds(tick: u64) -> f64 {
     tick as f64 / TICKS_PER_SECOND as f64
 }
@@ -174,7 +151,7 @@ struct Air {
     wet: f64,
     /// In a cloudy spell, which starts before a wet one and ends after it; between them the sky is clear.
     cloudy: f64,
-    /// In a spell of fury: over the steppe, the whole air mass darkens, thunders and blows in swells for hours, with no rain.
+    /// In a spell of fury: over the steppe, the whole air mass darkens, thunders and blows in swells for hours, rainless.
     fury: f64,
 }
 
@@ -185,8 +162,7 @@ fn steppe(moisture: f64, warmth: f64) -> f64 {
         * (1.0 - smoothstep_f64(STEPPE_HOT.0, STEPPE_HOT.1, warmth))
 }
 
-// A swell rolling through a spell of fury, 0..1, over lumps this many blocks across and this many game seconds, drifting with the storms: the dark cloud
-// builds and breaks in it, and its heights thunder.
+// A swell through a spell of fury, 0..1, drifting with the storms: dark cloud builds and breaks, and heights thunder.
 fn fury_swell(seed: u32, carried: DVec2, t: f64) -> f64 {
     let (x, z, k) = (carried.x / SWELL_LUMP, carried.y / SWELL_LUMP, t / SWELL_SECONDS);
     let (cell_x, cell_z, cell_t) = (x.floor(), z.floor(), k.floor());
@@ -202,7 +178,7 @@ fn fury_swell(seed: u32, carried: DVec2, t: f64) -> f64 {
     mix(plane(0), plane(1), w)
 }
 
-// Slow noise over air masses drifting with the storms, past bars the climate sets: it's all the climate does to the weather.
+// Slow noise over air masses drifting with the storms, past bars the climate sets: all the climate does to weather.
 fn air_mass(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> Air {
     let p = DVec3::new(
         carried.x / SPELL_CELL,
@@ -245,21 +221,19 @@ fn air_mass(seed: u32, carried: DVec2, t: f64, moisture: f64, warmth: f64) -> Ai
 
 // The noise a wet spell needs to clear, over the driest climates and the wettest.
 const SPELL_BAR: (f64, f64) = (0.76, 0.45);
-// The moisture and warmth over which the bar falls from the first to the second: only where
-// it's both wet and warm, so everywhere stays mostly dry but jungle (and warm seas), which is wet.
+// The moisture and warmth over which the bar falls: only where both wet and warm, so jungle and warm seas are wet.
 const SPELL_WET: (f64, f64) = (0.55, 0.95);
 const SPELL_WARM: (f64, f64) = (0.45, 0.7);
-// Below the first moisture the bar's raised by this much, out of the noise's reach, so deserts stay
-// dry, easing back by the second, over steppe.
+// Below the first moisture the bar rises by `SPELL_DRY_BAR`, so deserts stay dry; eased out by the second.
 const SPELL_DRY_GROUND: (f64, f64) = (0.16, 0.35);
 const SPELL_DRY_BAR: f64 = 0.4;
-// The steppe's range of moisture and warmth, in which a spell of fury can come: not the desert, which stays dry, nor the cold.
+// The steppe's range of moisture and warmth in which a spell of fury can come: not desert, which stays dry, nor cold.
 const STEPPE_MOISTURE: (f64, f64) = (0.25, 0.35);
 const STEPPE_WARM: (f64, f64) = (0.20, 0.30);
 const STEPPE_HOT: (f64, f64) = (0.55, 0.62);
 // The noise a spell of fury needs to clear, which is far easier than a wet spell's over the steppe.
 const FURY_BAR: f64 = 0.70;
-// The swell's lumps, in blocks and game seconds (an hour and a half), and the swell it takes for the sky to darken and for thunder to come.
+// The swell's lumps, in blocks and game seconds (an hour and a half), and the swell that darkens the sky and thunders
 const SWELL_LUMP: f64 = 30_000.0;
 const SWELL_SECONDS: f64 = 1.5 * 3600.0;
 const SWELL_DARK: (f64, f64) = (0.3, 0.55);
@@ -270,10 +244,10 @@ const CLOUDY_BELOW_BAR: (f64, f64) = (0.25, 0.05);
 // Dry ground raises the cloud bar by this much, so steppe and desert are clearer still.
 const CLOUDY_DRY_BAR: f64 = 0.25;
 
-// How much warmer than snowy grass the ground can be before it's all rain: narrow, about 35 blocks of height, so rain and snow rarely fall together.
+// How much warmer than snowy grass the ground can be before it's all rain: about 35 blocks of height.
 const SNOW_FALL_BAND: f64 = 0.01;
 
-// The share of what falls on ground of `warmth` that's snow: all of it where grass lies under snow, as the taiga's does.
+// The share of what falls on ground of `warmth` that's snow: all of it where grass lies under snow, as in the taiga.
 fn snow_share(warmth: f64) -> f64 {
     let cold = SNOWY_GRASS_TEMPERATURE as f64;
     1.0 - smoothstep_f64(cold, cold + SNOW_FALL_BAND, warmth)
@@ -285,13 +259,11 @@ fn fair_cloud(moisture: f64) -> f64 {
 }
 
 impl Storm {
-    /// Where its centre is at `t`.
     pub fn centre(&self, t: f64) -> DVec2 {
         self.origin + self.wind * t
     }
 
-    /// How grown it is at `t`, 0 before it's born and after it dies, 1 when mature, and how wide
-    /// its core is then.
+    /// How grown it is at `t`, 0 before birth and after death, 1 when mature, and its core's width then.
     fn grown(&self, t: f64) -> (f64, f64) {
         let s = (t - self.born) / self.life;
         if !(0.0..=1.0).contains(&s) {
@@ -307,13 +279,11 @@ impl Storm {
         shield_reach(self.radius, self.aspect)
     }
 
-    /// Whether it's alive at `t`.
     pub fn alive(&self, t: f64) -> bool {
         (self.born..=self.born + self.life).contains(&t)
     }
 
-    // Its precipitation, cloud shield, dark cloud and thunder at `p` at `t`, before the climate
-    // there has its say, see `Forecast::finish`.
+    // Its precipitation, cloud shield, dark cloud and thunder at `p` at `t`, before the climate's say; see `finish`.
     fn at(&self, p: DVec2, t: f64) -> [f64; 4] {
         let (grown, radius) = self.grown(t);
         if grown <= 0.0 {
@@ -334,8 +304,7 @@ impl Storm {
                     delta.y / RAGGED_LUMP,
                 );
         let root = self.aspect.sqrt();
-        // distance, stretched ahead of it where the anvil runs before the storm, and along its
-        // long side, and pushed in and out by its ragged edge
+        // distance, stretched ahead where the anvil runs and along its long side, pushed by its ragged edge
         let reach = |stretch: f64| {
             let delta = if along > 0.0 {
                 delta - ahead * (along - along / stretch)
@@ -362,8 +331,7 @@ impl Storm {
 }
 
 impl Forecast {
-    /// The weather over a world of `seed`, its storms drifting along `wind` (any length), whose
-    /// climate is `climate`.
+    /// The weather over a world of `seed` and `climate`, its storms drifting along `wind` (any length).
     pub fn new(
         seed: u32,
         wind: [f32; 2],
@@ -440,8 +408,7 @@ impl Forecast {
             return None;
         }
         let strength = lerp((0.55, 1.0), d(5));
-        // squall lines lie across the wind, turned up to 0.7 radians (40 degrees) either way: a
-        // small angle's cos and sin, so no platform maths
+        // squall lines lie across the wind, turned up to 0.7 radians either way: small, so cos and sin need no `libm`
         let turn = (d(9) - 0.5) * 1.4;
         let small_turn = DVec2::new(1.0 - turn * turn / 2.0, turn);
         let long_side = small_turn
@@ -489,8 +456,7 @@ impl Forecast {
         storms
     }
 
-    /// Where the thunderstorms within `reach` blocks of `centre` have their cores at `t` (game
-    /// seconds): where lightning strikes, seen from afar.
+    /// Where thunderstorms within `reach` blocks of `centre` have cores at `t` (game seconds): where lightning strikes.
     pub fn thunderstorms_near(&self, centre: DVec2, reach: f64, t: f64) -> Vec<DVec2> {
         let mut cores: Vec<DVec2> = self
             .storms_near(centre, reach, t)
@@ -506,7 +472,7 @@ impl Forecast {
         cores
     }
 
-    // The heads of a spell of fury's swells within `reach` blocks of `centre` at `t`: the middle of each lump of the swell where the sky thunders.
+    // The heads of a spell of fury's swells within `reach` blocks of `centre` at `t`: where the sky thunders.
     fn fury_cores(&self, centre: DVec2, reach: f64, t: f64) -> Vec<DVec2> {
         let carried = centre - self.wind * t;
         let span = (reach / SWELL_LUMP).ceil() as i32 + 1;
@@ -530,7 +496,6 @@ impl Forecast {
         cores
     }
 
-    /// The weather at (x, z) at game tick `tick`.
     pub fn sky(&self, x: f64, z: f64, tick: u64) -> Sky {
         let t = seconds(tick);
         let p = DVec2::new(x, z);
@@ -538,8 +503,7 @@ impl Forecast {
         self.sky_among(&storms, p, t)
     }
 
-    /// The weather at `p` at `t` (game seconds), from `storms`, which must hold every storm that
-    /// reaches `p` then, see `storms_near`.
+    /// The weather at `p` at `t` (game seconds); `storms` must hold every storm reaching `p` then, see `storms_near`.
     pub fn sky_among(&self, storms: &[Storm], p: DVec2, t: f64) -> Sky {
         let (moisture, warmth) = self.climate_at(p.x, p.y);
         let mut most = [0.0f64; 4];
@@ -549,9 +513,7 @@ impl Forecast {
         self.finish(most, p, t, (moisture, warmth))
     }
 
-    /// The weather over a square of `size` by `size` cells, each `cell` blocks across, its
-    /// north-west corner at `corner`, sampled at their centres at `tick`: row-major `[z][x]`.
-    /// The same as asking `sky` at each centre, for far less.
+    /// The weather over `size` by `size` cells of `cell` blocks from north-west `corner` at `tick`, row-major `[z][x]`.
     pub fn map(&self, corner: DVec2, size: usize, cell: f64, tick: u64) -> Vec<Sky> {
         let t = seconds(tick);
         let half = size as f64 * cell / 2.0;
@@ -582,10 +544,7 @@ impl Forecast {
             .collect()
     }
 
-    // The weather at `p` at `t` from the strongest storm values there, over ground of `moisture`
-    // and `warmth`: the rain only falls inside a wet spell strong enough for the climate there, so
-    // only warm, wet ground gets many wet days, and the fair-weather clouds fill in under a
-    // storm's shield.
+    // The weather at `p` at `t` from the strongest storm values, over `moisture` and `warmth`: rain needs a wet spell.
     fn finish(&self, most: [f64; 4], p: DVec2, t: f64, (moisture, warmth): (f64, f64)) -> Sky {
         let [mut rain, shield, dark, mut thunder] = most;
         let air = air_mass(self.seed, p - self.wind * t, t, moisture, warmth);
@@ -612,8 +571,7 @@ impl Forecast {
         }
     }
 
-    // The moisture and warmth at the centre of each cell of a map, kept from the last map over the
-    // same cells.
+    // The moisture and warmth at each cell's centre, kept from the last map over the same cells.
     fn map_climate(
         &self,
         corner: DVec2,
@@ -644,7 +602,6 @@ impl Forecast {
     }
 }
 
-// The larger of each of storm values `a` and `b`.
 fn strongest(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
     [
         a[0].max(b[0]),
@@ -710,7 +667,7 @@ mod tests {
         assert!(differs);
     }
 
-    // Huge dark storms a place sees a game week, and the share of time it rains there, over `weeks` weeks at a spread of places.
+    // Huge dark storms a place sees a game week, and the share of time it rains, over `weeks` weeks at many places.
     fn storms_a_week(moisture: f32, warmth: f32, weeks: u64) -> (f64, f64) {
         let forecast = Forecast::new(7, [1.0, 0.3], uniform(moisture, warmth));
         let step = DAY_TICKS / 20;

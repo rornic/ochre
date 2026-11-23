@@ -1,6 +1,4 @@
-// The night sky's stars, Milky Way, moon and aurora, for `night_sky.wesl` and the water that reflects
-// them. Stars are placed by hashing a grid of cells, and turn with the sun round the same axis
-// it circles.
+// The night sky's stars, Milky Way, moon and aurora, for `night_sky.wesl` and water reflections; stars sit on a grid
 
 import bevy_pbr::render::mesh_view_bindings as view_bindings;
 import super::sky::{MOON_LIGHT, SUN_LIGHT, night_factor, night_glow};
@@ -8,25 +6,22 @@ import super::cloud_cover::disc_showing;
 import super::lighting::moon_phase;
 import super::aurora::aurora;
 
-// The sun's path is the circle through these, which are square to each other, and the pole it
-// turns about. Matches `path_basis` in `sky.rs`.
+// The sun's path is the circle through these, square to each other, and the pole it turns about (see `sky.rs`).
 const EAST: vec3<f32> = vec3<f32>(0.66436, 0.0, 0.74738);
 const PEAK: vec3<f32> = vec3<f32>(-0.44944, 0.79900, 0.39950);
 const POLE: vec3<f32> = vec3<f32>(-0.5972, -0.6013, 0.5308);
 
-// The stars run ahead of the moon, which keeps to the sun, by twice this many radians over a night, and ease back by day
-// while they're hidden, so they're the same each night, as the real moon falls behind them through its month.
+// Stars run ahead of the moon, which keeps to the sun, by twice this many radians a night, easing back by day unseen.
 const NIGHT_DRIFT: f32 = 0.25;
 // The moon's size in radians, about four times the real moon's, and how bright its lit face is.
 const MOON_RADIUS: f32 = 0.035;
 const MOON_SCENE: f32 = 2.2;
 const MOON_HALO: vec3<f32> = vec3<f32>(0.5, 0.65, 1.0);
-// How blurred the stars are as reflected in water, in radians, and how much of the aurora's light the water gives back.
+// How blurred the stars are as reflected in water, in radians, and how much of the aurora's light the water returns.
 const REFLECTED_BLUR: f32 = 0.012;
 const REFLECTED_AURORA: f32 = 0.4;
 
-// The star layers: cells round the sky, the share with a star, how far its glow reaches in
-// cells, and its brightest, in scene colour.
+// The star layers: cells round the sky, share with a star, its glow's reach in cells, and its peak in scene colour.
 const LAYERS: i32 = 3;
 const LAYER_GRID: array<f32, 3> = array<f32, 3>(60.0, 140.0, 320.0);
 const LAYER_DENSITY: array<f32, 3> = array<f32, 3>(0.22, 0.16, 0.1);
@@ -77,16 +72,14 @@ fn rotate_about(axis: vec3<f32>, angle: f32, v: vec3<f32>) -> vec3<f32> {
     return v * cos(angle) + cross(axis, v) * sin(angle) + axis * dot(axis, v) * (1.0 - cos(angle));
 }
 
-// `direction` in the frame the stars are fixed in: the sky turned back by how far round its
-// path the sun has come, and on by `NIGHT_DRIFT`.
+// `direction` in the stars' fixed frame: the sky turned back by the sun's progress round its path, plus `NIGHT_DRIFT`
 fn star_frame(direction: vec3<f32>) -> vec3<f32> {
     let sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
     let angle = atan2(dot(sun, PEAK), dot(sun, EAST));
     return rotate_about(POLE, -(angle + NIGHT_DRIFT * cos(angle)), direction);
 }
 
-// The light of one layer's star, if there's one in this direction's cell, for `footprint`
-// radians a pixel: stars smaller than a pixel are drawn a pixel wide and dimmed to match.
+// One layer's star light, if this direction's cell has one, at `footprint` radians a pixel; sub-pixel stars dim.
 fn star_layer(stars: vec3<f32>, layer: i32, crowding: f32, footprint: f32) -> vec3<f32> {
     let grid = LAYER_GRID[layer];
     let at = stars * grid;
@@ -158,8 +151,8 @@ fn moon_halo(direction: vec3<f32>) -> vec3<f32> {
     return MOON_HALO * moon_phase() * (0.03 * exp(-angle / 0.12) + 0.008 * exp(-angle / 0.6)) * disc_showing(true);
 }
 
-// Everything the night adds to the sky towards `direction`, premultiplied, for `footprint`
-// radians a pixel: its glow, stars, Milky Way, aurora and the moon. Only the brightest stars for `rich` false.
+// The night's addition to the sky towards `direction`, premultiplied, at `footprint` radians a pixel: glow, stars,
+// Milky Way, aurora and moon; only the brightest stars when `rich` is false.
 fn celestial(direction: vec3<f32>, footprint: f32, rich: bool) -> vec4<f32> {
     let night = night_factor();
     var light = night_glow(direction);
@@ -186,8 +179,7 @@ fn celestial(direction: vec3<f32>, footprint: f32, rich: bool) -> vec4<f32> {
     return vec4<f32>(light * (1.0 - moon.a) + moon.rgb, moon.a);
 }
 
-// The night's stars and moon as reflected in water towards `direction`, premultiplied, blurred
-// for the waves that stir them and without the sky's glow, which the reflected sky has.
+// The night's stars and moon reflected in water towards `direction`, premultiplied, blurred for waves, no sky glow.
 fn reflected_celestial(direction: vec3<f32>) -> vec4<f32> {
     let night = night_factor();
     var light = vec3<f32>(0.0);

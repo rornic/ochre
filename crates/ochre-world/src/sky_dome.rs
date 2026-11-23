@@ -13,7 +13,7 @@ use bevy::{
 };
 use ochre_terrain::material::CloudLayer;
 
-/// Sorts the sky domes before every other blended thing, each pinned to the far plane so it draws only where nothing else is.
+/// Sorts the sky domes before every other blended thing, each pinned to the far plane.
 pub(crate) const SKY_DEPTH_BIAS: f32 = -2.0e9;
 
 // A material drawn over the sky by a sphere hung round the camera, and the plugin spawning it.

@@ -1,8 +1,4 @@
-// Runs the terrain systems headless (no window or GPU), as `lod_sim` does, to time frames while water
-// flows. It lets the area round spawn load, times frames with the water still, then breaks the banks
-// nearest the camera, lets the water flow out and times frames again, with how much is flowing. Fix the
-// place with OCHRE_SEED and OCHRE_SPAWN (by a lake or river), and run with:
-//   cargo run --release --example flow_sim -- [banks to break, default 8] [seconds each phase, default 30]
+// Headless like `lod_sim`: times frames with the water still, then after breaking the banks nearest the camera.
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
@@ -32,8 +28,7 @@ fn setup(mut commands: Commands, world: Res<World>) {
 
 const SIDES: [I64Vec3; 4] = [I64Vec3::X, I64Vec3::NEG_X, I64Vec3::Z, I64Vec3::NEG_Z];
 
-// Up to `count` banks a block thick round `centre`, nearest first and at least 8 blocks apart: a solid
-// block with still water on one side and air on the other.
+// Up to `count` banks round `centre`, nearest first, 8 blocks apart: solid, still water one side, air the other.
 fn banks(world: &World, centre: I64Vec3, count: usize) -> Vec<I64Vec3> {
     let reach = 4;
     let middle = ChunkCoordinate::containing(centre).0;

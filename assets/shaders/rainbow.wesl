@@ -1,6 +1,4 @@
-// A rainbow after the rain, see `weather::RainbowMaterial`: a ring round the point opposite
-// the sun, its uv.x running from the inside of the band to the outside, fading where it
-// would dip below the camera, as a real one ends at the ground.
+// A rainbow after rain (`weather::RainbowMaterial`): a ring round the point opposite the sun, fading below the camera
 
 import bevy_pbr::render::{forward_io::VertexOutput, mesh_view_bindings as view_bindings};
 
@@ -26,7 +24,6 @@ fn band(t: f32) -> vec3<f32> {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = in.uv.x;
-    // soft at both edges of the band
     let edges = smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.82, 1.0, t));
     let eye = view_bindings::view.world_position;
     let above = smoothstep(eye.y - 10.0, eye.y + 60.0, in.world_position.y);

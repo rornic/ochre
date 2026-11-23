@@ -89,7 +89,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Seen:** 2026-11-23, from the ground at eye height (`OCHRE_CLEAR_SKY`, noon). Seed 6 at -6096,4368 (savanna): ground 65 to 73 over a stretch 650 blocks wide against 45 to 50 round it, flat on top and cut by valley cliff bands, so it shows as a low plateau with a rock slope and no dome. Seed 3 at 3600,21808 (forest): a round dome 70 blocks over 47, but green with trees on it and standing in a lake.
 - **Known:** by `info` along a line through each site; the docs say a bare dome 20 to 45 blocks high on dry, warm sedimentary lowland (`landforms.md`). Both sites are forest or savanna, and the biome is set after the dome is laid.
 - **Not known:** whether the valleys (seed 6) and the later hydrology (seed 3) reshape the dome, or whether the dome's rock is simply not picked out by the block rules. Neither was tested.
-- **To check:** `generate_with(.., false)` to drop the valleys, and a block rule that shows bare rock on a dome.
+- **To check:** generating with the valley stages left out, and a block rule that shows bare rock on a dome.
 
 ## Tower karst in a desert reads as sand-covered humps
 

@@ -21,16 +21,13 @@ use ochre_base::WATER_LEVEL;
 
 // The tallest land can rise above the sea.
 const TALLEST: f32 = 576.0;
-/// Between these heights above sea level the bend eases in, so near the ground the world is
-/// drawn flat as ever and distant mountains don't sink, and from high up the horizon curves away.
+/// The bend eases in between these heights above sea level: flat near the ground so distant peaks don't sink.
 const FADE_START: f32 = 100.0;
 const FADE_END: f32 = 450.0;
 
-/// The round world the land is drawn bent around: always the same size, so a shorter render
-/// distance shows less of its curve.
+/// The round world the land bends around: a fixed size, so a shorter render distance shows less of its curve.
 pub const WORLD_CURVE: Curve = Curve::seen_from_the_top_to(MAX_RENDER_DISTANCE);
 
-/// A round world to bend the land around.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Curve {
     /// In blocks.
@@ -38,8 +35,7 @@ pub struct Curve {
 }
 
 impl Curve {
-    /// The world whose horizon from the top of the world is `chunks` away. From sea level
-    /// its horizon is half as far, see `horizon_distance`.
+    /// The world whose horizon from the top of the world is `chunks` away; from sea level it is half as far.
     pub(crate) const fn seen_from_the_top_to(chunks: f32) -> Self {
         let blocks = chunks * CHUNK_SIZE as f32;
         // solves `horizon_distance` at the top of the world for the radius
@@ -48,18 +44,13 @@ impl Curve {
         }
     }
 
-    /// How far out land can be seen from `height` blocks up: out to the sea's horizon, and
-    /// on past it for as long as the tallest peaks still rise above it. While the bend is
-    /// still easing in, land drops less and so could be seen farther, but it's fogged out by
-    /// then, as on flat ground.
+    /// How far out land can be seen from `height` blocks up: the sea's horizon, or past it while tall peaks still show.
     pub fn horizon_distance(self, height: f32) -> f32 {
         let above_sea = (height - WATER_LEVEL as f32).max(0.0);
         (2.0 * self.radius).sqrt() * (above_sea.sqrt() + TALLEST.sqrt())
     }
 
-    /// How far below level the land's edge is seen from `height` blocks up, as a slope: the
-    /// sea's horizon, or nearer, `drawn` blocks out, if the land's drawn short of it. The
-    /// same as `horizon_dip` in `horizon.wesl`.
+    /// The slope at which the land's edge is seen below level from `height` up; matches `horizon_dip` in `horizon.wesl`.
     pub fn edge_dip(self, height: f32, drawn: f32) -> f32 {
         let above_sea = (height - WATER_LEVEL as f32).max(0.0);
         let bend = self.bend_at(height);
@@ -70,8 +61,7 @@ impl Curve {
         above_sea / edge + bend * edge
     }
 
-    /// How far below the camera's flat horizon land `distance` blocks away is drawn, seen
-    /// from `height` blocks up: a sphere's drop, while it's still eased in.
+    /// How far below the camera's flat horizon land `distance` blocks away is drawn from `height` up: a sphere's drop.
     pub fn drop_at(self, distance: f32, height: f32) -> f32 {
         distance * distance * self.bend_at(height)
     }
@@ -84,20 +74,16 @@ impl Curve {
     }
 }
 
-/// What the shaders bend the land around, see `curvature.wesl`: the camera's position and
-/// `Curve::bend_at` its height, this frame's then last frame's for motion vectors. The camera's
-/// own, as the sun's shadow passes see the light's view in place of the camera's.
-///
-/// Every material that draws the land carries this one buffer, at binding 8.
+/// What the shaders bend the land around (`curvature.wesl`): camera position and `Curve::bend_at` height, now and last.
 #[derive(Resource)]
 pub struct Curvature {
     pub buffer: Handle<ShaderBuffer>,
     last: [f32; 4],
     /// What the shaders are told about the cold, see `ochre_base::cold::shader_values`: written after the two bends.
     pub(crate) cold: [f32; 8],
-    /// What painterly lighting pushes the sky's light toward in shadow, a colour and how far, see `ochre_world::atmosphere`.
+    /// What painterly lighting pushes the sky's light toward in shadow: a colour and how far.
     pub shadow: [f32; 4],
-    /// The haze toward each of 16 compass points: for each the camera's, then 3 rings out, a tint and a density as 4 floats, see `ochre_world::ambience::haze`.
+    /// The haze toward 16 compass points: per point the camera's, then 3 rings out, a tint and density as 4 floats.
     pub haze: [f32; 256],
     /// How much of its sway the foliage keeps, 1 for all of it, in `x`: the rest is padding, see `foliage.wesl`.
     pub sway: [f32; 4],
@@ -142,11 +128,7 @@ fn update_curvature(
     curvature.last = now;
 }
 
-/// Bevy culls what's out of view where it lies flat, but the land's drawn dropped by the
-/// curve, so from high up some of it drops into view under the top of the screen while it
-/// still lies flat above it. Each side of the camera's frustum that faces down is loosened by
-/// as far as anything drawn can drop, letting through everything the curve could bring into
-/// view. Rebuilt from the camera every frame, as Bevy only rebuilds it when the camera moves.
+/// Loosens the frustum's lower sides so curved-in land isn't culled; every frame, as Bevy rebuilds it only on moves.
 fn loosen_frustum(
     mut cameras: Query<(&GlobalTransform, &Projection, &mut Frustum), With<Camera3d>>,
 ) {

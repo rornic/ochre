@@ -1,5 +1,4 @@
-//! A diagnostic for how open and how dramatic the view is from the spawn regions the gameplay pass found. It reads
-//! the world's ground only and changes no generation, and is not a way of placing anything.
+//! A diagnostic for how open and dramatic the view is from spawn regions; reads the ground, places nothing.
 
 use super::{FeatureKind, WorldTerrain};
 use ochre_base::terrain_source::TerrainSource;
@@ -12,7 +11,6 @@ const RAYS: usize = 16;
 const OPEN_FROM: f64 = 1500.0;
 /// How high over the ground the eye is.
 const EYE: f64 = 2.0;
-/// The most sites listed.
 pub(crate) const MOST_SITES: usize = 20;
 
 /// A spawn region and what can be seen from it.
@@ -28,8 +26,7 @@ pub struct Site {
     pub look: (f64, f64, f64),
 }
 
-/// The spawn regions in the square `half` blocks each way from (`x`, `z`), best first as the gameplay pass scored them, at
-/// most `MOST_SITES`, each with the view from it.
+/// The best-scored spawn regions (at most `MOST_SITES`) within `half` blocks of (`x`, `z`), with their view.
 pub fn view_sites(terrain: &WorldTerrain, x: i64, z: i64, half: i64) -> Vec<Site> {
     terrain
         .map()

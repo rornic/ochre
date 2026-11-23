@@ -1,7 +1,4 @@
-// Snow falling round the camera, see `weather::SnowMaterial`. The mesh is a box of flakes, as
-// `rain.wesl`'s is of streaks: each carries a fixed spot in its position and which corner it is
-// in its uv. They drift down here with the wind, swaying as they go, wrapped round the camera
-// so the box goes wherever it does, and each is a soft round dot turned to face the camera.
+// Snow falling round the camera (`weather::SnowMaterial`): a box of flakes as `rain.wesl`'s is of streaks, soft dots.
 
 import bevy_pbr::render::{
     forward_io::{Vertex, VertexOutput},
@@ -9,14 +6,12 @@ import bevy_pbr::render::{
     view_transformations::position_world_to_clip,
 };
 
-// x: how hard it's snowing, 0..1; y: how bright the light on it is; zw: the wind it drifts
-// on, in blocks a second across the ground.
+// x: how hard it's snowing, 0..1; y: how bright the light on it is; zw: the wind it drifts on, blocks a second.
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> snow: vec4<f32>;
 
 // Matches `SNOW_BOX` in `weather.rs`.
 const BOX: vec3<f32> = vec3<f32>(40.0, 24.0, 40.0);
-// How fast flakes fall, in blocks a second, a flake's radius, in blocks, how far it sways
-// either side of its path, in blocks, and how fast, in turns a second.
+// Fall speed in blocks a second, a flake's radius and sway either side of its path in blocks, sway speed in turns/s.
 const FALL: f32 = 1.4;
 const RADIUS: f32 = 0.035;
 const SWAY: f32 = 0.45;
@@ -53,8 +48,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.world_position = vec4<f32>(world, 1.0);
     out.position = position_world_to_clip(world);
     out.world_normal = vec3<f32>(0.0, 1.0, 0.0);
-    // how far through the box it is, to fade it out before it wraps round, and only some
-    // of the flakes show in lighter snow
+    // how far through the box it is, to fade out before it wraps, and only some flakes show in lighter snow
     let through = abs(offset) / (BOX * 0.5);
     let edge = max(through.x, max(through.y, through.z));
     let shown = step(other, snow.x);
@@ -71,7 +65,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    // a soft round dot, solid in the middle
     let dot_shape = 1.0 - smoothstep(0.3, 1.0, length(in.uv));
     let alpha = dot_shape * in.color.x * in.color.y * 0.85;
     if alpha < 0.002 {

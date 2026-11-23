@@ -1,5 +1,4 @@
-// Bends the land away from the camera as if the world were round, see `curvature.rs`. Only
-// how it's drawn: the world itself stays flat.
+// Bends the land away from the camera as if the world were round (`curvature.rs`); drawing only, the world stays flat
 
 struct Bend {
     // the camera's position, not the view's: the sun's shadow passes see the light's
@@ -10,9 +9,9 @@ struct Bend {
 
 // What the land is told about the cold, see `ochre_base::cold::shader_values`.
 struct Cold {
-    // the camera's sea-level temperature, how much frost its biome keeps, 1 if frost is on, and the height of the ground under it
+    // the camera's sea-level temperature, how much frost its biome keeps, 1 if frost is on, ground height under it
     camera: vec4<f32>,
-    // blocks of height that cool the ground by one, the temperature of the ground at the snow line, and how far warmer than that frost reaches
+    // blocks of height that cool the ground by one, ground temperature at the snow line, how far warmer frost reaches
     rule: vec4<f32>,
 }
 
@@ -23,7 +22,7 @@ struct Bends {
     cold: Cold,
     // the colour the sky's light is pushed toward in shadow, and how far, see `painterly.wesl`
     shadow: vec4<f32>,
-    // the haze toward 16 compass points, for each four vec4s of a tint and a density: the camera's and three rings out, see `haze_toward`
+    // the haze toward 16 compass points, four vec4s of tint and density each: the camera's and three rings out
     haze: array<vec4<f32>, 64>,
     // how much of its sway the foliage keeps in x, see `foliage.wesl`
     sway: vec4<f32>,
@@ -62,7 +61,7 @@ fn shadow_tint() -> vec4<f32> {
     return curvature.shadow;
 }
 
-// How much of its sway the foliage keeps where the camera is, 0..1: less in a sheltered hollow, where the wind is quiet.
+// How much sway the foliage keeps at the camera, 0..1: less in a sheltered hollow, where the wind is quiet.
 fn sway_kept() -> f32 {
     return curvature.sway.x;
 }
@@ -75,7 +74,7 @@ fn cold() -> Cold {
 // Distances of the rings `haze` is sensed at, in blocks.
 const HAZE_RINGS: vec3<f32> = vec3<f32>(1000.0, 3000.0, 8000.0);
 
-// The haze `distance` blocks off along `across`, between the ring points sensed round the camera: the tint to multiply the haze's colour by, and a density to divide its length by.
+// The haze `distance` blocks off along `across`, between the ring points: a tint for its colour, a density for length
 fn haze_toward(across: vec2<f32>, distance: f32) -> vec4<f32> {
     let turn = (atan2(across.y, across.x) / 6.2831853 + 0.5) * 16.0;
     let first = u32(floor(turn)) % 16u;

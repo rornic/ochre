@@ -43,7 +43,7 @@ use crate::view::{
     MurkMaterial, ViewAssets,
 };
 
-/// The player's body, at its feet, with the camera at its eyes. What the body does is `CharacterState`; this is what it shows.
+/// The player body at its feet, with the camera at its eyes; `CharacterState` is what it does, this what it shows.
 #[derive(Component, Default)]
 pub struct Player {
     // how far through its stride the head's bob is, in radians a pair of steps, and how big the bob is now
@@ -89,20 +89,18 @@ const LOOK_SENSITIVITY: f32 = 0.1;
 // Just short of straight up or down, where the view would flip over.
 const MAX_PITCH: f32 = 89.0_f32.to_radians();
 
-/// How high the camera sits above the player's feet, far enough under the top of its head
-/// that the camera's near plane stays out of the ceiling.
+/// Camera height above the feet, far enough under the head that the near plane stays out of the ceiling.
 pub const EYE_HEIGHT: f32 = 1.9;
-// How close the camera's near plane is. A 90 degree view's near plane reaches `NEAR * (sin(pitch) + cos(pitch))` above the eye, at most
-// `NEAR * sqrt 2`, which has to stay under the 0.1 between the eye and the top of the head, or a two-block gap shows the inside of its ceiling.
+// The near plane reaches at most `NEAR * sqrt 2` above the eye, which must stay under the 0.1 to the head's top.
 pub(crate) const NEAR: f32 = 0.05;
 // Head bob walking and sprinting in blocks, blocks walked a pair of steps, and how fast it eases in and out a second.
 const BOB_WALK: f32 = 0.05;
 const BOB_SPRINT: f32 = 0.065;
 const BOB_STRIDE: f32 = 3.6;
+const BOB_EASE: f32 = 6.0;
 // Sprinting takes longer strides, so its bob is only a little quicker than walking's.
 const BOB_SPRINT_STRIDE: f32 = 4.6;
-const BOB_EASE: f32 = 6.0;
-// Vertical field of view in degrees, how much wider it opens sprinting, and the spring it follows with: stiffness, and twice its square root in damping, which settles without overshoot.
+// Vertical FOV in degrees, the extra when sprinting, and the follow spring: stiffness, damping 2 * sqrt(stiffness).
 pub(crate) const FOV: f32 = 90.0;
 const SPRINT_FOV: f32 = 8.0;
 const FOV_STIFFNESS: f32 = 36.0;
@@ -111,7 +109,7 @@ const FOV_DAMPING: f32 = 12.0;
 const STEP_EASE: f32 = 10.0;
 // The longest frame the view moves in one go, so a hitch doesn't fling it.
 const MAX_STEP: f32 = 0.1;
-// A jump's push-off, as a multiple of a step's loudness, the degrees it widens the view and tips it up, and how fast, a share a second, that fades.
+// A jump's push-off loudness as a multiple of a step's, degrees it widens and tips the view, fade rate per second
 const TAKEOFF_LOUDNESS: f32 = 0.6;
 const JUMP_FOV: f32 = 1.0;
 const JUMP_PITCH: f32 = 0.5;
@@ -119,7 +117,7 @@ const KICK_DECAY: f32 = 5.0;
 // How many degrees a landing narrows the view and tips it down, at a walking step's thud.
 const LAND_FOV: f32 = 1.0;
 const LAND_PITCH: f32 = 0.75;
-// Landing: how far the eyes drop for each block a second it was falling and at most, and how loud the thud is, as a multiple of a step, at the softest and hardest.
+// Landing: eye drop per block/s of fall and its cap, and thud loudness as a multiple of a step, softest and hardest.
 const LAND_DIP: f32 = 0.012;
 const LAND_DIP_MAX: f32 = 0.3;
 const LAND_LOUDNESS: (f32, f32) = (0.8, 2.0);
@@ -278,8 +276,7 @@ pub fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> boo
         .is_ok_and(|cursor| cursor.grab_mode != CursorGrabMode::None)
 }
 
-/// Holds the cursor in the window once it's clicked into, and lets it go on Escape or when the
-/// window loses focus.
+/// Holds the cursor in the window once clicked, releasing it on Escape or lost focus.
 pub fn grab_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -316,7 +313,7 @@ fn player_look(
         .get_mut(parent.parent())
         .expect("player does not exist");
     let turn = LOOK_SENSITIVITY * time.delta_secs();
-    // the camera only ever turns about x, under the body's turn about y, and the jump's tip is taken off and put back on each frame
+    // the camera only turns about x, under the body's turn about y; the jump's tip is taken off and put back each frame
     let (tipped, _, _) = camera.rotation.to_euler(EulerRot::XYZ);
     let mut pitch = tipped - player.nudge;
     for ev in motion_evr.read() {
@@ -334,7 +331,7 @@ pub struct PlayerPlugin {
     pub look: Vec3,
     /// Starts flying, so the player hovers where it spawns.
     pub fly: bool,
-    /// Leaves the stepping to the game, which sets the body's `Transform` and `CharacterState` and calls `Player::after_step` itself.
+    /// Leaves stepping to the game, which sets `Transform` and `CharacterState` and calls `Player::after_step`.
     pub driven: bool,
     /// How far the view turns up or down from level, in radians, at most 89 degrees.
     pub max_pitch: f32,
@@ -357,7 +354,7 @@ struct PlayerSpawn {
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        // past 89 degrees the view would flip over the top, and the camera's near plane would reach through a two-block gap's ceiling
+        // past 89 degrees the view would flip over the top and the near plane reach through a two-block gap's ceiling
         app.insert_resource(LookLimit(self.max_pitch.clamp(0.0, MAX_PITCH)));
         // the cold grade follows the climate it senses
         if !app.is_plugin_added::<SurroundingsPlugin>() {
@@ -388,8 +385,6 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-/// Spawns the player at the world's spawn, with a camera that sees out to the renderer's fog distance, and the murk the
-/// camera sees through underwater.
 fn spawn_player(
     mut commands: Commands,
     mut assets: ViewAssets,
@@ -444,9 +439,7 @@ mod tests {
         assert!(!footfall(0.1, 0.2));
     }
 
-    // In a two-block gap the camera is `BODY.max.y - EYE_HEIGHT` under the ceiling, and a view of `fov` degrees at `pitch` has its near
-    // plane's top edge `NEAR * (sin(pitch) + cos(pitch) * tan(fov / 2))` above the eye: it must never reach it, however far up the
-    // player looks, or the camera is inside the block above.
+    // in a two-block gap the camera sits `BODY.max.y - EYE_HEIGHT` under a ceiling the near plane must not reach
     #[test]
     fn test_the_near_plane_stays_out_of_the_ceiling_of_a_two_block_gap() {
         let headroom = BODY.max.y - EYE_HEIGHT;

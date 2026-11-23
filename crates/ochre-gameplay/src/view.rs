@@ -63,8 +63,7 @@ pub(crate) struct ViewAssets<'w> {
     murk: ResMut<'w, Assets<MurkMaterial>>,
 }
 
-/// Spawns the camera as a child of `player`: HDR, atmosphere and anti-aliasing, seeing out to the renderer's fog
-/// distance, with the murk it sees through underwater.
+/// Spawns the camera as a child of `player`: HDR, atmosphere and anti-aliasing, seeing out to the fog distance.
 pub(crate) fn spawn_camera(
     commands: &mut Commands,
     assets: &mut ViewAssets,
@@ -105,8 +104,7 @@ pub(crate) fn spawn_camera(
             DistanceFog {
                 color: Color::NONE.with_alpha(FOG_MAX_OPACITY),
                 falloff: FogFalloff::Linear {
-                    // half fogged where the farthest LOD level starts, hiding the swap to it,
-                    // see `fog.wesl`
+                    // half fogged where the farthest LOD level starts, hiding the swap to it
                     start: renderer.lod_layout().last_level_start() * CHUNK_SIZE as f32,
                     end: fog_distance,
                 },
@@ -114,7 +112,7 @@ pub(crate) fn spawn_camera(
             },
         ))
         .insert((
-            // In focus 8 blocks out, blurred ~1px at 16 blocks and ~2px from 150 on, so LOD seams soften. Gaussian is cheaper than Bokeh.
+            // In focus 8 blocks out, ~1px blurred at 16 and ~2px from 150, so LOD seams soften; cheaper than Bokeh.
             DepthOfField {
                 mode: DepthOfFieldMode::Gaussian,
                 focal_distance: 8.0,
@@ -149,17 +147,12 @@ pub(crate) struct DryDefaults {
 // The fog's colour underwater, picked as it should look on screen.
 static UNDERWATER_COLOR: LazyLock<Color> =
     LazyLock::new(|| scene_colour(Color::srgb_u8(20, 90, 130)).into());
-// How far round the camera the murk hangs, in blocks: past the underwater fog's end, where
-// everything is already its colour, so it only hides the sky.
+// Blocks from the camera to the murk, past the underwater fog's end, so it only hides the sky.
 const MURK_DISTANCE: f32 = 48.0;
 // Where the fog underwater in a river or lake is thick enough to hide everything, in blocks.
 const FRESH_FOG_END: f32 = 160.0;
 
-/// The sky isn't fogged, so underwater it's hidden behind a sphere of the fog's colour hung
-/// round the camera. It's always drawn, and only shows when its alpha is 1, so going under
-/// changes nothing but a uniform: taking the atmosphere off the camera instead changed what
-/// every material's shaders were compiled with, which stalled the first dive recompiling
-/// them all.
+/// A fog-coloured sphere round the camera hiding the unfogged sky underwater; shown by alpha, avoiding recompiles.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub(crate) struct MurkMaterial {
     #[uniform(0)]
@@ -194,8 +187,7 @@ impl Material for MurkMaterial {
 #[derive(Resource)]
 pub(crate) struct Murk(Handle<MurkMaterial>);
 
-/// The murk, hidden, to hang from the camera, and the handle `update_underwater_effects`
-/// shows it by.
+/// The murk, hidden, and the handle `update_underwater_effects` shows it by.
 fn murk(meshes: &mut Assets<Mesh>, materials: &mut Assets<MurkMaterial>) -> (impl Bundle, Murk) {
     let material = materials.add(MurkMaterial {
         color: LinearRgba::from(*UNDERWATER_COLOR).with_alpha(0.0),
@@ -212,9 +204,7 @@ fn murk(meshes: &mut Assets<Mesh>, materials: &mut Assets<MurkMaterial>) -> (imp
     (bundle, Murk(material))
 }
 
-// Snapshots whichever DistanceFog/DepthOfField/ClearColor were active right before the camera
-// entered water, and restores that exact snapshot on exit, instead of hardcoding "dry" defaults
-// that could drift out of sync with setup_scene's render-distance-derived fog settings.
+// Restores the fog, depth of field and clear colour snapshotted on entering water, not dry defaults that could drift.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn update_underwater_effects(
     world: Res<World>,
@@ -267,9 +257,7 @@ pub(crate) fn update_underwater_effects(
         for mut visibility in &mut clouds {
             visibility.set_if_neq(clouds_shown);
         }
-        // Matches ClearColor to the fog color, same trick setup_scene uses above water (its
-        // ClearColor equals the dry fog's color) - otherwise empty/unloaded space shows the old
-        // background color straight through, breaking the underwater illusion.
+        // ClearColor matches the fog, as above water, or unloaded space shows the old background through.
         let underwater_color = *UNDERWATER_COLOR;
         *fog = DistanceFog {
             color: underwater_color,
@@ -285,9 +273,7 @@ pub(crate) fn update_underwater_effects(
             aperture_f_stops: if fresh { 8.0 } else { 0.5 },
             ..default()
         };
-        // The fog's colour is already the water's: a white balance shift on top, like the
-        // -0.4 this once had, moves the white point off the chromaticity diagram, where Bevy's
-        // balance matrix turns blue into olive.
+        // No white balance shift on top of the fog's water colour: it leaves the chromaticity diagram, turning blue olive.
         color_grading.global.post_saturation = 0.85;
         clear_color.0 = underwater_color;
     } else if let Some(dry) = dry_defaults.take() {
@@ -303,24 +289,24 @@ pub(crate) fn update_underwater_effects(
     }
 }
 
-// How far the cold country has pulled the camera's grade, 0 to 1, and the grade as it was before that, kept to put back exactly.
+// How far the cold country has pulled the camera's grade, 0 to 1, and the grade before that, to put back exactly.
 #[derive(Resource, Default)]
 pub(crate) struct ColdGrade {
     eased: f32,
     clean: Option<ColorGrading>,
 }
 
-// Seconds for the cold grade to cover most of the way to the country the camera is in, for the cold is sensed in steps.
+// Seconds for the cold grade to cover most of the way to the camera's country, as the cold is sensed in steps.
 const COLD_GRADE_EASE: f32 = 2.0;
 
-// Puts back the grade under the cold's, before `update_underwater_effects` snapshots or sets it, so it sees only its own.
+// Puts back the grade under the cold's before `update_underwater_effects` snapshots or sets it.
 pub(crate) fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
     if let (Some(clean), Ok(mut grading)) = (cold.clean.take(), camera.single_mut()) {
         *grading = clean;
     }
 }
 
-// Lays the cold's grade, and the hot country's, over whatever grade the camera has now, easing in and out of the cold by how warm the surroundings are.
+// Lays the cold and hot country's grade over the camera's, easing in and out of the cold by how warm it is.
 pub(crate) fn apply_cold_grade(
     around: Option<Res<Surroundings>>,
     feel: Option<Res<EasedFeel>>,
@@ -360,7 +346,7 @@ mod tests {
     #[derive(Resource, Default)]
     struct Wet(bool);
 
-    // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade put back once on leaving the water.
+    // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade restored once on leaving.
     fn fake_underwater(wet: Res<Wet>, mut was: Local<bool>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
         let mut grading = camera.single_mut().unwrap();
         if wet.0 {

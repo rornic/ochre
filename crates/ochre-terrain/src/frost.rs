@@ -1,4 +1,4 @@
-//! Senses the cold where the camera is and hands it to the land's shaders in the shared curvature buffer, see `ochre_base::cold`.
+//! Senses the cold at the camera and passes it to the land's shaders in the curvature buffer (`ochre_base::cold`).
 
 use bevy::{
     app::{App, Plugin, Update},
@@ -36,7 +36,7 @@ impl Plugin for FrostPlugin {
 #[derive(Resource)]
 pub struct FrostOn;
 
-/// How much of the ground at `feet` the cold frosts, 0 to 1: the shaders' cover before their patchiness, so 0.5 is about half covered.
+/// How much of the ground at `feet` the cold frosts, 0 to 1: the shaders' cover before patchiness (0.5 is half).
 pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
     let terrain = world.region_store.terrain();
     let (x, z) = (feet.x.floor() as f64, feet.z.floor() as f64);
@@ -44,8 +44,7 @@ pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
     cold::frost_cold(terrain.temperature(x, z), feet.y - WATER_LEVEL as f32) * thaw
 }
 
-// What the shaders see: the camera's sea-level temperature, how much of the cold's frost its biome keeps and the height of the ground
-// under it, with where each is heading.
+// What shaders see: sea-level temperature, biome frost share and ground height at the camera, with their trends.
 #[derive(Default)]
 struct Seen {
     now: [f32; 3],

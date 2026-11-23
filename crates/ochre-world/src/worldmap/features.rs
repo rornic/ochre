@@ -1,5 +1,4 @@
-//! What the gameplay pass finds and places on the map, stored with it so every machine and every
-//! system (spawning, the map export, later the game's own encounters) reads the same labels.
+//! What the gameplay pass finds and places on the map, stored with it so every machine reads the same labels.
 
 /// A labelled place, in world coordinates.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -7,8 +6,7 @@ pub struct Feature {
     pub kind: FeatureKind,
     pub x: i32,
     pub z: i32,
-    /// What the kind measures: a pass's height, a crossing's river width in blocks, a spawn
-    /// region's radius, and nothing for the rest.
+    /// What the kind measures: a pass's height, a crossing's river width, a spawn region's radius, else nothing.
     pub value: f32,
 }
 

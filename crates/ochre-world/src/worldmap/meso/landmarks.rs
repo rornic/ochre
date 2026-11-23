@@ -1,6 +1,4 @@
-//! Landmarks (meso slice 2): big raised forms and bowls, sited by a rule table over the map's own layers, the form drawn from the rock
-//! under the site, laid with the other stamped shapes before the passes are carved. A biome has landmarks if the table has rows for it.
-//! See `docs/meso-slice1-decision.md`.
+//! Landmarks: big raised forms and bowls sited by a rule table over the map's layers (`docs/meso-slice1-decision.md`)
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm, hash, unit};
@@ -37,7 +35,7 @@ struct Row {
     height: (f64, f64),
 }
 
-// The share of sited places that get a landmark, from thin patches to full ones, and a patch's width in landmark spacings.
+// The share of sited places that get a landmark, thin patches to full, and a patch's width in landmark spacings.
 const SPAWN: (f64, f64) = (0.35, 1.0);
 const PATCH: f64 = 2.5;
 
@@ -46,8 +44,7 @@ const BEDDED: &[u8] = &[SEDIMENTARY, METAMORPHIC];
 const KARST: &[u8] = &[SEDIMENTARY];
 const ANY: &[u8] = &[];
 
-// Sized from the slice 1 baseline: 130 blocks of relief over about 190 blocks reads from 4 km, and 250 over 750 as a mass. Every biome keeps
-// a massif and a bowl that form on any rock, so a site never lacks a row.
+// Sized from the slice 1 baseline: 130 blocks of relief over ~190 reads from 4 km, 250 over 750 as a mass.
 const TABLE: &[Row] = &[
     Row { biome: BiomeKind::Steppe, primitive: Primitive::Butte, rock: CAPPED, weight: 0.35, radius: (2.5, 4.0), height: (150.0, 260.0) },
     Row { biome: BiomeKind::Steppe, primitive: Primitive::Massif, rock: ANY, weight: 0.25, radius: (7.0, 11.0), height: (250.0, 380.0) },
@@ -77,7 +74,7 @@ const TABLE: &[Row] = &[
     Row { biome: BiomeKind::Taiga, primitive: Primitive::Massif, rock: ANY, weight: 0.35, radius: (6.0, 10.0), height: (200.0, 320.0) },
     Row { biome: BiomeKind::Taiga, primitive: Primitive::Ridge, rock: ANY, weight: 0.30, radius: (7.0, 12.0), height: (110.0, 200.0) },
     Row { biome: BiomeKind::Taiga, primitive: Primitive::Bowl, rock: ANY, weight: 0.35, radius: (4.0, 6.0), height: (40.0, 90.0) },
-    // jungle: steep forested hills, sinkholes in the limestone, tepuis (sheer-sided tops standing out of the canopy) and basins that fill
+    // jungle: steep forested hills, limestone sinkholes, tepuis (sheer tops over the canopy) and filling basins
     Row { biome: BiomeKind::Jungle, primitive: Primitive::Massif, rock: ANY, weight: 0.35, radius: (5.0, 9.0), height: (150.0, 260.0) },
     Row { biome: BiomeKind::Jungle, primitive: Primitive::Butte, rock: CAPPED, weight: 0.35, radius: (3.0, 5.0), height: (180.0, 320.0) },
     Row { biome: BiomeKind::Jungle, primitive: Primitive::Ridge, rock: BEDDED, weight: 0.20, radius: (7.0, 12.0), height: (110.0, 180.0) },
@@ -113,8 +110,7 @@ pub struct Landmark {
     pub height: f64,
 }
 
-// The biome of each cell, if the table has rows for it and a landmark could stand on the ground: the climate's own classification of its warmth
-// at height and its moisture, before the climate pass decides.
+// The biome of each cell if the table has rows for it and a landmark could stand there, before the climate pass.
 pub(super) fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
     let dim = map.dim();
     let (temperature, moisture) = moisture_field(map);
@@ -135,7 +131,7 @@ pub(super) fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
         .collect()
 }
 
-// The climate's own class of every land cell, from its warmth at height and its moisture, before the climate pass decides.
+// The climate's own class of every land cell, from warmth at height and moisture, before the climate pass decides.
 pub(super) fn classes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
     let dim = map.dim();
     let (temperature, moisture) = moisture_field(map);
@@ -160,12 +156,12 @@ fn profile(primitive: Primitive, t: f64) -> f64 {
     }
 }
 
-// How much a seed favours a form in a biome: 0.3 to 1.9 times its weight, so one seed's desert is mostly buttes and another's domes.
+// How much a seed favours a form in a biome: 0.3 to 1.9 times its weight, so one desert is buttes, another's domes.
 fn favour(seed: u32, biome: BiomeKind, primitive: Primitive) -> f64 {
     0.3 + 1.6 * unit(seed ^ SALT ^ 0x51, biome as i32, primitive as i32)
 }
 
-// How crowded a seed's landmarks are in a biome against the table's spacing, 0.45 to 1.3 times: one seed's steppe is dotted with them and another's bare.
+// How crowded a seed's landmarks are in a biome against the table's spacing, 0.45 to 1.3 times.
 fn crowding(seed: u32, biome: BiomeKind) -> f64 {
     0.45 + 0.85 * unit(seed ^ SALT ^ 0x53, biome as i32, 0)
 }
@@ -175,7 +171,7 @@ fn scale(seed: u32, biome: BiomeKind) -> (f64, f64) {
     (0.75 + 0.55 * unit(seed ^ SALT ^ 0x52, biome as i32, 0), 0.85 + 0.4 * unit(seed ^ SALT ^ 0x52, biome as i32, 1))
 }
 
-// The row a site draws, by the weights of the rows for its biome that form on the rock under it, as the seed favours them.
+// The row a site draws, by the weights of its biome's rows that form on the rock under it, as the seed favours them.
 fn row_for(seed: u32, biome: BiomeKind, rock: u8, h: u32) -> &'static Row {
     let rows: Vec<&Row> = TABLE.iter().filter(|r| r.biome == biome && (r.rock.is_empty() || r.rock.contains(&rock))).collect();
     let weight = |r: &Row| r.weight * favour(seed, biome, r.primitive);
@@ -220,7 +216,7 @@ fn lay(map: &mut WorldMap, keep: &mut [f32], (sx, sz): (usize, usize), (primitiv
     }
 }
 
-// The smaller buttes round a butte at `site`: 1 to 4, 1.6 to 4 radii off, 0.4 to 0.75 as wide and 0.45 to 0.85 as tall, on dry ground clear of any landmark.
+// The smaller buttes round a butte at `site`: 1 to 4, 1.6 to 4 radii off, 0.4 to 0.75 as wide, 0.45 to 0.85 as tall.
 fn satellites(map: &WorldMap, keep: &[f32], (sx, sz): (usize, usize), radius: f64, height: f64, h: u32) -> Vec<(usize, usize, f64, f64)> {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
@@ -239,10 +235,9 @@ fn satellites(map: &WorldMap, keep: &[f32], (sx, sz): (usize, usize), radius: f6
         .collect()
 }
 
-/// Lays landmarks on steppe and tundra, each `apart` cells from the others, into `map.height`. Returns them, and a mask of how
-/// much each cell belongs to one (1 inside, easing off past its radius), which the steppe's flattening leaves alone.
+/// Lays landmarks, each `apart` cells from the others, into `map.height`; returns them and a membership mask.
 pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
-    // sited closer so the count holds, then each kept by a chance that swells and thins over patches: dart throwing alone packs a near-regular lattice
+    // sited closer so the count holds, then each kept by a patchy chance: dart throwing alone packs a lattice
     let wavelength = apart * PATCH;
     let seed = map.seed;
     let chance = |x: usize, z: usize| SPAWN.0 + (SPAWN.1 - SPAWN.0) * smoothstep(-0.4, 0.4, fbm(seed ^ SALT ^ 6, x as f64, z as f64, wavelength, 2));

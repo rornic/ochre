@@ -1,5 +1,4 @@
-//! Where water goes: lakes fill the basins, every other cell drains downhill to a lake or the
-//! sea, and cells that a lot of land drains through become rivers, carved into the ground.
+//! Where water goes: lakes fill basins, other cells drain downhill to a lake or sea, busy cells become carved rivers.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -7,11 +6,12 @@ use std::collections::BinaryHeap;
 use super::{WaterCell, WorldMap, NEIGHBOURS, NO_FLOW};
 use ochre_base::WATER_LEVEL;
 
-/// Square blocks of land that must drain through a cell for it to be a stream, which starts a
-/// block or two wide and widens from there.
+/// Square blocks of land that must drain through a cell for it to be a stream, a block or two wide at first.
 pub(crate) const RIVER_MIN_AREA: f32 = 400_000.0;
 // No river is narrower, in blocks: one block wide doesn't fill with water reliably.
 const MIN_RIVER_WIDTH: f32 = 2.0;
+// Fewer cells than this in a river that never reaches water, and it is no river.
+const MIN_INLAND_RIVER_CELLS: usize = 30;
 
 // A sortable IEEE key, including negative elevations. Raw float bits sort only positive values.
 fn height_key(value: f32) -> u32 {
@@ -30,16 +30,13 @@ fn key_height(key: u32) -> f32 {
         !key
     })
 }
-// Fewer cells than this in a river that never reaches water, and it is no river.
-const MIN_INLAND_RIVER_CELLS: usize = 30;
-
 // How far apart, in blocks, the hills and hollows of the noise that breaks ties in the flood are.
 const TIE_WAVELENGTH: f64 = 900.0;
 
-// Slopes (rise over run) between which ground goes from flat to steep enough for a river to start on, and how many times more catchment flat ground needs.
+// Slopes (rise over run) from flat to steep enough to start a river, and the extra catchment flat ground needs.
 const FLAT_SLOPE: (f64, f64) = (0.005, 0.08);
 const FLAT_START_FACTOR: f32 = 8.0;
-// Height over the sea and slope between which ground is bare rock, and how much rain a cell of soil and of rock sheds, 1 being the old even share.
+// Height over sea and slope between which ground is bare rock, and the rain a cell of soil and of rock sheds.
 const ROCK_ABOVE: (f64, f64) = (60.0, 300.0);
 const ROCK_SLOPE: (f64, f64) = (0.1, 0.5);
 const SOIL_RUNOFF: f32 = 0.7;
@@ -47,10 +44,9 @@ const ROCK_RUNOFF: f32 = 2.5;
 // How much of its rain the driest ground sheds no runoff of, and how much of the flow crossing a cell of it is lost.
 const DRY_RUNOFF_LOSS: f32 = 0.9;
 const DRY_FLOW_LOSS: f32 = 0.01;
-// And how many cells' worth of flow the driest ground evaporates from a river crossing it, so a
-// big river carries on across a desert that a stream can't.
+// Cells' worth of flow the driest ground evaporates from a river: big rivers cross a desert, streams can't.
 const DRY_EVAPORATION: f32 = 8.0;
-// What the desert adds on top of those, as the fourth power of how dry it is, so steppe and savanna keep their water: more runoff lost, more evaporated from a river, more from a lake's cell.
+// What the desert adds, by the fourth power of its dryness so steppe keeps its water: runoff lost, evaporation.
 const ARID_RUNOFF_LOSS: f32 = 0.08;
 const ARID_EVAPORATION: f32 = 12.0;
 const ARID_LAKE_EVAPORATION: f32 = 8.0;
@@ -59,14 +55,13 @@ const MIN_LAKE_DEPTH: f32 = 4.0;
 const MIN_LAKE_CELLS: usize = 300;
 // Fewer cells under a lake's level than this and its basin is left a dry flat.
 const MIN_POND_CELLS: usize = 4;
-// How many cells' worth of flow a cell of lake loses to the air, in wet country and in the driest: a
-// wet country's lakes fill to their brims and spill on, a dry one's stand lower in closed basins.
+// Cells' worth of flow a lake cell loses to the air, in wet country and the driest: dry lakes sit low.
 const LAKE_EVAPORATION: (f32, f32) = (0.6, 4.0);
 // Rounds of draining small basins, each of which can open the next one along.
 const DRAIN_ROUNDS: usize = 4;
 // A basin shallower than this, in blocks, too small for a lake is filled to its spill level rather than drained.
 const FILL_DEPTH: f32 = 2.0;
-// The deepest a drained basin's channel is cut into the ground past its rim, in blocks; the basin is filled up to meet it.
+// The deepest a drained basin's channel is cut past its rim, in blocks; the basin is filled up to meet it.
 const BREACH_DEPTH: f32 = 2.0;
 // Only basins this deep or shallower, in blocks, are filled to meet their channel.
 const BREACH_MAX_BASIN: f32 = 12.0;
@@ -80,8 +75,7 @@ const SHALLOWEST: f32 = 1.5;
 const INLAND_SEA_ABOVE_SEA: f32 = 1.0;
 const MAX_RIVER_DEPTH: f32 = 12.0;
 
-/// Blocks across a river draining `area` square blocks of land: a stream a block or two wide where
-/// it starts, ten at a few square kilometres, close to a hundred where a whole range drains.
+/// Blocks across a river draining `area` square blocks: one or two at the source, ten at a few km2, ~100 for a range
 pub fn river_width(area: f32) -> f32 {
     (1.5 * libm::powf((area / RIVER_MIN_AREA).max(1.0), 0.9)).max(MIN_RIVER_WIDTH)
 }
@@ -93,21 +87,14 @@ pub(crate) fn river_depth(area: f32) -> f32 {
 
 pub(super) const NONE: u32 = u32::MAX;
 
-// What the priority flood works out: every cell's height once its basin is filled to its
-// spill point, the cell it drains into, and the cells in the order they were reached, which is
-// downstream before upstream.
+// What the priority flood works out: each cell's filled height, the cell it drains into, and the order reached.
 pub(super) struct Flood {
     pub(super) filled: Vec<f32>,
     pub(super) down: Vec<u32>,
     pub(super) order: Vec<u32>,
 }
 
-// Barnes' priority flood: start from the sea and the map's edge and always take the lowest cell
-// next, so each cell is reached from its lowest neighbour and a basin's floor is raised to its
-// spill point. A cell drains into the one it was reached from, so every path ends at the sea.
-/// What breaks ties in the flood, so water over flat ground, where every cell is as low as the next,
-/// runs along smooth noise's valleys: in first-in first-out order it runs in dead straight lines, and
-/// with each cell's tie of its own, in a jagged comb. The low bits are a hash, so no two tie.
+/// What breaks flood ties: smooth noise, so water on flat ground follows valleys, not straight lines; low bits hash.
 pub(super) fn flood_ties(map: &WorldMap) -> Vec<u32> {
     let dim = map.dim();
     let mut ties = vec![0u32; dim * dim];
@@ -125,8 +112,7 @@ pub(super) fn flood_ties(map: &WorldMap) -> Vec<u32> {
     ties
 }
 
-// The open sea: the cells under the sea's level that join the map's edge. A basin of them walled in by
-// higher land is not the sea, and is filled like any other.
+// The open sea: cells under sea level joined to the map's edge; a basin of them walled in by land is filled as any.
 struct OpenSea {
     cells: Vec<bool>,
     // where the flood starts: the map's edge and the open sea beside land
@@ -169,6 +155,7 @@ fn open_sea(height: &[f32], dim: usize) -> OpenSea {
     OpenSea { cells, roots }
 }
 
+// Barnes' priority flood: lowest cell next from the sea and edge, so basins fill to their spill point.
 pub(super) fn priority_flood(height: &[f32], dim: usize, ties: &[u32]) -> Flood {
     flood_over(height, dim, ties, &open_sea(height, dim))
 }
@@ -187,7 +174,6 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
     for &i in &open.roots {
         let i = i as usize;
         seen[i] = true;
-        // Elevation first, including below sea level, then deterministic flood ties.
         queue.push(
             ((height_key(height[i]) as u64) << 32) | ties[i] as u64,
             i as u32,
@@ -205,7 +191,6 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
             seen[n] = true;
             flood.filled[n] = height[n].max(flood.filled[i]);
             flood.down[n] = i as u32;
-            // elevation first, including below sea level, then deterministic flood ties
             queue.push(
                 ((height_key(flood.filled[n]) as u64) << 32) | ties[n] as u64,
                 n as u32,
@@ -237,7 +222,7 @@ fn cells_beside(i: usize, dim: usize, beside: &mut [usize; 8]) -> usize {
     count
 }
 
-/// `priority_flood`'s `filled` alone, which no flood order changes, so a cell raised to its reacher's level skips the heap (Priority-Flood+FIFO).
+/// `priority_flood`'s `filled` alone, which no flood order changes, so a cell raised to its reacher skips the heap.
 pub(super) fn fill_levels(height: &[f32], dim: usize) -> Vec<f32> {
     let open = open_sea(height, dim);
     let mut filled = height.to_vec();
@@ -271,10 +256,7 @@ pub(super) fn fill_levels(height: &[f32], dim: usize) -> Vec<f32> {
 // How many of a key's top bits pick its bucket in `FloodQueue`.
 const BUCKET_BITS: u32 = 18;
 
-// The flood's queue: pops the lowest (key, cell) first, ties on the key going to the higher cell, as a
-// `BinaryHeap` of `Reverse` keys does. Keys wait in buckets by their top bits and only the bucket being
-// drained is a heap, which is cheaper than one heap of the whole front. A key pushed is never in a lower
-// bucket than the one being drained, since a cell's level is never under the level it was reached from.
+// The flood's queue: pops the lowest (key, cell) like a `BinaryHeap` of `Reverse`, bucketed by top bits
 struct FloodQueue {
     buckets: Vec<Vec<(Reverse<u64>, u32)>>,
     current: usize,
@@ -320,8 +302,7 @@ pub(super) struct Basin {
     floor: usize,
 }
 
-// The connected runs of cells the flood raised, each one water it filled to its spill point, and
-// the basin each cell is in, or `NONE`.
+// The connected runs of cells the flood raised, each filled to its spill point, and each cell's basin or `NONE`.
 pub(super) fn basins(height: &[f32], filled: &[f32], dim: usize) -> (Vec<Basin>, Vec<u32>) {
     let wet = |i: usize| filled[i] - height[i] > 0.25;
     let mut of = vec![NONE; height.len()];
@@ -348,13 +329,9 @@ pub(super) fn basins(height: &[f32], filled: &[f32], dim: usize) -> (Vec<Basin>,
                 basin.floor = i;
             }
             // all eight ways round, as the flood goes, so a basin is what it filled as one
-            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            let mut beside = [0usize; 8];
+            let count = cells_beside(i, dim, &mut beside);
+            for &n in &beside[..count] {
                 if of[n] == NONE && wet(n) {
                     of[n] = id;
                     stack.push(n);
@@ -366,10 +343,7 @@ pub(super) fn basins(height: &[f32], filled: &[f32], dim: usize) -> (Vec<Basin>,
     (basins, of)
 }
 
-// Drains basin `id`, too small to be a lake, in one go: a channel from its floor out the way its
-// water would leave, each cell of it under the one before, until it reaches lower ground. It's cut no
-// lower than water it runs into, which would drain too, nor under the sea, which would come in up it.
-// One whose floor is under the sea already is filled to just over it instead. Returns whether it changed anything.
+// Drains basin `id`, too small for a lake, by a channel from its floor out; returns whether it changed anything.
 fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &Basin, dim: usize) -> bool {
     let sea = WATER_LEVEL as f32;
     if height[basin.floor] < sea + LAND_ABOVE_SEA {
@@ -378,10 +352,7 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         }
         return true;
     }
-    // The basin is filled first to the level that lets its channel be cut no more than `BREACH_DEPTH` into the ground on the
-    // way out: cut from the floor, a deep basin's channel was a trench a cell wide and many blocks deep, which the smooth
-    // ground turns into a chain of round dips across the plain.
-    // A deeper basin is a landform's bowl, a crater or a cirque (37 blocks and more), whose notch is meant.
+    // filled first so the channel cuts under `BREACH_DEPTH`: from the floor it was a trench smooth ground turns to dips
     let breached = basin.depth <= BREACH_MAX_BASIN;
     let (mut fill_to, mut i, mut steps) = (height[basin.floor], basin.floor, 0.0);
     while breached && flood.down[i] != NONE && fill_to < basin.spill {
@@ -415,9 +386,7 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
         if height[d] > target {
             height[d] = target;
             cut = true;
-            // a diagonal step is cut through a cell beside it too, or the channel's cells meet only at their
-            // corners and the smooth ground turns it into a chain of round dips; only a shallow channel, as a
-            // deep one's side cell would be a dry pit beside the river that comes to run down it
+            // a diagonal step cuts a side cell too, or cells meet only at corners and smooth ground makes dips; only when shallow
             let (x, z, dx) = (i % dim, i / dim, d % dim);
             if breached && dx != x && d / dim != z {
                 let side = [z * dim + dx, (d / dim) * dim + x]
@@ -440,22 +409,19 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
     cut
 }
 
-// Fills `basin` to its spill level, as the flood found it, and to just over the sea if under it.
-fn fill(height: &mut [f32], flood: &Flood, basin: &Basin) {
+// Fills `basin` to its spill level in `filled`, and to just over the sea if under it.
+fn fill(height: &mut [f32], filled: &[f32], basin: &Basin) {
     let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
     for &i in &basin.cells {
-        height[i] = height[i].max(flood.filled[i]).max(floor);
+        height[i] = height[i].max(filled[i]).max(floor);
     }
 }
 
 /// Fills every basin `wanted` picks up to its spill level, leaving a flat with no pit and no channel cut out of it.
 pub(super) fn fill_where(height: &mut [f32], dim: usize, wanted: impl Fn(&Basin) -> bool) {
     let filled = fill_levels(height, dim);
-    let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
     for basin in basins(height, &filled, dim).0.iter().filter(|b| wanted(b)) {
-        for &i in &basin.cells {
-            height[i] = height[i].max(filled[i]).max(floor);
-        }
+        fill(height, &filled, basin);
     }
 }
 
@@ -500,8 +466,7 @@ fn arid(dry: f32) -> f32 {
     dry.powi(4)
 }
 
-// What rain does on each cell: the share of it shed as runoff, the share of the flow crossing it kept,
-// what it evaporates from a river over it, and how dry it is, 0..1.
+// What rain does on each cell: share shed as runoff, share of flow kept, river evaporation, dryness 0..1.
 struct Rain {
     supply: Vec<f32>,
     keep: Vec<f32>,
@@ -509,9 +474,7 @@ struct Rain {
     dry: Vec<f32>,
 }
 
-// Rain runs off wet ground and soaks into dry ground, which also loses water crossing it. Bare rock
-// sheds rain where soil soaks it up: high and steep ground, thin soil on stone, runs off many times
-// what the lowlands' deep soil does.
+// Rain runs off wet ground and soaks into dry ground, which also loses water crossing it; bare rock sheds far more.
 fn rain(map: &WorldMap) -> Rain {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;
@@ -555,10 +518,7 @@ fn rain(map: &WorldMap) -> Rain {
     }
 }
 
-// The level the lake in `basin` stands at, its cells `sorted` from lowest up, with `inflow` running in:
-// it spreads cell by cell from the floor until the water it loses to the air from its surface is all
-// that runs in, or reaches the basin's brim and spills the rest over it. Returns the level, what
-// spills over the brim, and whether the lake is held under it, with no outlet of its own.
+// The level of the lake in `basin`, its cells `sorted` lowest up: spreads until air loss equals `inflow`, or spills.
 fn balance(
     basin: &Basin,
     sorted: &[usize],
@@ -586,8 +546,7 @@ fn balance(
         lost += evaporation(i);
     }
     if floor < sea {
-        // ground under the sea's level walled off from it holds water at least just over the sea, or it
-        // would stand dry under the sea's level, which the land never does
+        // ground under the sea walled off from it holds water just over sea level, which land never goes under
         level = level.max(sea + INLAND_SEA_ABOVE_SEA).min(basin.spill);
     } else if sorted.partition_point(|&i| height[i] < level) < MIN_POND_CELLS {
         level = floor;
@@ -606,9 +565,7 @@ struct Lakes {
     held: Vec<bool>,
 }
 
-// Flow through every cell, with each basin's lake taking what it loses to the air from what passes through
-// it: what drains into a basin is gathered at the cells it leaves by, and once all of it's in, the lake's
-// level is worked out and what spills over its brim goes on.
+// Flow through every cell, each basin's lake taking its air loss: inflow gathers at the exits, then the level is set.
 fn flow_through(
     down: &[u32],
     basins: &[Basin],
@@ -660,9 +617,7 @@ fn flow_through(
     (flow, lakes)
 }
 
-// Inside a basin whose lake doesn't fill it, water runs down to the lake, not out over the brim the
-// flood found: a flood from the lake, or the floor of a basin with none, out over the basin's cells,
-// each draining into the one it was reached from, and the lake's own cells into nothing.
+// Inside a basin whose lake doesn't fill it, water runs down to the lake, not over the brim: a flood from the lake.
 fn reroute(
     down: &mut [u32],
     height: &[f32],
@@ -683,13 +638,9 @@ fn reroute(
     }
     while let Some((Reverse(bits), i)) = heap.pop() {
         let filled = key_height(bits);
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
-            }
-            let n = nz as usize * dim + nx as usize;
+        let mut beside = [0usize; 8];
+        let count = cells_beside(i, dim, &mut beside);
+        for &n in &beside[..count] {
             if basin_of[n] != id || !seen.insert(n) {
                 continue;
             }
@@ -699,9 +650,7 @@ fn reroute(
     }
 }
 
-/// Scatters the ground by up to a block or so before the last `run`, so water on gentle ground winds
-/// instead of running in the flood's straight lines. It stays in the ground, so the lakes the flood
-/// finds and the ground they lie in agree.
+/// Scatters the ground by up to a block before the last `run`, so water on gentle ground winds; kept so lakes agree.
 pub fn scatter(map: &mut WorldMap) {
     let dim = map.dim();
     let mut heights = std::mem::take(&mut map.height);
@@ -717,15 +666,12 @@ pub fn scatter(map: &mut WorldMap) {
     map.height = heights;
 }
 
-/// Works out lakes, drainage and rivers from the height layer: small basins are drained, the rest
-/// hold lakes as high as the water running into them keeps them against what they lose to the air,
-/// and with `carve`, the rivers' beds are cut into the ground.
+/// Lakes, drainage and rivers from the height layer: small basins drain, the rest hold lakes; `carve` cuts beds.
 pub fn run(map: &mut WorldMap, carve: bool) {
     run_keeping(map, carve, &[]);
 }
 
-/// `run`, but a basin reaching a cell `bowls` marks holds its lake however few cells it has: a landmark's bowl, smaller than the
-/// lakes the world otherwise keeps.
+/// `run`, but a basin reaching a cell `bowls` marks keeps its lake however few cells it has (a landmark's bowl).
 pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
     let dim = map.dim();
     let in_bowl = |cells: &[usize]| !bowls.is_empty() && cells.iter().any(|&i| bowls[i]);
@@ -740,9 +686,8 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
         for (id, basin) in lakes.iter().enumerate() {
             if (basin.cells.len() < MIN_LAKE_CELLS && !in_bowl(&basin.cells)) || basin.depth < MIN_LAKE_DEPTH {
                 if basin.depth < FILL_DEPTH && !in_bowl(&basin.cells) {
-                    // a hollow this shallow is filled flat: a channel out of it ran for kilometres on level
-                    // ground and left a dry pit with a ditch out of it
-                    fill(&mut map.height, &flood, basin);
+                    // a hollow this shallow is filled flat: a channel out of it ran for kilometres on level ground, leaving a pit
+                    fill(&mut map.height, &flood.filled, basin);
                     cut = true;
                 } else {
                     cut |= drain(&mut map.height, &flood, &basin_of, id as u32, basin, dim);
@@ -791,8 +736,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
             if height[i] < level[b] {
                 kind[i] = WaterCell::Lake as u8;
                 surface[i] = level[b];
-                // a lake's water is drawn a whole block, under its level: a bed between the two would
-                // stand out of it, parting the lake into pools where its cells only just hold water
+                // a lake's water is drawn a block under its level: a bed between the two would part the lake into pools
                 if carve {
                     map.height[i] = map.height[i].min(level[b].floor() - SHALLOWEST);
                 }
@@ -800,9 +744,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
         }
     }
 
-    // A river starts only where the ground is steep enough to hold a channel for the water it
-    // drains: flat lowlands need many times the catchment, so rivers rise in hills and mountains
-    // and not out of the plain, and once one has started it carries on across flat ground.
+    // A river starts only where ground is steep enough to hold a channel: flat lowlands need far more catchment.
     let cell_len = map.config.map_cell as f32;
     let cell_area = cell_len * cell_len;
     let mut is_river = vec![false; height.len()];
@@ -831,8 +773,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
             fed[d] = true;
         }
     }
-    // a short river that dries up before reaching water, with nothing feeding it, is a scrap of
-    // stream out of nowhere: it goes
+    // a short river that dries up before reaching water, with nothing feeding it, is a scrap of stream: drop it
     let mut end = vec![usize::MAX; height.len()];
     let mut size = vec![0usize; height.len()];
     for &i in order.iter().rev() {
@@ -901,12 +842,9 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
         surface[i] = bed + depth;
         width[i] = river_width(flow[i] * cell_area);
         if carve {
-            // the cell dips only as far as the river fills it: a stream a few blocks
-            // wide is cut at block scale, see `worldmap::source`, and digging all of its
-            // 32 m cell down to the bed would leave a dry crevice beside the water
+            // the cell dips only as far as the river fills it: a stream a few blocks wide is cut at block scale (`source`)
             let filled = (width[i] / map.config.map_cell as f32).min(1.0);
-            // only ever cut: a bed held up by the water downstream must not raise the land; and not
-            // under the lake or sea beside it, which would spill into the cell's whole square
+            // only ever cut: a bed held up by water downstream mustn't raise the land, nor go under the lake or sea beside it
             let held = super::water::still_beside(dim, &kind, &surface, i);
             map.height[i] = (bed + depth * (1.0 - filled)).max(held).min(map.height[i]);
         }
@@ -1043,14 +981,12 @@ mod tests {
         run(&mut map, false);
         scatter(&mut map);
         let before = map.height.clone();
-        // a basin too small or shallow for a lake is filled, wholly or part way, so a river crossing one runs over the fill,
-        // never higher than the water it would have held
+        // a basin too small for a lake is filled, wholly or part way, so a river crossing it never runs above its water
         let held = priority_flood(&before, map.dim(), &flood_ties(&map)).filled;
         run(&mut map, true);
         let mut rivers = 0;
         for (i, (&was, &now)) in before.iter().zip(&map.height).enumerate() {
-            // Draining a small enclosed basin below sea level fills it to the
-            // inland sea floor before river carving; it is not a river cut.
+            // draining a small enclosed basin below sea level fills it to the inland sea floor first: not a river cut
             if map.water_kind[i] == WaterCell::River as u8
                 && was >= WATER_LEVEL as f32 + LAND_ABOVE_SEA
             {
@@ -1078,8 +1014,7 @@ mod tests {
 
     #[test]
     fn test_ground_under_the_sea_walled_in_holds_a_lake_over_it() {
-        // a bowl too big and deep to be a lake, its rim too thick to breach, dipping under the sea in its middle, in a dry climate so
-        // its lake stands under the brim
+        // a bowl too big to be a lake, rim too thick to breach, under the sea in a dry climate so its lake stays low
         let mut config = WorldConfig {
             size: 340 * 32,
             map_cell: 32,
@@ -1104,7 +1039,7 @@ mod tests {
         // at least just over the sea, and no higher than its brim
         assert!(map.water_surface[middle] >= WATER_LEVEL as f32 + INLAND_SEA_ABOVE_SEA);
         assert!(map.water_surface[middle] < 252.0);
-        // and no water stands over the dry ground beside it, which would end at the cells' edges, past the scatter the flood sees
+        // and no water stands over the dry ground beside it, which would end at the cells' edges, past the flood's scatter
         for i in 0..dim * dim {
             if map.water_kind[i] != WaterCell::Lake as u8 {
                 continue;

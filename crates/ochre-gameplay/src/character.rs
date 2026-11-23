@@ -56,7 +56,7 @@ pub struct MovementInput {
     pub pitch: f32,
 }
 
-// Turns about an axis through libm, as the platform's own sine and cosine differ in the last bit and a server and a client must step on the same.
+// Turns about an axis through libm: platform sin and cos differ in the last bit, and server and client must agree.
 fn about_y(angle: f32) -> Quat {
     let (sin, cos) = libm::sincosf(angle * 0.5);
     Quat::from_xyzw(0.0, sin, 0.0, cos)
@@ -78,7 +78,7 @@ pub struct StepEvents {
     pub jumped: Option<Vec3>,
 }
 
-/// What a step collides with. A server and a client must answer these the same way for the same position, or their steps part.
+/// What a step collides with. A server and a client must answer the same for the same position, or their steps part.
 pub trait MovementEnvironment {
     fn block(&self, at: I64Vec3) -> BlockType;
     /// Whether the block's chunk is loaded. Ground not loaded yet is solid, so the body waits for it.
@@ -178,7 +178,7 @@ const SETTLE_SNAP: f32 = 0.6;
 const SPHERES: Body = Body { radius: 0.3, heights: [0.3, 1.0, 1.7] };
 // The tallest rise the body steps up onto sculpted ground without jumping, in blocks; a jump clears a block.
 const SCULPT_STEP: f32 = 0.5;
-// How far up a sculpted face must face to stand on, about 45 degrees from level; steeper it slides down. Grass is half blended to dirt here (`GRASS_TO` in world.wesl).
+// How far up a face must face to stand on, ~45 degrees from level; steeper slides. Grass is half dirt here.
 const GROUND_FACING: f32 = 0.7;
 // A rise onto sculpted ground taller than this in a step counts as a step up.
 const SCULPT_RISE_EASE: f32 = 0.25;
@@ -190,7 +190,6 @@ const SHORT_HOP_GRAVITY: f32 = 2.5;
 // Landing: the slowest fall that counts.
 const LAND_MIN_SPEED: f32 = 7.0;
 
-/// Moves the body at `position` by `dt` seconds of `input` through `env`.
 pub fn step_character(
     state: &mut CharacterState,
     position: &mut Vec3,
@@ -289,7 +288,7 @@ fn walk(
     let generated = |block: I64Vec3| env.generated(block);
     let mut walled = false;
     let (moved_to, hit) = if ground_near.is_empty() {
-        // Chunks not generated yet are solid, so the player waits where it is for the ground to load rather than falling through it.
+        // Chunks not generated yet are solid, so the player waits for the ground to load rather than falling through.
         let solid = |block: I64Vec3| !generated(block) || env.block(block).is_solid();
         move_and_step(start + BLOCK_CORNER, delta, BODY, step, solid)
     } else {

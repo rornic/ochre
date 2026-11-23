@@ -128,7 +128,6 @@ impl LodLoader {
         }
     }
 
-    /// Whether `key` is among the nodes chosen to be drawn.
     pub fn is_retiring(&self, key: LodKey) -> bool {
         self.retiring.contains(&key)
     }
@@ -142,13 +141,11 @@ impl LodLoader {
         self.stand_ins.contains(&key)
     }
 
-    /// Whether the node at `key` exists with nothing to draw.
     pub fn node_is_empty(&self, key: LodKey) -> bool {
         self.nodes.get(&key).is_some_and(Option::is_none)
     }
 
-    /// Draws terrain out to `render_distance` chunks, or the set render distance if that's
-    /// further, selecting nodes afresh for it.
+    /// Draws terrain out to `render_distance` chunks, or the set render distance if further, selecting nodes afresh.
     pub fn set_render_distance(&mut self, render_distance: f32) {
         let layout = self
             .set_layout

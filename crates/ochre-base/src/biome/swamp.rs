@@ -5,8 +5,7 @@ use crate::features::ReliefKind;
 // Ground this far over the sea or lower is mud flat, not grass.
 const MUD_BELOW: i64 = 2;
 
-/// Flat, low, wet ground by fresh water: a fair number of broadleaf trees, grass that reads wetter than
-/// the climate, mud on the lowest flats and clay where a spring rises.
+/// Flat, low, wet ground: broadleaf trees, wet-reading grass, mud on the lowest flats, clay at springs.
 pub struct Swamp;
 
 impl Biome for Swamp {

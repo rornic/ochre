@@ -67,7 +67,6 @@ impl Surface {
         }
     }
 
-    /// Whether `feet` are pushing through grass or other ground flora.
     fn in_flora(world: &World, feet: Vec3) -> bool {
         world
             .get_block_at((feet + Vec3::Y * 0.1).round().as_i64vec3())
@@ -84,7 +83,6 @@ impl Surface {
     }
 }
 
-/// A foot comes down on `surface`.
 #[derive(Message)]
 pub struct Footstep {
     pub surface: Surface,
@@ -96,15 +94,15 @@ pub struct Footstep {
 
 // Clips cut for each surface, as `sounds/footsteps/<surface>_<1..=VARIANTS>.ogg`.
 const VARIANTS: usize = 4;
-// Volume of a walking step before its jitter, and how much louder a sprinting one is. The clips are levelled to -28 LUFS (grass -34), so this plays a step at -52 (grass -58).
+// Walking step volume before jitter, and the sprint multiplier. Clips sit at -28 LUFS (grass -34): steps play at -52.
 const VOLUME: f32 = 0.06;
 pub(crate) const SPRINT_LOUDER: f32 = 1.25;
 const VOLUME_JITTER: (f32, f32) = (0.75, 1.0);
 const PITCH_JITTER: (f32, f32) = (0.92, 1.08);
-// Rustle clips as `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, and their volume as a share of a step's.
+// Rustle clips `sounds/footsteps/foliage_<1..=RUSTLES>.ogg`, played over a step through flora, at a share of a step
 const RUSTLES: usize = 3;
 const RUSTLE_VOLUME: f32 = 0.02;
-// The frost cover, see `frost_cover`, from which ground rings like ice underfoot: tundra caps at 0.5, and its spawn area reads 0.33 to 0.42.
+// The frost cover from which ground rings like ice underfoot: tundra caps at 0.5, its spawn area reads 0.33 to 0.42.
 const ICY_FROST: f32 = 0.35;
 
 #[derive(Resource)]

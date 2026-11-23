@@ -1,6 +1,4 @@
-// Times each stage of building terrain around spawn, one thread, for comparing before and after a
-// change and for profiling. Run with:
-//   cargo run --release --example bench -- [seed, default 1] [lod, to time only LOD meshes]
+// Times each stage of building terrain around spawn on one thread, for comparing before and after a change.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -135,8 +133,7 @@ fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
     );
 }
 
-// Best of 3 at each level, after a first pass that fills the regions and column grids, which
-// nodes share with those near them.
+// Best of 3 per level, after a first pass that fills the regions and column grids neighbouring nodes share.
 fn lods(regions: &Arc<RegionStore>, spawn: I64Vec3) {
     let keys = |level: u8| {
         let centre = LodKey::containing(ChunkCoordinate(spawn), level).coord;
@@ -185,8 +182,7 @@ fn lods(regions: &Arc<RegionStore>, spawn: I64Vec3) {
     );
 }
 
-// The level-1 nodes the game draws round the spawn, between full detail and level 2, with flora and without, for what
-// drawing the tallest plants past full detail costs.
+// Level-1 nodes round the spawn with flora and without, for what drawing the tallest plants past full detail costs.
 fn flora_ring(regions: &Arc<RegionStore>, spawn: I64Vec3) {
     let Ok(settings) = ochre_engine::settings::Settings::read("assets/settings.toml") else {
         return;

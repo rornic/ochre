@@ -7,8 +7,7 @@ use ochre_base::cold::{
 use ochre_base::math::smoothstep_f64;
 use ochre_base::WATER_LEVEL;
 
-// The cell at the water's surface over ground below it is water, not ground: filled by its
-// ground it would draw as a beach at sea level, where the water over it is mostly of the cell.
+// The cell at the water's surface over lower ground is water: filled as ground it would draw as a sea-level beach.
 pub(super) fn underwater(
     block: BlockType,
     bottom: i64,
@@ -47,7 +46,7 @@ pub(super) fn ice_depth(temperature: f32) -> i64 {
     (1 + ((FREEZE_TEMPERATURE - temperature) / ICE_TEMPERATURE_PER_LAYER) as i64).min(ICE_MAX_DEPTH)
 }
 
-// A wider LOD cell's water, as ice when it overlaps the frozen top of the sea; its middle is sampled, which is usually below it.
+// A wider LOD cell's water, as ice when it overlaps the frozen sea top; its middle is sampled, usually below it.
 pub(super) fn freeze_cell(
     block: BlockType,
     temperature: f32,
@@ -62,8 +61,7 @@ pub(super) fn freeze_cell(
     }
 }
 
-// The steepest ground snow settles on, `above_sea` blocks up: only gentle ground at the snow
-// line, steeper the higher it gets, until only cliffs are left bare.
+// Steepest ground snow settles on at `above_sea` blocks up: gentle at the snow line, steeper higher, then only cliffs.
 pub(super) fn snow_holding_slope(above_sea: i64, snow_line: i64) -> f64 {
     let t = ((above_sea - snow_line) as f64 / 120.0).clamp(0.0, 1.0);
     1.5 + 3.0 * t
@@ -123,24 +121,21 @@ pub(super) fn terrain_block(
     }
 }
 
-// Blocks of soil, sand or snow under the surface block before stone, and how far under the
-// ground's surface the stone is packed hard, which only explosives break.
+// Blocks of soil, sand or snow over stone, and the depth where stone is packed hard (only explosives break it).
 pub(super) const SOIL_DEPTH: i64 = 2;
 pub(super) const SAND_DEPTH: i64 = 4;
-// Soil is one block of dirt on flat ground (sand and gravel go deeper) and thins to none on ground this steep or steeper, the slopes shedding it.
+// Soil is one block of dirt on flat ground (sand and gravel go deeper), none on ground this steep or steeper.
 const SOIL_SLOPE: (f64, f64) = (0.3, 1.0);
 pub(super) const COMPACTED_DEPTH: i64 = 6;
 // Under snow the cover is thick, full blocks of it, and the packed stone begins only beneath.
 pub(super) const SNOW_DEPTH: i64 = 14;
 pub(super) const SNOW_COMPACTED_DEPTH: i64 = 16;
-// How far down a cliff face each surface material clings, in blocks: turf only near the top, ice and snow the
-// whole way, sand and gravel a little.
+// Blocks down a cliff face each surface material clings: turf near the top, ice and snow all the way, sand less.
 const SKIN_GRASS: i64 = 8;
 const SKIN_ICE: i64 = 40;
 const SKIN_LOOSE: i64 = 4;
 
-// How many blocks under the surface block are still that material, in a column standing `exposed` blocks over
-// its lowest neighbour: the blocks the face shows. Level ground has none, so its layers stay under the surface.
+// Blocks under the surface block still that material in a column `exposed` blocks over its lowest neighbour.
 pub(super) fn skin_depth(surface: BlockType, exposed: i64) -> i64 {
     let clings = match surface {
         BlockType::Grass => SKIN_GRASS,
@@ -157,10 +152,7 @@ pub(super) fn soil_depth(slope: f64) -> i64 {
     (SOIL_DEPTH as f64 + (1 - SOIL_DEPTH) as f64 * t).round() as i64
 }
 
-// The ground in layers: grass is only the top block, over dirt, glacier ice over snow, then the
-// soil gives way to stone and the stone to compacted stone a fixed depth under this column's own
-// surface. Wider LOD cells are sampled mid-cell, which would turn their tops into dirt, and they
-// don't show the layers. `snowy` is whether the column's surface is snow, which lies deep.
+// Ground layers: grass atop dirt, ice over snow, soil, stone, compacted stone; wide LOD cells show none; `snowy` deep
 pub(super) fn under_grass(
     block: BlockType,
     world_y: i64,
@@ -210,9 +202,7 @@ pub(super) fn rocked(block: BlockType, rock: impl FnOnce() -> BlockType) -> Bloc
     }
 }
 
-// A block after cliffs are cut, where the noise says the ground is `solid` here: rock builds up
-// where it wasn't, and ground cut away is open air above the water but floods below it, ice
-// and all, so caves in a sea cliff fill with the sea.
+// A block after cliffs are cut where noise says `solid`: rock builds up; cut ground is air above water, sea below.
 pub(super) fn cut_cliff(
     block: BlockType,
     solid: bool,
@@ -243,16 +233,13 @@ pub(super) fn cut_cliff(
 // The steepest ground a patch of meadow still takes grass on: past it even meadow is rock.
 const MEADOW_GRADIENT: f64 = 0.9;
 
-// A mountain's ground is steep nearly everywhere, so blocks are chosen by its gradient eased by this,
-// leaving bare rock to the steepest faces and the outcrops, which add `OUTCROP_GRADIENT` to it.
+// Mountain ground is steep nearly everywhere, so its gradient is eased by this, leaving rock to the steepest faces.
 const MOUNTAIN_EASE: f64 = 0.5;
 const OUTCROP_GRADIENT: f64 = 1.0;
 // A valley wall adds this much to the gradient blocks are chosen by, so a face short of bare rock still shows some.
 const VALLEY_WALL_GRADIENT: f64 = 1.0;
 
-// The gradient to choose a column's blocks by: on a mountain, in a patch of meadow, as gentle as
-// MEADOW_GRADIENT at most, so grass and the trees and flora on it cling to the face where the
-// rest of the slope is bare rock, and on an outcrop steeper, so rock shows through the cover.
+// The gradient a column's blocks are chosen by: mountain meadow is capped at `MEADOW_GRADIENT`; outcrops are steeper.
 pub(in crate::generate) fn block_gradient(
     biomes: &Biomes,
     biome: BiomeId,
@@ -317,9 +304,7 @@ pub(in crate::generate) fn column_block(
     biomes.block(biome, base, world_y - WATER_LEVEL, combined_gradient)
 }
 
-// The bed fresh water lays over ground that would be `dry`, on a `slope`: where grass would grow, mud settles in still and
-// slow water and moving water leaves gravel; snow lies as gravel; rock, sand and the rest stay as they are, rock taking the
-// geology's beds as all stone does.
+// The bed under fresh water over `dry` ground on a `slope`: mud where grass would grow, else gravel; snow is gravel.
 fn fresh_bed(dry: BlockType, slope: f64) -> BlockType {
     match dry {
         BlockType::Grass if slope >= GRAVEL_BED_SLOPE => BlockType::Gravel,

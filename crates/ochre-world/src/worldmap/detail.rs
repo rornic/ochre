@@ -1,7 +1,4 @@
-//! The detail laid over the map's ground at block scale. Everything here must give the same
-//! answer on every machine, as separate machines build the same chunks independently: integer
-//! hash noise, and arithmetic with no `sin`, `exp` or `powf`, at full detail. Wider cells, which
-//! only LOD meshes use, may call `resolved`, which does.
+//! The detail laid over the map's ground at block scale: integer hash noise, no `sin`, `exp` or `powf`.
 
 use super::{par_rows, WorldMap};
 use ochre_base::math::smoothstep_f64 as smoothstep;
@@ -14,8 +11,7 @@ const DETAIL_OCTAVES: u32 = 6;
 pub(crate) const GENTLE_DETAIL: f64 = 3.0;
 pub(crate) const ROUGH_DETAIL: f64 = 38.0;
 
-// Rows of dunes driven by the wind: a long gentle slope up to each crest, and a steep
-// face falling away behind it.
+// Rows of dunes driven by the wind: a long gentle slope up to each crest, a steep face behind it.
 const DUNE_SPACING: f64 = 90.0;
 const DUNE_HEIGHT: f64 = 16.0;
 // The share of each dune that's the gentle windward slope.
@@ -29,25 +25,20 @@ const DUNE_FIELD_WAVELENGTH: f64 = 700.0;
 const DUNE_SHORE: (f64, f64) = (2.0, 14.0);
 const DUNE_HIGH_GROUND: (f64, f64) = (70.0, 140.0);
 
-// Patches of meadow on a mountain: noise this many blocks across, with the ground where it is over
-// the second taking grass however steep.
 // Cells either side that a mountain biome's presence is spread over, twice, to find the foothills.
 const RANGE_REACH: usize = 18;
-// Foothills: the ground round a range, within a few kilometres of it, is rough and cut into gullies and sharp ridges, as weather works at the edge of high ground.
+// Foothills: ground within a few kilometres of a range is rough and cut into gullies and sharp ridges.
 const GULLY_WAVELENGTH: f64 = 85.0;
 const GULLY_HEIGHT: f64 = 22.0;
 // Keep foothill relief gentler than the mountain faces it surrounds.
 pub(crate) const FOOTHILL_RELIEF: f64 = 0.6;
 
-/// How much of the way, 0..1, ground `above_sea` blocks up and `range` (0..1) near a mountain range
-/// is foothills: none far from a range or on the lowlands, all of it on the higher ground against one.
+/// How much of the way, 0..1, ground `above_sea` blocks up and `range` (0..1) near a mountain range is foothills.
 pub(crate) fn foothill_weight(range: f64, above_sea: f64) -> f64 {
     smoothstep(0.1, 0.55, range) * smoothstep(15.0, 90.0, above_sea)
 }
 
-/// Erosion's work on the ground: gullies and sharp ridges between them, in -1..1 where the ridges
-/// are the highs, scaled by `GULLY_HEIGHT` and the weight by whoever calls it. Ridged noise
-/// has sharp crests and rounded troughs, as slopes weather into ridge lines with gullies off them.
+/// Gullies and sharp ridges between them, -1..1 with ridges high; the caller scales by `GULLY_HEIGHT` and a weight.
 pub fn gullies(seed: u32, x: f64, z: f64) -> f64 {
     (ridged(seed ^ 0x6011, x, z, GULLY_WAVELENGTH, 3) - 0.45) * 2.0
 }
@@ -62,8 +53,7 @@ pub(crate) fn gully_relief(seed: u32, x: f64, z: f64, weight: f64, cell: f64) ->
     gullies(seed, x, z) * GULLY_HEIGHT * weight * seen
 }
 
-/// How high the detail rises over, or falls under, the map's ground at (`x`, `z`) on ground
-/// `roughness` rough (0..1) and `above_sea` blocks up, in cells `cell` blocks wide.
+/// Height the detail adds at (`x`, `z`), given `roughness` (0..1) and `above_sea` blocks, in cells `cell` wide.
 pub fn detail(seed: u32, x: f64, z: f64, cell: f64, roughness: f64, above_sea: f64) -> f64 {
     let amplitude = GENTLE_DETAIL + (ROUGH_DETAIL - GENTLE_DETAIL) * roughness;
     // calm near the shoreline, where noise would break the coast up into specks of land
@@ -71,8 +61,7 @@ pub fn detail(seed: u32, x: f64, z: f64, cell: f64, roughness: f64, above_sea: f
     fbm_filtered(seed, x, z, DETAIL_WAVELENGTH, DETAIL_OCTAVES, cell) * amplitude * shore
 }
 
-/// How a world's dunes are laid out: `scale` multiplies their spacing and height, and the rows run
-/// across `wind`, a unit vector pointing the way the air travels.
+/// How a world's dunes are laid out: `scale` multiplies spacing and height, rows run across `wind`, a unit vector.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dunes {
     pub scale: f64,
@@ -106,8 +95,7 @@ fn dune(seed: u32, x: f64, z: f64, style: Dunes) -> f64 {
     }
 }
 
-/// Height the dunes add on desert `above_sea` blocks up. Cells too wide to see the rows of dunes
-/// see their average height, half a crest.
+/// Height the dunes add on desert `above_sea` blocks up; cells too wide to see the rows get half a crest.
 pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64, style: Dunes) -> f64 {
     let room = smoothstep(DUNE_SHORE.0, DUNE_SHORE.1, above_sea)
         * smoothstep(DUNE_HIGH_GROUND.1, DUNE_HIGH_GROUND.0, above_sea);
@@ -132,8 +120,7 @@ pub fn dunes(seed: u32, x: f64, z: f64, cell: f64, above_sea: f64, style: Dunes)
     shape * DUNE_HEIGHT * style.scale * (0.4 + 0.6 * field) * room
 }
 
-// How much rougher than the plain a seed makes the open ground of each biome, 0 to 0.22 of the roughness scale (about 0 to 8 blocks of detail), so one seed's
-// grassland is billiard flat and another's rolls. Steppe and desert keep their own flatness and dunes.
+// How much rougher than the plain a seed makes each biome's open ground, 0 to 0.22 of the roughness scale.
 fn rolling_by_biome(seed: u32) -> [f32; 11] {
     use super::climate::BiomeKind::{Glacier, Grassland, Forest, Jungle, Savanna, Taiga, Tundra};
     let mut rolling = [0.0f32; 11];

@@ -1,7 +1,5 @@
-// The sun's disc and its glare, drawn over the sky round it, see `sun_glare.rs`: a halo and a burst of
-// rays, as bright light scatters in an eye or a lens. Bevy's bloom leaves out a spot as small
-// as the sun's disc, to keep single pixels from flickering, so it's drawn here instead. The disc is
-// drawn here too, not by Bevy's atmosphere, so the clouds in front can hide it, see `disc_showing`.
+// The sun's disc and glare (`sun_glare.rs`): a halo and burst of rays, as bright light scatters in an eye.
+// Bevy's bloom skips a spot this small and its atmosphere doesn't draw it, so clouds can hide it (`disc_showing`).
 
 import bevy_pbr::render::{
     forward_io::{Vertex, VertexOutput},
@@ -13,8 +11,7 @@ import super::lighting::{SKY_GAIN, sun_radiance};
 import super::cloud_cover::disc_showing;
 import super::sky::SUN_LIGHT;
 
-// The halo, bright close in and fainter far out: how bright each part is, as a share of
-// sunlight on a face turned to it, and how far it reaches, in radians.
+// The halo, bright close in, fainter far out: each part's brightness as a share of sunlight, and its reach in radians
 const CORE: f32 = 6.0;
 const CORE_REACH: f32 = 0.012;
 const HALO: f32 = 0.6;
@@ -43,8 +40,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     return out;
 }
 
-// How much of the sun's disc the land leaves showing, 0..1, from what the prepass drew where
-// it is on screen: the glare goes when it sets behind a mountain. All of it without a prepass.
+// How much of the sun's disc the land leaves showing, 0..1, from what the prepass drew there; all of it without one.
 fn sun_showing(to_sun: vec3<f32>) -> f32 {
 @if(DEPTH_PREPASS && !MULTISAMPLED) {
     let eye = view_bindings::view.world_position.xyz;

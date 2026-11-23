@@ -5,27 +5,22 @@ use crate::block::BlockType;
 use crate::features::ReliefKind;
 use crate::math::smoothstep_f64;
 
-/// What the ground has become on top of its climate biome: high steep ground, or a volcanic province's.
-/// A mountain desert and a mountain taiga differ because they are the desert and the taiga underneath.
+/// What the ground has become on top of its climate biome, which still shows through underneath.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Modifier {
     #[default]
     None,
-    /// High, steep ground: meadow with bare rock on the steeper faces, more of it the higher it gets,
-    /// scree for the sand and a few scattered trees.
+    /// High, steep ground: meadow with more bare rock the higher and steeper, scree for sand, few trees.
     Mountain,
-    /// High ground on a volcanic province: the rock there is basalt, bare on everything but the
-    /// gentlest slopes, with ash for the sand and hardly a tree.
+    /// A volcanic province: basalt bare on all but the gentlest slopes, ash for sand, hardly a tree.
     Volcanic,
 }
 
-// Mountain ground steeper than this is bare rock, the limit falling with height from the first gradient
-// at the first height over the sea to the second at the second.
+// Mountain ground steeper than this is bare rock, falling with height from the first gradient to the second.
 const ROCK_GRADIENT: (f64, f64) = (1.6, 1.0);
 const ROCK_ABOVE: (f64, f64) = (150.0, 600.0);
 // Volcanic ground steeper than this is bare rock.
 const BARE_GRADIENT: f64 = 0.5;
-// How thickly trees grow on mountain and on volcanic ground.
 const MOUNTAIN_TREES: f64 = 0.04;
 const VOLCANIC_TREES: f64 = 0.01;
 

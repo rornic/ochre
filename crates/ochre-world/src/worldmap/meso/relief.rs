@@ -1,5 +1,4 @@
-//! Base relief for the biomes whose ground the tectonics leave too flat: jungle gets steep ridged hills, savanna long low swells and glacier ice ridges,
-//! laid over the map's height after the landmarks, in proportion to how much of each cell's surroundings is that biome.
+//! Base relief for biomes the tectonics leave too flat: jungle's ridged hills, savanna's swells, glacier ice ridges.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm, hash, ridged, unit};
@@ -9,13 +8,13 @@ use super::super::climate::{blur_box, closeness, BiomeKind};
 use super::super::{WaterCell, WorldMap};
 use super::landmarks::classes;
 
-// One layer of a biome's relief: noise of `wavelength` blocks, ridged or smooth, adding up to about `amp` blocks either way.
+// One layer of a biome's relief: noise of `wavelength` blocks, ridged or smooth, up to about `amp` blocks either way.
 struct Layer {
     biome: BiomeKind,
     wavelength: f64,
     amp: f64,
     ridged: bool,
-    // a step instead of a wave: ground a plateau on one side of the noise's zero and a plain on the other, with a scarp between
+    // a step instead of a wave: plateau on one side of the noise's zero, plain on the other, with a scarp between
     scarp: bool,
     // 0 for smooth ground, else the height of the ledges the relief is cut into, each a flat tread and a steep riser
     steps: f64,
@@ -74,11 +73,11 @@ fn apply(map: &mut WorldMap, mask: &[f32], layer: &Layer, (keep, wet): (&[f32], 
     }
 }
 
-/// Lays the relief of jungle, savanna and glacier country into `map.height`, leaving `keep` (landmarks) as they stand.
+/// Lays jungle, savanna and glacier relief into `map.height`, leaving `keep` (landmarks) as they stand.
 pub(crate) fn run(map: &mut WorldMap, keep: &[f32]) {
     let dim = map.dim();
     let class = classes(map);
-    // the rivers and lakes of the first water run: steep ground beside them left a river's bank lower than its water, so the relief keeps about 7 cells off
+    // first-run rivers and lakes: steep ground beside them left banks under water, so relief keeps 7 cells off
     let wet = closeness(map, |i| map.water_kind[i] == WaterCell::Lake as u8 || map.water_kind[i] == WaterCell::River as u8);
     for biome in [BiomeKind::Jungle, BiomeKind::Savanna, BiomeKind::Glacier] {
         let present: Vec<f32> = class.iter().map(|&c| (c == Some(biome)) as u8 as f32).collect();

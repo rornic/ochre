@@ -2,7 +2,7 @@ use bevy::ecs::component::Component;
 use bevy::math::Vec3;
 use std::collections::HashMap;
 
-// The sculpted ground's triangles by the columns they cross, in mesh units, for plants to stand on and players to collide with.
+// The sculpted ground's triangles by the columns they cross, in mesh units, for plants and player collision.
 #[derive(Component, Default)]
 pub struct Floor {
     triangles: Vec<[Vec3; 3]>,

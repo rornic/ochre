@@ -3,7 +3,7 @@
 import super::cloud_bindings::{Weather, cloud_pattern, cloud_sampler, cloud_layer, most_storm, sky_cover, weather_at};
 import super::hash::hash3;
 
-// The cumulus slab's base and top, matching `CLOUD_BASE` and `CLOUD_TOP` in `clouds.rs`, and how high a storm's towers reach.
+// The cumulus slab's base and top (`CLOUD_BASE`, `CLOUD_TOP` in `clouds.rs`), and how high a storm's towers reach.
 const BASE: f32 = 2400.0;
 const TOP: f32 = 3000.0;
 const STORM_TOP: f32 = 6000.0;
@@ -11,9 +11,9 @@ const STORM_TOP: f32 = 6000.0;
 const LAND_TOP: f32 = 2048.0;
 // Light lost a block into the thickest cloud.
 const EXTINCTION: f32 = 0.025;
-// So little light still through that a march stops there, and counts it as none: the sun's disc is thousands of times brighter than the cloud, and would shine through what's left.
+// So little light still through that a march stops and counts it as none: the sun's disc is far brighter than cloud.
 const OPAQUE: f32 = 0.02;
-// How much of a ray through the slab is marched at full steps, in blocks, so they stay short along low rays, and how far on it's marched at fewer: past the clouds' fade nothing's left.
+// How much of a ray through the slab is marched at full steps, in blocks, and how far on it's marched at fewer.
 const NEAR_REACH: f32 = 3000.0;
 const MARCH_REACH: f32 = 15000.0;
 // Where light toward the sun is looked for, in blocks, for how much cloud shades each sample.
@@ -32,7 +32,7 @@ const DETAIL_REACH: f32 = 7000.0;
 const NOISE_CELL: f32 = 256.0;
 // How far edge wisps reach into clear sky: less is crisper but shimmers between too few samples.
 const SOFTNESS: f32 = 0.22;
-// Cirrus: its height, streak length and width, and the swirls turning them so they never fan out like rays (whole numbers to the pattern's width).
+// Cirrus: its height, streak length and width, and the swirls turning them so they never fan out (whole numbers).
 const CIRRUS: f32 = 3800.0;
 const CIRRUS_CELL: vec2<f32> = vec2<f32>(512.0, 256.0);
 const CIRRUS_SWIRL: f32 = 3072.0;
@@ -44,7 +44,7 @@ const CIRRUS_EDGE_ON: vec2<f32> = vec2<f32>(0.03, 0.25);
 // Standing in for a ray's distance going on forever.
 const FAR: f32 = 1e30;
 
-// `c` wrapped into 0..period, and the wrapped cell after it: wrapping once per axis rather than per corner is most of the noise's cost.
+// `c` wrapped into 0..period, and the cell after it: wrapping once per axis, not corner, is most of the noise's cost.
 fn wrapped(c: i32, period: i32) -> vec2<i32> {
     let at = ((c % period) + period) % period;
     return vec2<i32>(at, select(at + 1, 0, at + 1 == period));
@@ -99,10 +99,10 @@ const STORM_THICKENING: f32 = 2.5;
 // How much of the sun's light, and of the sky's on their undersides, a storm's cloud keeps.
 const STORM_SUNLIT: f32 = 0.5;
 const STORM_UNDERSIDE: f32 = 0.25;
-// Haze takes a storm's cloud this many times more slowly than fair-weather cloud, and it fades out later, so its towers stand out far off.
+// Haze takes a storm's cloud this many times slower than fair-weather cloud and fades later, so towers show far off.
 const STORM_CLEARER: f32 = 3.0;
 
-// The top of the slab rays are marched through: storms' towers only while one is about, so fair weather keeps its steps where its clouds are.
+// The top of the slab rays are marched through: storms' towers only while one is about, so fair weather keeps steps.
 fn slab_top() -> f32 {
     return select(TOP, STORM_TOP, most_storm() > 0.01);
 }
@@ -112,7 +112,7 @@ fn ceiling(weather: Weather) -> f32 {
     return mix(TOP, STORM_TOP, smoothstep(0.2, 0.9, weather.storm));
 }
 
-// Cloud density at `p` under `weather`, 0..1 (more in a storm): the pattern's cover piled into a flat-based dome, its edges eaten by noise.
+// Cloud density at `p` under `weather`, 0..1 (more in a storm): the pattern's cover piled into a dome, noise-eaten.
 fn density(p: vec3<f32>, drift: vec2<f32>, octaves: i32, weather: Weather) -> f32 {
     let xz = p.xz - drift;
     let share = textureSampleLevel(cloud_pattern, cloud_sampler, xz / cloud_layer.y, 0.0).r;
@@ -169,7 +169,7 @@ fn cloud_span(origin: vec3<f32>, direction: vec3<f32>, bend: f32) -> vec2<f32> {
     return span;
 }
 
-// A march's gathering: sun, moon-and-sky and haze reaching the eye in xyz, transmittance, and the distance to what it gathered, summed by how much each part gave.
+// A march's gathering: sun, moon-and-sky and haze in xyz, transmittance, and the distance to what it gathered.
 struct Marched {
     gathered: vec3<f32>,
     through: f32,
@@ -282,7 +282,7 @@ fn march_ray(origin: vec3<f32>, direction: vec3<f32>, bend: f32, limit: f32, ste
     return out;
 }
 
-// Distance to the first cloud a ray could meet, or `FAR`: the land never reaches that high, so nothing nearer hides them.
+// Distance to the first cloud a ray could meet, or `FAR`: land never reaches that high, so nothing nearer hides them.
 fn cloud_entry(origin: vec3<f32>, direction: vec3<f32>, bend: f32) -> f32 {
     let span = cloud_span(origin, direction, bend);
     var entry = select(FAR, span.x, span.y > span.x);
@@ -294,7 +294,8 @@ fn cloud_entry(origin: vec3<f32>, direction: vec3<f32>, bend: f32) -> f32 {
     return entry;
 }
 
-// The reflections' map is two halves: on the left the sky over the eye drawn stereographically onto a disc, and on the right the clouds straight over the ground round the eye, this far each way, see `reflection` in `cloud_target.wesl`.
+// The reflections' map is two halves: the sky over the eye on a disc (stereographic) on the left, and on the right
+// the clouds straight over the ground round the eye, this far each way (`reflection` in `cloud_target.wesl`).
 const REFLECTION_TEXELS: f32 = 512.0;
 const OVERHEAD_REACH: f32 = 12288.0;
 

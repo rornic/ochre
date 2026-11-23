@@ -1,5 +1,5 @@
 // Ground as one sculpted surface (surface nets, rock by dual contouring), see docs/sculpted-ground.md.
-use super::buffers::{GrassTint, MeshBuffers, Vertex};
+use super::buffers::{stored_normal, GrassTint, MeshBuffers, Vertex};
 use super::shading::face_light;
 use super::source::BlockSource;
 use crate::chunk::CHUNK_SIZE;
@@ -8,7 +8,7 @@ use bevy::math::{IVec3, Mat3, Vec3};
 use ochre_base::block::{BlockType, Face, Tile};
 use std::ops::Deref;
 
-// Quads left without a diagonal whose triangles both face from solid to air, which the cell constraint makes impossible.
+// Quads without a diagonal whose triangles both face solid to air, which the cell constraint makes impossible.
 #[cfg(test)]
 pub(super) static UNSOUND_QUADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -79,27 +79,27 @@ const CHISEL_SOFT: f32 = 0.25;
 const CHISEL_STEP: f32 = 2.0;
 // How far, in blocks, an edit can move the sculpted surface: a vertex's placing reads 5 out and every step a cell more.
 pub(crate) const EDIT_REACH: i64 = (VERTEX_REACH + PLANE_REACH + 3) as i64;
-// Steps that read a vertex's neighbours, each taking any error a cell further in: the passes, the facing and the normals.
+// Steps that read a vertex's neighbours, each taking any error a cell further in: the passes, facing and normals.
 const NEIGHBOUR_STEPS: usize = RELAX_PASSES + SPIKE_PASSES + 1 + CHISEL_PASSES + 1;
-// Cells past the chunk that get a vertex: one an owned quad uses, and the steps' reach past it, plus the wrong one at the end.
+// Cells past the chunk that get a vertex: one an owned quad uses, the steps' reach, and the last (wrong) one.
 const VERTEX_REACH: usize = 1 + NEIGHBOUR_STEPS + 1;
 // A vertex is placed from blocks a gap fill, a blur, a slope and a corner away, so the last right one needs this many.
 const _: () = assert!(VERTEX_REACH + PLANE_REACH + 2 <= REACH as usize);
 // A LOD node's ring repeated this far out, enough for the counts round its edge; its edge needn't match a neighbour's.
 const LOD_REACH: i32 = 4;
-// How far, in blocks, a node's surface sits under the ground's, so full-detail chunks drawn over it as it stands in for them win.
+// How far, in blocks, a node's surface sits under the ground's so full-detail chunks drawn over it win.
 const LOD_SINK: f32 = 0.3;
-// How far a skirt leans into its node for each cell it runs, so it never lies in the plane a neighbour draws in, see docs/sculpted-ground.md.
+// How far a skirt leans into its node per cell it runs, so it never lies in a neighbour's plane (sculpted-ground.md).
 pub(super) const SKIRT_LEAN: f32 = 1.0 / 16.0;
-// How far, in cells, the lowest vertices of the row past a node's bottom sit in behind the node below's, see docs/sculpted-ground.md.
+// How far, in cells, the row past a node's bottom sits in behind the node below's (docs/sculpted-ground.md).
 const ROW_LEAN: f32 = 0.5;
 // How far out along its normal a vertex's occlusion is read from the blurred blocks.
 const AO_OUT: f32 = 1.5;
-// Rock's occlusion: the openness it starts at (flat rock reads about 0.2), the most it takes, and the excess at which it has taken half of that.
+// Rock's occlusion: the openness it starts at (flat rock reads ~0.2), the most it takes, and the excess for half.
 const ROCK_AO_FROM: f32 = 0.2;
 const ROCK_AO_MAX: f32 = 0.55;
 const ROCK_AO_KNEE: f32 = 0.12;
-// A vertex's occlusion, 0.2 to 1, rides in its cell's fraction, within the ±0.5 every reader rounds away, see `world.wesl`.
+// A vertex's occlusion, 0.2 to 1, rides in its cell's fraction, within the ±0.5 every reader rounds away.
 const AO_MID: f32 = 0.6;
 const AO_SPREAD: f32 = 1.0;
 // Marks a vertex as projected three ways, in its uv's x, less the cell of the material it blends to, see `world.wesl`.
@@ -161,8 +161,7 @@ fn noise(seed: u32, p: Vec3) -> f32 {
     lerp(face(0), face(1), t.z)
 }
 
-// `cell_size` blocks to a cell: a chunk's are 1, a LOD node's wider, whose edge hangs a skirt instead of matching.
-// `beside` gets the triangles just past a chunk's edge that its neighbours draw, exact as they draw them, for what stands there.
+// Meshes a chunk (`cell_size` 1) or LOD node (wider cells, edge skirts); `beside` has triangles past a chunk edge.
 pub(super) fn mesh_nets(
     source: &impl BlockSource,
     buffers: &mut MeshBuffers,
@@ -193,8 +192,7 @@ fn sculpt<const MARGIN: i32>(
     let margin = MARGIN;
     // lumps and wobble are in blocks, over this for cells
     let cell_blocks = cell_size as f32;
-    // blocks by index, x then z then y as the neighbourhood holds them, index `a` being the chunk's block `a - margin`
-    // a constant before monomorphising, as the grid's indexing runs half again as slow without
+    // blocks by index, x then z then y, `a` being block `a - margin`; const as indexing runs half again as slow without
     let n = const { (SIZE + 2 * MARGIN) as usize };
     let index = |i: usize, j: usize, kk: usize| (i * n + kk) * n + j;
     let local = |i: usize, j: usize, kk: usize| IVec3::new(i as i32 - margin, j as i32 - margin, kk as i32 - margin);
@@ -279,7 +277,7 @@ fn sculpt<const MARGIN: i32>(
         return buffers.indices.len();
     }
 
-    // blocks counted over `plane_reach` each way, for rock's planes and occlusion: whole counts, so neighbours' sums agree
+    // blocks counted over `plane_reach` each way, for rock planes and occlusion: whole counts, so sums agree
     let cells = n - 1;
     // farther cells' vertices can't reach the chunk's own, see `VERTEX_REACH`
     let (near_low, near_high) = ((margin as usize).saturating_sub(VERTEX_REACH), ((margin + SIZE) as usize - 1 + VERTEX_REACH).min(cells - 1));
@@ -289,7 +287,7 @@ fn sculpt<const MARGIN: i32>(
     let window = (2 * reach + 1).pow(3) as f32;
     let (blur_low, blur_high) = (low.saturating_sub(6), (high + 6).min(n - 1));
     let (wide_low, wide_high) = (blur_low.saturating_sub(reach), (blur_high + reach).min(n - 1));
-    // rock's count rides in the top half, so one set of running sums counts both, for how rocky the ground round a vertex is
+    // rock's count rides in the top half, so one set of running sums counts both: how rocky the ground round a vertex is
     let mut counts: Vec<u32> = solid.iter().zip(&blocks).map(|(&s, &b)| s as u32 * (1 + (!soft(b)) as u32 * ROCK_COUNT)).collect();
     let mut line = vec![0u32; n + 1];
     let mut run = |counts: &mut Vec<u32>, start: usize, stride: usize, out: std::ops::RangeInclusive<usize>| {
@@ -334,7 +332,7 @@ fn sculpt<const MARGIN: i32>(
     let mut solid_corners: Vec<u8> = Vec::new();
     // the axes a cell's crossings run along, as bits x, y, z
     let mut crossing_axes: Vec<u8> = Vec::new();
-    // how far toward rock each vertex's blend is, kept to its own material's side of a half, and how far it's placed as rock
+    // rock blend per vertex, kept to its material's side of a half, and how far it is placed as rock
     let mut rockiness: Vec<f32> = Vec::new();
     let mut rocky: Vec<f32> = Vec::new();
     // whether a cell's corner is lit sky, for its vertex's light: the brightest air corner
@@ -442,7 +440,7 @@ fn sculpt<const MARGIN: i32>(
     let look = |m: BlockType| if soft(m) { k.soft } else { k.rock };
     let between = |from: usize, to: u32, offsets: &[Vec3]| (homes[to as usize] - homes[from]).as_vec3() + offsets[to as usize];
 
-    // which of this chunk and the six against its faces hold any ground before the gap fill: a face goes to its solid block's chunk unless that has none
+    // which of this chunk and the six beside it hold ground before the gap fill; a face goes to its solid block's chunk
     let slot = |c: usize| (c as i32 - margin).div_euclid(SIZE) + 1;
     let has_ground = {
         let mut has = [[[true; 3]; 3]; 3];
@@ -483,8 +481,7 @@ fn sculpt<const MARGIN: i32>(
                     if here {
                         quad.reverse();
                     }
-                    // a chunk draws the faces over its own solid blocks, as the cube mesher did, so an all-air chunk, which the loader never meshes, draws
-                    // none; a node keeps the low side, as its edges hang skirts
+                    // chunks draw faces over their own solid blocks, so all-air draws none; nodes keep the low side
                     let (sol, other) = if here { ((i, j, kk), (i + a, j + b, kk + c)) } else { ((i + a, j + b, kk + c), (i, j, kk)) };
                     let (oi, oj, ok) = if lod {
                         (i, j, kk)
@@ -637,7 +634,7 @@ fn sculpt<const MARGIN: i32>(
             }
         }
     }
-    // a node's edge vertices sit on its sides, so its surface meets a neighbour's there with only a step, which the skirt hides
+    // a node's edge vertices sit on its sides, leaving a step to a neighbour's surface that the skirt hides
     let boundary = |c: i32| c == margin - 1 || c == edge;
     if lod {
         for (offset, home) in offsets.iter_mut().zip(&homes) {
@@ -649,9 +646,7 @@ fn sculpt<const MARGIN: i32>(
             }
         }
     }
-    // inside its cell across each axis a crossing runs along, a vertex can't fold a triangle, however the passes moved it. Only
-    // the vertices of a quad that would fold are held so, a round at a time, as holding one can fold a quad beside it: held
-    // everywhere, a smooth slope of soft ground was pulled back onto its blocks' staircase and read as terraces
+    // hold only where a quad would fold, a round at a time as holding one can fold its neighbour; all would terrace
     const INSET: f32 = 1.0 / 64.0;
     const HOLD_ROUNDS: usize = 4;
     let hold = |offset: &mut Vec3, axes: u8| {
@@ -732,7 +727,7 @@ fn sculpt<const MARGIN: i32>(
         lerp(face(0), face(1), t.z)
     };
 
-    // vertices shared per material pair: a triangle draws its commonest material and blends to the other, see `world.wesl`
+    // vertices shared per material pair: a triangle draws its commonest material and blends to the other (`world.wesl`)
     let tile_for = |m: BlockType, v: usize| {
         tile_of(source, m, if m == BlockType::Grass { Face::Top } else { Face::Side }, homes[v] + local(0, 0, 0))
     };
@@ -802,8 +797,7 @@ fn sculpt<const MARGIN: i32>(
                 };
                 buffers.vertices.push(Vertex {
                     position: position.to_array(),
-                    // the cube's faces along z store their normals reversed
-                    normal: [normal.x, normal.y, -normal.z],
+                    normal: stored_normal(normal),
                     uv: [TRIPLANAR - other_tile.atlas_cell(), toward_other + tinted_side],
                 });
                 // tinted as its own material, or the blend's tinted one, drawn in the triangle's
@@ -824,8 +818,7 @@ fn sculpt<const MARGIN: i32>(
     past_bottom.min(buffers.indices.len())
 }
 
-// Each open edge along a node's sides, of the surface drawn from index `start` up to the row past its bottom at `past_bottom`, hangs a wall
-// into the ground, see docs/sculpted-ground.md.
+// Hangs a wall into the ground from each open edge along a node's sides, rows `start` to `past_bottom`.
 fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usize, past_bottom: usize) {
     let side = |c: f32| c == -0.5 || c == SIZE as f32 - 0.5;
     let at = |i: u32| buffers.vertices[i as usize].position;
@@ -836,7 +829,7 @@ fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usiz
     // how far, and which way, a vertex's skirt runs: into the ground, in the plane of the side across `axis`, never up
     let reach = |top: u32, axis: usize| {
         let (p, n) = (at(top), buffers.vertices[top as usize].normal);
-        // the cube's faces along z store their normals reversed
+        // undoes `stored_normal`
         let mut inward = Vec3::new(-n[0], -n[1], n[2]);
         inward[axis] = 0.0;
         let inward = if inward.length_squared() > 1e-6 { inward.normalize() } else { Vec3::NEG_Y };

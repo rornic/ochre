@@ -21,7 +21,7 @@ use ochre_world::{
 use crate::dev::DevEnv;
 use crate::settings::Settings;
 
-/// Builds the world `OchrePlugins` plays in, from `settings.world`. Takes seconds, so call it before the window opens.
+/// Builds the world `OchrePlugins` plays in, from `settings.world`. Takes seconds: call it before the window opens.
 pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     ochre_world::load_world(
         settings.renderer.lod_layout().region_reach() as u32,
@@ -30,12 +30,7 @@ pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     )
 }
 
-/// Every Ochre plugin, for a game that wants the lot. Turn parts off with `.disable::<P>()` and swap them with
-/// `.set(P { .. })`, as with Bevy's `DefaultPlugins`. Needs `DefaultPlugins`, with `task_pool_plugin()` set, added first.
-///
-/// `TerrainPlugin` is the one the rest stand on. The rest each work without the others: where a plugin reads another's
-/// resource it makes its own blank one, so what's disabled is simply absent. `settings.plugins` starts `FrostPlugin` and
-/// `GodrayPlugin` disabled, as the two that cost frame time or look.
+/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins`; `settings.plugins` starts frost and godrays off.
 pub struct OchrePlugins {
     pub settings: Settings,
     world: World,

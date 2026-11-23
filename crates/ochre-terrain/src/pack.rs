@@ -1,10 +1,4 @@
-//! Packs a terrain mesh's vertices into fewer bytes before it goes to the GPU, so the same view
-//! takes about half the memory.
-//!
-//! Positions become 16-bit fractions of the mesh's own bounds, normals 4-byte octahedral, both
-//! sets of uvs 16-bit, colours half-floats and indices 16-bit where the mesh is small enough.
-//! Bevy decodes all of them in its vertex shader, which every terrain shader already calls (see
-//! `decompress_vertex`), apart from the colours, whose half-floats the GPU widens by itself.
+//! Packs terrain mesh vertices into about half the bytes: 16-bit positions, uvs, indices; octahedral normals.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -19,11 +13,7 @@ pub fn set_packed(on: bool) {
     PACKED.store(on, Ordering::Relaxed);
 }
 
-// Positions are packed as fractions of the mesh's bounds, which are divided by the bounds' size, so
-// a mesh that is flat, as the top of a level stretch of ground is, has a size of nothing to divide
-// by. Bevy guards against that, but a vertex that no triangle uses, a block off the mesh along each
-// flat axis, gives the bounds some size at no cost and draws nothing. Returns false for a mesh whose
-// attributes aren't the floats it expects.
+// Flat meshes have zero bounds to divide by: add an unused vertex a block off each flat axis; false if not floats.
 fn give_bounds_size(mesh: &mut Mesh) -> bool {
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -70,9 +60,7 @@ fn give_bounds_size(mesh: &mut Mesh) -> bool {
     true
 }
 
-/// The mesh with its attributes packed, unless packing is off or it fails, in which case the mesh
-/// is returned as it was, which draws the same. Call it as late as possible: once a mesh is
-/// packed, code that reads its float attributes back no longer works.
+/// The packed mesh, or `mesh` unchanged if packing is off or fails. Call late: packed meshes can't be read as floats.
 pub fn pack(mut mesh: Mesh) -> Mesh {
     // Splitting foliage from ground can leave an empty solid mesh, with no bounds to quantize.
     if mesh.count_vertices() == 0 || !PACKED.load(Ordering::Relaxed) {
@@ -111,8 +99,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    // What the vertex shader makes of a packed position: the mesh's bounds' centre plus its half
-    // size times the 16-bit fraction.
+    // The vertex shader's decode: the bounds' centre plus half size times the 16-bit fraction.
     fn decoded_positions(mesh: &Mesh) -> Vec<[f32; 3]> {
         let aabb = mesh.final_aabb.expect("bounds");
         let (center, half) = ((aabb.min + aabb.max) * 0.5, (aabb.max - aabb.min) * 0.5);
@@ -274,7 +261,7 @@ mod tests {
         assert_eq!(4, pack(mesh).count_vertices());
     }
 
-    // Seed 1's peak, around where a hole was seen: the groups the game builds, merged, split and packed as it does, keep every triangle where it was.
+    // Seed 1 peak, where a hole was seen: groups built as the game does, merged, split and packed, keep every triangle.
     #[test]
     #[ignore = "builds seed 1's whole world, a few seconds"]
     fn diag_group_pipeline_keeps_every_triangle() {

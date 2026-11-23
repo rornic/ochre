@@ -430,9 +430,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "dryrivers" => {
-            // map river cells with no river or lake water in their own square at block scale (every 4 blocks), told apart
-            // into those whose river is drawn a few blocks off (the meander) and those with none on their line, which
-            // are sorted by where the cell sits on its river, driest first by how far the ground lies under the map's own
+            // river cells with no water in their square (every 4 blocks): meandered off, or none on the line
             let limit: usize = opt(args, 4, 12)?;
             let dim = map.dim();
             let cell = map.config.map_cell;
@@ -454,8 +452,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                         matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
                     })
                 });
-                // the line is the meander undone to a block or two, as wide as a stream is, so look 3 blocks round it, along
-                // the middle of the stretch, not its ends, which the next stretch shares
+                // the line is the meander undone to a block or two, so look 3 blocks round it along the middle
                 wet[i] = square_wet[i]
                     || terrain.river_course(i, 32).is_some_and(|RiverCourse { end, line, .. }| {
                         let wet_at = |k: usize| {
@@ -560,8 +557,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "course" => {
-            // the river stretch that starts in the map cell at x,z: its reach and levels, and the blocks' ground, dry
-            // ground, map height and water at points along it as they lay it (meander included)
+            // the river stretch starting in the map cell at x,z: levels, ground and water along it, meander included
             let (u, v) = map.to_cell(x as f64, z as f64);
             let dim = map.dim();
             let i = map.index((u.round() as usize).min(dim - 1), (v.round() as usize).min(dim - 1));
@@ -575,8 +571,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "steps" => {
-            // how terraced gentle ground is: of points on a slope of 0.2 to 1 over 8 blocks, the share whose ground
-            // is near level over 1 block (a tread), sampled every 2 blocks, both ways
+            // how terraced gentle ground is: share of points on a 0.2 to 1 slope over 8 blocks near level over 1 block
             let half: i64 = arg(args, 4)?;
             let h = |x: i64, z: i64| terrain.sample(x as f64, z as f64).height;
             let (mut slopes, mut treads) = (0usize, 0usize);
@@ -776,9 +771,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
     Ok(out)
 }
 
-// The chunks round (`x`, `z`) meshed as the game meshes them, drawn from above at `azimuth` degrees with an orthographic
-// camera, each face its tile's mean colour times its vertex colour, lit by one sun. Plants and leaves are left out, as
-// their cards would draw solid.
+// Chunks round (`x`, `z`) meshed as the game does, drawn from above in tile mean colour times vertex colour, sun-lit.
 fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, out: &str) -> Result<String, String> {
     use bevy::math::Vec3;
     use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
@@ -819,11 +812,11 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     // (position, normal, colour) triangles in world blocks
     let mut triangles: Vec<[(Vec3, Vec3, Vec3); 3]> = Vec::new();
     let mut vertices = 0usize;
-    // each ground triangle's centroid, area and its winding's normal against its vertices' stored normals, to find folded triangles
+    // each ground triangle's centroid, area and winding normal against its vertices' stored normals, to find folds
     let mut folds: Vec<(Vec3, f32, f32, usize)> = Vec::new();
     // the atlas cell of each triangle drawn, in step with `triangles`
     let mut tri_cell: Vec<usize> = Vec::new();
-    // which mesh each triangle came from, and whether it lies wholly in one of a node's side planes (1, walls drawn there) or is water (2)
+    // which mesh each triangle came from, and whether it lies wholly in a node's side plane (1) or is water (2)
     let mut tri_mesh: Vec<u32> = Vec::new();
     let mut tri_side: Vec<u8> = Vec::new();
     let mut meshes_added = 0u32;
@@ -887,7 +880,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     };
     // OCHRE_RENDER_LOD=<level> draws the coarse nodes of that level over the area instead of the chunks
     let lod_env = std::env::var("OCHRE_RENDER_LOD").ok();
-    // OCHRE_RENDER_LOD=auto draws what the game would round the spot lifted by OCHRE_RENDER_LIFT blocks, on the layout OCHRE_RENDER_LAYOUT=full,base,scale in chunks, see docs/sculpted-ground.md
+    // OCHRE_RENDER_LOD=auto draws what the game would, lifted by OCHRE_RENDER_LIFT, in the OCHRE_RENDER_LAYOUT
     let auto = lod_env.as_deref() == Some("auto");
     let lod: u8 = lod_env.and_then(|l| l.parse().ok()).unwrap_or(0);
     // OCHRE_RENDER_HANDOVER=1 draws chunks in the node holding (`x`, `z`) instead, to look at the seam round it
@@ -1000,7 +993,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         if area.abs() < 1e-6 {
             return;
         }
-        // OCHRE_RENDER_CULL=out draws only triangles whose winding faces the camera (the outward side the mesher winds toward), `in` the others, as a backface cull would
+        // OCHRE_RENDER_CULL=out draws only triangles facing the camera, `in` the others, as a backface cull would
         if let Some(mode) = &cull {
             let outward = (tri[2].0 - tri[0].0).cross(tri[1].0 - tri[0].0);
             let facing_camera = outward.dot(forward) < 0.0;
@@ -1056,16 +1049,15 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
         (c.x - x as f32).abs() < half as f32 * 0.8 && (c.z - z as f32).abs() < half as f32 * 0.8
     };
-    // OCHRE_RENDER_ZFIGHT=<blocks>: pixels where a second triangle, sharing no corner with the front one, lies within that depth of it, where the
-    // game's depth test would flicker between the two; counted by whether each lies in a node's side plane, and painted magenta
+    // OCHRE_RENDER_ZFIGHT=<blocks>: magenta where a second triangle, sharing no corner with the front, is that close
     if let Some(eps) = std::env::var("OCHRE_RENDER_ZFIGHT").ok().and_then(|e| e.parse::<f32>().ok()) {
         let mut fighting = vec![false; (w * h) as usize];
         // [front kind][other kind][same mesh], kinds as `tri_side`
         let mut kinds = [[[0usize; 2]; 3]; 3];
         let mut fighters: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        // by how the two triangles' meshes sit: one mesh, stacked nodes of one level (same footprint), neighbours of one level, and different cell sizes
+        // by how the two meshes sit: one mesh, stacked nodes of a level, neighbours of a level, or cell sizes
         let mut relations = [0usize; 4];
-        // pixels between triangles within about 8 degrees of parallel: coplanar surfaces fight over an area, where crossing ones only meet along a line
+        // pixels between triangles within ~8 degrees of parallel: coplanar surfaces fight over an area, not a line
         let mut parallel = 0usize;
         let facing = |t: usize| (triangles[t][2].0 - triangles[t][0].0).cross(triangles[t][1].0 - triangles[t][0].0).normalize_or_zero();
         let shares = |a: usize, b: usize| triangles[a].iter().any(|p| triangles[b].iter().any(|q| p.0.distance_squared(q.0) < 1e-6));
@@ -1111,7 +1103,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             img.put_pixel(at as u32 % w, at as u32 / w, Rgb([255, 0, 255]));
         }
     }
-    // OCHRE_RENDER_DUMP=<file> writes the pixels showing ground, drawn all in chunks, for OCHRE_RENDER_GAPS=<file> to count the openings against, see docs/sculpted-ground.md
+    // OCHRE_RENDER_DUMP=<file> writes the pixels showing ground, for OCHRE_RENDER_GAPS=<file> to count against
     let ground_at = |at: usize| front[at] != usize::MAX && tri_side[front[at]] != 2 && inner(front[at]);
     if let Ok(file) = std::env::var("OCHRE_RENDER_DUMP") {
         let side_of = |t: usize| {
@@ -1177,8 +1169,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
     }
     img.save(out).map_err(|e| format!("{out}: {e}"))?;
-    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays from the point and says, for each, whether the first ground triangle it meets faces it (the point is outside the
-    // drawn ground) or faces away (the point is inside the drawn ground, where a camera sees through it)
+    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays and says whether each first meets a ground triangle facing it or away
     if let Some(p) = std::env::var("OCHRE_RENDER_INSIDE").ok().and_then(|s| {
         let v: Vec<f32> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
         (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
@@ -1230,8 +1221,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         println!("from {p}: first ground hit faces the point on {facing} rays, faces away on {away}, nothing on {none}; nearest hit {nearest:.2} blocks");
     }
-    // by slope, each triangle's own face: walkable (normal.y over 0.4, as `GROUND_FACING`), steep (up to a wall), and a wall or overhang (normal.y under 0.1),
-    // with the share of the ground area each holds; and the interior's open edges, which a sealed surface has none of, the plants and leaves left out
+    // ground area by triangle slope (walkable above 0.4 normal.y, steep, wall, overhang below 0.1), and open edges
     {
         let (mut area, mut count) = ([0.0f32; 3], [0usize; 3]);
         let key = |p: Vec3| ((p.x * 16.0).round() as i64, (p.y * 16.0).round() as i64, (p.z * 16.0).round() as i64);
@@ -1255,16 +1245,16 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             "slope bands by area: walkable {:.1}%, steep {:.1}%, wall {:.1}% ({} / {} / {} triangles)",
             100.0 * area[0] / total, 100.0 * area[1] / total, 100.0 * area[2] / total, count[0], count[1], count[2]
         );
-        // the area's sides and the chunk rows' ends are where the drawing stops, so edges there are the picture's, not the mesh's
+        // the area's sides and chunk rows' ends are where drawing stops, so edges there are the picture's
         let (floor_y, ceiling_y) = ((cy0 * size) as f32 + 8.0, ((cy1 + 1) * size) as f32 - 8.0);
         let inside = |p: (i64, i64, i64)| {
             let y = p.1 as f32 / 16.0;
             (p.0 as f32 / 16.0 - x as f32).abs() < half as f32 * 0.8 && (p.2 as f32 / 16.0 - z as f32).abs() < half as f32 * 0.8 && y > floor_y && y < ceiling_y
         };
-        // trees are drawn by their own mesher, open where they meet what they stand in, so an edge with a log or leaf block beside it is the tree's
+        // trees open where they meet what they stand in, so an edge by a log or leaf block is the tree's
         let mut near_tree = |p: Point, q: Point| {
             let mid = ((p.0 + q.0) as f32 / 32.0, (p.1 + q.1) as f32 / 32.0, (p.2 + q.2) as f32 / 32.0);
-            // trunks sink into the ground, so a trunk's base sits up to two blocks under its first log, and the edge looks up for it
+            // trunks sink into the ground, so a base sits up to two blocks under its first log; the edge looks for it
             [-0.3f32, 0.3].iter().any(|&o| {
                 [-0.3f32, 0.3, 1.3, 2.3].iter().any(|&u| {
                     [-0.3f32, 0.3].iter().any(|&w| {
@@ -1294,7 +1284,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         let ground: Vec<&(Vec3, f32, f32, usize)> = folds.iter().filter(|f| !leaf_or_plant(f.3) && f.1 > 1e-6).collect();
         let mut flipped: Vec<&(Vec3, f32, f32, usize)> = ground.iter().copied().filter(|f| f.2 < -0.05).collect();
         flipped.retain(|f| inside(((f.0.x * 16.0) as i64, (f.0.y * 16.0) as i64, (f.0.z * 16.0) as i64)) && !near_trunk(f.0));
-        // which material tile (the atlas cell) the folds are in, against all ground, and how steep the stored normals say the place is
+        // which material tile (atlas cell) the folds are in, against all ground, and how steep the stored normals say
         {
             let mut by_cell: HashMap<usize, (usize, usize)> = HashMap::new();
             for f in &ground { by_cell.entry(f.3).or_default().0 += 1; }
@@ -1319,7 +1309,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         for ((bx, by, bz), (n, a)) in fold_worst.iter().take(10) {
             println!("  {n} folded ({a:.1} blocks of area) in the 16-block chunk at x {} y {} z {}", bx * 16, by * 16, bz * 16);
         }
-        // the winding checked by edges too: an edge walked the same way by two triangles means one of them is wound the wrong way
+        // winding checked by edges too: an edge walked the same way by two triangles means one is wound wrong
         let mut directed: HashMap<(Point, Point), u32> = HashMap::new();
         for tri in triangles.iter().filter(|t| t[0].2 != Vec3::new(0.16, 0.36, 0.55)) {
             let k = [tri[0].0, tri[1].0, tri[2].0].map(key);
@@ -1329,7 +1319,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         let same_way = directed.iter().filter(|(&(p, q), &n)| n >= 2 && inside(p) && inside(q)).count();
         println!("edges walked the same way twice: {same_way}");
-        // of those, edges with exactly two triangles (a pair wound against each other's sense) and not three or more meeting (a non-manifold join)
+        // of those, edges with exactly two triangles (wound against each other), not three or more (non-manifold)
         let (mut pair_bad, mut multi) = (0usize, 0usize);
         let mut pair_where: Vec<(Point, Point)> = Vec::new();
         for (&(p, q), &n) in directed.iter() {
@@ -1357,7 +1347,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         for ((bx, by, bz), n) in pb.iter().take(6) {
             println!("    {n} near x {} y {} z {}", bx * 16, by * 16, bz * 16);
         }
-        // each ground triangle tested against the blocks: a step out along its outward normal landing in solid ground and a step in landing in air means it faces into rock
+        // a step out along a triangle's normal landing in solid and a step in landing in air means it faces into rock
         if std::env::var("OCHRE_RENDER_INVERTED").is_ok() {
             let solid_at = |chunk_at: &mut dyn FnMut((i64, i64, i64)) -> Arc<ChunkData>, p: Vec3| {
                 let b = I64Vec3::new(p.x.round() as i64, p.y.round() as i64, p.z.round() as i64);

@@ -1,9 +1,4 @@
-// A scripted, repeatable camera flight through the chunk and LOD loading systems, headless (no
-// window or GPU), for comparing frame time and loading throughput between builds. The camera
-// settles at spawn, then walks, sprints and flies high over the same line of ground, and the
-// report gives each leg's frame time, chunks generated a second and generation queue depth.
-//   cargo run --release --example flight -- [--seed 1] [--out target/flight.txt] [--secs 30] [--fly-height 900] [--render-distance 512]
-// The report is `key: value` lines, so two runs diff cleanly.
+// A scripted headless camera flight (settle, walk, sprint, fly high) through the loading systems; `key: value` a leg
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};

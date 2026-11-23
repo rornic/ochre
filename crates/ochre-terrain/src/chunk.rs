@@ -31,9 +31,7 @@ impl ChunkCoordinate {
         .map(|offset| ChunkCoordinate(self.0 + offset))
     }
 
-    // All 26 chunks in the 3x3x3 neighborhood (face + edge + corner adjacent), needed so mesh
-    // generation can sample diagonal-neighbor blocks for vertex AO at chunk boundaries. Ordered
-    // by `neighbor_26_index` so callers can index straight into the result.
+    // All 26 neighbours in `neighbor_26_index` order, for sampling diagonal blocks for vertex AO at chunk boundaries.
     pub fn neighbors_26(&self) -> Vec<ChunkCoordinate> {
         let mut result = vec![*self; 26];
         for dx in -1..=1i64 {
@@ -61,8 +59,7 @@ pub(crate) fn neighbor_26_index(dx: i32, dy: i32, dz: i32) -> usize {
     }
 }
 
-// One block-type run in a chunk's linear cell ordering (see `ChunkData::linear_index`).
-// `length` covers at most size^3 = 4096 cells, comfortably within u16.
+// One block-type run in `linear_index` order; `length` fits u16 as a chunk has at most 4096 cells.
 #[derive(Debug, Clone, Copy)]
 struct Run {
     block: BlockType,
@@ -71,8 +68,7 @@ struct Run {
 
 #[derive(Clone)]
 pub struct ChunkData {
-    // Run-length encoded in `linear_index` order: most chunks are uniform or banded, so this is
-    // far smaller than one entry per block, at the cost of `get`/`set` scanning the runs.
+    // Run-length encoded in `linear_index` order: most chunks are uniform or banded, so far smaller than a block each.
     runs: Vec<Run>,
     /// The trees reaching into the chunk, to tint their leaves, see `TreeTints`.
     pub trees: TreeTints,
@@ -133,8 +129,7 @@ impl ChunkData {
         }
     }
 
-    // The run covering `index`, as its position in `runs` and the index it starts at. Chunks
-    // hold few runs (a uniform one is 1, banded terrain tens), so a linear scan is fine.
+    // The run covering `index` as its position in `runs` and its start index; chunks hold few runs, so a scan is fine.
     fn locate(&self, index: usize) -> (usize, usize) {
         let mut start = 0;
         for (i, run) in self.runs.iter().enumerate() {
@@ -163,7 +158,6 @@ impl ChunkData {
             + self.flow.len() * size_of::<(u16, u8)>()
     }
 
-    /// Every non-air block's coordinate and type.
     pub fn iter_non_air(&self) -> impl Iterator<Item = (U16Vec3, BlockType)> + '_ {
         let mut start = 0usize;
         self.runs.iter().flat_map(move |run| {
@@ -197,7 +191,6 @@ impl ChunkData {
         self.flow.get(&(linear_index(coord) as u16)).copied()
     }
 
-    /// Every flowing water block's coordinate and level.
     pub fn iter_flowing(&self) -> impl Iterator<Item = (U16Vec3, u8)> + '_ {
         self.flow
             .iter()
@@ -317,8 +310,7 @@ mod tests {
     #[test]
     fn test_set_block_mid_run_splits_without_disturbing_neighbours() {
         let mut chunk_data = ChunkData::default();
-        // a single Air run covers everything by default - set the middle cell of one
-        // column and confirm the cells immediately above/below it are untouched.
+        // one Air run covers everything by default: set one cell, check the cells above and below are untouched
         chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Rock);
 
         assert_eq!(

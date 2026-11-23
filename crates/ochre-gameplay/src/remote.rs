@@ -1,4 +1,4 @@
-//! `RemoteControlPlugin` serves the Bevy Remote Protocol on localhost, with `ochre.*` methods for driving the game from a script.
+//! `RemoteControlPlugin` serves the Bevy Remote Protocol on localhost, with `ochre.*` methods for driving the game.
 use bevy::{
     prelude::*,
     remote::{error_codes, http::RemoteHttpPlugin, BrpError, BrpResult, RemotePlugin},
@@ -15,13 +15,7 @@ use ochre_terrain::world::World;
 use ochre_world::sky::TimeOfDay;
 use ochre_world::weather::Weather;
 
-/// With a port, serves the BRP's built-in methods and these, all on `127.0.0.1` only:
-/// - `ochre.teleport {x, z, y?, height?, yaw?, pitch?}`: eyes at `y`, else `height` (default 3) over the ground; compass degrees, 0 north, 90 east.
-/// - `ochre.time {day}`: the time of day, 0 midnight, 0.25 sunrise, 0.5 noon.
-/// - `ochre.state`: seed, position, view, biome, time, weather, fps, loaded counts, whether loading has settled, the last shot saved.
-/// - `ochre.screenshot {path?, settle?}`: saves the window on the next frame, as `path` (a bare .png file name) in `target/remote`, and returns the path; poll `ochre.state` for `last_shot`. With `settle` true it waits for loading to settle first, so ground just teleported to is drawn.
-///
-/// Does nothing without a port. The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
+/// With a port, serves BRP plus the `ochre.*` methods on 127.0.0.1 only; render sub-app port 15703 allows one game.
 #[derive(Default)]
 pub struct RemoteControlPlugin {
     pub port: Option<u16>,
@@ -56,7 +50,7 @@ struct Remote {
     last_shot: Option<String>,
 }
 
-// shortcut: "settled" is no chunk or LOD task for a run of frames, not a check that every visible node is drawn (see `lod_sim`'s `holes_in`); upgrade if shots catch half-loaded ground.
+// shortcut: "settled" is no chunk or LOD task for a run of frames, not every node drawn; upgrade if shots hit holes.
 const QUIET_FRAMES: u32 = 30;
 const MIN_SETTLE_SECONDS: f32 = 2.0;
 // A shot is taken anyway after this long, as moving water can keep chunks remeshing.

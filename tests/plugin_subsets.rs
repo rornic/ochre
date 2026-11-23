@@ -1,5 +1,4 @@
-//! Every `OchrePlugins` plugin but the terrain's can be left out without anything else panicking, run headless with no GPU.
-//! `TerrainRenderPlugin` stays: it registers the material assets `TerrainPlugin` builds on, as `init_asset` does for `lod_sim`.
+//! Every `OchrePlugins` plugin but the terrain's can be left out without a panic, headless; the render plugin stays.
 use std::time::Duration;
 
 use bevy::app::{PluginGroup, ScheduleRunnerPlugin};

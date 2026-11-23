@@ -1,8 +1,4 @@
-//! The world's geography on a coarse grid, made once per seed: continents, mountain ranges,
-//! rivers and climate. Chunk generation and LOD sample it, adding local detail on top.
-//!
-//! A `WorldMap` is a plain value that saves to disk and loads back, so one machine can make it
-//! and share it with the rest: nothing downstream depends on the float maths that made it.
+//! The world's geography on a coarse grid, made once per seed: continents, ranges, rivers, climate.
 
 pub mod character;
 pub mod climate;
@@ -29,8 +25,7 @@ use std::sync::Arc;
 pub use features::{Feature, FeatureKind};
 pub use source::{RiverCourse, WorldTerrain};
 
-/// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
-/// players make are stored against the generated terrain, so a world from another version is refused.
+/// Bump when generation changes: player edits are stored against generated terrain, so other versions are refused.
 pub const GENERATOR_VERSION: u32 = 116;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
@@ -77,7 +72,6 @@ impl WorldConfig {
         Ok(())
     }
 
-    /// Cells across the map.
     pub fn dim(&self) -> usize {
         (self.size / self.map_cell) as usize
     }
@@ -109,8 +103,7 @@ impl WaterCell {
     }
 }
 
-/// The map: one value per cell of each layer, row-major `[z][x]`, with x and z running from the
-/// world's north-west corner. Layers a later generation stage hasn't filled are zero.
+/// The map: one value per cell of each layer, row-major `[z][x]` from the north-west; unfilled layers are zero.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorldMap {
     pub version: u32,
@@ -161,8 +154,7 @@ pub struct WorldMap {
     pub trees: Vec<u8>,
     /// How rough the ground is, 0..1 as 0..=255: the amplitude of the detail laid over it.
     pub roughness: Vec<u8>,
-    /// How near each cell is to a mountain range, 0..1 as 0..=255, reaching a few kilometres out
-    /// into the land round it: where the foothills are.
+    /// How near each cell is to a mountain range, 0..1 as 0..=255, reaching a few kilometres out: the foothills.
     pub range: Vec<u8>,
     /// A `landform::` class per cell (1 mountain), from the ground alone, never climate or water.
     pub landform: Vec<u8>,
@@ -170,18 +162,17 @@ pub struct WorldMap {
     pub ford: Vec<u8>,
     /// How much of a valley's cut each cell takes, 0..1 as 0..=255, sited before the valleys are cut: see `valleys`.
     pub valley: Vec<u8>,
-    /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only, see `valleys::run_alpine`.
+    /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only (`valleys::run_alpine`).
     pub alpine: Vec<u8>,
-    /// Each cell on a canyon's line: the way to the next (`NEIGHBOURS` index plus one) in the low nibble, its slot's depth in tens of blocks in the high.
+    /// Each cell on a canyon's line: direction to the next (`NEIGHBOURS` index + 1) in the low nibble, slot depth high
     pub canyon: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
-    /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
+    /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, 0 beyond a few cells.
     pub water_closeness: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
-    /// The share of soft beds at each cell, worked out by geology and not saved: erosion asks for it millions
-    /// of times, and it can be worked out again from the seed (empty on a map that was loaded or not generated).
+    /// The share of soft beds at each cell, cached for erosion and not saved (empty on a loaded or ungenerated map).
     pub(crate) soft: SoftCache,
 }
 
@@ -280,48 +271,32 @@ impl WorldMap {
     }
 
     /// The layer value at cell (`cx`, `cz`), clamped to the map's edge.
-    fn at(&self, layer: &[f32], cx: i64, cz: i64) -> f32 {
+    fn at<T: Copy>(&self, layer: &[T], cx: i64, cz: i64) -> T {
         let max = self.dim() as i64 - 1;
         layer[self.index(cx.clamp(0, max) as usize, cz.clamp(0, max) as usize)]
     }
 
     pub fn bilinear(&self, layer: &[f32], x: f64, z: f64) -> f32 {
-        let (u, v) = self.to_cell(x, z);
-        let (fu, fv) = (u.floor(), v.floor());
-        let (cx, cz) = (fu as i64, fv as i64);
-        let (tx, tz) = ((u - fu) as f32, (v - fv) as f32);
-        let top = self.at(layer, cx, cz) * (1.0 - tx) + self.at(layer, cx + 1, cz) * tx;
-        let bottom = self.at(layer, cx, cz + 1) * (1.0 - tx) + self.at(layer, cx + 1, cz + 1) * tx;
-        top * (1.0 - tz) + bottom * tz
+        self.lerp(layer, x, z)
     }
 
     /// `bilinear` of a layer of bytes, as a number in the byte's range.
     pub fn bilinear_bytes(&self, layer: &[u8], x: f64, z: f64) -> f32 {
+        self.lerp(layer, x, z)
+    }
+
+    fn lerp<T: Copy + Into<f32>>(&self, layer: &[T], x: f64, z: f64) -> f32 {
         let (u, v) = self.to_cell(x, z);
         let (fu, fv) = (u.floor(), v.floor());
         let (cx, cz) = (fu as i64, fv as i64);
         let (tx, tz) = ((u - fu) as f32, (v - fv) as f32);
-        let max = self.dim() as i64 - 1;
-        let at = |x: i64, z: i64| {
-            layer[self.index(x.clamp(0, max) as usize, z.clamp(0, max) as usize)] as f32
-        };
+        let at = |x: i64, z: i64| -> f32 { self.at(layer, x, z).into() };
         let top = at(cx, cz) * (1.0 - tx) + at(cx + 1, cz) * tx;
         let bottom = at(cx, cz + 1) * (1.0 - tx) + at(cx + 1, cz + 1) * tx;
         top * (1.0 - tz) + bottom * tz
     }
 
-    /// Catmull-Rom interpolation of the layer: smooth through every cell, no creases at cell edges.
-    pub fn bicubic(&self, layer: &[f32], x: f64, z: f64) -> f32 {
-        self.interpolate(layer, x, z, catmull_rom)
-    }
-
-    fn interpolate(
-        &self,
-        layer: &[f32],
-        x: f64,
-        z: f64,
-        curve: impl Fn([f32; 4], f32) -> f32,
-    ) -> f32 {
+    pub fn height_at(&self, x: f64, z: f64) -> f32 {
         let (u, v) = self.to_cell(x, z);
         let (fu, fv) = (u.floor(), v.floor());
         let (cx, cz) = (fu as i64, fv as i64);
@@ -334,34 +309,28 @@ impl WorldMap {
             let z = cz + j as i64 - 1;
             *row = if interior {
                 let from = z as usize * dim as usize + cx as usize - 1;
-                curve(layer[from..from + 4].try_into().unwrap(), tx)
+                monotone_cubic(self.height[from..from + 4].try_into().unwrap(), tx)
             } else {
-                curve(
+                monotone_cubic(
                     [
-                        self.at(layer, cx - 1, z),
-                        self.at(layer, cx, z),
-                        self.at(layer, cx + 1, z),
-                        self.at(layer, cx + 2, z),
+                        self.at(&self.height, cx - 1, z),
+                        self.at(&self.height, cx, z),
+                        self.at(&self.height, cx + 1, z),
+                        self.at(&self.height, cx + 2, z),
                     ],
                     tx,
                 )
             };
         }
-        curve(rows, tz)
+        monotone_cubic(rows, tz)
     }
 
-    pub fn height_at(&self, x: f64, z: f64) -> f32 {
-        self.interpolate(&self.height, x, z, monotone_cubic)
-    }
-
-    /// An `Arc`ed map, as every chunk task shares it.
     pub fn shared(self) -> Arc<Self> {
         Arc::new(self)
     }
 }
 
-// Harmonic-mean Hermite tangents preserve the endpoint range. Catmull-Rom can
-// overshoot a steep lake rim and create a dry hollow below its water outside the lake's cells.
+// Harmonic-mean Hermite tangents keep the curve inside its endpoints; Catmull-Rom overshoots a steep lake rim.
 fn monotone_cubic(p: [f32; 4], t: f32) -> f32 {
     let slope = |a: f32, b: f32| {
         if a * b <= 0.0 {
@@ -378,13 +347,6 @@ fn monotone_cubic(p: [f32; 4], t: f32) -> f32 {
         + (t3 - 2.0 * t2 + t) * m0
         + (-2.0 * t3 + 3.0 * t2) * p[2]
         + (t3 - t2) * m1
-}
-
-fn catmull_rom(p: [f32; 4], t: f32) -> f32 {
-    0.5 * (2.0 * p[1]
-        + (p[2] - p[0]) * t
-        + (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3]) * t * t
-        + (3.0 * (p[1] - p[2]) + p[3] - p[0]) * t * t * t)
 }
 
 /// A small world to run tests on, made once per seed.
@@ -407,15 +369,13 @@ pub fn test_terrain(seed: u32) -> Arc<WorldTerrain> {
         .clone()
 }
 
-/// The middle of a thick, gentle forest on a test world, nearest its centre, for tests that need
-/// trees to stand among.
+/// The middle of a thick, gentle forest on a test world, nearest its centre.
 #[cfg(any(test, feature = "test-support"))]
 pub fn forest_spot(terrain: &WorldTerrain) -> bevy::math::I64Vec2 {
     tree_spot(terrain, 80, 255)
 }
 
-/// The middle of dry land nearest the test world's centre where trees grow this thickly, as
-/// `WorldMap::trees` has them, everywhere round it.
+/// The middle of dry land nearest the test world's centre where `WorldMap::trees` is within `least..=most` all round.
 #[cfg(any(test, feature = "test-support"))]
 pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64Vec2 {
     try_tree_spot(terrain, least, most).expect("no forest on the test world")
@@ -490,13 +450,7 @@ pub(crate) fn par_rows<T: Send>(dim: usize, layer: &mut [T], f: impl Fn(usize, &
     });
 }
 
-/// Makes the whole map for `seed`.
 pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
-    generate_with(seed, config, true)
-}
-
-/// `generate`, with the valleys left out when `valleys` is false, to compare a world with and without them.
-pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap {
     config.validate().expect("invalid world config");
     let timed = std::env::var_os("OCHRE_STAGE_TIMES").is_some();
     let mut clock = std::time::Instant::now();
@@ -510,8 +464,7 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     lap("tectonics");
     geology::generate(&mut map);
     lap("geology");
-    // water first, so basins are cut open before the rain wears the ground, then again over the
-    // eroded ground, where the rivers really run
+    // water first so basins are cut open before rain wears the ground, then again over the eroded ground
     hydrology::run(&mut map, false);
     lap("hydrology 1");
     erosion::run(&mut map);
@@ -548,12 +501,10 @@ pub fn generate_with(seed: u32, config: WorldConfig, valleys: bool) -> WorldMap 
     landform::terrace(&mut map, knobs.tableland_share);
     lap("terrace");
     // after the terraces, which make lakes of their own that no valley is cut through, and before the water
-    valleys::run(&mut map, if valleys { knobs.valley_share } else { 0.0 }, &landmarks);
+    valleys::run(&mut map, knobs.valley_share, &landmarks);
     lap("valleys");
-    if valleys {
-        valleys::run_alpine(&mut map);
-        lap("alpine valleys");
-    }
+    valleys::run_alpine(&mut map);
+    lap("alpine valleys");
     hydrology::scatter(&mut map);
     lap("scatter");
     hydrology::run_keeping(&mut map, true, &bowls);
@@ -596,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bicubic_passes_through_cell_centres() {
+    fn test_height_at_passes_through_cell_centres() {
         let map = tiny();
         let half = map.config.half_size() as f64;
         // the centre of cell (5, 7) in world coordinates

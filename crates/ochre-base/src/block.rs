@@ -41,10 +41,10 @@ pub enum BlockType {
     Shale,
     CompactedGranite,
     CompactedShale,
-    // the steppe's grass and flower, flora like the rest, see `BlockType::is_flora`: last so no stored block's number moves
+    // the steppe's grass and flower, flora like the rest: last so no stored block's number moves
     FeatherGrass,
     SteppeFlower,
-    // the jungle's tall ferns and the savanna's long grass, drawn with the fern's and the tall grass's sprites at a larger size, see `mesh_flora`: last again
+    // the jungle's tall ferns and the savanna's long grass, drawn at a larger size: last again
     BigFern,
     LongGrass,
 }
@@ -60,8 +60,7 @@ impl BlockType {
         }
     }
 
-    // How many levels of sky light this block takes from light passing through it: all of
-    // it for opaque blocks, see `light.rs`.
+    // How many levels of sky light this block takes from light passing through it, all of it if opaque.
     pub fn light_opacity(&self) -> u8 {
         match self {
             BlockType::Air => 0,
@@ -82,7 +81,7 @@ impl BlockType {
         self.light_opacity() == crate::MAX_LIGHT
     }
 
-    // Whether the player can point at it: looking through air, water and leaves, which are drawn as cards, to what's past them.
+    // Whether the player can point at it: looks through air, water and leaves (drawn as cards) to what's past.
     pub fn is_targetable(&self) -> bool {
         !matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves)
     }
@@ -164,8 +163,7 @@ impl BlockType {
         }
     }
 
-    // Plants on the ground: drawn as two quads crossed through the block, not as a cube, and
-    // see-through, hiding nothing and shading nothing.
+    // Plants on the ground: two crossed quads, not a cube, hiding and shading nothing.
     pub fn is_flora(&self) -> bool {
         matches!(
             self,
@@ -252,8 +250,7 @@ pub enum Tile {
 
 pub const TILE_COUNT: usize = 40;
 
-// The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`. `Tile::Stone` and `Tile::CompactedStone`, which
-// terrain only lays as placeholders, have none of their own and draw shale's and compacted shale's.
+// The painted materials in layer order, each `assets/textures/materials/<name>.png`; placeholder stone draws shale's.
 pub const MATERIAL_FILES: [&str; 34] = [
     "dirt",
     "grass_top",
@@ -299,10 +296,8 @@ impl Tile {
     pub fn material_layer(self) -> Option<u8> {
         match self {
             Tile::Dirt => Some(0),
-            // a grass block's sides are the same grass as its top
             Tile::GrassTop | Tile::GrassSide => Some(1),
             Tile::Sand => Some(2),
-            // a snow block is snow on every face, so a snow side is the snow layer
             Tile::Snow | Tile::SnowSide => Some(3),
             Tile::Limestone => Some(4),
             Tile::Clay => Some(5),
@@ -311,7 +306,6 @@ impl Tile {
             Tile::Granite => Some(8),
             // the placeholder rock draws as shale, whose flagstone was stone's
             Tile::Shale | Tile::Stone => Some(9),
-            // a sandstone block's sides are the same rock as its top
             Tile::SandstoneTop | Tile::SandstoneSide => Some(10),
             Tile::Gravel => Some(11),
             Tile::Ice => Some(12),
@@ -330,10 +324,7 @@ impl Tile {
         }
     }
 
-    // The RGBA layer a leaf or plant draws instead of its atlas tile, across the tile's own uv. Leaves repeat it every
-    // block and a plant's sprite is drawn once across its quad, so neither needs the world-space projection that
-    // `material_layer` is for, and the depth and shadow passes, which have no normals, cut them just as the main pass does.
-    // The flora layers follow `FIRST_FLORA`'s order.
+    // The RGBA layer a leaf or plant draws over its own uv, not its atlas tile; flora layers follow `FIRST_FLORA`.
     pub fn foliage_layer(self) -> Option<u8> {
         match self {
             Tile::Leaves => Some(Self::LEAVES_LAYER),
@@ -530,7 +521,7 @@ mod tests {
         }
         assert_eq!(None, Tile::Water.foliage_layer());
         assert_eq!(None, Tile::Stone.foliage_layer());
-        // every layer is a world-space material or a foliage layer, so none is orphaned: the steppe's ground follows the foliage
+        // every layer is a world-space material or a foliage layer, so none is orphaned: steppe ground follows foliage
         assert_eq!(
             MATERIAL_LAYERS,
             Tile::FIRST_FLORA_LAYER as usize + (Tile::Heath as usize - Tile::FIRST_FLORA as usize) + 1 + 1

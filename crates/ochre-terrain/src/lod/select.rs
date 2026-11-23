@@ -23,8 +23,7 @@ pub(crate) fn select_lods(anchor: ChunkCoordinate, layout: LodLayout, band: LodB
     select_lods_and_stand_ins(anchor, layout, band).0
 }
 
-/// The LOD nodes to draw around `anchor`, and the level-1 nodes covering the full-detail
-/// area, which stand in for its chunks until they're ready.
+/// The LOD nodes to draw around `anchor`, plus level-1 nodes standing in for full-detail chunks not yet ready.
 pub(crate) fn select_lods_and_stand_ins(
     anchor: ChunkCoordinate,
     layout: LodLayout,

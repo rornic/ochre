@@ -21,14 +21,10 @@ const FADE_STEPS: usize = 64;
 /// The dither window that draws every pixel.
 pub(crate) const FULLY_VISIBLE: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
 
-// A mesh fading out is drawn this fraction farther than it is, so the one replacing it wins where
-// their surfaces coincide, as a LOD node's skirts and flat ground do with full detail.
+// A fading-out mesh is drawn this fraction farther than it is, so its replacement wins where their surfaces coincide.
 const FADE_DEPTH_PUSH: f32 = 0.0005;
 
-// A swap is staggered so one of the two meshes is always whole: the new one dithers in over the
-// old for this share of the fade, then the old one dithers out from under it for the rest. So
-// trees in the new mesh grow in over the old one's tint rather than popping up on top of it, and
-// no pixel is ever given up by both.
+// A swap is staggered: the new mesh dithers in over the old for this share of the fade, then the old dithers out.
 const FADE_IN_SHARE: f32 = 0.5;
 
 // The window drawn at `step` of a fade in: one more level of the dither is drawn each step.
@@ -36,8 +32,7 @@ fn fade_in_window(step: usize) -> Vec4 {
     Vec4::new(0.0, (step + 1) as f32 / FADE_STEPS as f32, 0.0, 0.0)
 }
 
-// The window drawn at `step` of a fade out, which hides `step` levels of the dither: whole at
-// step 0, while what replaces it is still coming in, but pushed back already so that wins.
+// The window at `step` of a fade out, hiding `step` dither levels; step 0 is pushed back so the replacement wins.
 fn fade_out_window(step: usize) -> Vec4 {
     Vec4::new(step as f32 / FADE_STEPS as f32, 1.0, FADE_DEPTH_PUSH, 0.0)
 }
@@ -167,9 +162,7 @@ pub(crate) struct Fade {
     despawn: bool,
 }
 
-/// Fades `entity` in or out unless it's already shown or hidden as asked. The two are staggered,
-/// see `FADE_IN_SHARE`, so a mesh and the one replacing it, set going together, never both leave
-/// a pixel undrawn.
+/// Fades `entity` in or out unless already as asked; staggered (`FADE_IN_SHARE`) so a swap leaves no pixel undrawn.
 pub(crate) fn set_shown(
     commands: &mut Commands,
     entity: Entity,
