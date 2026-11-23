@@ -38,7 +38,7 @@ pub struct WindDials {
     steppe: Dial,
     // the gust the shader has at the camera, 0..1, see `gust_at`, so the sound swells as the grass bends
     gust: Dial,
-    // how sheltered the foliage is from the wind, 0..1, gliding with the camera: steppe in a hollow, see `SHELTERED_SWAY`
+    // how sheltered the foliage is from the wind, 0..1, gliding with the camera: any ground in a hollow, see `SHELTERED_SWAY`
     shelter: Dial,
 }
 
@@ -81,8 +81,10 @@ const WIND_FOLLOW_SECONDS: f32 = 0.6;
 // spells: it blows from the exposure's first value up to full at the second, and not at all in a hollow.
 const STEPPE_BREEZE: f32 = 0.5;
 const STEPPE_EXPOSED: (f32, f32) = (0.3, 0.75);
-// How much of its sway the foliage loses in the most sheltered steppe, so grass in a hollow bends a little where the wind sound is quiet.
+// How much of its sway the foliage loses in the most sheltered hollow, so grass there bends a little where the wind is quiet.
 const SHELTERED_SWAY: f32 = 0.7;
+// Foliage is fully sheltered at or under the first exposure and fully in the wind from the second, level ground, up.
+const SHELTER_EXPOSURE: (f32, f32) = (0.3, 0.5);
 // The gust's greatest push either way, see `gust_at`.
 const GUST_RANGE: f32 = 1.2;
 
@@ -124,6 +126,11 @@ fn exposed(exposure: f32) -> f32 {
     smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, exposure)
 }
 
+// How sheltered foliage on ground this exposed is from the wind, in any biome: all in a hollow, none from level ground up.
+fn sheltered(exposure: f32) -> f32 {
+    1.0 - smoothstep(SHELTER_EXPOSURE.0, SHELTER_EXPOSURE.1, exposure)
+}
+
 pub(crate) fn update_wind(
     time: Res<Time>,
     around: Res<Surroundings>,
@@ -146,7 +153,7 @@ pub(crate) fn update_wind(
     dials.steppe.set(steppe + (if around.underwater { 0.0 } else { around.steppe } - steppe) * follow);
     let exposed = exposed(around.exposure);
     let shelter = dials.shelter.get();
-    dials.shelter.set(shelter + (dials.steppe.get() * (1.0 - exposed) - shelter) * follow);
+    dials.shelter.set(shelter + (sheltered(around.exposure) - shelter) * follow);
     if let Some(mut curvature) = curvature {
         curvature.sway[0] = 1.0 - SHELTERED_SWAY * dials.shelter.get();
     }
@@ -518,5 +525,13 @@ mod tests {
         assert_eq!(0.0, exposed(0.1));
         assert!(exposed(0.5) > 0.2 && exposed(0.5) < 0.6);
         assert_eq!(1.0, exposed(0.9));
+    }
+
+    #[test]
+    fn foliage_is_sheltered_in_a_hollow_and_not_on_level_ground() {
+        assert_eq!(1.0, sheltered(0.2));
+        assert!(sheltered(0.4) > 0.2 && sheltered(0.4) < 0.8);
+        assert_eq!(0.0, sheltered(0.5));
+        assert_eq!(0.0, sheltered(0.9));
     }
 }
