@@ -26,7 +26,8 @@ run() { # crate, test filter
 for l in sys.stdin:
     m=json.loads(l)
     if m.get("executable") and m.get("profile",{}).get("test"): print(m["executable"])' | tail -n 1)
-  "$T/q/usr/bin/qemu-aarch64-static" "$exe" "$2"
+  # a filter that matches nothing passes, so fail on zero tests run
+  "$T/q/usr/bin/qemu-aarch64-static" "$exe" "$2" | tee /dev/stderr | grep -Eq 'test result: ok\. [1-9]'
 }
 run ochre-world portable_maths
 run ochre-terrain determinism
