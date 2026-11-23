@@ -586,6 +586,18 @@ fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     out
 }
 
+// The cells sharing an edge with cell `i`, within the map.
+fn edge_neighbours(i: usize, dim: usize) -> impl Iterator<Item = usize> {
+    let (x, z) = ((i % dim) as i64, (i / dim) as i64);
+    [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]
+        .into_iter()
+        .filter_map(move |(dx, dz)| {
+            let (nx, nz) = (x + dx, z + dz);
+            ((0..dim as i64).contains(&nx) && (0..dim as i64).contains(&nz))
+                .then(|| nz as usize * dim + nx as usize)
+        })
+}
+
 // The lake cells in lakes of at least `RIPARIAN_LAKE_CELLS`, so a pond of a few cells wets no ground round it.
 fn big_lake_cells(map: &WorldMap) -> Vec<bool> {
     let dim = map.dim();
@@ -599,14 +611,9 @@ fn big_lake_cells(map: &WorldMap) -> Vec<bool> {
         let (mut cells, mut next) = (vec![start], 0);
         seen[start] = true;
         while next < cells.len() {
-            let (x, z) = ((cells[next] % dim) as i64, (cells[next] / dim) as i64);
+            let i = cells[next];
             next += 1;
-            for (dx, dz) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            for n in edge_neighbours(i, dim) {
                 if lake(n) && !seen[n] {
                     seen[n] = true;
                     cells.push(n);
@@ -641,13 +648,7 @@ pub(super) fn closeness_within(map: &WorldMap, reach: u8, source: impl Fn(usize)
     let mut next = Vec::new();
     for d in 1..=reach {
         for &i in &frontier {
-            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-            for (dx, dz) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            for n in edge_neighbours(i, dim) {
                 if dist[n] == u8::MAX {
                     dist[n] = d;
                     next.push(n);
@@ -790,13 +791,7 @@ fn merge_small(kinds: &mut [u8], dim: usize, allowed: impl Fn(usize, u8) -> bool
             stack.push(start);
             while let Some(i) = stack.pop() {
                 cells.push(i);
-                let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-                for (dx, dz) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
-                    let (nx, nz) = (x + dx, z + dz);
-                    if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                        continue;
-                    }
-                    let n = nz as usize * dim + nx as usize;
+                for n in edge_neighbours(i, dim) {
                     if kinds[n] == kinds[start] {
                         if comp[n] == u32::MAX {
                             comp[n] = id;
