@@ -35,6 +35,12 @@ fn vertex(vertex_in: prepass_io::Vertex) -> prepass_io::VertexOutput {
     out.world_position = vec4<f32>(curved(swayed(out.world_position.xyz, vertex.color.a, uv, coarse, globals.time)), 1.0);
     out.color = vertex.color;
     out.position = position_world_to_clip(out.world_position.xyz);
+@if(VIEW_PROJECTION_ORTHOGRAPHIC) {
+    // plants cast no sun shadow: every blade striping the ground read as ink, not painted shade
+    if is_flora(vertex.color.a) {
+        out.position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+}
     // a mesh fading out sits a little farther than it is, as in the main pass, see `fade.rs`
 @if(!VIEW_PROJECTION_ORTHOGRAPHIC) {
     out.position.z *= 1.0 - material_fade.z;
