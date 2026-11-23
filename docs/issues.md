@@ -4,23 +4,17 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
-## Steppe's streams and the climate shift are not measured for frame time
-
-- **Seen:** 2026-11-16. The dryness curve and the bank cap change rivers, lakes and the grassland and forest shares on every seed (`docs/terrain-perf.md`, Streams in dry country).
-- **Since, 2026-11-19:** `water_audit --fine` on seeds 1, 42 and 1337 finds no lake or coast walls or steps and no uncontained map cell; its river "walls" are steps in a river's level, not leaks (they compare samples 4 blocks apart, and its one-block check finds no water beside lower dry ground and no open block edge). The census over seeds 1 to 64 finds no biome over 70% of land: the most is forest at 56% on one seed, steppe averages 19% and reaches 47%.
-- **To check:** frame times, with the `profile` skill.
 ## Steppe on hills wider than a few kilometres stays hilly
 
 - **Seen:** 2026-11-16, seed 3. The flattening of steppe ground (`valleys::flatten`) removes hills smaller than about 4 km. Seed 3's steppe stands on foothills, and a larger smoothing radius makes steep edges where the flattened zone ends.
 - **Known:** median slope fell by about two thirds on the seed 3 windows with no valley cut, relief over 1.5 km by about a fifth (`docs/terrain-perf.md`).
 - **Not known:** whether steppe should be kept off foothills in the first place, which is a change to `classify` and the census shares.
 
-## The steppe change is not measured for speed
+## Hummocks make chunk meshing a quarter dearer
 
-- **Seen:** 2026-11-16. Frame times, `bench` vertex counts and the cost of the foliage shader's second gust term were not measured for the valleys, flattening, exposure, flora and wind. The valley stage in map generation takes 0.30 to 0.51 s against the 0.3 s a new stage may add (`docs/world-plan.md`).
-- **Since, 2026-11-19:** `OCHRE_STAGE_TIMES` with no map cached reads the valley stage at 0.93, 0.89 and 1.22 s on seeds 1, 3 and 20, and alpine valleys at 0.43 to 0.60 s, of about 14 s for the map. These ran on a 4-core container, where map generation uses 2 worker threads (`worker_threads`, every logical CPU but two), so they are not comparable with the 0.30 to 0.51 s above. Timers inside `valleys::run` on seed 1 put about 0.22 s in the steppe-likeness layer (`favoured_layer`, which works out the climate fields again), 0.19 s in `flatten`'s blurs, 0.26 s in `siting` (0.18 s of it a priority flood) and 0.14 s in `fill_where`'s flood. Caching `flood_ties`, which five stages each work out, saved nothing measurable over three runs.
-- **Since, 2026-11-23:** on 16 cores the valley stage takes 0.24 to 0.32 s on seeds 1, 3 and 42 and 0.31 s on seed 20, after the two floods in it work out fill levels alone (`docs/terrain-perf.md`, Valley stage). Seed 20 stays about 0.015 s over the gate, in parallel work that can't be shared.
-- **To check:** frame times, `bench` vertex counts and the second gust term.
+- **Seen:** 2026-11-23, `bench` on seed 42 at (-8000, -10000), dry swamp with hummocks on 11% of samples (`docs/terrain-perf.md`, The steppe change measured).
+- **Known:** with hummocks, chunk meshing takes 610 to 614 ms against 486 to 489 ms without, in three alternating pairs, while chunk vertices fall from 847,179 to 841,481. Generation and LOD are level.
+- **Not known:** which part of the sculpted ground's meshing grows over tussocks 1 to 3 blocks high, and whether frame times in a swamp show it.
 
 ## Only forests have birdsong
 
