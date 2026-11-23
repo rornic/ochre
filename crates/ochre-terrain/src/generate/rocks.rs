@@ -22,8 +22,7 @@ const MAX_GRADIENT: f64 = 0.4;
 const MAX_SLOPE: f64 = 0.9;
 const SEA_CLEARANCE: i64 = 3;
 
-// The tundra's rocks on the `CELL` grid are outcrops, wide low ledges of rock, this share of the cells it once held boulders in,
-// between these radii and this much of their width tall.
+// Tundra outcrops, wide low ledges of rock on the `CELL` grid, hold this share of the cells that once held boulders, with radii in this range and this much of their width tall.
 const OUTCROP_SHARE: f64 = 0.12;
 const OUTCROP_RADIUS: (f64, f64) = (5.5, 11.0);
 const OUTCROP_SQUASH: f64 = 0.32;
@@ -36,8 +35,7 @@ const SMALL_REACH: i64 = 3;
 const SMALL_SHARE: f64 = 0.3;
 const SMALL_RADIUS: (f64, f64) = (0.9, 2.3);
 
-// Giants, the tundra's rare landmarks, on a coarse grid: a share of its cells hold one, a lone tall boulder or an arch of two
-// pillars with a gap between and a capstone over it, a passage to walk through and build into.
+// The tundra's rare giants on a coarse grid, a share of whose cells hold a lone tall boulder or an arch: two pillars with a capstone over a gap to walk through.
 const GIANT_CELL: i64 = 96;
 const GIANT_SHARE: f64 = 0.054;
 const GIANT_ARCH_SHARE: f64 = 0.22;
@@ -133,8 +131,7 @@ fn flavour(seed: u64, biome: Option<&str>) -> f64 {
     0.4 + 1.4 * frac(hash(seed ^ 0xF1A7_0A00 ^ name, 7, 11), 0)
 }
 
-// Boulders come in fields: the share of cells that hold one is scaled by a factor that varies over patches this many blocks
-// across, from `FIELD_FACTOR`'s first, near bare ground, to its second, where nearly every cell has one.
+// Boulder fields scale the share of cells holding one by a factor that varies over patches `FIELD` blocks across, from `FIELD_FACTOR`'s first (near bare ground) to its second (nearly every cell).
 const FIELD: i64 = 96;
 const FIELD_FACTOR: (f64, f64) = (0.1, 2.0);
 
@@ -152,8 +149,7 @@ fn field(seed: u64, x: i64, z: i64) -> f64 {
     FIELD_FACTOR.0 + (FIELD_FACTOR.1 - FIELD_FACTOR.0) * p * p
 }
 
-// What a rock of `kind` standing at `ground` is made of: a boulder is the rock under it, so it matches the cliffs and the ground round
-// it and not a stone of its own, and a mound is earth.
+// What a rock of `kind` at `ground` is made of: a boulder is the rock under it, matching the cliffs and ground round it, and a mound is earth.
 fn stone_of(kind: RockKind, column: &mut dyn RockColumn, ground: i64) -> BlockType {
     match kind {
         RockKind::Erratic => column.at(ground),
@@ -168,8 +164,7 @@ fn cells_near(min: I64Vec2, max: I64Vec2, cell: i64, reach: i64) -> impl Iterato
     (first.y..=last.y).flat_map(move |cz| (first.x..=last.x).map(move |cx| (cx, cz)))
 }
 
-// Every rock that could reach into the columns `min..=max` (x, z), as seen from cells `scale` blocks across: a LOD node leaves out
-// what would be under a pixel.
+// Every rock that could reach into the columns `min..=max` (x, z) seen from cells `scale` blocks across; a LOD node leaves out what would be under a pixel.
 pub(crate) fn rocks_near(
     noise: &dyn TerrainSource,
     heights: &mut impl TreeGround,
@@ -372,8 +367,7 @@ fn lone_giant(x: i64, z: i64, seed: u64) -> Rock {
     }
 }
 
-// Two pillars with a gap between them a player walks through, and a long capstone laid over the gap and resting on both, as
-// `ARCH_CLEARANCE` over the ground at its underside. Their `base.y` is for the caller to set from the ground.
+// Two pillars with a gap to walk through and a long capstone resting on both, `ARCH_CLEARANCE` over the ground at its underside; the caller sets `base.y` from the ground.
 fn arch(x: i64, z: i64, seed: u64) -> Vec<Rock> {
     let direction = ((seed >> 60) & 3) as u8;
     let (ux, uz) = axis(direction);
@@ -511,8 +505,7 @@ impl Rock {
                 ))
     }
 
-    /// Calls `set` with the place of each cell of the rock inside `bounds` (local, inclusive), for a chunk or LOD node at
-    /// `origin` whose cells are `scale` blocks across. A cell is the rock if its middle is.
+    /// Calls `set` with the place of each cell of the rock inside `bounds` (local, inclusive), for a chunk or LOD node at `origin` with cells `scale` blocks across; a cell is the rock if its middle is.
     pub fn plant(
         &self,
         origin: I64Vec3,
@@ -690,8 +683,7 @@ mod tests {
                     solid.insert(at);
                 });
             }
-            // the cells of the middle of the gap, between the pillars: the axis the pillars lie along is `direction`'s, and the
-            // middle of the arch is where it crosses the walk-through
+            // the middle of the gap between the pillars, where `direction`'s axis, which they lie along, crosses the walk-through
             let (ux, uz) = axis(((seed << 60 | seed) >> 60) as u8 & 3);
             let (vx, vz) = (-uz, ux);
             let middle = |along: f64, across: f64| {

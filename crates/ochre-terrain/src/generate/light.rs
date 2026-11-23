@@ -14,8 +14,7 @@ pub(crate) struct SkyLight {
 }
 
 impl SkyLight {
-    /// Lights the box of `size` cells from `min`, whose `light_opacity`s are in `opacity`
-    /// in `SkyLight::index` order, with `sky` falling into the top of every column.
+    /// Lights the box of `size` cells from `min`, whose `light_opacity`s are in `opacity` in `SkyLight::index` order, with `sky` falling into every column's top.
     pub fn new(min: IVec3, size: IVec3, sky: u8, opacity: Vec<u8>) -> Self {
         assert_eq!((size.x * size.y * size.z) as usize, opacity.len());
         let mut levels = vec![0; opacity.len()];

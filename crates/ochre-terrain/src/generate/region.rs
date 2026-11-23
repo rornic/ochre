@@ -81,8 +81,7 @@ impl Region {
         self.trees[Self::index(local_x, local_z)] as f64 / 255.0
     }
 
-    /// The lowest ground and highest ground or inland water in `min..=max` (local x, z), rounded out to
-    /// whole tiles.
+    /// The lowest ground and highest ground or inland water in `min..=max` (local x, z), rounded out to whole tiles.
     pub fn height_range(&self, min: I64Vec2, max: I64Vec2) -> (f32, f32) {
         let (min, max) = (min / TILE_SIZE, max / TILE_SIZE);
         (min.y..=max.y)
