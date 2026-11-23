@@ -50,6 +50,8 @@ pub(crate) struct Moved {
     pub(crate) wall: Vec3,
     // it rose into a ceiling
     pub(crate) bumped: bool,
+    // the outward normal of a face too steep to stand on that it came to rest on, else zero
+    pub(crate) slope: Vec3,
 }
 
 // How the body moves over sculpted ground: walls and ground kept apart, so neither undoes the other.
@@ -141,6 +143,22 @@ impl Walker<'_> {
         room
     }
 
+    // The outward normal of an upward face whose surface under `p` is at `y`.
+    fn face_at(&self, p: Vec3, y: f32) -> Option<Vec3> {
+        self.triangles.iter().find_map(|&[a, b, c]| {
+            let outward = (c - a).cross(b - a).normalize_or_zero();
+            let area = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+            if outward.y <= 0.0 || area.abs() < 1e-6 {
+                return None;
+            }
+            let u = ((b.x - p.x) * (c.z - p.z) - (c.x - p.x) * (b.z - p.z)) / area;
+            let v = ((c.x - p.x) * (a.z - p.z) - (a.x - p.x) * (c.z - p.z)) / area;
+            let w = 1.0 - u - v;
+            let on = u >= -1e-4 && v >= -1e-4 && w >= -1e-4 && (a.y * u + b.y * v + c.y * w - y).abs() < 0.01;
+            on.then_some(outward)
+        })
+    }
+
     // The highest walkable ground under the body's footprint, from `below` the feet to a step over them.
     pub(crate) fn ground_under(&self, feet: Vec3, below: f32) -> Option<f32> {
         FOOTPRINT
@@ -181,10 +199,16 @@ impl Walker<'_> {
             _ => {
                 let landing = FOOTPRINT
                     .iter()
-                    .filter_map(|&(x, z)| (self.support)(moved.feet + Vec3::new(x, 0.0, z) * self.body.radius, (-delta.y).max(0.0) + 0.05, 0.05))
-                    .max_by(f32::total_cmp);
+                    .filter_map(|&(x, z)| {
+                        let p = moved.feet + Vec3::new(x, 0.0, z) * self.body.radius;
+                        (self.support)(p, (-delta.y).max(0.0) + 0.05, 0.05).map(|y| (p, y))
+                    })
+                    .max_by(|a, b| a.1.total_cmp(&b.1));
                 moved.feet.y = match landing {
-                    Some(height) if fallen <= height => height,
+                    Some((p, height)) if fallen <= height => {
+                        moved.slope = self.face_at(p, height).unwrap_or(Vec3::Y);
+                        height
+                    }
                     _ => fallen,
                 };
             }

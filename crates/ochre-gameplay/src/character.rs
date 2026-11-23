@@ -176,10 +176,10 @@ pub(crate) const STEP_HEIGHT: f32 = 1.0;
 const SETTLE_SNAP: f32 = 0.6;
 // The body against sculpted ground, rounded over its bumps, see `contact`.
 const SPHERES: Body = Body { radius: 0.3, heights: [0.3, 1.0, 1.7] };
-// The tallest rise the body steps up onto sculpted ground without jumping, in blocks.
-const SCULPT_STEP: f32 = 1.0;
-// How far up a sculpted face must face to stand on, about 66 degrees from level; steeper is a wall.
-const GROUND_FACING: f32 = 0.4;
+// The tallest rise the body steps up onto sculpted ground without jumping, in blocks; a jump clears a block.
+const SCULPT_STEP: f32 = 0.5;
+// How far up a sculpted face must face to stand on, about 45 degrees from level; steeper it slides down.
+const GROUND_FACING: f32 = 0.7;
 // A rise onto sculpted ground taller than this in a step counts as a step up.
 const SCULPT_RISE_EASE: f32 = 0.25;
 // Seconds between steps up.
@@ -320,6 +320,11 @@ fn walk(
             state.velocity -= wall * into_wall;
         }
         walled = wall != Vec3::ZERO;
+        // on a face too steep to stand on nothing into it is kept, so gravity carries the body down it
+        let into_slope = state.velocity.dot(moved.slope);
+        if into_slope < 0.0 {
+            state.velocity -= moved.slope * into_slope;
+        }
         (moved.feet + BLOCK_CORNER, hit)
     };
     // a step up moves the body a block in one step
@@ -443,6 +448,48 @@ mod tests {
     fn quad(y: f32) -> Floor {
         let (a, b, c, d) = (Vec3::new(0.0, y, 0.0), Vec3::new(16.0, y, 0.0), Vec3::new(16.0, y, 16.0), Vec3::new(0.0, y, 16.0));
         Floor::new(vec![[a, b, c], [a, c, d]])
+    }
+
+    // Level ground at y = 2 for x < 4, a ramp rising `grade` blocks a block to x = 10, and level ground on top past it.
+    fn ramp(grade: f32) -> Floor {
+        let top = 2.0 + 6.0 * grade;
+        let quad = |x0: f32, y0: f32, x1: f32, y1: f32| {
+            let (a, b, c, d) = (Vec3::new(x0, y0, 0.0), Vec3::new(x1, y1, 0.0), Vec3::new(x1, y1, 16.0), Vec3::new(x0, y0, 16.0));
+            [[a, b, c], [a, c, d]]
+        };
+        Floor::new([quad(0.0, 2.0, 4.0, 2.0), quad(4.0, 2.0, 10.0, top), quad(10.0, top, 16.0, top)].concat())
+    }
+
+    // `seconds` of `input` on `floor` from `at`, and the highest the feet got.
+    fn run_on(floor: &Floor, at: Vec3, input: &MovementInput, seconds: f32) -> (CharacterState, Vec3, f32) {
+        let world = flat_world();
+        let env = WorldEnvironment::new(&world, [(LodKey { level: 1, coord: I64Vec3::ZERO }, Vec3::ZERO, floor)]);
+        let (mut state, mut at, mut highest) = (CharacterState::new(Movement::Walk), at, at.y);
+        for _ in 0..(seconds / DT) as usize {
+            step_character(&mut state, &mut at, input, &env, DT);
+            highest = highest.max(at.y);
+        }
+        (state, at, highest)
+    }
+
+    #[test]
+    fn walks_up_a_gentle_slope() {
+        let right = MovementInput { across: Vec2::new(1.0, 0.0), ..default() };
+        let (state, at, _) = run_on(&ramp(0.4), Vec3::new(2.0, 2.0, 8.0), &right, 3.0);
+        assert!(at.x > 11.0 && (at.y - 4.4).abs() < 0.1 && state.grounded, "at {at}");
+    }
+
+    #[test]
+    fn cannot_walk_or_jump_up_a_steep_slope() {
+        let climb = MovementInput { across: Vec2::new(1.0, 0.0), sprint: true, jump: true, ..default() };
+        let (_, at, highest) = run_on(&ramp(1.4), Vec3::new(2.0, 2.0, 8.0), &climb, 4.0);
+        assert!(highest < 2.0 + 1.6, "climbed to {highest}, at {at}");
+    }
+
+    #[test]
+    fn slides_down_a_steep_slope_onto_level_ground() {
+        let (state, at, _) = run_on(&ramp(1.4), Vec3::new(8.0, 2.0 + 4.0 * 1.4, 8.0), &MovementInput::default(), 3.0);
+        assert!(at.x < 4.6 && (at.y - 2.0).abs() < 0.05 && state.grounded, "at {at}");
     }
 
     #[test]
