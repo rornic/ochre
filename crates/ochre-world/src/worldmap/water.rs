@@ -334,14 +334,9 @@ impl WorldMap {
         };
         // the biggest river cell running into each cell
         let mut main_up = vec![usize::MAX; self.height.len()];
-        for i in 0..self.height.len() {
-            if self.river_width[i] <= 0.0 {
-                continue;
-            }
-            if let Some(d) = self.down[i].ne(&NO_FLOW).then(|| {
-                let (dx, dz) = NEIGHBOURS[self.down[i] as usize];
-                ((i / dim) as i64 + dz) as usize * dim + ((i % dim) as i64 + dx) as usize
-            }) {
+        for i in (0..self.height.len()).filter(|&i| self.river_width[i] > 0.0) {
+            if let Some((dx, dz)) = self.downstream(i % dim, i / dim) {
+                let d = self.index(dx, dz);
                 if main_up[d] == usize::MAX || self.flow[i] > self.flow[main_up[d]] {
                     main_up[d] = i;
                 }
@@ -633,7 +628,6 @@ impl WorldMap {
                 profiles.ends[n] = ((shore + 3) as f32 / SHORE_STEPS as f32).min(1.0);
             }
         }
-        let _ = dim;
         let mut order = Vec::with_capacity(stretches.len());
         while let Some(n) = ready.pop() {
             order.push(n);
