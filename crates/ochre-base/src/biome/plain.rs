@@ -2,8 +2,7 @@ use super::{Biome, TreeScale};
 use crate::block::BlockType;
 use crate::features::ReliefKind;
 
-/// A biome that sets how thickly trees grow, how big they get and how lush or dry the grass reads: a
-/// world map picks it, and the ground keeps the base terrain's blocks.
+/// A biome that sets tree density and size and how lush the grass reads, keeping the base terrain's blocks.
 pub struct Plain {
     name: &'static str,
     trees: f64,
@@ -52,8 +51,7 @@ impl Plain {
         self
     }
 
-    /// Bares the ground below `line` blocks over the sea that the climate would snow over: grass, and gravel on ground
-    /// with a gradient of `scree` or more. Snow stays on the heights.
+    /// Bares ground below `line` blocks over the sea that the climate would snow over: grass, gravel from gradient `scree`.
     pub fn with_thaw(mut self, line: i64, scree: f64) -> Self {
         self.thaw = Some((line, scree));
         self

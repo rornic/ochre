@@ -60,8 +60,7 @@ impl BlockType {
         }
     }
 
-    // How many levels of sky light this block takes from light passing through it: all of
-    // it for opaque blocks, see `light.rs`.
+    // How many levels of sky light this block takes from light passing through it, all of it if opaque.
     pub fn light_opacity(&self) -> u8 {
         match self {
             BlockType::Air => 0,
@@ -164,8 +163,7 @@ impl BlockType {
         }
     }
 
-    // Plants on the ground: drawn as two quads crossed through the block, not as a cube, and
-    // see-through, hiding nothing and shading nothing.
+    // Plants on the ground: two crossed quads, not a cube, hiding and shading nothing.
     pub fn is_flora(&self) -> bool {
         matches!(
             self,
@@ -252,8 +250,7 @@ pub enum Tile {
 
 pub const TILE_COUNT: usize = 40;
 
-// The painted materials, in array layer order: each is `assets/textures/materials/<name>.png`. `Tile::Stone` and `Tile::CompactedStone`, which
-// terrain only lays as placeholders, have none of their own and draw shale's and compacted shale's.
+// The painted materials in array layer order, each `assets/textures/materials/<name>.png`; the placeholder stone tiles draw shale's.
 pub const MATERIAL_FILES: [&str; 34] = [
     "dirt",
     "grass_top",
@@ -330,10 +327,7 @@ impl Tile {
         }
     }
 
-    // The RGBA layer a leaf or plant draws instead of its atlas tile, across the tile's own uv. Leaves repeat it every
-    // block and a plant's sprite is drawn once across its quad, so neither needs the world-space projection that
-    // `material_layer` is for, and the depth and shadow passes, which have no normals, cut them just as the main pass does.
-    // The flora layers follow `FIRST_FLORA`'s order.
+    // The RGBA layer a leaf or plant draws across the tile's own uv instead of its atlas tile; flora layers follow `FIRST_FLORA`'s order.
     pub fn foliage_layer(self) -> Option<u8> {
         match self {
             Tile::Leaves => Some(Self::LEAVES_LAYER),

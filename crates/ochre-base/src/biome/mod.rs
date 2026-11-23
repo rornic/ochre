@@ -35,19 +35,16 @@ impl Default for Climate {
     }
 }
 
-// What a biome changes about the ground and what grows on it: the blocks it uses in place of
-// the base terrain's, and how thickly trees grow.
+// What a biome changes about the ground: its blocks in place of the base terrain's, and tree density.
 pub trait Biome: Send + Sync {
     fn name(&self) -> &'static str;
 
-    // The chance, 0..1, of a tree on each spot one could grow, or None to leave the base
-    // terrain's. Trees only grow on grass.
+    // The chance, 0..1, of a tree on each spot that could grow one, or None for the base terrain's.
     fn tree_density(&self) -> Option<f64> {
         None
     }
 
-    // The block to use where the base terrain would put `base`, `above_sea` blocks up, on
-    // ground with the given gradient (see `terrain_block`).
+    // The block to use where the base terrain would put `base`, `above_sea` blocks up, on this gradient.
     fn block(&self, base: BlockType, _above_sea: i64, _gradient: f64) -> BlockType {
         base
     }
@@ -57,8 +54,7 @@ pub trait Biome: Send + Sync {
         BlockType::Gravel
     }
 
-    // Added to the temperature and humidity grass and flora are tinted by, so a biome reads lusher or
-    // drier than its climate.
+    // Added to the temperature and humidity that tint grass and flora, so a biome reads lusher or drier.
     fn climate_shift(&self) -> (f32, f32) {
         (0.0, 0.0)
     }
@@ -130,8 +126,7 @@ pub struct Biomes {
     entries: Vec<Entry>,
 }
 
-// The tundra is bare ground, tan grass and scree, below this height over the sea, not snow as the cold would make it, and the
-// ground is scree from this gradient.
+// Below this height over the sea the tundra is bare ground, not snow as the cold would make it.
 const TUNDRA_THAW_LINE: i64 = 350;
 const TUNDRA_SCREE_GRADIENT: f64 = 0.38;
 // Keep taiga lowlands forested and green, with snow remaining on higher ground.

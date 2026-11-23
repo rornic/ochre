@@ -2,8 +2,7 @@ use super::Biome;
 use crate::block::BlockType;
 use crate::features::ReliefKind;
 
-// Sand over the lowlands. Rock and snow on the heights are left as they are, and the dunes are
-// the ground's, see `worldmap::detail::dunes`.
+// Sand over the lowlands, leaving rock and snow on the heights; the dunes are the ground's.
 pub struct Desert;
 
 impl Biome for Desert {

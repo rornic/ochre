@@ -18,8 +18,7 @@ pub struct Water {
     pub depth: f32,
 }
 
-// A column's height, with how far inland it is (negative out to sea), the biome owning it
-// and how thickly trees grow there.
+// A column's height, how far inland it is (negative out to sea), its biome and tree density.
 #[derive(Debug, Default, Copy, Clone)]
 pub struct TerrainSample {
     pub continentalness: f64,
@@ -47,8 +46,6 @@ pub enum SpringPart {
     Pool,
 }
 
-/// Where the ground, its biomes and its water come from. Chunk generation and LOD read terrain
-/// only through this.
 /// The rocks down one column.
 pub trait RockColumn {
     /// The blocks `y` is among that are all one rock, as `start..end`, and the block stone is drawn as in them.
@@ -68,6 +65,7 @@ impl RockColumn for StoneColumn {
     }
 }
 
+/// Where the ground, its biomes and its water come from; chunk generation and LOD read terrain only through this.
 pub trait TerrainSource: Send + Sync {
     fn seed(&self) -> u32;
 
@@ -77,8 +75,7 @@ pub trait TerrainSource: Send + Sync {
 
     fn biomes(&self) -> &Biomes;
 
-    /// The terrain as a cell `cell` blocks wide, sampled at its centre, should see it: features
-    /// too fine for cells that wide fade to their average. The same as `sample` for single blocks.
+    /// The terrain as a cell `cell` wide sees it, features too fine for it fading to their average; `sample` for single blocks.
     fn sample_for_cell(&self, x: f64, z: f64, cell: f64) -> TerrainSample;
 
     /// The rock down the column at (x, z), `Stone` throughout where the source has no geology.
@@ -140,14 +137,12 @@ pub trait TerrainSource: Send + Sync {
     /// The nearest lowland column to the world centre.
     fn find_spawn(&self) -> (i64, i64, f64);
 
-    /// The way the prevailing wind blows over the world, as an x, z direction of any length: the
-    /// wind its climate carries rain on, and its weather drifts with.
+    /// The prevailing wind as an x, z direction of any length, which carries the climate's rain and weather's drift.
     fn prevailing_wind(&self) -> [f32; 2] {
         [1.0, 0.0]
     }
 
-    /// The most tree density the column at (x, z) can have, without sampling its terrain, so
-    /// callers can rule out trees cheaply. 1 if it can't say.
+    /// The most tree density the column at (x, z) can have without sampling its terrain, 1 if unknown.
     fn tree_bound(&self, _x: f64, _z: f64) -> f64 {
         1.0
     }

@@ -30,15 +30,12 @@ pub(crate) fn ground_temperature(sea_temperature: f32, above_sea: f32) -> f32 {
     sea_temperature - above_sea / SNOW_LINE_PER_DEGREE as f32
 }
 
-/// How cold enough for frost the ground is, 0 to 1: full at the snow line's temperature, easing out over `FROST_BAND`. The shaders do
-/// the same sum, see `frost.wesl`.
+/// How cold enough for frost the ground is, 0 to 1: full at the snow line's temperature, easing out over `FROST_BAND`; `frost.wesl` does the same sum.
 pub fn frost_cold(sea_temperature: f32, above_sea: f32) -> f32 {
     1.0 - smoothstep(SNOW_TEMPERATURE, SNOW_TEMPERATURE + FROST_BAND, ground_temperature(sea_temperature, above_sea))
 }
 
-/// What the shaders are given about the cold, in the order `Cold` has them in `curvature.wesl`: the camera's sea-level temperature,
-/// how much frost its biome allows, whether frost is on, the height of the ground under it (where the mist lies), and the constants
-/// the sum needs.
+/// What the shaders are given about the cold, in the order `Cold` has them in `curvature.wesl`.
 pub fn shader_values(sea_temperature: f32, thaw: f32, on: bool, ground: f32) -> [f32; 8] {
     [
         sea_temperature,

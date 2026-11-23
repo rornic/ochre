@@ -52,8 +52,7 @@ impl WorldBounds {
     }
 }
 
-/// Sky light under open sky. Each block it spreads sideways or up loses one level, and
-/// blocks it passes through take their `light_opacity` too.
+/// Sky light under open sky; each block it spreads sideways or up loses one level, plus `light_opacity`.
 pub const MAX_LIGHT: u8 = 15;
 
 #[cfg(test)]

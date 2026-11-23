@@ -1,17 +1,13 @@
-//! Ground shapes both the world map and the chunk generator need to agree on. Like
-//! [`crate::noise`], everything here gives the same answer on every machine.
+//! Ground shapes the world map and the chunk generator must agree on, portable like [`crate::noise`].
 
 use crate::math::smoothstep_f64;
 use crate::noise::{perlin, perlin3};
 
-// Where the ground is steeper than this (see `terrain_block`), cliffs start to take shape: about
-// half of a range's columns are over the first, and nine in ten are under the second. And
-// by the second the surface can move this far either way, which is not far, or cliffs turn abrupt.
+// Gradients where cliffs start (about half a range's columns exceed the first) and are fully formed (nine in ten are under the second).
 const CLIFF_GRADIENT: (f64, f64) = (1.0, 2.8);
 const CLIFF_REACH: f64 = 9.0;
 
-/// How many blocks the surface of ground this steep can be moved up or down by `cliff_density`,
-/// 0 on ground too gentle for cliffs.
+/// How many blocks `cliff_density` can move the surface of ground this steep, 0 where too gentle for cliffs.
 pub fn cliff_reach(gradient: f64) -> f64 {
     CLIFF_REACH * smoothstep_f64(CLIFF_GRADIENT.0, CLIFF_GRADIENT.1, gradient)
 }
@@ -26,10 +22,8 @@ pub fn cliff_reach_boosted(gradient: f64, boost: f64) -> f64 {
 
 const VERTICAL_SQUASH: f64 = 0.7;
 
-/// Noise in -1..1 that cliffs and overhangs are cut from: the surface in a column is wherever
-/// `height - y + reach * cliff_density` crosses zero, which is a different height at each y, so
-/// ledges overhang and caves open in the face. The noise changes `VERTICAL_SQUASH` as fast with height round the
-/// column's `ground`, since at full speed it turns the surface over several times in a column and pits it.
+/// Noise in -1..1 that cliffs are cut from: the surface is where `height - y + reach * cliff_density` crosses zero, so ledges overhang.
+/// It varies `VERTICAL_SQUASH` as fast with height round `ground`, since full speed folds the surface over and pits it.
 pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
     let squashed = ground as f64 + (y - ground) as f64 * VERTICAL_SQUASH;
     let (fx, fy, fz) = (x as f64 + 0.5, squashed + 0.5, z as f64 + 0.5);
@@ -40,8 +34,7 @@ pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
 const MEADOW_WAVELENGTH: f64 = 55.0;
 const MEADOW_OVER: f64 = 0.12;
 
-/// Whether (`x`, `z`) is in a patch of meadow, which clings to a mountain's faces where the rest
-/// is bare rock. About a third of the ground.
+/// Whether (`x`, `z`) is in a patch of meadow, which clings to mountain faces otherwise bare rock; about a third of the ground.
 pub fn meadow_patch(seed: u32, x: f64, z: f64) -> bool {
     perlin(seed ^ 0x3EAD, x / MEADOW_WAVELENGTH, z / MEADOW_WAVELENGTH) > MEADOW_OVER
 }
