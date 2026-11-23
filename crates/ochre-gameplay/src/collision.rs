@@ -1,12 +1,9 @@
 use bevy::math::{BVec3, I64Vec3, Vec3};
 
-// Overlaps thinner than this don't count, so a box resting on a face, give or take rounding,
-// isn't taken to be inside the block under it and fall through.
+// Overlaps thinner than this don't count, so a box resting on a face doesn't fall through it.
 const EPSILON: f32 = 1e-3;
 
-/// How far into the face of a ledge it can step onto the box walks before it steps, so the step isn't taken a body's width away from
-/// the ledge. It is also how shallow an overlap on a horizontal axis still stops the box and pushes it back out, so a box in the air
-/// can't be walked on through the ledge it walked into.
+/// How far into a ledge's face the box walks before stepping up; also the shallowest horizontal overlap that still stops it, so a box in the air can't walk through the ledge.
 pub(crate) const STEP_REACH: f32 = 0.25;
 
 /// An axis-aligned box, as offsets from the position it's moved by.
@@ -16,10 +13,8 @@ pub struct Aabb {
     pub max: Vec3,
 }
 
-/// Moves `aabb` at `position` by `delta` an axis at a time, up first, stopping each axis
-/// against the first block `solid` says it would move into. Returns where it ends up, and
-/// which axes were stopped. Blocks it already overlaps are ignored, so it can always get out
-/// of them.
+/// Moves `aabb` at `position` by `delta` an axis at a time, up first, stopping each against the first `solid` block.
+/// Returns where it ends up and which axes were stopped; blocks it already overlaps are ignored so it can get out.
 pub(crate) fn move_and_collide(
     position: Vec3,
     delta: Vec3,
@@ -37,9 +32,7 @@ pub(crate) fn move_and_collide(
     (position, hit)
 }
 
-/// Like `move_and_collide`, but a box blocked sideways tries again from `step` higher and
-/// settles back down, so it climbs ledges up to `step` tall. It walks `STEP_REACH` into a ledge it can climb before it does.
-/// Pass a `step` of 0 in the air.
+/// Like `move_and_collide`, but a box blocked sideways retries from `step` higher and settles back down, climbing ledges up to `step` tall; pass 0 in the air.
 pub(crate) fn move_and_step(
     position: Vec3,
     delta: Vec3,
@@ -71,8 +64,7 @@ pub(crate) fn move_and_step(
     }
 }
 
-// Where the box ends up if it rises `step`, moves across and settles back down, when that lands it on something and gets it further
-// along its way than `flat`, where walking into the wall left it, which can be backwards if it was in the wall's face.
+// Where the box ends up if it rises `step`, moves across and settles, when that lands on something and beats `flat` along the way.
 fn climb(
     position: Vec3,
     delta: Vec3,
@@ -89,8 +81,7 @@ fn climb(
     (landed.y && gained(settled) > gained(flat)).then_some((settled, BVec3::new(hit.x, true, hit.z)))
 }
 
-// How far the box gets along `axis` towards `delta`, and whether a block stopped it. A block it overlaps by no more than `shallow` along
-// the axis stops it too, and moves it back out of the block; deeper overlaps are ignored, so it can always get out.
+// How far the box gets along `axis` towards `delta`, and whether a block stopped it; overlaps deeper than `shallow` are ignored so it can get out.
 fn sweep_axis(
     position: Vec3,
     aabb: Aabb,

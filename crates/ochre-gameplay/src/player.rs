@@ -89,19 +89,17 @@ const LOOK_SENSITIVITY: f32 = 0.1;
 // Just short of straight up or down, where the view would flip over.
 const MAX_PITCH: f32 = 89.0_f32.to_radians();
 
-/// How high the camera sits above the player's feet, far enough under the top of its head
-/// that the camera's near plane stays out of the ceiling.
+/// How high the camera sits above the player's feet, far enough under its head that the near plane stays out of the ceiling.
 pub const EYE_HEIGHT: f32 = 1.9;
-// How close the camera's near plane is. A 90 degree view's near plane reaches `NEAR * (sin(pitch) + cos(pitch))` above the eye, at most
-// `NEAR * sqrt 2`, which has to stay under the 0.1 between the eye and the top of the head, or a two-block gap shows the inside of its ceiling.
+// The near plane reaches at most `NEAR * sqrt 2` above the eye, which must stay under the 0.1 to the top of the head or a two-block gap shows its ceiling.
 pub(crate) const NEAR: f32 = 0.05;
 // Head bob walking and sprinting in blocks, blocks walked a pair of steps, and how fast it eases in and out a second.
 const BOB_WALK: f32 = 0.05;
 const BOB_SPRINT: f32 = 0.065;
 const BOB_STRIDE: f32 = 3.6;
+const BOB_EASE: f32 = 6.0;
 // Sprinting takes longer strides, so its bob is only a little quicker than walking's.
 const BOB_SPRINT_STRIDE: f32 = 4.6;
-const BOB_EASE: f32 = 6.0;
 // Vertical field of view in degrees, how much wider it opens sprinting, and the spring it follows with: stiffness, and twice its square root in damping, which settles without overshoot.
 pub(crate) const FOV: f32 = 90.0;
 const SPRINT_FOV: f32 = 8.0;
@@ -278,8 +276,7 @@ pub fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> boo
         .is_ok_and(|cursor| cursor.grab_mode != CursorGrabMode::None)
 }
 
-/// Holds the cursor in the window once it's clicked into, and lets it go on Escape or when the
-/// window loses focus.
+/// Holds the cursor in the window once clicked, releasing it on Escape or lost focus.
 pub fn grab_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -388,8 +385,7 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-/// Spawns the player at the world's spawn, with a camera that sees out to the renderer's fog distance, and the murk the
-/// camera sees through underwater.
+/// Spawns the player at the world's spawn with its camera.
 fn spawn_player(
     mut commands: Commands,
     mut assets: ViewAssets,
@@ -444,9 +440,7 @@ mod tests {
         assert!(!footfall(0.1, 0.2));
     }
 
-    // In a two-block gap the camera is `BODY.max.y - EYE_HEIGHT` under the ceiling, and a view of `fov` degrees at `pitch` has its near
-    // plane's top edge `NEAR * (sin(pitch) + cos(pitch) * tan(fov / 2))` above the eye: it must never reach it, however far up the
-    // player looks, or the camera is inside the block above.
+    // In a two-block gap the camera is `BODY.max.y - EYE_HEIGHT` under the ceiling; the near plane's top edge `NEAR * (sin(pitch) + cos(pitch) * tan(fov / 2))` must never reach it.
     #[test]
     fn test_the_near_plane_stays_out_of_the_ceiling_of_a_two_block_gap() {
         let headroom = BODY.max.y - EYE_HEIGHT;

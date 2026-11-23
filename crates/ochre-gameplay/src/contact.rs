@@ -463,8 +463,7 @@ mod tests {
         // a rise of a step or a jump is climbed, one past both is a wall whatever the tread
         assert!(climb(1.0, 1.0, 6) > 5.9, "a step-high stair is climbed");
         assert!(climb(4.0, 1.0, 6) < 4.0, "a four-block face is not");
-        // the measured limits, with the game's jump speed 9, gravity 32 and step 1: a ledge of 2.15 is climbed and 2.2 is a wall, and a ledge 0.2 deep gives
-        // footing where 0.1 does not
+        // measured limits at jump speed 9, gravity 32, step 1: a 2.15 ledge is climbed and 2.2 is a wall, 0.2 deep gives footing and 0.1 doesn't
         assert!(climb(2.15, 1.0, 6) > 12.9 && climb(2.2, 1.0, 6) < 2.0);
         assert!(climb(1.5, 0.2, 6) > 8.9 && climb(1.5, 0.1, 6) < 2.0);
     }

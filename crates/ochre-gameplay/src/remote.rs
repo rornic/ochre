@@ -15,13 +15,8 @@ use ochre_terrain::world::World;
 use ochre_world::sky::TimeOfDay;
 use ochre_world::weather::Weather;
 
-/// With a port, serves the BRP's built-in methods and these, all on `127.0.0.1` only:
-/// - `ochre.teleport {x, z, y?, height?, yaw?, pitch?}`: eyes at `y`, else `height` (default 3) over the ground; compass degrees, 0 north, 90 east.
-/// - `ochre.time {day}`: the time of day, 0 midnight, 0.25 sunrise, 0.5 noon.
-/// - `ochre.state`: seed, position, view, biome, time, weather, fps, loaded counts, whether loading has settled, the last shot saved.
-/// - `ochre.screenshot {path?, settle?}`: saves the window on the next frame, as `path` (a bare .png file name) in `target/remote`, and returns the path; poll `ochre.state` for `last_shot`. With `settle` true it waits for loading to settle first, so ground just teleported to is drawn.
-///
-/// Does nothing without a port. The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
+/// With a port, serves BRP's built-in methods plus `ochre.teleport`, `ochre.time`, `ochre.state` and `ochre.screenshot` on `127.0.0.1` only (see the `game-remote` skill).
+/// The render sub-app's BRP port is Bevy's fixed 15703, so run one game with it at a time.
 #[derive(Default)]
 pub struct RemoteControlPlugin {
     pub port: Option<u16>,

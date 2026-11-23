@@ -33,8 +33,7 @@ pub struct FlightConfig {
     pub file: String,
     /// Seconds spent holding the first key while the world round it loads, `FLIGHT_WARMUP` if unset.
     pub warmup: Option<f32>,
-    /// With a directory the flight is rendered a frame at a time on a fixed 60 fps clock, a frame saved for each, however
-    /// slowly the machine draws, for a picture to put the sound of a real-time run to.
+    /// A directory to render the flight into a frame at a time on a fixed 60 fps clock, however slowly the machine draws.
     pub frames: Option<String>,
 }
 
@@ -65,12 +64,8 @@ impl Plugin for FlythroughPlugin {
     }
 }
 
-/// A flight read from `OCHRE_FLIGHT`: one key a line, `seconds x z height yaw pitch day`, with `#` comments. The camera is `height`
-/// blocks over the ground at `x`, `z`, looks `yaw` degrees round from north (90 is east, and it may run past 360 to keep turning) and
-/// `pitch` degrees up, with the time of day at `day` (0 is midnight, 0.25 sunrise, 0.5 noon), all eased through the keys. It waits
-/// `OCHRE_FLIGHT_WARMUP` seconds first, holding the first key, so the world round it loads, then logs `flythrough: flying` and runs in
-/// real time, so the sound and the clouds go as they do in play. With `OCHRE_FLIGHT_FRAMES=<dir>` it renders on a fixed 60 fps clock
-/// instead and saves `frame_NNNNN.png` for every frame there. Spawn at the first key's `x z` with `OCHRE_SPAWN`.
+/// A flight read from `OCHRE_FLIGHT`: a key a line, `seconds x z height yaw pitch day`, `#` comments; yaw is compass degrees and may pass 360, day 0 is midnight, 0.5 noon.
+/// It holds the first key for `OCHRE_FLIGHT_WARMUP` seconds while the world loads, logs `flythrough: flying`, then runs in real time or, with `OCHRE_FLIGHT_FRAMES=<dir>`, saves `frame_NNNNN.png`s.
 #[derive(Resource)]
 struct Flight {
     keys: Vec<Key>,
@@ -125,8 +120,7 @@ fn parse_keys(text: &str) -> Result<Vec<Key>, String> {
     Ok(keys)
 }
 
-// The keys at `t` seconds: each value on a Hermite curve through its keys, with monotone tangents so it never overshoots a key and
-// swings back, and still at the ends.
+// The keys at `t` seconds: each value on a Hermite curve with monotone tangents, so it never overshoots a key, and still at the ends.
 fn sample_keys(keys: &[Key], t: f32) -> Key {
     let last = keys.len() - 1;
     let i = (0..last).find(|&i| t < keys[i + 1][0]).unwrap_or(last - 1);

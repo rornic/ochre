@@ -34,8 +34,7 @@ const CPU_PASSES_SHOWN: usize = 5;
 // what a stretch of the frame's main schedules is called, between marks laid in `Main`'s order
 const MAIN_STAGES: [&str; 5] = ["first", "pre", "update", "post", "last"];
 
-/// F1 toggles a text readout of the player's climate, the block it's looking at, frame cost and
-/// loaded terrain. With `stats` it starts shown and prints each readout to stdout as a `STATS` line.
+/// F1 toggles a text readout of climate, targeted block, frame cost and loaded terrain; `stats` starts it shown and prints `STATS` lines.
 #[derive(Default)]
 pub struct DebugOverlayPlugin {
     pub stats: bool,
