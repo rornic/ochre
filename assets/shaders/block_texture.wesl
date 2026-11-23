@@ -282,17 +282,17 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.1612, 0.1542, 0.1649), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
         vec3<f32>(0.1143, 0.1095, 0.1169), // compacted shale
-        vec3<f32>(0.4868, 0.4832, 0.4913), // steppe top
-        vec3<f32>(0.4954, 0.4954, 0.4954), // tall grass
+        vec3<f32>(0.4925, 0.4896, 0.5003), // steppe top
+        vec3<f32>(0.4945, 0.4945, 0.4945), // tall grass
         vec3<f32>(0.3000, 0.3000, 0.3000), // fern
-        vec3<f32>(0.3995, 0.0742, 0.0164), // poppy
-        vec3<f32>(0.3838, 0.3697, 0.0299), // dandelion
-        vec3<f32>(0.4988, 0.4988, 0.4988), // short grass
-        vec3<f32>(0.4951, 0.4951, 0.4951), // seed grass
-        vec3<f32>(0.6059, 0.6059, 0.6059), // feather grass
-        vec3<f32>(0.3202, 0.2752, 0.3175), // steppe flower
+        vec3<f32>(0.4006, 0.0749, 0.0165), // poppy
+        vec3<f32>(0.3822, 0.3703, 0.0299), // dandelion
+        vec3<f32>(0.4983, 0.4983, 0.4983), // short grass
+        vec3<f32>(0.4943, 0.4943, 0.4943), // seed grass
+        vec3<f32>(0.6101, 0.6101, 0.6101), // feather grass
+        vec3<f32>(0.3184, 0.2733, 0.3157), // steppe flower
         vec3<f32>(0.2699, 0.2699, 0.2699), // shrub
-        vec3<f32>(0.1368, 0.0389, 0.0247), // heath
+        vec3<f32>(0.1383, 0.0388, 0.0245), // heath
     );
     let atlas_cell = u32(floor(vertex_alpha + 0.5));
     return material_color * vec4<f32>(means[atlas_cell], 1.0);

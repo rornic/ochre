@@ -12,7 +12,7 @@ SEED = 7
 DIRT, GRIT, GRASS, PATCH = 0.6, 0.9, 0.3, 0.7
 CONTRAST = 0.085
 # linear mean of grass_top, which the tint is built for
-LINEAR_MEAN = 0.4981
+LINEAR_MEAN = 0.4989
 # how the pebbles' colour differs from the ground's, in linear light, under the steppe's golden tint (0.77, 0.58, 0.14), which zeroes blue: rust-brown stones and a few pale ones
 RUST, PALE = np.array([0.72, 0.58, 0.65]), np.array([1.25, 1.3, 1.7])
 
