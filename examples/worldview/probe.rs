@@ -710,6 +710,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
     let mut tri_side: Vec<u8> = Vec::new();
     let mut meshes_added = 0u32;
     let mut mesh_origins: Vec<Vec3> = vec![Vec3::ZERO];
+    let mut mesh_scales: Vec<f32> = vec![1.0];
     // (position, normal, colour) triangles in world blocks, from `mesh` placed at `origin` and scaled by `scale`
     let mut add = |mesh: &Mesh, origin: Vec3, scale: f32, water: bool| {
         let (
@@ -731,6 +732,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         meshes_added += 1;
         mesh_origins.push(origin);
+        mesh_scales.push(scale);
         let side = |c: f32| scale > 1.0 && (c == -0.5 || c == CHUNK_SIZE as f32 - 0.5);
         // OCHRE_RENDER_FLAT=1 shades each triangle by its own normal, as the game cuts sculpted rock's facets
         let flat = std::env::var("OCHRE_RENDER_FLAT").is_ok();
@@ -766,12 +768,48 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
     };
     // OCHRE_RENDER_LOD=<level> draws the coarse nodes of that level over the area instead of the chunks
-    let lod: u8 = std::env::var("OCHRE_RENDER_LOD").ok().and_then(|l| l.parse().ok()).unwrap_or(0);
+    let lod_env = std::env::var("OCHRE_RENDER_LOD").ok();
+    // OCHRE_RENDER_LOD=auto draws what the game would round the spot lifted by OCHRE_RENDER_LIFT blocks, on the layout OCHRE_RENDER_LAYOUT=full,base,scale in chunks, see docs/sculpted-ground.md
+    let auto = lod_env.as_deref() == Some("auto");
+    let lod: u8 = lod_env.and_then(|l| l.parse().ok()).unwrap_or(0);
     // OCHRE_RENDER_HANDOVER=1 draws chunks in the node holding (`x`, `z`) instead, to look at the seam round it
     let centre_node = ochre_terrain::lod::LodKey::containing(ChunkCoordinate(I64Vec3::new(chunk_of(x), 0, chunk_of(z))), lod.max(1)).coord;
     let handover = lod > 0 && std::env::var("OCHRE_RENDER_HANDOVER").is_ok();
     let in_centre = |cx: i64, cz: i64| (cx >> lod, cz >> lod) == (centre_node.x, centre_node.z);
-    if lod > 0 {
+    let mut nodes: Vec<ochre_terrain::lod::LodKey> = Vec::new();
+    let mut chunk_list: Vec<(i64, i64, i64)> = Vec::new();
+    if auto {
+        let lift: i64 = std::env::var("OCHRE_RENDER_LIFT").ok().and_then(|l| l.parse().ok()).unwrap_or(0);
+        let layout_numbers: Vec<u32> = std::env::var("OCHRE_RENDER_LAYOUT").unwrap_or_else(|_| "12,16,2".into()).split(',').filter_map(|n| n.trim().parse().ok()).collect();
+        let [full, base, scale] = layout_numbers[..] else { return Err("OCHRE_RENDER_LAYOUT is full,base,scale".into()) };
+        let reach = (2 * half / size) as u32 + 2;
+        let layout = ochre_terrain::lod::LodLayout::new(base, reach.max(full), scale).with_full_detail_distance(full);
+        let anchor = ChunkCoordinate(I64Vec3::new(chunk_of(x), chunk_of(sampler.ground_top(x, z) + lift), chunk_of(z)));
+        fn select(layout: ochre_terrain::lod::LodLayout, anchor: ChunkCoordinate, key: ochre_terrain::lod::LodKey, nodes: &mut Vec<ochre_terrain::lod::LodKey>, stand_ins: &mut Vec<ochre_terrain::lod::LodKey>) {
+            if !layout.splits(key, anchor) {
+                nodes.push(key);
+            } else if key.level > 1 {
+                key.children().into_iter().for_each(|child| select(layout, anchor, child, nodes, stand_ins));
+            } else {
+                stand_ins.push(key);
+            }
+        }
+        let mut stand_ins = Vec::new();
+        let top = 1i64 << layout.max_level;
+        for tx in cx0.div_euclid(top)..=cx1.div_euclid(top) {
+            for tz in cz0.div_euclid(top)..=cz1.div_euclid(top) {
+                for ty in cy0.div_euclid(top)..=cy1.div_euclid(top) {
+                    select(layout, anchor, ochre_terrain::lod::LodKey { level: layout.max_level, coord: I64Vec3::new(tx, ty, tz) }, &mut nodes, &mut stand_ins);
+                }
+            }
+        }
+        let mut levels = [0usize; 16];
+        nodes.iter().for_each(|k| levels[k.level as usize] += 1);
+        println!("auto layout {full},{base},{scale} from chunk {:?}: {} stand-ins and nodes per level {:?}", anchor.0, stand_ins.len(), &levels[1..=layout.max_level as usize]);
+        for key in stand_ins {
+            chunk_list.extend(key.chunks().map(|c| (c.0.x, c.0.y, c.0.z)).filter(|c| (cx0..=cx1).contains(&c.0) && (cy0..=cy1).contains(&c.1) && (cz0..=cz1).contains(&c.2)));
+        }
+    } else if lod > 0 {
         let mut keys = std::collections::BTreeSet::new();
         for cx in cx0..=cx1 {
             for cz in cz0..=cz1 {
@@ -781,43 +819,45 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
                 }
             }
         }
-        for (x, y, z) in keys.into_iter().filter(|&(x, _, z)| !handover || (x, z) != (centre_node.x, centre_node.z)) {
-            let key = ochre_terrain::lod::LodKey { level: lod, coord: I64Vec3::new(x, y, z) };
-            let cell = key.cell_size() as f32;
-            let origin = key.min_block().as_vec3() + Vec3::splat(0.5 * cell - 0.5);
-            if let Some(meshes) = ochre_terrain::generate::generator::generate_lod_mesh(regions.clone(), key, None) {
-                add(&meshes.opaque, origin, cell, false);
-                if let Some(water) = &meshes.water {
-                    add(water, origin, cell, true);
-                }
+        nodes.extend(keys.into_iter().filter(|&(x, _, z)| !handover || (x, z) != (centre_node.x, centre_node.z)).map(|(x, y, z)| ochre_terrain::lod::LodKey { level: lod, coord: I64Vec3::new(x, y, z) }));
+    }
+    for key in nodes {
+        let cell = key.cell_size() as f32;
+        let origin = key.min_block().as_vec3() + Vec3::splat(0.5 * cell - 0.5);
+        if let Some(meshes) = ochre_terrain::generate::generator::generate_lod_mesh(regions.clone(), key, None) {
+            add(&meshes.opaque, origin, cell, false);
+            if let Some(water) = &meshes.water {
+                add(water, origin, cell, true);
             }
         }
     }
-    for cx in cx0..=cx1 {
-        for cz in (cz0..=cz1).filter(|&cz| lod == 0 || (handover && in_centre(cx, cz))) {
-            for cy in cy0..=cy1 {
-                let chunk = chunk_at((cx, cy, cz));
-                let mut neighbours = vec![None; 26];
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        for dz in -1..=1 {
-                            let at = ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1)) as usize;
-                            if at == 13 {
-                                continue;
-                            }
-                            neighbours[if at < 13 { at } else { at - 1 }] =
-                                Some(chunk_at((cx + dx as i64, cy + dy as i64, cz + dz as i64)));
-                        }
+    if !auto {
+        for cx in cx0..=cx1 {
+            for cz in (cz0..=cz1).filter(|&cz| lod == 0 || (handover && in_centre(cx, cz))) {
+                chunk_list.extend((cy0..=cy1).map(|cy| (cx, cy, cz)));
+            }
+        }
+    }
+    for (cx, cy, cz) in chunk_list {
+        let chunk = chunk_at((cx, cy, cz));
+        let mut neighbours = vec![None; 26];
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let at = ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1)) as usize;
+                    if at == 13 {
+                        continue;
                     }
-                }
-                let coord = ChunkCoordinate(I64Vec3::new(cx, cy, cz));
-                let meshes = generate_chunk_mesh_with(chunk, neighbours, coord, regions, true);
-                let origin = Vec3::new((cx * size) as f32, (cy * size) as f32, (cz * size) as f32);
-                add(&meshes.opaque, origin, 1.0, false);
-                if let Some(water) = &meshes.water {
-                    add(water, origin, 1.0, true);
+                    neighbours[if at < 13 { at } else { at - 1 }] = Some(chunk_at((cx + dx as i64, cy + dy as i64, cz + dz as i64)));
                 }
             }
+        }
+        let coord = ChunkCoordinate(I64Vec3::new(cx, cy, cz));
+        let meshes = generate_chunk_mesh_with(chunk, neighbours, coord, regions, true);
+        let origin = Vec3::new((cx * size) as f32, (cy * size) as f32, (cz * size) as f32);
+        add(&meshes.opaque, origin, 1.0, false);
+        if let Some(water) = &meshes.water {
+            add(water, origin, 1.0, true);
         }
     }
     let (w, h) = (1600u32, 1000u32);
@@ -893,6 +933,11 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
             img.put_pixel(px, py, Rgb([rgb.x as u8, rgb.y as u8, rgb.z as u8]));
         });
     }
+    // the area's own sides show nodes' skirts with no neighbour drawn, so only pixels well inside count
+    let inner = |t: usize| {
+        let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
+        (c.x - x as f32).abs() < half as f32 * 0.8 && (c.z - z as f32).abs() < half as f32 * 0.8
+    };
     // OCHRE_RENDER_ZFIGHT=<blocks>: pixels where a second triangle, sharing no corner with the front one, lies within that depth of it, where the
     // game's depth test would flicker between the two; counted by whether each lies in a node's side plane, and painted magenta
     if let Some(eps) = std::env::var("OCHRE_RENDER_ZFIGHT").ok().and_then(|e| e.parse::<f32>().ok()) {
@@ -900,11 +945,11 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         // [front kind][other kind][same mesh], kinds as `tri_side`
         let mut kinds = [[[0usize; 2]; 3]; 3];
         let mut fighters: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        // the area's own sides show nodes' skirts with no neighbour drawn, so only pixels well inside count
-        let inner = |t: usize| {
-            let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
-            (c.x - x as f32).abs() < half as f32 * 0.8 && (c.z - z as f32).abs() < half as f32 * 0.8
-        };
+        // by how the two triangles' meshes sit: one mesh, stacked nodes of one level (same footprint), neighbours of one level, and different cell sizes
+        let mut relations = [0usize; 4];
+        // pixels between triangles within about 8 degrees of parallel: coplanar surfaces fight over an area, where crossing ones only meet along a line
+        let mut parallel = 0usize;
+        let facing = |t: usize| (triangles[t][2].0 - triangles[t][0].0).cross(triangles[t][1].0 - triangles[t][0].0).normalize_or_zero();
         let shares = |a: usize, b: usize| triangles[a].iter().any(|p| triangles[b].iter().any(|q| p.0.distance_squared(q.0) < 1e-6));
         for (t, tri) in triangles.iter().enumerate() {
             cover(tri, &mut |px, py, d, _| {
@@ -914,6 +959,18 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
                     return;
                 }
                 fighting[at] = true;
+                let (mf, mt) = (tri_mesh[f] as usize, tri_mesh[t] as usize);
+                let relation = if mf == mt {
+                    0
+                } else if mesh_scales[mf] != mesh_scales[mt] {
+                    3
+                } else if mesh_origins[mf].x == mesh_origins[mt].x && mesh_origins[mf].z == mesh_origins[mt].z {
+                    1
+                } else {
+                    2
+                };
+                relations[relation] += 1;
+                parallel += (facing(f).dot(facing(t)).abs() > 0.99) as usize;
                 kinds[tri_side[f] as usize][tri_side[t] as usize][(tri_mesh[f] == tri_mesh[t]) as usize] += 1;
                 fighters.insert(f);
                 fighters.insert(t);
@@ -925,7 +982,8 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         let total = fighting.iter().filter(|&&f| f).count();
         let drawn = front.iter().filter(|&&f| f != usize::MAX).count();
-        println!("z-fighting pixels within {eps} blocks: {total} of {drawn} drawn ({:.3}%), {} triangles take part", 100.0 * total as f32 / drawn.max(1) as f32, fighters.len());
+        println!("z-fighting pixels within {eps} blocks: {total} of {drawn} drawn ({:.3}%), {} triangles take part, {parallel} of the pixels between near-parallel triangles", 100.0 * total as f32 / drawn.max(1) as f32, fighters.len());
+        println!("  by meshes: {} in one, {} between stacked nodes of one level, {} between neighbours of one level, {} between cell sizes", relations[0], relations[1], relations[2], relations[3]);
         for (a, name_a) in ["surface", "side plane", "water"].iter().enumerate() {
             for (b, name_b) in ["surface", "side plane", "water"].iter().enumerate() {
                 println!("  front {name_a} against {name_b}: {} across meshes, {} in one mesh", kinds[a][b][0], kinds[a][b][1]);
@@ -933,6 +991,71 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         for (at, _) in fighting.iter().enumerate().filter(|(_, f)| **f) {
             img.put_pixel(at as u32 % w, at as u32 / w, Rgb([255, 0, 255]));
+        }
+    }
+    // OCHRE_RENDER_DUMP=<file> writes the pixels showing ground, drawn all in chunks, for OCHRE_RENDER_GAPS=<file> to count the openings against, see docs/sculpted-ground.md
+    let ground_at = |at: usize| front[at] != usize::MAX && tri_side[front[at]] != 2 && inner(front[at]);
+    if let Ok(file) = std::env::var("OCHRE_RENDER_DUMP") {
+        let side_of = |t: usize| {
+            let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
+            if (c.x - x as f32) * forward.x + (c.z - z as f32) * forward.z > 0.0 { 1 } else { 2 }
+        };
+        let covered: Vec<u8> = (0..(w * h) as usize).map(|at| if ground_at(at) { side_of(front[at]) } else { 0 }).collect();
+        std::fs::write(&file, covered).map_err(|e| format!("{file}: {e}"))?;
+    }
+    if let Ok(file) = std::env::var("OCHRE_RENDER_GAPS") {
+        let truth = std::fs::read(&file).map_err(|e| format!("{file}: {e}"))?;
+        let (wi, hi) = (w as i64, h as i64);
+        // the first ground within 8 pixels from (px, py) along (dx, dy), as its mesh
+        let reach = |px: i64, py: i64, dx: i64, dy: i64| (1..=8).find_map(|r| {
+            let (qx, qy) = (px + dx * r, py + dy * r);
+            (qx >= 0 && qy >= 0 && qx < wi && qy < hi && front[(qy * wi + qx) as usize] != usize::MAX && tri_side[front[(qy * wi + qx) as usize]] != 2).then(|| tri_mesh[front[(qy * wi + qx) as usize]] as usize)
+        });
+        let mut openings = 0usize;
+        let mut sides = [0usize; 2];
+        // by what lies at the two ends: chunk or node, and for nodes whether they are one mesh, one cell size or two
+        let mut ends: std::collections::BTreeMap<(&str, &str), usize> = std::collections::BTreeMap::new();
+        let mut marked = Vec::new();
+        for py in 0..hi {
+            for px in 0..wi {
+                let at = (py * wi + px) as usize;
+                if truth[at] == 0 || front[at] != usize::MAX {
+                    continue;
+                }
+                let across = reach(px, py, -1, 0).zip(reach(px, py, 1, 0));
+                let down = reach(px, py, 0, -1).zip(reach(px, py, 0, 1));
+                let Some((a, b)) = across.or(down) else { continue };
+                openings += 1;
+                sides[truth[at] as usize - 1] += 1;
+                marked.push(at);
+                // OCHRE_RENDER_GAPS_SAMPLES=1 prints every 60th opening with the triangles at its two ends
+                if std::env::var("OCHRE_RENDER_GAPS_SAMPLES").is_ok() && openings % 60 == 1 {
+                    let pick = |m: usize| (0..triangles.len()).find(|&t| tri_mesh[t] as usize == m && triangles[t].iter().map(|v| v.0).any(|p| {
+                        let d = p - centre;
+                        (w as f32 / 2.0 + d.dot(right) * scale - px as f32).abs() < 9.0 && (h as f32 / 2.0 - d.dot(up) * scale - py as f32).abs() < 9.0
+                    }));
+                    let show = |m: usize| format!("mesh {m} at {} scale {}: {:?}", mesh_origins[m], mesh_scales[m], pick(m).map(|t| triangles[t].map(|v| v.0)));
+                    println!("  opening at pixel {px},{py}: {} | {}", show(a), show(b));
+                }
+                let name = if a == b {
+                    "within one mesh"
+                } else if mesh_scales[a] == 1.0 && mesh_scales[b] == 1.0 {
+                    "chunk against chunk"
+                } else if mesh_scales[a] == 1.0 || mesh_scales[b] == 1.0 {
+                    "chunk against node"
+                } else if mesh_scales[a] == mesh_scales[b] {
+                    "node against node of one level"
+                } else {
+                    "node against node of another level"
+                };
+                *ends.entry((name, if truth[at] == 1 { "inside" } else { "outside" })).or_default() += 1;
+            }
+        }
+        let covered = truth.iter().filter(|&&t| t != 0).count();
+        let ends: Vec<String> = ends.iter().map(|((name, side), n)| format!("{name} {side} {n}")).collect();
+        println!("openings: {openings} pixels of {covered} the truth covers show no ground, {} seen from inside the full-detail area and {} from outside: {}", sides[0], sides[1], ends.join(", "));
+        for at in marked {
+            img.put_pixel(at as u32 % w, at as u32 / w, Rgb([0, 255, 255]));
         }
     }
     img.save(out).map_err(|e| format!("{out}: {e}"))?;
