@@ -67,22 +67,3 @@ Wind: the gust direction in the foliage shader is the world's prevailing wind an
 Ground texture: the grass ground of steppe draws its own layer, `steppe_top`, a rougher and less leafy one (earthy mottling, grit, a trace of the grass layer's leaves, and sparse pebbles), grey at grass's mean so the same tint colours it, with the pebbles coloured: rust-brown and pale, worked out against the steppe's golden tint (about 0.77, 0.58, 0.14, which leaves almost no blue), so under it they show as stones and not as lighter grass. The mesher picks it per face (`Tile::SteppeTop`, `TerrainSource::steppe`, `BlockSource::steppe`), since the shaders do not see the biome, and the steppe's edge is a hard change of texture, under a smooth tint, along one block's edge. Grass block sides on steppe draw it too. Far LODs (which draw the grass layer's mean, close in brightness) and steppe on a mountain or volcano keep the grass layer. `.claude/skills/block-textures/steppe_ground.py` draws it from `dirt.png` and `grass_top.png`, no ComfyUI.
 
 Not done: steppe has no tint of its own beyond the biome's dry shift. A `GrassTint` ramp by exposure would need the grass faces not to merge, which costs vertices (`docs/terrain-perf.md`), and was left.
-
-## Birds by biome
-
-The starling flock and the goose skeins, which used to be the same everywhere, are sized by the biome under the camera (`birds.rs`: `BirdLife`, `bird_life`, read twice a second; crossing a border, the flock shrinks or grows toward the new size three birds a quarter second, so it does not pop). Grassland and the base terrain keep the old values. The rest of the sky:
-
-| Biome | Starlings | Flock range, height | Skein every (s) | Geese, height |
-| --- | --- | --- | --- | --- |
-| grassland | 160 | 55, 34 | 45 to 110 | 7 to 11, 48 |
-| steppe | 60 | 85, 42 | 25 to 60 | 9 to 13, 70 |
-| tundra | 25 | 70, 32 | 30 to 75 | 9 to 13, 45 |
-| swamp | 110 | 55, 30 | 28 to 70 | 8 to 12, 40 |
-| savanna | 110 | 75, 40 | 110 to 260 | 7 to 11, 55 |
-| taiga | 50 | 50, 36 | 50 to 130 | 7 to 11, 55 |
-| forest | 70 | 45, 38 | 90 to 220 | 7 to 11, 60 |
-| jungle | 40 | 40, 40 | 200 to 420 | 6 to 9, 65 |
-| desert | 20 | 85, 45 | 300 to 600 | 5 to 8, 80 |
-| glacier | none | | 400 to 800 | 5 to 7, 80 |
-
-Open and wet country has wide skies and busy geese (migrants crossing the steppe and tundra, fowl over the swamp); woods, jungle, desert and ice have few. Birdsong is still only the forest loop, so steppe and the other treeless biomes have none: that needs a recording per biome (`docs/issues.md`).

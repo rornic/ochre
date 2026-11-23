@@ -9,7 +9,7 @@ use bevy::winit::WinitPlugin;
 use ochre_engine::settings::Settings;
 use ochre_engine::{load_world, OchrePlugins};
 use ochre_gameplay::{
-    birds::BirdPlugin, debug::DebugOverlayPlugin,
+    debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
     remote::RemoteControlPlugin,
 };
@@ -91,7 +91,6 @@ fn each_plugin_can_be_left_out() {
     run("PlayerPlugin", without!(PlayerPlugin));
     run("FootstepPlugin", without!(FootstepPlugin));
     run("AmbiencePlugin", without!(AmbiencePlugin));
-    run("BirdPlugin", without!(BirdPlugin));
     run("DebugOverlayPlugin", without!(DebugOverlayPlugin));
     run("FlythroughPlugin", without!(FlythroughPlugin));
     // everything but the terrain and what draws it
@@ -107,7 +106,6 @@ fn each_plugin_can_be_left_out() {
         PlayerPlugin,
         FootstepPlugin,
         AmbiencePlugin,
-        BirdPlugin,
         DebugOverlayPlugin,
         FlythroughPlugin
     ));

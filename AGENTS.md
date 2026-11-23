@@ -24,7 +24,7 @@ Dependencies point down only. `ochre-engine` (root `src/`) re-exports all four a
 ochre-base      blocks, biomes, noise/math, TerrainSource trait, WorldBounds, WATER_LEVEL
 ochre-terrain   chunks, generation, greedy meshing, octree LODs, materials, loaders (depends on base only)
 ochre-world     world map (erosion, hydrology, climate), sky, clouds, weather, ambience (base, terrain)
-ochre-gameplay  player, collision, birds, debug overlay, flythrough (base, terrain, world)
+ochre-gameplay  player, collision, debug overlay, flythrough (base, terrain, world)
 ```
 
 `ochre-terrain` never sees the world map: it generates from a `TerrainSource`, and `ochre-world::load_world` supplies one. Terrain's tests borrow real maps through `ochre-world`'s `test-support` feature, so only `ochre-base` types may cross back.
@@ -35,7 +35,7 @@ ochre-gameplay  player, collision, birds, debug overlay, flythrough (base, terra
 
 - `TerrainPlugin` owns the `World`, the loaders and the materials, headless-safe. `TerrainRenderPlugin` (needs a GPU) adds the material plugins, textures and mesh buffers. `CurvaturePlugin` and `FrostPlugin` are separate.
 - `SkyPlugin` (clock, sun, moon, atmosphere), `NightSkyPlugin`, `SunGlarePlugin`, `CloudPlugin`, `WeatherPlugin`, `GodrayPlugin` (equips the camera itself).
-- `PlayerPlugin` (spawns the player and camera), `FootstepPlugin`, `BirdPlugin`, `AmbiencePlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`.
+- `PlayerPlugin` (spawns the player and camera), `FootstepPlugin`, `AmbiencePlugin`, `DebugOverlayPlugin`, `FlythroughPlugin`.
 
 Every plugin but the terrain's can be left out: one that reads another's resource makes a blank of its own (`init_resource`), and `tests/plugin_subsets.rs` runs each combination headless. The plugins assume exactly one `Camera3d` (the loaders and sky systems follow it), so a game without `PlayerPlugin` spawns its own. A headless run (`flight`, `lod_sim`) uses `MinimalPlugins`, `AssetPlugin`, `TerrainPlugin::new(world, renderer, debug)` and registers the `Mesh`, `Image` and material assets with `init_asset`.
 

@@ -1,6 +1,6 @@
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 use ochre_gameplay::{
-    birds::BirdPlugin, debug::DebugOverlayPlugin,
+    debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
     remote::RemoteControlPlugin,
 };
@@ -88,7 +88,6 @@ impl PluginGroup for OchrePlugins {
             .add(PlayerPlugin::default())
             .add(FootstepPlugin)
             .add(AmbiencePlugin)
-            .add(BirdPlugin)
             .add(DebugOverlayPlugin { stats: dev.stats })
             .add(FlythroughPlugin { flight: dev.flight })
             .add(RemoteControlPlugin { port: dev.remote });
