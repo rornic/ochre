@@ -64,6 +64,8 @@ pub struct Player {
     fov_speed: f32,
     // how far the last step moved the body, so the camera can trail it between steps
     moved: Vec3,
+    /// Degrees a game narrows the view by, which it eases to like the rest of the field of view.
+    pub zoom: f32,
 }
 
 impl Player {
@@ -221,7 +223,8 @@ fn player_present(
     if let Ok(mut projection) = projection.single_mut() {
         if let Projection::Perspective(perspective) = &mut *projection {
             let wanted = (FOV + if rushing { SPRINT_FOV } else { 0.0 } + JUMP_FOV * player.kick
-                - LAND_FOV * player.thud)
+                - LAND_FOV * player.thud
+                - player.zoom)
                 .to_radians();
             let pull = (wanted - perspective.fov) * FOV_STIFFNESS - player.fov_speed * FOV_DAMPING;
             player.fov_speed += pull * dt;
