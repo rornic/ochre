@@ -55,7 +55,7 @@ impl Plugin for AmbiencePlugin {
     }
 }
 
-/// Keeps `Surroundings` current. Added by whichever of `AmbiencePlugin` and `MusicPlugin` comes first.
+/// Keeps `Surroundings` current. Added by `AmbiencePlugin`, or by a game's own plugin that reads it.
 pub struct SurroundingsPlugin;
 
 impl Plugin for SurroundingsPlugin {
@@ -80,7 +80,7 @@ fn ease_feel(around: Res<Surroundings>, time: Res<Time>, mut eased: ResMut<Eased
 
 /// The system that updates `Surroundings`, for systems that read it to run after.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct SenseSurroundings;
+pub struct SenseSurroundings;
 
 /// What's round the camera, as far as what it hears goes. The fractions are 0..1.
 #[derive(Resource, Debug, Clone, Copy, PartialEq)]

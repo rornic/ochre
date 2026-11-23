@@ -15,10 +15,6 @@ pub struct DevEnv {
     pub time_scale: Option<f32>,
     /// `OCHRE_CLEAR_SKY`.
     pub clear_sky: bool,
-    /// `OCHRE_MUSIC_DELAY`, seconds before the first track.
-    pub music_delay: Option<f32>,
-    /// `OCHRE_MUSIC_TRACK`, what the track played has in its file name.
-    pub music_track: Option<String>,
     /// `OCHRE_STATS`.
     pub stats: bool,
     /// `OCHRE_FLIGHT`, with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`.
@@ -59,8 +55,6 @@ impl DevEnv {
             time: number("OCHRE_TIME"),
             time_scale: number("OCHRE_TIMESCALE").filter(|s: &f32| s.is_finite() && *s >= 0.0),
             clear_sky: var_os("OCHRE_CLEAR_SKY").is_some(),
-            music_delay: number("OCHRE_MUSIC_DELAY"),
-            music_track: var("OCHRE_MUSIC_TRACK").ok(),
             stats: var_os("OCHRE_STATS").is_some(),
             flight: var("OCHRE_FLIGHT").ok().map(|file| FlightConfig {
                 file,

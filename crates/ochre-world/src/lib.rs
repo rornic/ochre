@@ -5,7 +5,6 @@ pub mod ambience;
 pub mod atmosphere;
 pub mod clouds;
 pub mod godrays;
-pub mod music;
 pub mod sky;
 pub mod sky_dome;
 pub mod storms;
