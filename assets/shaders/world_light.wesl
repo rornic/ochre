@@ -42,7 +42,6 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     }
     let view_z = position_world_to_view(world_position.xyz).z;
     let reach = (*sun).cascades[(*sun).num_cascades - 1u].far_bound;
-    // faded out wholly, so nothing to look up
     if -view_z >= reach {
         return FAR_VISIBILITY;
     }
@@ -64,7 +63,6 @@ fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: v
     if view_bindings::lights.n_directional_lights > 0u {
         to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         sun = sun_radiance(uncurved(world_position.xyz)) * gate;
-        // no sun, nothing to shadow
         if any(sun > vec3<f32>(0.0)) {
             // a plant's own cut-out shadow falls on its quad, which the map's texels are too coarse to keep off it, so
             // its lookup is moved toward the sun and it takes the land's shadows less the further it is

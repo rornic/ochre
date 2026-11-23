@@ -310,7 +310,6 @@ fn skyward(direction: vec3<f32>) -> vec3<f32> {
     return normalize(vec3<f32>(direction.x, max(direction.y, 0.02), direction.z));
 }
 
-// The sky and stars reflected along `direction`.
 fn reflected_sky(direction: vec3<f32>) -> vec3<f32> {
     let up = skyward(direction);
     let night = reflected_celestial(up);
@@ -412,7 +411,6 @@ const SEA_WANDER: f32 = 1.5;
 const FRESH_TINT: f32 = 0.1;
 // How far, in screen heights, ripples bend what's seen through the surface, per block of depth.
 const REFRACTION: f32 = 0.035;
-// How strong the ripples are.
 const FRESH_RIPPLES: f32 = 0.15;
 // Fresh water's speed downhill per unit of slope, in blocks a second, its most, and how much more rippled it is then.
 const FLOW_SPEED: f32 = 12.0;

@@ -65,7 +65,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    // a soft round dot, solid in the middle
     let dot_shape = 1.0 - smoothstep(0.3, 1.0, length(in.uv));
     let alpha = dot_shape * in.color.x * in.color.y * 0.85;
     if alpha < 0.002 {

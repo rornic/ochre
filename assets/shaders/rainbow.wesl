@@ -24,7 +24,6 @@ fn band(t: f32) -> vec3<f32> {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = in.uv.x;
-    // soft at both edges of the band
     let edges = smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.82, 1.0, t));
     let eye = view_bindings::view.world_position;
     let above = smoothstep(eye.y - 10.0, eye.y + 60.0, in.world_position.y);
