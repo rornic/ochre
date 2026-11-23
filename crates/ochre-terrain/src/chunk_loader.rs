@@ -73,19 +73,16 @@ pub struct ChunkLoader {
     pub(super) remesh: HashSet<LodKey>,
 }
 
-// Loading spends up to a time budget a frame rather than a fixed count of chunks, so it keeps up
-// at any render distance and on any machine.
+// Loading spends a time budget a frame, not a fixed chunk count, so it keeps up at any render distance and on any machine.
 const GATHER_TIME_BUDGET: Duration = Duration::from_millis(3);
 const MESH_APPLY_TIME_BUDGET: Duration = Duration::from_millis(4);
 // How much of the spawn queue `gather_chunks` takes between checks of the time.
 const SPAWN_BATCH_SIZE: usize = 64;
 const SCAN_BATCH_SIZE: usize = 50_000;
-// Meshing reads every chunk in the 3x3x3 around a chunk, up to sqrt(3) away, so chunk data is
-// generated this much past the meshed chunks.
+// Meshing reads the 3x3x3 round a chunk, up to sqrt(3) away, so data is generated this far past the meshed chunks.
 const NEIGHBOR_DATA_PADDING: u32 = 2;
 
-// A cap on concurrent generation tasks, should generation fall behind: 512 at a render distance of
-// 32, scaled with the area of the shell of chunks loading in as the camera moves.
+// A cap on concurrent generation tasks should generation fall behind: 512 at render distance 32, scaled with the area of the loading shell.
 fn max_in_flight(render_distance: u32) -> usize {
     let scale =
         (render_distance + NEIGHBOR_DATA_PADDING) as f64 / (32 + NEIGHBOR_DATA_PADDING) as f64;
@@ -253,8 +250,7 @@ pub(crate) fn load_chunks(
                 }
             }
             None => {
-                // a neighbour found in `mark_chunks` may have been unloaded since, which would
-                // bake a border into the mesh
+                // a neighbour found in `mark_chunks` may have been unloaded since, which would bake a border into the mesh
                 let coord = chunk.coord;
                 if coord
                     .adjacent()
@@ -336,10 +332,7 @@ fn build_offsets(render_distance: u32) -> Vec<I64Vec3> {
     offsets
 }
 
-/// Which chunks to load next: a distance-sorted table of offsets from the camera's chunk, scanned
-/// with a cursor that rewinds just far enough to cover chunks newly in range when the camera
-/// moves, see `rewind_for_shift`. What's loaded is asked of `chunk_to_entity` every time, so
-/// nothing is tracked twice.
+/// Which chunks to load next: a distance-sorted table of offsets from the camera's chunk, scanned with a cursor that rewinds just far enough on a shift (`rewind_for_shift`); loaded state comes from `chunk_to_entity` so nothing is tracked twice.
 #[derive(Debug)]
 struct ChunkSpawnQueue {
     offsets: Vec<I64Vec3>,
@@ -363,8 +356,7 @@ impl ChunkSpawnQueue {
         Self { layers, ..self }
     }
 
-    // Chunks scanned out to D from the old anchor are scanned out to D - shift from the new one,
-    // so only the outermost `shift` of what was scanned needs scanning again.
+    // Chunks scanned out to D from the old anchor are scanned out to D - shift from the new one, so only the outermost `shift` needs rescanning.
     fn rewind_for_shift(&mut self, shift: f32) {
         let scanned = self
             .cursor
@@ -586,9 +578,7 @@ mod tests {
 
     #[test]
     fn test_is_exhausted_can_be_true_even_with_an_empty_batch() {
-        // an exhausting call can still return zero candidates, if everything left to
-        // scan happens to already be loaded - is_exhausted must not be inferred from an
-        // empty batch alone (see its doc comment)
+        // an exhausting call can still return zero candidates if everything left is loaded, so is_exhausted can't be inferred from an empty batch
         let mut queue = ChunkSpawnQueue::new(1);
         let anchor = ChunkCoordinate(I64Vec3::ZERO);
         let mut loaded = HashMap::new();
@@ -618,8 +608,7 @@ mod tests {
     #[test]
     fn test_sort_by_viewport_bias_never_puts_farther_chunk_before_closer_one() {
         let camera_chunk = ChunkCoordinate(I64Vec3::ZERO);
-        // a chunk directly ahead but far away, vs a chunk behind but close - distance
-        // must win, even though the far chunk has a much better viewport score
+        // a chunk directly ahead but far away vs one behind but close: distance must win despite the far one's better viewport score
         let forward = Dir3::new(Vec3::new(1.0, 0.0, 0.0)).unwrap();
         let far_ahead = ChunkCoordinate(I64Vec3::new(10, 0, 0));
         let close_behind = ChunkCoordinate(I64Vec3::new(-1, 0, 0));

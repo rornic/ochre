@@ -44,8 +44,7 @@ pub fn frost_cover(world: &World, feet: Vec3) -> f32 {
     cold::frost_cold(terrain.temperature(x, z), feet.y - WATER_LEVEL as f32) * thaw
 }
 
-// What the shaders see: the camera's sea-level temperature, how much of the cold's frost its biome keeps and the height of the ground
-// under it, with where each is heading.
+// What the shaders see: the camera's sea-level temperature, its biome's frost share and the ground height under it, each with where it is heading.
 #[derive(Default)]
 struct Seen {
     now: [f32; 3],

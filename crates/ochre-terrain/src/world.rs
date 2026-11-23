@@ -115,8 +115,7 @@ impl World {
         bounds.layers()
     }
 
-    // Below the world is solid and above it open sky, standing in for chunks that are never
-    // generated, so the chunks at its bottom and top still have neighbours to mesh against.
+    // Solid below the world and open sky above, so edge chunks still have neighbours to mesh against.
     fn chunk(&self, coord: ChunkCoordinate) -> Option<&Arc<ChunkData>> {
         let layers = Self::layers(self.bounds);
         if coord.0.y < layers.start {
@@ -163,8 +162,7 @@ impl World {
             })
     }
 
-    /// Sets the block at `block`, in a chunk generated already, and remembers it was changed, see
-    /// `take_edits`. Returns whether it changed.
+    /// Sets the block at `block` in a generated chunk and records the edit (`take_edits`); returns whether it changed.
     pub fn set_block_at(&mut self, block: I64Vec3, to: BlockType) -> bool {
         let size = CHUNK_SIZE as i64;
         // only the world's own chunks: what lies beyond it isn't for changing
@@ -189,8 +187,7 @@ impl World {
             .and_then(|data| data.flow_at(block.rem_euclid(I64Vec3::splat(size)).as_u16vec3()))
     }
 
-    /// Makes the block at `block` water flowing at `level`, or still if None, in a chunk generated
-    /// already. Returns whether it changed.
+    /// Makes the block water flowing at `level`, or still if None, in a generated chunk; returns whether it changed.
     pub(crate) fn set_flow_at(&mut self, block: I64Vec3, level: Option<u8>) -> bool {
         let size = CHUNK_SIZE as i64;
         let Some(data) = self.chunks.get_mut(&ChunkCoordinate::containing(block)) else {
@@ -227,8 +224,7 @@ impl World {
         stirred
     }
 
-    /// Breaks the block at `block`, leaving air, unless it's one that can't be broken. Returns
-    /// what was broken.
+    /// Breaks the block, leaving air, unless it can't be broken; returns what was broken.
     pub fn break_block(&mut self, block: I64Vec3) -> Option<BlockType> {
         let broken = self.get_block_at(block);
         (broken.is_breakable() && self.set_block_at(block, BlockType::Air)).then_some(broken)

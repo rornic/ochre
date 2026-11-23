@@ -11,22 +11,17 @@ pub struct RendererSettings {
     pub render_distance: u32,
     /// How far terrain is drawn at full detail, in chunks.
     pub full_detail_distance: u32,
-    /// Each LOD level reaches this many times as far as the one before it, starting
-    /// from `lod_base_distance`: level n reaches it times this to the n.
+    /// Each LOD level reaches this many times as far as the one before, from `lod_base_distance`.
     pub lod_level_scale: u32,
-    /// The distance, in chunks, LOD levels scale out from, the full-detail distance if unset.
-    /// Full detail reaching further than this only narrows the first LOD level's ring.
+    /// The distance in chunks LOD levels scale out from, the full-detail distance if unset.
     pub lod_base_distance: Option<u32>,
     /// How long swapping between LOD levels takes to cross-fade, in seconds.
     pub lod_fade_seconds: f32,
-    /// The most megabytes in one buffer the terrain's meshes are packed into. A buffer that fills
-    /// is copied into a bigger one, with both alive for a moment, so smaller buffers mean a lower
-    /// peak and less empty room in the last one.
+    /// Most megabytes in one mesh buffer; a full buffer is copied into a bigger one, so smaller means a lower peak.
     pub mesh_slab_mb: u64,
     /// How much bigger a mesh buffer is made each time it fills, over 1.
     pub mesh_slab_growth: f64,
-    /// Pack terrain meshes' vertices into about half the bytes, see `crate::pack`. On unless a
-    /// test of the two needs it off.
+    /// Pack mesh vertices into about half the bytes, see `crate::pack`; off only for tests.
     pub pack_meshes: bool,
     /// Blocks before a painted material repeats, a power of two from 1 to 64.
     pub material_period: u32,

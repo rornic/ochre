@@ -1,8 +1,4 @@
-//! Water flowing out of the world's still water into the space edits open beside it, as
-//! Minecraft's does. It falls as far as it can and spreads sideways from where it rests, a level
-//! less each block, so it runs `SPREAD` blocks over flat ground and a channel carries it as far as
-//! it keeps falling. It flows only while fed: cut off, it dries up back from the cut. Still water,
-//! the water the world was generated with, never moves.
+//! Water flowing from still water into the space edits open: it falls as far as it can and spreads a level less per block, drying up when cut off.
 
 use bevy::{
     ecs::system::{Local, Res, ResMut},
@@ -21,8 +17,7 @@ pub(crate) const FALLING: u8 = 8;
 /// The level still water, and a fall where it lands, spread at, one less each block on.
 pub(crate) const SPREAD: u8 = 7;
 
-/// How far over the bottom of its block flowing water at `level` stands, in blocks, as still
-/// water stands a whole block.
+/// How far over the bottom of its block water at `level` stands, in blocks; still water stands a whole block.
 pub fn surface(level: u8) -> f32 {
     match level {
         FALLING => 1.0,
@@ -85,8 +80,7 @@ fn fed(world: &World, block: I64Vec3) -> Option<u8> {
         .max()
 }
 
-/// Moves the water a block on wherever it was stirred, each block from how the water round it was
-/// before the step. Returns how many blocks changed.
+/// Moves the water a block on wherever it was stirred, each block from the water round it before the step; returns how many blocks changed.
 pub(crate) fn step(world: &mut World) -> usize {
     let changes: Vec<(I64Vec3, Option<u8>)> = world
         .take_stirred()

@@ -24,8 +24,7 @@ use super::{
 use crate::chunk::CHUNK_SIZE;
 use crate::pack::pack;
 
-/// A level-1 node's worth of full-detail chunks drawn as one mesh. Level 1 is where terrain
-/// swaps between full detail and LODs, so a group is always wholly shown or wholly hidden.
+/// A level-1 node's full-detail chunks drawn as one mesh, so a group is wholly shown or hidden at the LOD swap.
 #[derive(Component)]
 pub struct ChunkGroup {
     pub key: LodKey,
@@ -41,8 +40,7 @@ pub(crate) struct BuildChunkGroup {
 #[derive(Component)]
 pub struct BuiltGroup;
 
-/// A chunk meshed with something to draw, whose mesh waits in `ChunkLoader::held` for the
-/// rest of its group.
+/// A chunk meshed with something to draw, its mesh waiting in `ChunkLoader::held` for the rest of its group.
 #[derive(Component)]
 pub struct MeshedChunk;
 
@@ -109,8 +107,7 @@ pub(crate) fn build_groups(
                     chunks: entities,
                 },
                 Transform::from_translation(min),
-                // hidden until refresh_lod_visibility fades it in, so it never flashes up
-                // over the LOD node it's replacing
+                // hidden until refresh_lod_visibility fades it in, so it never flashes over the LOD node it replaces
                 Visibility::Hidden,
             ))
             .id();
@@ -270,8 +267,7 @@ fn merge_meshes(parts: Vec<(Vec3, Mesh)>) -> Option<Mesh> {
     }
     let mut merged = Mesh::new(
         PrimitiveTopology::TriangleList,
-        // both worlds, as the lod meshes are: a packed mesh is not drawn if its main copy, which
-        // keeps the bounds its positions are packed against, is dropped once it is uploaded
+        // both worlds like the lod meshes: a packed mesh isn't drawn if its main copy, which keeps the pack bounds, is dropped on upload
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
