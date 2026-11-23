@@ -30,7 +30,6 @@ A change that alters generation bumps `GENERATOR_VERSION` and re-pins the map ha
 | Trees and flora density follow a cell's own biome, so a blended patch keeps its neighbour's trees | looking at a blended edge | Open |
 | Hummock views, and gully views since they became wider swales, were not measured | `terrain-perf.md` | Open |
 | Seen in the game so far: gullies and the cliff pass. Not yet: groves, relief on the other biomes, inselbergs, karst, cirques, blended edges after the two-cell cap | | Needs a look from the ground |
-| The ARM64 checksum run under `qemu-aarch64` | never run; the pins were written natively | Open |
 
 ## Glossary
 

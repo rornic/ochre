@@ -24,3 +24,6 @@ Two shell clients for the `worldview` example's HTTP server (`examples/worldview
 
 ## Verification
 - No tests. Start the server with `cargo run --release --example worldview -- 1 8777`, then run `scripts/census.sh 1 2 8777`.
+
+## ARM64 pins
+`arm64-pins.sh [tool-dir]` cross-builds the pinned map and chunk hash tests (`portable_maths`, `determinism`, `ochre-base` noise) for `aarch64-unknown-linux-musl` and runs them under `qemu-aarch64-static`. It needs no sudo: it fetches `ziglang` (the linker) and unpacks the `qemu-user-static` .deb under `tool-dir` (default `/tmp/ochre-arm64`). Slow: about 10 minutes under emulation. Stubs the `alsa` and `libudev` pkg-config files, which bevy's sys crates ask for at build time and the tests never call.
