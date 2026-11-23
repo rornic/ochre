@@ -62,11 +62,18 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Known:** `push_shore` and the reach over the bank apply only to fresh water (`top_block` needs `water_block_level`, which only lakes and rivers have), so the sea's top faces end at the block edge.
 - **Not known:** how visible it is from the beach at eye height, or whether the shelf is typical.
 
-## A chunk's edge lower than the LOD node beside it opens a gap from outside
+## A chunk's edge higher than the LOD node beside it opens a gap from outside
 
-- **Seen:** 2026-11-17, found while building the sculpted LODs, never seen in play. A full-detail chunk whose edge lies lower or further in than the node next to it leaves a gap, visible only from outside the full-detail area, where the eye is not.
-- **Known:** skirts hang from the node's open edges to close the usual cases (`hang_skirts`), and the test allows open edges where a skirt ends.
-- **Not known:** how often it shows from a mountain or the air.
+- **Seen:** 2026-11-17, found while building the sculpted LODs, never seen in play, first written as the chunk's edge lying lower or further in. Measured 2026-11-23 with `OCHRE_RENDER_GAPS` (`docs/sculpted-ground.md`, Checking it): it is the chunk's edge standing higher.
+- **Known:** on seed 1's mountains (10816, -6784), views from four azimuths, the eye seeing through 0 to 1,532 pixels of 337,000 to 831,000 along the seam between a chunk and a node, nearly all of them on the side of the area the eye is outside of. In the samples the node's edge vertex, pinned on the side's plane, stands 1.2 blocks under the chunk's edge (`LOD_SINK` is 0.3 of it, the rest is its coarse cells), and nothing covers the slit between them: a skirt hangs down from the node's edge, never up. A sight line from outside passes between them into the ground and out through its open underside. From inside, the node's surface lies behind the chunk's edge and nothing shows. The counts are about the same with and without stacked nodes agreeing (`docs/sculpted-ground.md`).
+- **Not known:** whether anything looks at the seam from outside in the game: shadow maps do, from the sun, and were not checked. Seed 4's seracs show 239 to 717 as well, among many more that are not seams, see the next entry.
+- **To fix:** a choice about how the seam looks, not a measurement. A collar rising from the node's edge, facing outward, would close it from outside and show nothing from inside, but where the chunk's edge stands lower than it, it is a fin above the ground seen from outside, and it casts a shadow. The node's edge raised to the real ground would end the slit, and make a step up of a block or two at the ring seen from inside, which `LOD_SINK` is there to avoid. Rerun `OCHRE_RENDER_GAPS` on the views above to judge either.
+
+## LOD nodes show thin slits against one another and within one node
+
+- **Seen:** 2026-11-23, with `OCHRE_RENDER_GAPS` (`docs/sculpted-ground.md`, Checking it), looking for the entry above.
+- **Known:** on seed 1's mountains a node against another leaves 4 to 193 pixels of 337,000 to 831,000 where the all-chunk view shows ground and the nodes show none, and one node against itself up to 120; on seed 4's seracs 15 to 3,049 and 153 to 901. Some are on the far half of the area from the eye, which an eye inside it would see. Not all are seams: ice slabs thinner than a coarse cell are in the chunks and not in the nodes.
+- **Not known:** how many are skirts ending at a node's corner and how many are what coarse cells can't hold. No sample was followed to its cause.
 
 ## Stacked LOD nodes still z-fight a little on their shared row
 
