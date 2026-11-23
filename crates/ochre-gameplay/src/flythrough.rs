@@ -174,16 +174,17 @@ fn fly_keys(
     if state.height.is_empty() {
         let end = state.keys[state.keys.len() - 1][0];
         let mut ground = world.region_store.sampler();
-        let need: Vec<f32> = (0..=(end / HEIGHT_STEP) as usize + 1)
+        // the keys' own line, and the least the camera can be at to clear the ground and trees
+        let (line, clear): (Vec<f32>, Vec<f32>) = (0..=(end / HEIGHT_STEP) as usize + 1)
             .map(|i| {
                 let key = sample_keys(&state.keys, i as f32 * HEIGHT_STEP);
                 let p = Vec3::new(key[1], 0.0, key[2]);
                 let floor = ground_height(&world, p);
                 let follow = key[7].clamp(0.0, 1.0);
-                (key[3] + floor * follow).max(floor + MIN_CLEARANCE).max(tree_top(&world, &mut ground, p) + TREE_CLEARANCE)
+                (key[3] + floor * follow, (floor + MIN_CLEARANCE).max(tree_top(&world, &mut ground, p) + TREE_CLEARANCE))
             })
-            .collect();
-        state.height = smooth_lift(&need, (LIFT_REACH / HEIGHT_STEP) as usize);
+            .unzip();
+        state.height = camera_heights(&line, &clear, (LIFT_REACH / HEIGHT_STEP) as usize);
     }
     if state.flying.is_none() && started.elapsed().as_secs_f32() >= state.warmup {
         state.flying = Some(Instant::now());
@@ -274,20 +275,33 @@ fn block_height(world: &World, p: Vec3) -> f32 {
 // The lift over each frame: never under its `need`, the highest need within `reach` frames, eased twice over it.
 fn smooth_lift(need: &[f32], reach: usize) -> Vec<f32> {
     let window = |i: usize| i.saturating_sub(reach)..(i + reach + 1).min(need.len());
-    let mut lift: Vec<f32> = (0..need.len())
+    let lift: Vec<f32> = (0..need.len())
         .map(|i| need[window(i)].iter().copied().fold(0.0, f32::max))
         .collect();
     // each frame of two means over half the span still only draws on frames whose highest covers its own need
-    let half = reach / 2;
+    ease(&lift, reach / 2)
+}
+
+// The keys' line eased evenly either side, so a drop starts when the keys say, with only what it lacks to `clear` lifted early and
+// settled late.
+fn camera_heights(line: &[f32], clear: &[f32], reach: usize) -> Vec<f32> {
+    let line = ease(line, reach / 2);
+    let short: Vec<f32> = clear.iter().zip(&line).map(|(c, l)| c - l).collect();
+    line.iter().zip(smooth_lift(&short, reach)).map(|(l, lift)| l + lift).collect()
+}
+
+// Two passes of a mean over `half` frames either side, centred so nothing lags.
+fn ease(values: &[f32], half: usize) -> Vec<f32> {
+    let mut out = values.to_vec();
     for _ in 0..2 {
-        lift = (0..lift.len())
+        out = (0..out.len())
             .map(|i| {
-                let span = i.saturating_sub(half)..(i + half + 1).min(lift.len());
-                lift[span.clone()].iter().sum::<f32>() / span.len() as f32
+                let span = i.saturating_sub(half)..(i + half + 1).min(out.len());
+                out[span.clone()].iter().sum::<f32>() / span.len() as f32
             })
             .collect();
     }
-    lift
+    out
 }
 
 #[cfg(test)]
@@ -362,5 +376,15 @@ mod tests {
             .map(|w| (w[1] - w[0]).abs())
             .fold(0.0, f32::max);
         assert!(steepest < 1.5, "{steepest} blocks in a frame");
+    }
+
+    #[test]
+    fn test_a_drop_starts_when_the_keys_say_and_the_ground_is_still_cleared() {
+        // a line that holds at 100 then drops to 0 from frame 300, over ground with a ridge under the drop
+        let line: Vec<f32> = (0..600).map(|i: i32| 100.0 - (i - 300).clamp(0, 60) as f32 * 100.0 / 60.0).collect();
+        let clear: Vec<f32> = (0..600).map(|i| if (450..470).contains(&i) { 30.0 } else { -50.0 }).collect();
+        let height = camera_heights(&line, &clear, 75);
+        assert!(height[330] < 70.0, "{} halfway down the drop", height[330]);
+        assert!(height.iter().zip(&clear).all(|(h, c)| h >= c));
     }
 }
