@@ -25,6 +25,8 @@ struct Bends {
     shadow: vec4<f32>,
     // the haze toward 16 compass points, for each four vec4s of a tint and a density: the camera's and three rings out, see `haze_toward`
     haze: array<vec4<f32>, 64>,
+    // how much of its sway the foliage keeps in x, see `foliage.wesl`
+    sway: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(8) var<storage, read> curvature: Bends;
@@ -58,6 +60,11 @@ fn eye() -> vec3<f32> {
 // The colour of the shadows where the camera is, and how far the sky's light is pushed to it.
 fn shadow_tint() -> vec4<f32> {
     return curvature.shadow;
+}
+
+// How much of its sway the foliage keeps where the camera is, 0..1: less in a sheltered hollow, where the wind is quiet.
+fn sway_kept() -> f32 {
+    return curvature.sway.x;
 }
 
 // What the camera's climate does to the land, see `frost.wesl`.

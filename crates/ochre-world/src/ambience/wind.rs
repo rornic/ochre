@@ -22,7 +22,7 @@ use bevy::{
     time::Time,
 };
 
-use ochre_terrain::world::World;
+use ochre_terrain::{curvature::Curvature, world::World};
 
 use super::{smoothstep, Surroundings};
 
@@ -38,6 +38,8 @@ pub struct WindDials {
     steppe: Dial,
     // the gust the shader has at the camera, 0..1, see `gust_at`, so the sound swells as the grass bends
     gust: Dial,
+    // how sheltered the foliage is from the wind, 0..1, gliding with the camera: steppe in a hollow, see `SHELTERED_SWAY`
+    shelter: Dial,
 }
 
 impl WindDials {
@@ -79,6 +81,8 @@ const WIND_FOLLOW_SECONDS: f32 = 0.6;
 // spells: it blows from the exposure's first value up to full at the second, and not at all in a hollow.
 const STEPPE_BREEZE: f32 = 0.5;
 const STEPPE_EXPOSED: (f32, f32) = (0.3, 0.75);
+// How much of its sway the foliage loses in the most sheltered steppe, so grass in a hollow bends a little where the wind sound is quiet.
+const SHELTERED_SWAY: f32 = 0.7;
 // The gust's greatest push either way, see `gust_at`.
 const GUST_RANGE: f32 = 1.2;
 
@@ -115,6 +119,11 @@ pub fn wind_strength(altitude: f32, speed: f32) -> f32 {
     (GROUND_BREEZE + (1.0 - GROUND_BREEZE) * height + rush).min(1.0)
 }
 
+// How much of steppe's wind reaches ground this exposed: none in a hollow, all on a crest.
+fn exposed(exposure: f32) -> f32 {
+    smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, exposure)
+}
+
 pub(crate) fn update_wind(
     time: Res<Time>,
     around: Res<Surroundings>,
@@ -122,6 +131,7 @@ pub(crate) fn update_wind(
     weather: Option<Res<crate::weather::Weather>>,
     world: Res<World>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
+    curvature: Option<ResMut<Curvature>>,
 ) {
     if let Ok(camera) = camera.single() {
         let eye = camera.translation();
@@ -134,10 +144,15 @@ pub(crate) fn update_wind(
     let follow = 1.0 - (-time.delta_secs() / WIND_FOLLOW_SECONDS).exp();
     let steppe = dials.steppe.get();
     dials.steppe.set(steppe + (if around.underwater { 0.0 } else { around.steppe } - steppe) * follow);
+    let exposed = exposed(around.exposure);
+    let shelter = dials.shelter.get();
+    dials.shelter.set(shelter + (dials.steppe.get() * (1.0 - exposed) - shelter) * follow);
+    if let Some(mut curvature) = curvature {
+        curvature.sway[0] = 1.0 - SHELTERED_SWAY * dials.shelter.get();
+    }
     let wanted = if around.underwater {
         UNDERWATER_WIND
     } else {
-        let exposed = smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, around.exposure);
         wind_strength(around.altitude, around.speed)
             .max(storm)
             .max(dials.steppe.get() * STEPPE_BREEZE * exposed)
@@ -500,7 +515,6 @@ mod tests {
 
     #[test]
     fn the_steppe_wind_is_gone_in_a_hollow_and_full_on_a_crest() {
-        let exposed = |e| smoothstep(STEPPE_EXPOSED.0, STEPPE_EXPOSED.1, e);
         assert_eq!(0.0, exposed(0.1));
         assert!(exposed(0.5) > 0.2 && exposed(0.5) < 0.6);
         assert_eq!(1.0, exposed(0.9));

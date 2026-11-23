@@ -1,7 +1,7 @@
 // Leaves and ground flora swaying in the wind, shared by ChunkMaterial's main and shadow
 // passes so they keep to their shadows.
 
-import super::curvature::eye;
+import super::curvature::{eye, sway_kept};
 
 // How far, in blocks, leaves sway: little enough that they never pull far from their twigs.
 const SWAY: f32 = 0.08;
@@ -102,7 +102,7 @@ fn swayed(world: vec3<f32>, vertex_alpha: f32, uv: vec2<f32>, coarse: bool, time
         let gust = gust_at(world.xz, time);
         // quicker than the boughs
         let flutter = sin(time * 3.3 + dot(world.xz, vec2<f32>(1.7, 1.1)));
-        let push = (FLORA_LEAN + gust * 0.45 + flutter * 0.25) * bend * bend * FLORA_SWAY * (1.0 - shrink);
+        let push = (FLORA_LEAN + gust * 0.45 + flutter * 0.25) * bend * bend * FLORA_SWAY * (1.0 - shrink) * sway_kept();
         // a leaning tip dips a little, as its stem doesn't stretch
         return at + vec3<f32>(toward.x * push * 1.17, -abs(push) * 0.3, toward.y * push * 1.17);
     }
@@ -113,5 +113,5 @@ fn swayed(world: vec3<f32>, vertex_alpha: f32, uv: vec2<f32>, coarse: bool, time
     // with a quicker flutter on top
     let flutter = sin(time * 4.1 + dot(world, vec3<f32>(0.9, 0.7, 1.3)));
     let push = gust * 0.7 + flutter * 0.3;
-    return world + vec3<f32>(toward.x * push * 1.17, flutter * 0.4, toward.y * push * 1.17) * SWAY;
+    return world + vec3<f32>(toward.x * push * 1.17, flutter * 0.4, toward.y * push * 1.17) * SWAY * sway_kept();
 }
