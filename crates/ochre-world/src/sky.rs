@@ -37,7 +37,7 @@ use serde::Deserialize;
 /// How opaque fog gets at its far end.
 pub const FOG_MAX_OPACITY: f32 = 0.8;
 
-/// Where the sun is at noon: its path across the sky is the great circle through this and the horizon, see `path_basis`.
+/// Where the sun is at noon: its path is the great circle through this and the horizon; see `path_basis`.
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.45, 0.8, 0.4);
 /// Seconds in a full day/night cycle: six hours, giving three hours of daylight.
 pub(crate) const DAY_SECONDS: f32 = 21_600.0;
@@ -56,14 +56,14 @@ const MOON_LAG: f32 = 0.5;
 pub(crate) const SUN_COLOR: Color = Color::srgb(1.0, 0.9, 0.75);
 /// How bright sunlight is in the world shaders, where the camera's exposure cancels out.
 const SUN_BRIGHTNESS: f32 = 1.3;
-/// How many times brighter the sun is made than the world's shading needs, to lift the sky; `lighting.wesl` divides it back out.
+/// How many times brighter the sun is made than shading needs, to lift the sky; `lighting.wesl` divides it back out.
 const SKY_GAIN: f32 = 4.0;
 const CAMERA_EV100: f32 = Exposure::EV100_SUNLIGHT;
 const FIRST_CASCADE_DISTANCE: f32 = 20.0;
-// Bevy's defaults, which clear the stripes of self-shadowing on gentle slopes that lower normal biases leave, see `FAR_NORMAL_BIAS` in `world_light.wesl` for the far shadows.
+// Bevy's defaults, which clear the self-shadow stripes on gentle slopes that lower normal biases leave.
 const SHADOW_DEPTH_BIAS: f32 = 0.02;
 const SHADOW_NORMAL_BIAS: f32 = 1.8;
-// How much of the camera's height over the ground the first cascade starts at, and the start under which cascades stay as at the ground.
+// How much of the camera's height over ground the first cascade starts at, and the start under which they stay put.
 const CASCADE_START_SHARE: f32 = 0.5;
 const CASCADE_START_FROM: f32 = 16.0;
 const CASCADE_OVERLAP: f32 = 0.4;
@@ -72,7 +72,7 @@ const ENVIRONMENT_MAP_SIZE: u32 = 64;
 const SUN_DISC_SIZE: f32 = 0.02;
 /// Colour of moonlight, cool against the sun's.
 const MOON_COLOR: Color = Color::srgb(0.65, 0.78, 1.0);
-/// How many times more light the shaders make of the moon's, so its scattering stays too faint to light the sky; matches `MOON_BOOST` in `lighting.wesl`.
+/// How many times more light the shaders make of the moon's, so its scattering can't light the sky; see `MOON_BOOST`.
 const MOON_BOOST: f32 = 400.0;
 /// How bright moonlight is in the world shaders at full moon, as `SUN_BRIGHTNESS` is for sunlight.
 const MOON_BRIGHTNESS: f32 = 0.1;
@@ -130,10 +130,10 @@ pub(crate) struct Sun;
 #[derive(Component)]
 struct SunShadows(Quat);
 
-// The shadow map turns in steps so its texels stay put and edges don't crawl; the sun moves under 0.02 degrees a second, so a step pops under a texel.
+// The shadow map turns in steps so texels stay put and edges don't crawl; the sun moves under 0.02 degrees a second.
 const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
-/// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun, matching `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl`.
+/// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun (`sky.wesl`).
 #[derive(Component)]
 pub(crate) struct Moon;
 
@@ -177,7 +177,7 @@ fn sun_angle(days: f32) -> f32 {
     TAU * (days.fract() - 0.25)
 }
 
-// The sun's path as a circle through `east` and `peak`, square to each other; matches `EAST` and `PEAK` in `stars.wesl`.
+// The sun's path as a circle through `east` and `peak`, square to each other; matches `stars.wesl`.
 fn path_basis() -> (Vec3, Vec3) {
     let peak = SUN_DIRECTION.normalize();
     (Vec3::new(peak.z, 0.0, -peak.x).normalize(), peak)
@@ -236,12 +236,12 @@ fn move_sky(
     }
 }
 
-// A cascade's bounds are distances from the camera, so high over the land the fine ones would cover empty air: this starts them half as far as the ground.
+// Cascade bounds are distances from the camera, so high over land fine ones cover empty air: start half as far.
 fn fit_cascades_to_ground(
     world: Option<Res<World>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut sun: Query<&mut CascadeShadowConfig, With<Sun>>,
-    // the start distance now fitted to, in steps of root two so the cascades' texels only change size a few times in a climb
+    // the start distance now fitted to, in steps of root two so texels change size only a few times in a climb
     mut fitted: Local<f32>,
 ) {
     let (Some(world), Ok(camera), Ok(mut config)) = (world, camera.single(), sun.single_mut()) else {
@@ -269,7 +269,7 @@ fn fit_cascades_to_ground(
     .build();
 }
 
-// The distance the cascades start at for a `wanted` one, kept at `fitted` while within 20% of it so hovering on a step's edge doesn't flip them back and forth, and 0 under `CASCADE_START_FROM`.
+// Cascade start for a `wanted` one, held at `fitted` within 20% so hovering on a step's edge doesn't flip.
 fn fitted_start(wanted: f32, fitted: f32) -> f32 {
     if wanted < CASCADE_START_FROM {
         0.0
@@ -338,7 +338,7 @@ fn spawn_atmosphere(mut commands: Commands, mut media: ResMut<Assets<ScatteringM
     commands.spawn(Atmosphere::earth(medium));
 }
 
-/// Sinks the atmosphere's planet so the sky's horizon dips as far as the land's edge (`WORLD_CURVE`), which the Earth-sized planet's barely does from a peak.
+/// Sinks the atmosphere's planet so the horizon dips as far as the land's edge (`WORLD_CURVE`).
 fn match_sky_horizon(
     camera: Query<(&GlobalTransform, &DistanceFog), With<Camera3d>>,
     mut planets: Query<(&Atmosphere, &mut GlobalTransform), Without<Camera3d>>,
@@ -374,7 +374,7 @@ pub struct SkySettings {
     pub shadow_distance: u32,
     /// Shadow map cascades, each drawing the terrain in its slice again.
     pub shadow_cascades: usize,
-    /// Width of each cascade's shadow map in texels, a power of two: 4096 halves the texel size and costs about 4 ms more on an RTX 2060.
+    /// Width of each cascade's shadow map in texels, a power of two: 4096 halves texel size for ~4 ms on an RTX 2060.
     pub shadow_resolution: usize,
 }
 
@@ -415,7 +415,7 @@ fn spawn_sun_and_moon(
 ) {
     let fog = renderer.map_or(f32::MAX, |renderer| renderer.fog_distance());
     let distance = (sky.shadow_distance as f32 * CHUNK_SIZE as f32).min(fog);
-    // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` in `sky.wesl` relies on. With no fog volume nothing is drawn
+    // always volumetric, godrays or not: the patched `bevy_pbr` sorts the volumetric sun first, which `SUN_LIGHT` needs
     commands.spawn((sun(distance, sky.shadow_cascades), shining()));
     commands.spawn(moon());
 }

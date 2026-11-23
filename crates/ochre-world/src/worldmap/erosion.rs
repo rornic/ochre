@@ -1,11 +1,11 @@
-//! Weathering: rain droplets wear gullies and lay silt, then thermal erosion slumps what is steeper than rock holds; droplets run in four rounds of non-touching tiles, so cores share the work and a seed still gives one map.
+//! Weathering: droplets wear gullies and lay silt, then thermal erosion slumps steep ground; four rounds of tiles.
 
 use super::geology::BedSpan;
 use super::hydrology::{accumulate, priority_flood, NONE};
 use super::{par_rows, WorldMap};
 use ochre_base::WATER_LEVEL;
 
-// Heights are scaled down by this for the droplets, tuned for ground rising about a cell's width over a range's flank.
+// Heights are scaled down by this for the droplets, tuned for ground rising about a cell's width over a flank.
 const HEIGHT_SCALE: f32 = 1.0 / 120.0;
 const DROPLETS_PER_CELL: f32 = 0.12;
 const ROUNDS: u32 = 2;
@@ -177,7 +177,7 @@ fn hydraulic_round(grid: &mut [f32], map: &WorldMap, round: u32, shift: usize) {
             .flat_map(|tz| (0..tiles).map(move |tx| (tx, tz)))
             .filter(|&(tx, tz)| (tx % 2) + 2 * (tz % 2) == phase)
             .collect();
-        // threads take the next tile as they finish one, as a range's tiles take far longer than the sea's; windows don't overlap, so write-back order changes nothing
+        // threads take the next tile as they finish, as range tiles take far longer than the sea's; windows don't overlap
         let next = std::sync::atomic::AtomicUsize::new(0);
         let mut results: Vec<_> = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..super::worker_threads())
@@ -362,12 +362,12 @@ pub(crate) fn thermal(map: &mut WorldMap) {
     }
 }
 
-// Stream power: ground wears faster with more water and steeper slope, so gathered water cuts valleys and leaves ridges.
+// Stream power: ground wears faster with more water and steeper slope, so gathered water cuts valleys.
 const STREAM_PASSES: usize = 6;
 // Per pass, with the water as the square root of the area drained in cells.
 const STREAM_K: f32 = 0.03;
 
-/// Cuts valleys along the lines water gathers, solving each pass outward from the sea in one sweep, stable at any rate of wear.
+/// Cuts valleys along the lines water gathers, solved outward from the sea in one sweep, stable at any wear rate.
 pub(crate) fn stream_power(map: &mut WorldMap) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;

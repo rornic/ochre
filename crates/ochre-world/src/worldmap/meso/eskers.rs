@@ -1,4 +1,4 @@
-//! Eskers: long sinuous ridges of gravel a glacier's meltwater laid along its way, raised along the line the water now takes through taiga and tundra.
+//! Eskers: sinuous gravel ridges from a glacier's meltwater, raised along the line water takes in taiga and tundra.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{hash, perlin, unit};
@@ -45,7 +45,7 @@ fn path(flood: &Flood, dim: usize, start: (usize, usize), len: usize) -> Vec<(f6
         .collect()
 }
 
-// Raises `map.height` along `line` by up to `height`, a ridge `half` cells to a side easing in and out at its ends, from the ground in `before`, leaving `keep` (landmarks) alone.
+// Raises `map.height` along `line` by up to `height`, a ridge `half` cells wide easing at its ends, leaving `keep`.
 fn raise(map: &mut WorldMap, before: &[f32], line: &[(f64, f64)], half: f64, height: f64, h: u32, keep: &[f32]) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f64;
@@ -67,7 +67,7 @@ fn raise(map: &mut WorldMap, before: &[f32], line: &[(f64, f64)], half: f64, hei
     }
 }
 
-/// Raises up to `count` eskers on taiga and tundra ground 15 or more blocks over the sea, each 30 to 130 cells long and 14 to 30 blocks high along the line the water takes.
+/// Raises up to `count` eskers on taiga and tundra 15+ blocks over the sea, 30 to 130 cells long, 14 to 30 high.
 pub(crate) fn run(map: &mut WorldMap, count: u32, keep: &[f32]) {
     let dim = map.dim();
     if count == 0 || dim <= 2 * EDGE {

@@ -1,4 +1,4 @@
-//! A regional tectonic snapshot: plates carry motion, not a mountain mask; noise bends boundaries and compression decides uplift.
+//! A regional tectonic snapshot: plates carry motion, noise bends boundaries, compression sets uplift.
 
 use super::{par_rows, WorldConfig, WorldMap};
 use ochre_base::math::smoothstep_f64 as smooth;
@@ -62,7 +62,7 @@ pub struct Plate {
     age: f64,
 }
 
-/// The rock a plate is made of, drawn once per plate: layered sedimentary basin, old metamorphic shield or volcanic; a range takes the rock of one plate of its pair.
+/// The rock a plate is made of, drawn once per plate: sedimentary basin, metamorphic shield or volcanic.
 pub(crate) const ROCK_BASIN: u8 = 0;
 pub(crate) const ROCK_SHIELD: u8 = 1;
 pub(crate) const ROCK_VOLCANIC: u8 = 2;
@@ -288,7 +288,7 @@ impl Tectonics {
         }
     }
 
-    /// The rock of each plate given its land cells, shared out by land to about half basin, 3/10 shield and 2/10 volcanic: the largest plates go to the rock furthest short, with some chance.
+    /// The rock of each plate by land share: about half basin, 3/10 shield, 2/10 volcanic; big plates go to the neediest.
     pub fn plate_rocks(&self, land: &[usize]) -> Vec<u8> {
         let n = self.plates.len();
         let total: f64 = land.iter().sum::<usize>().max(1) as f64;
@@ -340,7 +340,7 @@ impl Tectonics {
                 nearest = (d, i);
             }
         }
-        // every nearby plate counts: picking only the N nearest sites would seam the height wherever the Nth and (N+1)th swap order
+        // every nearby plate counts: only the N nearest sites would seam the height where the Nth and (N+1)th swap order
         let reach = self.half * 2.0 / (self.plates.len() as f64).sqrt() * 0.35;
         let mut weights = [0.0; 64];
         for (i, _) in self.plates.iter().enumerate() {

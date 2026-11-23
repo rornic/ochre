@@ -1,4 +1,4 @@
-//! Meso-scale geography: the landmarks, canyons, eskers, stacks, ponds and relief laid during generation, and `score`, a read-only ranking of a finished world's distinctive places; see `docs/designs/meso-scale-geography.md`.
+//! Meso-scale geography: landmarks, canyons, eskers, stacks, ponds, relief, and `score`, a read-only ranking.
 
 pub mod canyons;
 pub mod eskers;
@@ -15,7 +15,7 @@ use super::climate::BiomeKind;
 use super::WorldTerrain;
 use ochre_base::terrain_source::TerrainSource;
 
-/// The most distinctive places of `terrain`'s world, per biome, best first within each biome, biomes in a fixed order.
+/// The most distinctive places of `terrain`'s world, per biome, best first, biomes in a fixed order.
 pub fn score(terrain: &WorldTerrain, params: &Params) -> Vec<Place> {
     let map = terrain.map();
     let half = map.config.half_size() as f64;

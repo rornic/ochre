@@ -7,7 +7,7 @@ use ochre_base::{
     terrain_source::TerrainSource,
 };
 
-/// How much the country at a point is each kind of country, each 0..1 and smooth in climate: they overlap where kinds meet, and a hot, wet, wooded place is some of several.
+/// How much the country at a point is each kind, each 0..1 and smooth in climate; they overlap where kinds meet.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Feel {
     pub cold: f32,
@@ -32,7 +32,7 @@ impl Feel {
         }
     }
 
-    /// The feel of country with this `climate`, `sea_temperature` being the map's temperature there, which the cold is judged by.
+    /// The feel of country with this `climate`; `sea_temperature` is the map's temperature there, for judging the cold.
     pub fn of(climate: Climate, sea_temperature: f32) -> Self {
         let (t, h) = (climate.temperature, climate.humidity);
         let warm = smoothstep(0.50, 0.62, t);
@@ -67,11 +67,11 @@ impl Feel {
     }
 }
 
-/// `Surroundings::feel` eased over a few seconds, since it is sensed in steps, for the grade, the sun and the haze to follow.
+/// `Surroundings::feel` eased over a few seconds, since it is sensed in steps, for the grade, sun and haze to follow.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
 pub struct EasedFeel(pub Feel);
 
-/// What a kind of country does at full weight, as changes to a neutral look. The cold's grade is its own (`tonemap::cold_color_grading`), so its row has haze alone.
+/// What a kind of country does at full weight, as changes to a neutral look; the cold's grade is in `tonemap`.
 struct Row {
     // how much more (or less) of the sun's strength
     sun: f32,
@@ -91,7 +91,7 @@ struct Row {
 }
 
 const SUN: [f32; 3] = [1.0, 0.9, 0.75]; // `sky::SUN_COLOR`, which a test checks
-// what painterly lighting pushes the sky's light toward in shadow, and how far, with no feel: `SHADOW_TINT` in `painterly.wesl`
+// what painterly lighting pushes the sky's light toward in shadow, and how far; `SHADOW_TINT` in `painterly.wesl`
 pub const SHADOW: [f32; 3] = [0.55, 0.63, 1.0];
 pub const SHADOW_AMOUNT: f32 = 0.3;
 const COLD: Row = Row { sun: 0.0, sun_colour: SUN, temperature: 0.0, saturation: 0.0, contrast: 0.0, haze_tint: [0.88, 0.95, 1.08], haze_density: 0.45, storm: 0.0, shadow_tint: SHADOW, shadow_amount: 0.0 };
@@ -138,7 +138,7 @@ impl Atmosphere {
             shadow_tint: SHADOW,
             shadow_amount: SHADOW_AMOUNT,
         };
-        // the jungle's haze is raised to the fourth power of its weight, or the edge of a jungle, where it is a fraction of the way in, takes much of 15 times the haze
+        // the jungle's haze goes by the fourth power of its weight, so a jungle's edge isn't 15x hazy
         for (weight, haze_power, row) in [(feel.cold, 1, &COLD), (feel.hot, 1, &HOT), (feel.jungle, 4, &JUNGLE), (feel.forest, 1, &FOREST), (feel.steppe, 1, &STEPPE), (feel.mountain, 1, &MOUNTAIN), (feel.volcanic, 1, &VOLCANIC)] {
             a.sun += weight * row.sun;
             a.temperature += weight * row.temperature;

@@ -1,4 +1,4 @@
-//! Climate from geography: warmth falls with latitude and height, a prevailing wind carries moisture off the sea and drops it on rising ground (rain shadows behind ranges), and a Whittaker-style table turns warmth and moisture into biomes.
+//! Climate from geography: latitude and height set warmth, wind rains moisture on high ground, a table gives biomes.
 
 use super::{par_rows, WaterCell, WorldMap};
 use ochre_base::biome::Biomes;
@@ -70,7 +70,7 @@ const MARGIN_CELLS: i64 = 2;
 pub(super) const FIELD_BLUR: usize = 4;
 // Cells round a river or lake that valleys and swamps keep clear of or grow by.
 const RIPARIAN_REACH: u8 = 14;
-// Cells round a big river or lake that it wets and cools, short so the green reads as a corridor. Under 7 the biome tidy-up leaves slivers (63 specks of biome at 6).
+// Cells round a big river or lake that it wets and cools; under 7 the biome tidy-up leaves slivers.
 const MOISTURE_REACH: u8 = 8;
 // River widths, in blocks, that count for a little, a lot and everything of that reach.
 const RIPARIAN_WIDTHS: (f32, f32, f32) = (20.0, 38.0, 65.0);
@@ -79,17 +79,17 @@ const DRY_BELOW: (f64, f64) = (0.1, 0.3);
 const RIPARIAN_MOISTURE: f32 = 1.0;
 // A lake with fewer cells than this is a pond, and wets no ground round it.
 const RIPARIAN_LAKE_CELLS: usize = 20;
-// Banks of ground drier than the second moisture of `DRY_BANK` are only as wet as `DRY_BANK_MOISTURE`, just under where steppe ends, so a lake or river in the steppe leaves steppe; the cap eases in from the first moisture.
+// Banks drier than `DRY_BANK`'s second moisture are capped at `DRY_BANK_MOISTURE`, so lakes in steppe leave steppe.
 const DRY_BANK_MOISTURE: f32 = 0.29;
 const DRY_BANK: (f64, f64) = (0.35, 0.28);
 const RIPARIAN_COOLING: f32 = 0.14;
 // Water cools its banks only where the ground is warmer than this: none at the first, in full at the second.
 const RIPARIAN_COOLS_FROM: (f64, f64) = (0.30, 0.55);
-// A cell takes the most common biome within this many cells, `MODE_PASSES` times, and a patch of fewer cells than `MIN_BIOME_CELLS` joins a neighbour.
+// A cell takes the commonest biome within this many cells, `MODE_PASSES` times; patches under `MIN_BIOME_CELLS` join.
 const MODE_RADIUS: usize = 2;
 const MODE_PASSES: usize = 2;
 const MIN_BIOME_CELLS: usize = 400;
-// Swamp: grassland, forest or jungle no higher than `SWAMP_BELOW` over the sea, on ground flatter than `SWAMP_SLOPE`, at least `SWAMP_MOISTURE` wet and within about 13 cells of a river or lake (`closeness` of `SWAMP_NEAR`).
+// Swamp: grassland, forest or jungle that is low, flat, wet and near a river or lake (`SWAMP_*`).
 const SWAMP_BELOW: f32 = 40.0;
 const SWAMP_SLOPE: f32 = 0.2;
 const SWAMP_MOISTURE: f32 = 0.65;
@@ -109,7 +109,7 @@ pub(crate) fn treeline(warmth: f32) -> (f64, f64) {
     (start, (TREELINE.1 + shift).max(start + 100.0))
 }
 
-// Cells between nearest-sea samples at which the warp and the gradient are worked out, then interpolated, as both vary over kilometres.
+// Cells between nearest-sea samples; warp and gradient are worked out there and interpolated.
 const COARSE: usize = 8;
 // Cells of distance from the sea at which the interior is fully inland (12 km at 32 m a cell).
 const INLAND_CELLS: f32 = 375.0;
@@ -147,7 +147,7 @@ fn sea_distance(map: &WorldMap) -> Vec<f32> {
     d.into_iter().map(|v| v as f32 / 3.0).collect()
 }
 
-// Position along the gradient direction, -1 to 1, with the coordinates warped so a line of equal warmth wanders, worked out on a coarse grid and interpolated.
+// Position along the gradient direction, -1 to 1, with warped coordinates so equal-warmth lines wander; coarse grid.
 fn gradient_position(map: &WorldMap) -> Vec<f32> {
     let dim = map.dim();
     let cfg = map.config.climate;
@@ -182,7 +182,7 @@ fn gradient_position(map: &WorldMap) -> Vec<f32> {
     out
 }
 
-/// Each cell's sea-level warmth from the config alone: the baseline, the gradient and how far inland it is, before local variation, height or water; the treeline follows it.
+/// Each cell's sea-level warmth from config alone (baseline, gradient, distance inland), before height or water.
 pub(super) fn regional_warmth(map: &WorldMap) -> Vec<f32> {
     let cfg = map.config.climate;
     let mut warmth = vec![cfg.warmth; map.height.len()];
@@ -214,7 +214,7 @@ pub enum BiomeKind {
     Jungle = 8,
     /// The sea floor, which has no land biome.
     Sea = 9,
-    /// Only a scratch value while landform is worked out: the biome layer never holds it, since a mountain is the climate biome with the mountain modifier, see `Modifier`.
+    /// Only a scratch value while landform is worked out: a mountain is the climate biome plus a `Modifier`.
     Mountain = 10,
     /// Flat, low, wet ground by fresh water.
     Swamp = 11,
@@ -297,7 +297,7 @@ fn tree_density(kind: BiomeKind, biomes: &Biomes) -> f64 {
 // Cells across a tile of the rain sweep.
 const SWEEP_TILE: usize = 64;
 
-/// Background climate shared by runoff and vegetation: transport sweeps in upwind dependency order, mixing the two upstream neighbours for oblique winds, with rates per metre and lift in metres, not per map cell.
+/// Background climate shared by runoff and vegetation: transport sweeps upwind-first, rates per metre.
 fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let dim = map.dim();
     let cfg = map.config.climate;
@@ -315,7 +315,7 @@ fn climate_fields(map: &WorldMap) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let ax = cfg.wind_x.abs() / norm;
     let az = cfg.wind_z.abs() / norm;
     let step = map.config.map_cell as f32 / (ax + az);
-    // the sweep needs the cell upwind along each axis, so it runs in tiles, those on one diagonal of tiles (none upwind of another) side by side
+    // the sweep needs the cell upwind on each axis, so tiles run diagonal by diagonal, side by side
     let vapour: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
     let rain: Vec<AtomicU32> = (0..dim * dim).map(|_| AtomicU32::new(0)).collect();
     let (from_x, from_z) = (cfg.wind_x >= 0.0, cfg.wind_z >= 0.0);
@@ -410,10 +410,10 @@ pub fn run(map: &mut WorldMap) {
     let (temperature, moisture, precipitation) = climate_fields(map);
     map.precipitation = precipitation;
     let biomes = Biomes::new(seed);
-    // smooth over a few cells each way, so a biome doesn't flip back and forth along the edge where its warmth or moisture hovers at a threshold
+    // smooth over a few cells each way, so a biome doesn't flip back and forth at a threshold
     let mut moisture = blur_box(&moisture, dim, FIELD_BLUR);
     let mut temperature = blur_box(&temperature, dim, FIELD_BLUR);
-    // only big water changes the ground round it: a wide river or a lake cools and wets its banks, so a green belt follows one through a desert, and a stream does nothing of the kind
+    // only big water changes the ground round it: a wide river or lake wets and cools its banks, a stream does nothing
     let near_water = fresh_water_closeness(map);
     for i in 0..dim * dim {
         if map.height[i] >= sea {
@@ -472,7 +472,7 @@ pub fn run(map: &mut WorldMap) {
             kinds[i] = climate_kinds[i];
         }
     }
-    // the tidying can leave specks of the climate's biome in the swamp or of swamp beside it: a speck merged into the swamp may stand a little over its limit, as a knoll in it, or a cell of forest a block or two up would stay a speck with only swamp to join
+    // a speck merged into the swamp may stand a little over its limit (a knoll in it), or it would stay a speck
     let too_high = |i: usize| map.height[i] - sea > SWAMP_BELOW + SWAMP_KNOLL || map.landform[i] == super::landform::MOUNTAIN;
     merge_small(&mut kinds, dim, |i, kind| kind != BiomeKind::Swamp as u8 || !too_high(i));
 
@@ -491,7 +491,7 @@ pub fn run(map: &mut WorldMap) {
             || map.water_kind[i] == WaterCell::River as u8;
         let kind = BiomeKind::from_u8(kinds[i]);
         let above = (map.height[i] - sea) as f64;
-        // a mountain's slopes are forested with conifers below the treeline where wet enough, thinning to bare rock above, not the few scattered trees the biome gets
+        // a mountain's slopes are conifer forest below the treeline where wet enough, thinning to bare rock above
         let density = if map.landform[i] == super::landform::MOUNTAIN {
             let line = treeline(regional[i].clamp(0.0, 1.0));
             let belt = ALPINE_FOREST
@@ -510,7 +510,7 @@ pub fn run(map: &mut WorldMap) {
     map.trees = trees;
 }
 
-// For each land cell, the climate biome just across its nearest class boundary and how far off it the cell is: the first of `MARGIN_PROBES` warmth or moisture offsets that changes the class sets the margin (offset over the last, 0..255; 255 if none does) and the biome there. A cell the swamp rule or tidying made something its climate is not stays 255.
+// The climate biome across each land cell's nearest class boundary, and the margin: first offset to change class.
 fn boundary_margins(
     map: &WorldMap,
     temperature: &[f32],
@@ -540,7 +540,7 @@ fn boundary_margins(
             }
         }
     }
-    // the climate margin alone spreads patches for hundreds of blocks where the climate changes slowly, so patches stop a few cells from a boundary
+    // the climate margin alone spreads patches for hundreds of blocks where climate changes slowly; stop near a boundary
     let dim = map.dim();
     for i in 0..kinds.len() {
         if margin[i] == 255 {
@@ -564,7 +564,7 @@ fn boundary_margins(
     (alt, margin)
 }
 
-// How strongly water near each cell wets and cools it, 0..1: a lake or a very wide river counts in full, a wide river by less, a narrow stream not at all, falling to 0 at `MOISTURE_REACH` cells and squared so the green hugs the bank.
+// How strongly water near each cell wets and cools it, 0..1: full for lakes and wide rivers, none for streams.
 fn fresh_water_closeness(map: &WorldMap) -> Vec<f32> {
     let tiers: [(f32, f32); 3] = [
         (RIPARIAN_WIDTHS.0, 0.45),
@@ -695,7 +695,7 @@ pub(super) fn window_max(values: &[f32], dim: usize, reach: usize) -> Vec<f32> {
 
 // A box blur of `radius` cells each way along both axes.
 pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
-    // each cell adds its window in order, as a plain sum would, so the sums bit for bit match; they run along a row side by side
+    // each cell adds its window in order, as a plain sum would, so sums match bit for bit; rows run side by side
     let zero: f32 = std::iter::empty::<f32>().sum();
     let along_x = {
         let mut out = vec![0.0f32; layer.len()];
@@ -739,7 +739,7 @@ pub(super) fn blur_box(layer: &[f32], dim: usize, radius: usize) -> Vec<f32> {
     out
 }
 
-// Biomes with ragged edges and specks tidied: each land cell takes the most common biome in the cells round it, then any patch under `MIN_BIOME_CELLS` is given to the biome it borders most. The sea is left alone.
+// Tidies ragged edges and specks: each land cell takes the commonest biome round it, then small patches merge.
 pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
     let sea = BiomeKind::Sea as u8;
     let mut kinds = kinds.to_vec();
@@ -772,7 +772,7 @@ pub(super) fn tidy_biomes(kinds: &[u8], dim: usize) -> Vec<u8> {
     kinds
 }
 
-// A patch of one biome too small to be worth its own is merged into the neighbour it shares the longest edge with, if `allowed` lets each of its cells be that biome; the sea is left alone.
+// Merges a patch too small for its own biome into the neighbour it shares the longest edge with, if `allowed`.
 fn merge_small(kinds: &mut [u8], dim: usize, allowed: impl Fn(usize, u8) -> bool) {
     let sea = BiomeKind::Sea as u8;
     let mut small_passes = 0;
@@ -1222,7 +1222,7 @@ mod tests {
                 small += 1;
             }
         }
-        // a few are let by: river belts through dry country can leave a sliver the tidy-up just misses, and jungle's relief can cool a cell or two across a forest line
+        // a few are let by: river belts through dry country can leave a sliver the tidy-up misses, as can jungle relief
         assert!(small <= 4, "{small} specks of biome");
     }
 

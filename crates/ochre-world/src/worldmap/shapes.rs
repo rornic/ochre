@@ -1,4 +1,4 @@
-//! Shapes erosion does not make (fjords, cones, inselbergs, karst, cirques, cold uplands), laid after erosion so thermal slumping can't soften their walls.
+//! Shapes erosion does not make (fjords, cones, inselbergs, karst, cirques, cold uplands), laid after it
 
 use super::climate::blur_box;
 use super::WorldMap;
@@ -10,7 +10,7 @@ const EDGE: usize = 60;
 // Candidates drawn for each site, the best being used.
 const CANDIDATES: u32 = 32;
 
-// A fjord starts on a coast cell with sea within COAST_REACH cells, where the uplift averaged over a window round it is at least FJORD_UPLIFT blocks.
+// A fjord starts on a coast cell with sea within COAST_REACH cells and uplift round it of at least FJORD_UPLIFT.
 const COAST_REACH: i64 = 2;
 const FJORD_UPLIFT: f32 = 300.0;
 const UPLIFT_WINDOW: usize = 5;
@@ -22,13 +22,13 @@ const APART: f64 = 60.0;
 // Its floor lies this far under the sea, 8 cells wide, with walls rising this many blocks a cell.
 const FJORD_DEPTH: (f64, f64) = (40.0, 120.0);
 const FLOOR_HALF_WIDTH: (f64, f64) = (2.5, 8.0);
-// The centre line wanders this many cells either side over this many cells along it; the walls are pushed in and out by up to RAGGED.0 cells over RAGGED.1.
+// The centre line wanders this many cells either side over this many along it; walls are pushed out by up to RAGGED.0
 const MEANDER: (f64, f64) = (6.0, 14.0);
 const RAGGED: (f64, f64) = (2.0, 12.0);
 const WALL_PER_CELL: f64 = 40.0;
 const ASCENT_SMOOTHING: usize = 2;
 
-// A cone's radius in cells (its crater at most 300 cells, the smallest lake hydrology keeps) and height in blocks; the crater is CRATER_WIDTH as wide and CRATER_DEPTH of the height under the rim, and flanks and rim are pushed in and out by up to CONE_RAGGED of the radius.
+// A cone's radius in cells (crater at most 300, the smallest lake hydrology keeps) and height in blocks.
 const CONE_RADIUS: (u32, u32) = (16, 36);
 const CONE_HEIGHT: (f64, f64) = (150.0, 400.0);
 const CRATER_WIDTH: f64 = 0.25;
@@ -152,7 +152,7 @@ pub(super) fn fjords(map: &mut WorldMap, share: f64) -> Vec<Vec<(usize, usize)>>
             continue;
         };
         mouths.push(line[0]);
-        // the centre line wanders, the floor's width and depth drift and the walls are ragged, so a fjord is no straight trench
+        // the centre line wanders, floor width and depth drift and walls are ragged, so a fjord is no straight trench
         let centre: Vec<(f64, f64)> = line
             .iter()
             .enumerate()
@@ -299,7 +299,7 @@ pub(super) fn cones(map: &mut WorldMap, share: f64) -> Vec<(usize, usize, f64)> 
                 if !(0.0..1.0).contains(&t) {
                     continue;
                 }
-                // the crater is cut to a bowl under the rim: the design's cone less a quarter of its height leaves the middle above the rim, a bump
+                // the crater is cut to a bowl under the rim: the design's cone less a quarter of its height leaves a bump
                 let rim = CRATER_WIDTH;
                 let flank = |t: f64| height * libm::pow(1.0 - t, 1.5);
                 let shape = if t < rim {
@@ -315,7 +315,7 @@ pub(super) fn cones(map: &mut WorldMap, share: f64) -> Vec<(usize, usize, f64)> 
     sites
 }
 
-// Inselbergs, tower karst and cirques are sited by the world's config (never its climate output) and counted by the seed's knobs.
+// Inselbergs, tower karst and cirques are sited by the world's config (never climate output), counted by seed knobs.
 const SEDIMENTARY: u8 = 1;
 const BIG_APART: f64 = 40.0;
 const LOWLAND: (f32, f32) = (20.0, 150.0);
@@ -434,7 +434,7 @@ pub(super) fn cold_uplands(map: &mut WorldMap) -> Vec<(usize, usize, f64, f64)> 
     out
 }
 
-/// Raises up to `count` isolated rock domes on dry, warm sedimentary lowland, weighted by the config's dryness and warmth; returns each site, radius in cells and height in blocks.
+/// Raises up to `count` rock domes on dry warm sedimentary lowland; returns site, radius (cells), height (blocks).
 pub(super) fn inselbergs(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f64, f64)> {
     let (dry, _, _) = weights(map);
     let count = (count as f64 * dry).round() as usize;
@@ -467,7 +467,7 @@ pub(super) fn inselbergs(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f
     out
 }
 
-/// Raises up to `groups` fields of 10 to 40 steep limestone towers on wet sedimentary lowland, weighted by the config's wetness; returns each tower's site, radius in cells and height in blocks.
+/// Raises up to `groups` fields of 10-40 limestone towers on wet sedimentary lowland; returns site, radius, height
 pub(super) fn karst(map: &mut WorldMap, groups: u32) -> Vec<(usize, usize, f64, f64)> {
     let (_, wet, _) = weights(map);
     let groups = (groups as f64 * wet).round() as usize;
@@ -530,7 +530,7 @@ pub(super) fn karst(map: &mut WorldMap, groups: u32) -> Vec<(usize, usize, f64, 
     towers
 }
 
-/// Cuts up to `count` steep-headed bowls into cold mountain slopes, weighted by the config's cold; returns each site, radius in cells and depth in blocks.
+/// Cuts up to `count` steep-headed bowls into cold mountain slopes; returns each site, radius (cells), depth (blocks)
 pub(super) fn cirques(map: &mut WorldMap, count: u32) -> Vec<(usize, usize, f64, f64)> {
     let (_, _, cold) = weights(map);
     let count = (count as f64 * cold).round() as usize;
@@ -578,7 +578,7 @@ mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
 
-    // The pipeline up to the last hydrology run with `shape` laid after the cones, to see what its ground becomes once water is routed over it.
+    // The pipeline up to the last hydrology run with `shape` laid after the cones, to see what its ground becomes.
     fn through_hydrology(seed: u32, shape: impl FnOnce(&mut WorldMap)) -> WorldMap {
         use crate::worldmap::{erosion, gameplay, geology, hydrology, tectonics};
         let config = WorldConfig {

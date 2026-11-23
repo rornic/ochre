@@ -22,12 +22,12 @@ const LAND_ABOVE_SEA: f64 = 0.3;
 // Over the sea by up to this much the ground's detail is eased out, so a flat shore stays flat.
 const SHORE_SMOOTH: f64 = 5.0;
 
-// How far either side of still water's level, in blocks, the ground is held to the side of it its smooth ground is on, see `contain`.
+// How far either side of still water's level, in blocks, the ground is held to its smooth ground's side (`contain`).
 pub(super) const HOLD: f64 = 1.5;
-// Over how many blocks the ground's detail is calmed to nothing at still water's edge, so a shore and the bed out from it are smooth.
+// Blocks over which ground detail is calmed to nothing at still water's edge, so shores and beds are smooth.
 const CALM: f64 = 8.0;
 
-// A lake's hold on the ground round it, in blocks from its cells' centres: full out to `LAKE_NEAR`, then easing to nothing over `LAKE_FADE`.
+// A lake's hold on the ground round it, in blocks from its cells' centres: full to `LAKE_NEAR`, then easing out.
 const LAKE_NEAR: f64 = 32.0;
 const LAKE_FADE: f64 = 96.0;
 
@@ -36,16 +36,16 @@ const SHARPEN_CELL: (f64, f64) = (16.0, 32.0);
 
 // Beds step ground as a cell this wide sees it, see `landform_ground`.
 const TERRACE_CELL: f64 = 32.0;
-// Cells this wide or wider take their own biome, not a patchwork near a class boundary, whose patches are about `ZONE_PATCH` blocks.
+// Cells this wide or wider take their own biome, not a patchwork near a class boundary of about `ZONE_PATCH` blocks.
 const ZONE_CELL: f64 = 16.0;
 const ZONE_PATCH: f64 = 12.0;
-// Across this share of a patch's edge (of the noise level it takes the other biome at) tree density eases from one biome's to the other's.
+// Across this share of a patch's edge tree density eases from one biome's to the other's.
 const ZONE_EASE: f64 = 0.5;
 // Relief features need ground this high over the sea.
 const RELIEF_ABOVE_SEA: f64 = 6.0;
 // A kopje's heap shows bare rock where it stands this many blocks over the plain.
 const KOPJE_ROCK_ABOVE: f64 = 4.0;
-// Groves and clearings: trees grow in patches about `GROVE_PATCH` blocks across, keeping `TreeScale::clearings` of their density in a clearing.
+// Groves and clearings: patches about `GROVE_PATCH` blocks across, keeping `TreeScale::clearings` of density.
 const GROVE_PATCH: f64 = 160.0;
 // How far, in blocks, and over what wavelength, the climate biome's cell is drifted at a point.
 const DRIFT: f64 = 160.0;
@@ -55,7 +55,7 @@ const VOLCANIC_FROM: f64 = 120.0;
 
 // The humidity the lie of the land can green grass up to, under the palette's lush end.
 const LUSH_CAP: f32 = 0.6;
-// How far the lie of the land moves the humidity grass is tinted by: at the water's edge, and on the most exposed crest (the same, negated, in the deepest hollow).
+// How far the lie of the land moves grass-tint humidity: at the water's edge, and on the most exposed crest.
 const BANK_WETTING: f32 = 0.25;
 const EXPOSURE_DRYING: f32 = 0.2;
 // The most the height thins it, between `THIN_FROM` and `THIN_TO` blocks over the sea.
@@ -67,13 +67,13 @@ const TREE_VIGOUR: f64 = 2.0;
 const MIN_LIE: f64 = 0.2;
 const MAX_LIE: f64 = 2.2;
 
-// How far over still water's level, in blocks, ground ringed by its cells is still under it: the water is drawn a whole block under the level its cells were found by, so ground just over that would part it into pools.
+// How far over still water's level, in blocks, ringed ground still counts as under it: water is drawn a block under.
 const DROWN: f64 = 2.0;
 
-// A river within this many blocks of still water's level is joined to it: the two waters meet, and the still water's is the one inside its shore.
+// A river within this many blocks of still water's level joins it; the still water's is the one inside its shore.
 const JOIN: f64 = 1.5;
 
-// A river's valley floor is never lower than this over the sea or a lake near it, or it would flood in a wider inlet than the river.
+// A river's valley floor is never lower than this over the sea or a nearby lake, or it floods a wider inlet.
 const VALLEY_ABOVE_SEA: f64 = 0.6;
 
 // How far past a river's banks, in blocks, its valley floor eases back out into the land's own ground.
@@ -82,12 +82,12 @@ const VALLEY_WIDTH: f64 = 40.0;
 const FALL_SHEET: f32 = 2.0;
 // How far over the real ground a river's valley floor may stand where the map's ground is higher.
 const VALLEY_OVER: f64 = 2.0;
-// The gap under the map's ground, in blocks, from which the valley floor follows the real ground, and where it does fully.
+// The gap under the map's ground, in blocks, from which the valley floor follows the real ground, and where fully.
 const VALLEY_GAP: (f64, f64) = (12.0, 30.0);
 
 // Wider cells resolve only rivers at least a cell wide; finer cells retain every stream.
 const RIVER_DETAIL_CELL: f64 = 16.0;
-// A spring's pool is `SPRING_POOL` blocks across, `SPRING_DEPTH` (edge, middle) under its level, in a rim of ground `SPRING_RIM` wide held over it.
+// A spring's pool is `SPRING_POOL` blocks across, `SPRING_DEPTH` (edge, middle) deep, in a `SPRING_RIM` rim.
 const SPRING_POOL: f32 = 2.6;
 const SPRING_DEPTH: (f64, f64) = (0.8, 2.2);
 const SPRING_RIM: f32 = 1.6;
@@ -97,24 +97,24 @@ const SPRING_MOUND: f32 = 4.0;
 // Tableland weight over which a river runs in a gorge: its banks widen up to 4 times and rise as a wall, not a slope.
 const GORGE_FROM: f64 = 0.2;
 
-// How much of the map's tree density a point keeps, `keeps` to 1, in patches of grove and clearing averaged over `cell`; at most 1 so `tree_bound` holds.
+// How much of the map's tree density a point keeps, `keeps` to 1, over grove and clearing patches; at most 1.
 fn grove(seed: u32, x: f64, z: f64, cell: f64, keeps: f64) -> f64 {
     let n = fbm_filtered(seed ^ 0x670E, x, z, GROVE_PATCH, 2, cell);
     keeps + (1.0 - keeps) * smoothstep(-0.2, 0.3, n)
 }
 
-// The ground over a river's channel: a parabolic bed up to the water's edge, then the bank easing out into the ground beside it; in a gorge (`gorge` is the tableland weight) a wide floor and a steep wall.
+// The ground over a river's channel: a parabolic bed to the water's edge, then the bank easing out; wide in gorges
 fn channel(ground: f32, river: RiverHit, gorge: f64) -> f32 {
     let half = river.width / 2.0;
     if river.distance < half {
         return ground.min(bed_height(river));
     }
-    // the rim, a block over the water's edge and over half of the block its surface lies in, is cut down or built up from the land's own height so the water is held in
+    // the rim, a block over the water's edge, is cut or built from the land's height to hold the water in
     let rim = (river.surface + freeboard(river.width)).max(river.surface.ceil() - 0.4);
-    // where the land lies far under the water, as where a river held at its lake's level crosses a dip, the bank is a levee as wide as the drop
+    // where land lies far under the water (a river at lake level over a dip) the bank is a levee as wide
     let width = bank_width(river, gorge).max(((rim - ground) * LEVEE_RUN).min(LEVEE_MAX));
     let t = ((river.distance - half) / width).clamp(0.0, 1.0);
-    // The bank joins the surrounding terrain over its width; block-level containment against neighbouring water comes after.
+    // The bank joins the surrounding terrain over its width; block-level containment against nearby water comes after.
     let rise = if gorge > GORGE_FROM {
         t * t * t
     } else {
@@ -154,7 +154,7 @@ struct Still {
 }
 
 impl Still {
-    // Whether a point whose smooth ground is `base` is under this water: under its level, or up to `DROWN` over it where all four cells round it are the water's.
+    // Whether a point with smooth ground `base` is under this water: under its level, or up to `DROWN` over it.
     fn under(&self, base: f64) -> bool {
         base < self.level + DROWN * smoothstep(0.5, 1.0, self.cover)
     }
@@ -164,7 +164,7 @@ impl Still {
     }
 }
 
-// `ground` held over still water `w` where the map's smooth ground `base` is over its level, by as much as `near` the water the point is, see `contain`.
+// `ground` held over still water `w` where smooth ground `base` is over its level, by as much as `near` the water is.
 fn hold_over(ground: f64, base: f64, w: Still) -> f64 {
     if base < w.level {
         return ground;
@@ -183,7 +183,7 @@ fn hold_by(mut ground: f64, base: f64, by: &[Option<Still>; 4], wet: Option<Stil
     ground
 }
 
-// `ground` held to still water at `level` by the side its map smooth ground `base` is on: under it the ground stays under by as much as the smooth ground is (up to `HOLD`), over it, over by as much, so detail never crosses the water's edge.
+// `ground` held to still water at `level` on its smooth ground's side, by as much as it is (up to `HOLD`).
 fn contain(ground: f64, base: f64, level: f64, under: bool) -> f64 {
     let t = (base - level).abs().min(HOLD);
     if under {
@@ -201,10 +201,10 @@ pub(super) fn river_reach(width: f32) -> f32 {
 
 // The most `meander` moves a point, in blocks.
 const MEANDER_REACH: f32 = 34.0 + 9.0;
-// The most a one-block step moves a point under both meander components: below 4.1 blocks by the Perlin gradient and fade bounds, so five is safe.
+// The most a one-block step moves a point under both meander components: under 4.1 blocks, so 5 is safe.
 const NEIGHBOUR_MEANDER_REACH: f32 = 5.0;
 
-// How far a river's line is moved off its straight run between cell centres: bends a few hundred blocks long, with smaller wiggles.
+// How far a river's line is moved off its straight run between cell centres: bends a few hundred blocks long
 fn meander(seed: u32, x: f64, z: f64) -> (f64, f64) {
     let bend = |salt: u32| {
         perlin(seed ^ salt, x / 260.0, z / 260.0) * 34.0
@@ -220,7 +220,7 @@ fn unmeander(seed: u32, x: f64, z: f64) -> (f64, f64) {
     (x - mx, z - mz)
 }
 
-/// One river stretch's reach (how far along it, 0..1, the river goes), water level at each profile point and points along it.
+/// One river stretch's reach (how far along it, 0..1, the river goes), water level at each profile point, and points.
 pub struct RiverCourse {
     pub end: f32,
     pub levels: [f32; super::water::PROFILE_POINTS + 1],
@@ -261,7 +261,7 @@ pub struct WorldTerrain {
     id: u64,
 }
 
-// Per-thread memory of the map's height by (terrain, x, z): a column's relief reads the height 8 blocks either side, which the columns there have read as their own.
+// Per-thread memory of the map's height by (terrain, x, z): a column's relief reads 8 blocks either side
 const MEMO_SIZE: usize = 1 << 16;
 
 #[derive(Copy, Clone, Default)]
@@ -359,7 +359,7 @@ impl WorldTerrain {
         })
     }
 
-    // Whether each cell has sea or lake in the 4x4 window `still_near` reaches from it (1 back to 2 on), so open land skips the scan.
+    // Whether each cell has sea or lake in the 4x4 window `still_near` reaches from it, so open land skips the scan.
     fn near_still(&self) -> Vec<bool> {
         let map = &self.map;
         let n = map.dim();
@@ -433,7 +433,7 @@ impl WorldTerrain {
             .min_by(|a, b| a.0.total_cmp(&b.0))
     }
 
-    // Each river's water level every few blocks along it, graded under its valley floor (the map's smooth ground), with the river drawn off its map line by the meander.
+    // Each river's water level every few blocks, graded under its valley floor, drawn off its map line by the meander.
     fn river_profiles(&self) -> RiverProfiles {
         let seed = self.map.seed;
         self.map.build_river_profiles(
@@ -476,7 +476,7 @@ impl WorldTerrain {
             .collect()
     }
 
-    // The still water with cells within `reach` cells of a point (1 is the four round it): the sea first, then up to three lakes, each at its level, a whole block.
+    // The still water within `reach` cells of a point (1 is the four round it): the sea first, then up to three lakes.
     fn still_near(&self, x: f64, z: f64, reach: i64) -> [Option<Still>; 4] {
         let map = &self.map;
         let (u, v) = map.to_cell(x, z);
@@ -535,7 +535,7 @@ impl WorldTerrain {
         still
     }
 
-    // For each map cell, the distance in blocks to the nearest lake cell's centre (capped past its reach) and that lake's level, by a two-pass chamfer.
+    // For each map cell, the blocks to the nearest lake cell's centre (capped past its reach) and that lake's level.
     fn lake_field(&self) -> (Vec<f32>, Vec<f32>) {
         let map = &self.map;
         let n = map.dim();
@@ -580,7 +580,7 @@ impl WorldTerrain {
         (distance, level)
     }
 
-    // The nearest lake's hold on a point, if within reach: `near` falls smoothly with the distance in blocks, blended from the field's four cells round the point, and the lake is the nearest of them.
+    // The nearest lake's hold on a point, if within reach: `near` falls with distance, blended from four cells
     fn lake_near(&self, x: f64, z: f64) -> Option<Still> {
         let map = &self.map;
         let (u, v) = map.to_cell(x, z);
@@ -609,12 +609,12 @@ impl WorldTerrain {
         })
     }
 
-    // The still water a point can be in, from the four cells round it: the water's edge always falls inside them, see `docs/water.md`.
+    // The still water a point can be in, from the four cells round it: its edge always falls inside (`docs/water.md`)
     fn still_round(&self, x: f64, z: f64) -> [Option<Still>; 4] {
         self.still_near(x, z, 1)
     }
 
-    // The still water whose shore a point may be near: the sea a cell further each way than `still_round`, and the nearest lake by its distance, so the ground is held and calmed past the farthest the water reaches.
+    // The still water whose shore a point may be near: the sea a cell further than `still_round`, and the nearest lake.
     fn still_by(&self, x: f64, z: f64) -> [Option<Still>; 4] {
         let mut by = self.still_near(x, z, 2);
         by[1..].fill(None);
@@ -709,7 +709,7 @@ impl WorldTerrain {
         dunes(self.map.seed ^ 0xD05E, x, z, cell, base - sea, self.dunes) * desert * shore
     }
 
-    // The map's height with detail, terraces and valley walls, from map layers only (never live climate or biome), see `landform`.
+    // The map's height with detail, terraces and valley walls, from map layers only, never climate or biome (`landform`).
     fn landform_ground(&self, x: f64, z: f64, cell: f64, base: f64, calm: f64) -> f64 {
         self.bedded_ground(x, z, cell, base, calm) + self.valley_sharpening(x, z, cell, calm)
     }
@@ -724,7 +724,7 @@ impl WorldTerrain {
         self.map.bilinear_bytes(&self.map.alpine, x, z) as f64 / 255.0
     }
 
-    // How far the valley walls, the steppe's and the ranges', pull the ground from the map's, none in cells too wide to see past the map's soft wall.
+    // How far the steppe's and ranges' valley walls pull the ground from the map's; none in cells too wide to see it.
     fn valley_sharpening(&self, x: f64, z: f64, cell: f64, calm: f64) -> f64 {
         let seen = calm * (1.0 - smoothstep(SHARPEN_CELL.0, SHARPEN_CELL.1, cell));
         let (weight, alpine) = (self.valley_weight(x, z) * seen, self.alpine_weight(x, z) * seen);
@@ -745,7 +745,7 @@ impl WorldTerrain {
         if weight <= 0.0 {
             return smooth;
         }
-        // the beds step only the broad shape: stepping the finest detail too dropped a dip at a ledge's edge a whole bed, a narrow pit tens of blocks deep
+        // the beds step only the broad shape: stepping the finest detail dropped a dip at a ledge's edge a whole bed
         let broad = self.detail_at(x, z, cell.max(TERRACE_CELL), base) * shore;
         let stepped = map.terraced(x, z, base + broad, base - sea) + (fine - broad);
         smooth + (stepped - smooth) * weight
@@ -763,7 +763,7 @@ impl WorldTerrain {
         )
     }
 
-    // `ground` held to the still water round a point (`base` is the map's smooth ground there), and the water the point is in, if any; `round` and `by` are `still_round` and `still_by` there.
+    // `ground` held to the still water round a point (`base` is the smooth ground there), and the water it's in, if any.
     fn held(
         &self,
         base: f64,
@@ -786,7 +786,7 @@ impl WorldTerrain {
         (ground, wet)
     }
 
-    // How much of the ground's detail is kept at a point, 0..1: none at still water's edge, easing in over `CALM` blocks of smooth ground either side of its level.
+    // How much ground detail is kept at a point, 0..1: none at still water's edge, easing in over `CALM` blocks.
     fn calm(base: f64, by: &[Option<Still>; 4]) -> f64 {
         by.iter()
             .flatten()
@@ -802,7 +802,7 @@ impl WorldTerrain {
         self.held(base, ground, &round, &by).0
     }
 
-    // How much of the ground round a point is `kind`, 0..1, smooth across the map's cells and wobbled so a biome's edge wanders.
+    // How much of the ground round a point is `kind`, 0..1, smooth across map cells and wobbled so a biome's edge wanders
     fn kind_cover(&self, kind: BiomeKind, x: f64, z: f64) -> f64 {
         self.cover(|i| self.map.biome[i] == kind as u8, kind as u32, x, z)
     }
@@ -860,9 +860,9 @@ impl WorldTerrain {
         detail
     }
 
-    // The floor of a river's valley: the map's smooth ground `base`, never under the sea or a lake near it, or the valley would flood in a wider inlet than the river.
+    // The floor of a river's valley: the map's smooth ground `base`, never under the sea or a nearby lake.
     fn valley_floor(&self, x: f64, z: f64, base: f64) -> f64 {
-        // where the real ground falls far under the map's, as at a cliff the map has as a plateau, the floor follows it down to `VALLEY_OVER` over it, so the river goes over the cliff, not out on a bank built up to the map's height; ordinary ups and downs leave the map's floor alone
+        // where real ground falls far under the map's, as at a cliff the map has as a plateau, the floor follows it
         let gap = base - self.landform_ground(x, z, TERRACE_CELL, base, 1.0);
         let lowered = (gap - VALLEY_OVER).max(0.0) * smoothstep(VALLEY_GAP.0, VALLEY_GAP.1, gap);
         let floor = (base - lowered).max(WATER_LEVEL as f64 + VALLEY_ABOVE_SEA);
@@ -881,7 +881,7 @@ impl WorldTerrain {
         })
     }
 
-    // A point moved a little by a wandering offset, to look up what the map holds by cell without following the cells' squares.
+    // A point moved by a wandering offset, to look up what the map holds by cell without following the cells' squares.
     fn wandered(&self, x: f64, z: f64) -> (f64, f64) {
         let seed = self.map.seed;
         let wander = self.map.config.map_cell as f64 * 1.5;
@@ -942,7 +942,7 @@ impl WorldTerrain {
         )
     }
 
-    // The cell whose climate biome a point takes: the point drifted by a slow warp so climate edges meander without closing into islands, or `at` where that would leave the land.
+    // The cell whose climate biome a point takes: drifted by a slow warp so climate edges meander, or `at` if off land.
     fn climate_cell(&self, x: f64, z: f64, at: usize) -> usize {
         let seed = self.map.seed;
         let (dx, dz) = (
@@ -957,12 +957,12 @@ impl WorldTerrain {
         }
     }
 
-    // The biome of the cell nearest a point, found through a wandering offset so biome edges don't follow the cells' squares.
+    // The biome of the cell nearest a point, via a wandering offset so biome edges don't follow the cells' squares.
     fn biome_at(&self, x: f64, z: f64, cell: f64) -> BiomeId {
         self.biome_and_trees(x, z, cell).0
     }
 
-    // `biome_at` with how far the map's tree density (its cell's own biome's) is off here: in a patch of the biome across a class boundary, up to that biome's density, easing across the patch's edge.
+    // `biome_at` with how far the map's tree density is off here: up to the across-boundary biome's, easing over the edge
     fn biome_and_trees(&self, x: f64, z: f64, cell: f64) -> (BiomeId, f64) {
         let (x, z) = self.wandered(x, z);
         let i = self.nearest_cell(x, z);
@@ -981,7 +981,7 @@ impl WorldTerrain {
                 kind = alt;
             }
         }
-        // high ground on a volcanic province is volcanic whatever the climate, bare basalt on its slopes, and mountain landform is mountain
+        // high ground on a volcanic province is volcanic whatever the climate, bare basalt on slopes; mountain stays mountain
         if self.map.geology[i] == super::geology::VOLCANIC
             && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
         {
@@ -1049,7 +1049,7 @@ impl WorldTerrain {
         } else {
             0.0
         };
-        // a river runs in a valley with a graded floor (the map's smooth ground) it eases out of into the land's detail and terraces, so its water, held under that floor, never needs a bank built up; not under still water, whose bed it would raise
+        // a river runs in a valley with a graded floor it eases out of into the land's detail, so it needs no built-up bank
         let valley = rivers
             .iter()
             .flatten()
@@ -1064,7 +1064,7 @@ impl WorldTerrain {
         }
         let (held, wet) = self.held(base, ground, &still, &by);
         ground = held;
-        // a river is left out where it's in still water it joins or that stands over it, the still water's shore being the edge there; one passing over still water is cut and banked as ever
+        // a river is left out where it's in still water it joins or that stands over it: the still water's shore is the edge
         let shaped = |r: &RiverHit| wet.is_none_or(|w| r.surface as f64 > w.level + JOIN);
         // near still water it's joined to, a river builds no banks, or they'd stand between the two as a strip of land
         let joined_by = |r: &RiverHit| {
@@ -1083,7 +1083,7 @@ impl WorldTerrain {
                 channel(ground as f32, river, gorge) as f64
             };
         }
-        // a river the nearest meets has its bed cut where its water is, so a stream isn't cut off short of the river it runs into, unless it lies well under the nearest's water, held by its banks
+        // a river the nearest meets has its bed cut where its water is, so a joining stream isn't cut short
         if let Some(joining) = rivers[1]
             .filter(|r| r.distance < r.width / 2.0)
             .filter(shaped)
@@ -1096,7 +1096,7 @@ impl WorldTerrain {
                 ground = ground.min(bed_height(joining) as f64);
             }
         }
-        // the other river's bank holds too unless the two are joined, or where a river bends past another the nearer's banks would cut the farther's from under its water
+        // the other river's bank holds too unless the two are joined, or a nearer bank would cut the farther's from under it
         if let Some(other) = rivers[1].filter(shaped) {
             let out = other.distance - other.width / 2.0;
             // only on dry ground: in the nearest's water the other's banks would stand up through it as a strip of land
@@ -1226,7 +1226,7 @@ impl TerrainSource for WorldTerrain {
 
     fn sample_for_cell(&self, x: f64, z: f64, cell: f64) -> TerrainSample {
         let (mut sample, near_river) = self.sample_uncontained(x, z, cell, true);
-        // a dry block beside water reaches that water's top block, from uncontained neighbours so it's independent of sample order
+        // a dry block beside water reaches that water's top block, from uncontained neighbours so sample order doesn't matter
         if cell <= 1.0 && near_river && sample.water_kind == WaterKind::None {
             for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
                 let (neighbour, _) = self.sample_uncontained(x + dx, z + dz, cell, false);
@@ -1768,7 +1768,7 @@ mod river_bank_tests {
         assert_eq!(0.0, terrain.tableland(0.0, 0.0, 150.0, 1.0));
     }
 
-    // fewer than 1 in 100 dune points over 2 blocks tall are within 30 blocks of water; the rest follow the biome's own wetting, see `climate`
+    // fewer than 1 in 100 dune points over 2 blocks tall are within 30 blocks of water; the rest follow the biome
     #[test]
     fn almost_no_tall_dunes_are_within_30_blocks_of_river_or_lake_water() {
         for seed in [1u32, 42, 1337, 300059728] {
@@ -1806,7 +1806,7 @@ mod river_bank_tests {
         let config = super::super::WorldConfig { size: 65536, map_cell: 128, ..Default::default() };
         let terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
         let (mut cliffs, mut walls, mut seen) = (0, 0, 0);
-        // every 100 blocks, so enough wall points are looked at that one or two more or fewer reaching a cliff don't decide it
+        // every 100 blocks, so enough wall points are looked at that one or two more or fewer reaching a cliff don't decide
         for i in 0..640 {
             for j in 0..640 {
                 let (x, z) = (i as f64 * 100.0 - 32000.0, j as f64 * 100.0 - 32000.0);

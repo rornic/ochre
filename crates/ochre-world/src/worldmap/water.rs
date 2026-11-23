@@ -1,4 +1,4 @@
-//! Rivers and lakes at block scale: a river is a chain of cells drawn as segments between cell centres, so one 6 blocks wide stays so on 32-block cells.
+//! Rivers and lakes at block scale: a river is segments between cell centres, so a 6-block one stays narrow.
 
 use super::{WaterCell, WorldMap, NEIGHBOURS, NO_FLOW};
 
@@ -19,22 +19,22 @@ pub struct RiverHit {
     pub depth: f32,
 }
 
-// Points a river's water level is worked out at along each stretch between two cells (every few blocks), where the ground it must lie under is looked at.
+// Points along each stretch between two cells (every few blocks) where a river's water level is worked out.
 pub(super) const PROFILE_POINTS: usize = 8;
 // A stretch falling this much a block on average, along its cell, runs in treads and falls, see `stairs`.
 const STAIR_GRADE: f32 = 0.2;
 const TREAD_DROP: f32 = 4.0;
 // A drop between two profile points this big is a fall, and its lip a step.
 const FALL_MIN: f32 = 5.0;
-// Two falls closer than this many blocks along a river are one, since the shelf between them is a column or two of water.
+// Two falls closer than this many blocks along a river are one: the shelf between them is a column or two of water.
 const MIN_TREAD: f32 = 4.0;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
 // How many cells on a river is followed to the still water it ends in.
 const SINK_HOPS: usize = 400;
-// A river into a lake ends where its water would stand this far under the lake's level, since a river that can't rise can't feed it; a gorge through higher ground isn't that.
+// A river into a lake ends where its water would stand this far under the lake: a river can't rise to feed it.
 const UNDER_LAKE: f32 = 1.0;
-// How far a river's level may sit over the lake or sea it runs into, a block for each 20 blocks back (`MOUTH_SLOPE`), and how far above that it may be and still be brought down (`MOUTH_DROP`).
+// How far a river's level may sit over the lake or sea it enters (`MOUTH_SLOPE`), and how far over is lowered.
 const MOUTH_SLOPE: f32 = 0.05;
 const MOUTH_DROP: f32 = 8.0;
 // The most, in blocks, a river is dug under the ground at its middle to stay under its banks.
@@ -48,7 +48,7 @@ const MOUTH_CELLS: usize = 6;
 // How steeply, in blocks of height a block, a river comes down from the lake it leaves.
 const OUTLET_SLOPE: f32 = 0.25;
 
-/// How far a river's water lies under the ground beside it, and its banks stand over it at its edge: up to a block, less for the narrowest streams, which would be cut far too deep.
+/// How far a river's water lies under the ground beside it, up to a block, less for narrow streams.
 pub(super) fn freeboard(width: f32) -> f32 {
     (width * 0.25).clamp(0.2, 1.0)
 }
@@ -78,7 +78,7 @@ pub(crate) fn depth_for_width(width: f32) -> f32 {
     (0.6 + (width - 1.2).max(0.0) / 3.0).min(12.0)
 }
 
-// A steep stretch's levels as treads and falls: from the second point on, each group of points is held at its lowest, so the water stays under the ground it was graded to, taking points while it has dropped no more than `TREAD_DROP`; the ends are left, which neighbouring stretches share.
+// A steep stretch's levels as treads and falls: groups of points held at their lowest within `TREAD_DROP`.
 fn stairs(data: &mut [f32; PROFILE_POINTS + 1], cell: f32) {
     if (data[0] - data[PROFILE_POINTS]) / cell < STAIR_GRADE {
         return;
@@ -138,7 +138,7 @@ pub struct RiverProfiles {
     data: Vec<[f32; PROFILE_POINTS + 1]>,
     // by interval of each profile, where in it the water falls from one point's level to the next's, 0..1, or NaN
     lips: Vec<[f32; PROFILE_POINTS]>,
-    // how far along the stretch, 0..1, a river into a lake reaches: its curve goes on past the shore, which would leave a stub of channel
+    // how far along the stretch, 0..1, a river into a lake reaches: its curve runs past the shore, leaving a stub
     ends: Vec<f32>,
     // each profile's course
     stretches: Vec<Stretch>,
@@ -147,7 +147,7 @@ pub struct RiverProfiles {
     // by map cell, the stretches that reach into it, see `index`: `near[near_start[cell]..near_start[cell + 1]]`
     near_start: Vec<u32>,
     near: Vec<u32>,
-    // each stretch's river: the head of the run of widest feeders it's part of, so a wide river's stretches are one river and a tributary is its own
+    // each stretch's river: the head of the widest-feeder run it's in, so a tributary is its own river
     stem: Vec<u32>,
 }
 
@@ -197,7 +197,7 @@ impl RiverProfiles {
         profile[k] + (profile[k + 1] - profile[k]) * along
     }
 
-    /// Lists each stretch in every cell of `map` its water, banks and valley reach into, a cell off its line for the curve's bend and `margin` blocks more.
+    /// Lists each stretch in every cell its water, banks and valley reach: the bend's cells, plus `margin` blocks.
     pub fn index(&mut self, map: &WorldMap, margin: f64) {
         self.stem = self.stems();
         self.curves = self
@@ -242,7 +242,7 @@ impl RiverProfiles {
         self.near_start = count;
     }
 
-    // Each stretch's river, see `stem`: it carries on the river of the stretch it runs into if it's the widest that runs into it, else heads its own.
+    // Each stretch's river, see `stem`: it continues the river it runs into if the widest feeder, else heads its own.
     fn stems(&self) -> Vec<u32> {
         let next = |n: usize| {
             let to = self.index[self.stretches[n].to];
@@ -304,7 +304,7 @@ impl RiverProfiles {
 }
 
 impl WorldMap {
-    /// The highest level of the lake or sea of any cell round cell `i`, or far under any ground if none: a cell beside still water stays at least that high, see `WorldTerrain::still_round`.
+    /// The highest lake or sea level of any cell round cell `i`, or far under any ground if none.
     pub(super) fn still_beside(&self, i: usize) -> f32 {
         still_beside(self.dim(), &self.water_kind, &self.water_surface, i)
     }
@@ -320,7 +320,7 @@ impl WorldMap {
         }
     }
 
-    /// The way each river cell's water leaves it, a blend of the way it came in and the way it goes on, so rivers draw as smooth curves through the cells; zero for cells with no river.
+    /// The way each river cell's water leaves it, blending in and out directions so rivers curve; zero with no river.
     pub fn river_tangents(&self) -> Vec<[f32; 2]> {
         let dim = self.dim();
         let direction = |i: usize| -> Option<[f32; 2]> {
@@ -368,7 +368,7 @@ impl WorldMap {
         self.river_hits(profiles, x, z)[0]
     }
 
-    /// The lake cell that drains into cell (`cx`, `cz`), if one does, or into a dry cell draining into it: the lake spills over a rim of ground, and the river starts below.
+    /// The lake cell draining into cell (`cx`, `cz`), or into a dry cell draining into it; the river starts below the rim
     pub(super) fn outlet_lake(&self, cx: usize, cz: usize) -> Option<(usize, usize)> {
         let kind = |(x, z): (usize, usize)| self.water_kind[self.index(x, z)];
         self.feeders(cx, cz).find_map(|u| {
@@ -417,14 +417,14 @@ impl WorldMap {
         let (sx, sz) = (b.0 - a.0, b.1 - a.1);
         let mut length = (sx * sx + sz * sz).sqrt();
         let along = [(sx / length) as f32, (sz / length) as f32];
-        // a river runs on past the centre of the lake or sea cell it drains into, which may be on land at the water's edge, so it reaches the water the land really lets in
+        // a river runs on past the centre of the lake or sea cell it drains into, which may be land, to reach real water
         let extra = self.config.map_cell as f64 * MOUTH_REACH;
         if !into_river {
             b = (b.0 + along[0] as f64 * extra, b.1 + along[1] as f64 * extra);
             length += extra;
         }
         if let Some((ux, uz)) = outlet {
-            // from the middle of the lake cell that drains into it, so the river starts in the lake's water, not short of it on the rim's ground
+            // from the middle of the lake cell that drains into it, so the river starts in the lake's water, not short on the rim
             let from = self.cell_centre(ux, uz);
             length += ((a.0 - from.0).powi(2) + (a.1 - from.1).powi(2)).sqrt();
             a = from;
@@ -444,7 +444,7 @@ impl WorldMap {
         })
     }
 
-    /// Water levels as the map has them, a straight run between each stretch's cells, before `build_river_profiles` sets them to the ground.
+    /// Water levels as the map has them, straight between each stretch's cells, before `build_river_profiles`.
     pub fn flat_river_profiles(&self, tangents: &[[f32; 2]]) -> RiverProfiles {
         let mut profiles = RiverProfiles {
             index: vec![RiverProfiles::NONE; self.height.len()],
@@ -473,7 +473,7 @@ impl WorldMap {
         profiles
     }
 
-    /// Each river stretch's water level every few blocks along it, held under the lowest of the `ground` round that point (its bed, banks and where they end) and never rising downstream, so no bank has to be built up to hold it. `centre` moves a point on a stretch's curve to where the river is really drawn.
+    /// Each stretch's water level every few blocks, held under the lowest ground round it and never rising downstream.
     pub fn build_river_profiles(
         &self,
         tangents: &[[f32; 2]],
@@ -509,14 +509,14 @@ impl WorldMap {
                             {
                                 lowest = lowest.min(ground(x + dx, z + dz));
                             }
-                            // a bank much lower than the middle doesn't dig the river in after it: the water stands that far over it, and the bank is built up a little
+                            // a bank much lower than the middle doesn't dig the river in: the water stands over it and the bank is built up
                             *level = lowest.max(middle - MAX_CUT) as f32 - freeboard(width);
                         }
                     }
                 });
             }
         });
-        // a river that leaves a lake starts at the lake's level and comes down from it through the rim, so the waters are joined, not parted by a bank of the rim's ground
+        // a river leaving a lake starts at the lake's level and comes down through the rim, so no bank parts the waters
         let cell_blocks = self.config.map_cell as f32;
         let mut from_lake = vec![false; stretches.len()];
         for (n, stretch) in stretches.iter().enumerate() {
@@ -555,7 +555,7 @@ impl WorldMap {
                 None
             })
             .collect();
-        // a river into a lake is held at the lake's level where its valley floor (`valley_floor`, with block-level steps the map lacks) dips under it, since a river never rises and would be cut off there (below), dry down to the lake; its banks are levees (`channel`)
+        // a river into a lake is held at the lake's level where its valley floor (`valley_floor`) dips under it
         for (n, lake) in into_lake.iter().enumerate() {
             if let Some(lake) = lake {
                 for cap in caps[n].iter_mut() {
@@ -563,7 +563,7 @@ impl WorldMap {
                 }
             }
         }
-        // a river runs down to the lake or sea it drains into over its last few cells if it comes down to it; one far above it ends in a cliff or a fall
+        // a river runs down to the lake or sea it drains into over its last few cells; one far above ends in a cliff or fall
         for n in 0..stretches.len() {
             let mut hops = 0;
             let mut end = stretches[n];
@@ -609,7 +609,7 @@ impl WorldMap {
             stretches: stretches.clone(),
             ..RiverProfiles::default()
         };
-        // a river into a lake or the sea ends, rounded, where the land last gives way to the water and goes no further over the land beside it; a pocket of low ground inland of the shore doesn't count
+        // a river into a lake or sea ends, rounded, where land last gives way to water; low ground inland doesn't count
         for (n, stretch) in stretches.iter().enumerate() {
             let into = self.water_kind[stretch.to];
             if into != WaterCell::Lake as u8 && into != WaterCell::Ocean as u8 {
@@ -646,7 +646,7 @@ impl WorldMap {
                 }
             }
         }
-        // a stream that runs into a river comes down to its level over its last cells, so its water isn't left standing over the river's as a step
+        // a stream into a river comes down to its level over its last cells, so its water isn't left standing over it
         let mut feeders: Vec<Vec<usize>> = vec![Vec::new(); stretches.len()];
         for (n, stretch) in stretches.iter().enumerate() {
             if let Some(&next) = at.get(&stretch.to) {
@@ -704,7 +704,7 @@ impl WorldMap {
                 }
             }
         }
-        // the next stretch can start lower than the preceding one ends: both are the same point, so each upstream endpoint comes down to the shared level, the last profile interval carrying the drop instead of a discontinuity
+        // the next stretch can start lower than the last ends: both are one point, so upstream ends drop to the shared level
         for &n in order.iter().rev() {
             if let Some(&next) = at.get(&stretches[n].to) {
                 profiles.data[n][PROFILE_POINTS] = profiles.data[next][0];
@@ -773,7 +773,7 @@ impl WorldMap {
         profiles
     }
 
-    /// The two nearest rivers' water or banks: the nearest, and the nearest that isn't another stretch of the same river, so a stream that joins a river isn't dropped a few blocks short of it, the river's bank being the nearer.
+    /// The two nearest rivers' water or banks: the nearest and the nearest of another river, so a joiner isn't short
     pub fn river_hits(&self, profiles: &RiverProfiles, x: f64, z: f64) -> [Option<RiverHit>; 2] {
         let (u, v) = self.to_cell(x, z);
         let max = self.dim() as f64 - 1.0;
@@ -833,7 +833,7 @@ impl WorldMap {
                 let distance = best_d2.sqrt() as f32;
                 let width = stretch.width_at(best_t);
                 let surface = profiles.level(i, best_t as f32);
-                // the bed steps down two blocks before the water does, so at a lip the water stands in a column down to the lower tread's bed: the sheet of the fall
+                // the bed steps down two blocks before the water, so at a lip the water stands in a column to the lower bed: the fall
                 let chord = ((stretch.b.0 - stretch.a.0).powi(2)
                     + (stretch.b.1 - stretch.a.1).powi(2))
                 .sqrt();

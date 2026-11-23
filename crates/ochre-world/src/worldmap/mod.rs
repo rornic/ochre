@@ -1,4 +1,4 @@
-//! The world's geography on a coarse grid, made once per seed: continents, ranges, rivers and climate, which chunks and LODs sample and add detail to; a plain value that saves and loads, so one machine can make it for the rest.
+//! The world's geography on a coarse grid, made once per seed: continents, ranges, rivers, climate.
 
 pub mod character;
 pub mod climate;
@@ -25,7 +25,7 @@ use std::sync::Arc;
 pub use features::{Feature, FeatureKind};
 pub use source::{RiverCourse, WorldTerrain};
 
-/// Stamped on every saved map and world; bump it whenever generation changes, as a world from another version is refused.
+/// Bump when generation changes: player edits are stored against generated terrain, so other versions are refused.
 pub const GENERATOR_VERSION: u32 = 116;
 
 /// How big the world is and how finely its map is drawn. Both are config, not constants.
@@ -104,7 +104,7 @@ impl WaterCell {
     }
 }
 
-/// The map: one value per cell of each layer, row-major `[z][x]` from the north-west corner; layers a later stage hasn't filled are zero.
+/// The map: one value per cell of each layer, row-major `[z][x]` from the north-west; unfilled layers are zero.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorldMap {
     pub version: u32,
@@ -155,7 +155,7 @@ pub struct WorldMap {
     pub trees: Vec<u8>,
     /// How rough the ground is, 0..1 as 0..=255: the amplitude of the detail laid over it.
     pub roughness: Vec<u8>,
-    /// How near each cell is to a mountain range, 0..1 as 0..=255, reaching a few kilometres out: where the foothills are.
+    /// How near each cell is to a mountain range, 0..1 as 0..=255, reaching a few kilometres out: the foothills.
     pub range: Vec<u8>,
     /// A `landform::` class per cell (1 mountain), from the ground alone, never climate or water.
     pub landform: Vec<u8>,
@@ -163,13 +163,13 @@ pub struct WorldMap {
     pub ford: Vec<u8>,
     /// How much of a valley's cut each cell takes, 0..1 as 0..=255, sited before the valleys are cut: see `valleys`.
     pub valley: Vec<u8>,
-    /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only, see `valleys::run_alpine`.
+    /// How much of the ranges' valley cut each cell takes, 0..1 as 0..=255: mountain ground only (`valleys::run_alpine`).
     pub alpine: Vec<u8>,
-    /// Each cell on a canyon's line: the way to the next (`NEIGHBOURS` index plus one) in the low nibble, its slot's depth in tens of blocks in the high.
+    /// Each cell on a canyon's line: direction to the next (`NEIGHBOURS` index + 1) in the low nibble, slot depth high
     pub canyon: Vec<u8>,
     /// How far each cell stands over the ground round it, 0..1 as 0..=255, 128 on level ground: crests up, hollows down.
     pub exposure: Vec<u8>,
-    /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, falling to 0 within a few cells.
+    /// How close each cell is to a river, lake or pond, 0..1 as 0..=255: 255 on the water, 0 beyond a few cells.
     pub water_closeness: Vec<u8>,
     /// What the gameplay pass found: passes, crossings, spawn regions, resources and encounters.
     pub features: Vec<Feature>,
@@ -332,7 +332,7 @@ impl WorldMap {
     }
 }
 
-// Harmonic-mean Hermite tangents keep the curve inside its endpoints, where Catmull-Rom overshoots a steep lake rim into a dry hollow.
+// Harmonic-mean Hermite tangents keep the curve inside its endpoints; Catmull-Rom overshoots a steep lake rim.
 fn monotone_cubic(p: [f32; 4], t: f32) -> f32 {
     let slope = |a: f32, b: f32| {
         if a * b <= 0.0 {
@@ -377,7 +377,7 @@ pub fn forest_spot(terrain: &WorldTerrain) -> bevy::math::I64Vec2 {
     tree_spot(terrain, 80, 255)
 }
 
-/// The middle of dry land nearest the test world's centre where `WorldMap::trees` is within `least..=most` everywhere round it.
+/// The middle of dry land nearest the test world's centre where `WorldMap::trees` is within `least..=most` all round.
 #[cfg(any(test, feature = "test-support"))]
 pub fn tree_spot(terrain: &WorldTerrain, least: u8, most: u8) -> bevy::math::I64Vec2 {
     try_tree_spot(terrain, least, most).expect("no forest on the test world")
@@ -467,7 +467,7 @@ pub fn generate(seed: u32, config: WorldConfig) -> WorldMap {
     lap("tectonics");
     geology::generate(&mut map);
     lap("geology");
-    // water first so basins are cut open before the rain wears the ground, then again over the eroded ground where rivers really run
+    // water first so basins are cut open before rain wears the ground, then again over the eroded ground
     hydrology::run(&mut map, false);
     lap("hydrology 1");
     erosion::run(&mut map);

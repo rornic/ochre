@@ -1,4 +1,4 @@
-//! The gameplay pass: passes through ranges, river crossings, spawn regions, resources, caves and encounters, stored as `Feature`s on the map.
+//! The gameplay pass: passes, river crossings, spawn regions, resources, caves and encounters, stored as `Feature`s.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -21,7 +21,7 @@ const PASS_RADIUS: i64 = 3;
 const WADE_WIDTH: f32 = 8.0;
 // The widest river that gets a ford; wider ones get a bridge site.
 const FORD_MAX_WIDTH: f32 = 36.0;
-// A river that can't be waded gets a crossing at the first good spot after this many blocks, and by `CROSSING_MAX` regardless.
+// A river that can't be waded gets a crossing at the first good spot after this many blocks, and by `CROSSING_MAX`.
 const CROSSING_SPACING: f32 = 1_800.0;
 const CROSSING_MAX: f32 = 3_000.0;
 
@@ -117,7 +117,7 @@ fn walk_mask(map: &WorldMap, slope: &[f32]) -> Vec<bool> {
         .collect()
 }
 
-// The first landmass with big walkable regions and no walkable way between them: (landmass, region ids biggest first), or None.
+// The first landmass whose big walkable regions have no walkable way between: (landmass, region ids biggest first).
 struct Split {
     walk: Vec<u32>,
     land: Vec<u32>,
@@ -126,7 +126,7 @@ struct Split {
 
 fn find_split(map: &WorldMap) -> Option<Split> {
     let dim = map.dim();
-    // mountain barriers only: river and lake beds sit below the travel surface and their cuts are no range, while real surface gradients still reject a steep waterfall
+    // mountain barriers only: river and lake beds sit below the travel surface; real gradients still reject a waterfall
     let slope = slope_from(map, |i| {
         if matches!(
             WaterCell::from_u8(map.water_kind[i]),
@@ -168,7 +168,7 @@ fn find_split(map: &WorldMap) -> Option<Split> {
         })
 }
 
-// The cheapest way from the biggest region to another of the split's: steep ground costs, high ground a little, so it goes through the lowest saddle.
+// The cheapest way from the biggest region to another of the split's: steep ground costs most, so it takes a saddle.
 fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     let dim = map.dim();
     let slope = slope_layer(map);
@@ -244,7 +244,7 @@ fn cheapest_way(map: &WorldMap, split: &Split) -> Option<Vec<usize>> {
     None
 }
 
-// Grades `path` to never climb steeper than WALK_SLOPE, opens a valley round it, and labels the highest point left as the pass.
+// Grades `path` to never climb steeper than WALK_SLOPE, opens a valley round it, labels its highest point the pass.
 fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     let dim = map.dim();
     let cell = map.config.map_cell as f32;
@@ -308,7 +308,7 @@ fn carve(map: &mut WorldMap, path: &[usize]) -> bool {
     changed
 }
 
-/// Carves a pass at the lowest saddle between walled-off lowlands, one at a time, until every big walkable region on a landmass reaches every other.
+/// Carves a pass at the lowest saddle between walled-off lowlands until a landmass's big regions all connect.
 pub(crate) fn carve_passes(map: &mut WorldMap) {
     map.features.retain(|f| f.kind != FeatureKind::Pass);
     for _ in 0..MAX_PASSES {
@@ -336,7 +336,7 @@ fn push(map: &mut WorldMap, kind: FeatureKind, i: usize, value: f32) {
     map.features.push(Feature { kind, x, z, value });
 }
 
-// Walks every river from its source, adding up blocks too wide to wade since the last crossing: `place` gets each cell that needs one, and the longest stretch left without is returned.
+// Walks each river from its source, summing blocks too wide to wade since the last crossing; `place` gets each cell.
 fn river_gaps(
     map: &WorldMap,
     slope: &[f32],
@@ -499,7 +499,7 @@ fn kind_at(map: &WorldMap, i: usize) -> BiomeKind {
     BiomeKind::from_u8(map.biome[i])
 }
 
-// How good a place to start the cell is, or None; `relaxed` takes any open, gentle land, for a landmass with nowhere better.
+// How good a place to start the cell is, or None; `relaxed` takes any open, gentle land.
 fn spawn_score(
     map: &WorldMap,
     i: usize,

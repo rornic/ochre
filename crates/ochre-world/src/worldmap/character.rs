@@ -71,7 +71,7 @@ fn round(value: f64, decimals: i32) -> f64 {
     (value * scale).round() / scale
 }
 
-/// What a seed decides about its landforms, derived where used and never stored, so a new landform changes no file format.
+/// What a seed decides about its landforms, derived where used and never stored, so a new landform changes no format.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LandformKnobs {
     /// About how much of the sedimentary lowland is tableland.

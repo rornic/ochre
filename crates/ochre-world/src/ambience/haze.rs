@@ -1,4 +1,4 @@
-//! Hands the land's shaders the haze of the country round the camera, on 16 compass points and 3 rings out, so a far biome shows in the haze.
+//! Hands the land's shaders the haze of the country round the camera, on 16 compass points and 3 rings.
 
 use std::f32::consts::TAU;
 

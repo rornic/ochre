@@ -48,7 +48,7 @@ impl Default for WorldOptions {
     }
 }
 
-/// A world over a generated map; `region_distance` is how far, in chunks, terrain is built from full-detail regions, see `LodLayout::region_reach`.
+/// A world over a generated map; `region_distance` is how far, in chunks, terrain is built from full-detail regions.
 pub fn load_world(region_distance: u32, config: WorldConfig, options: &WorldOptions) -> World {
     let start = std::time::Instant::now();
     let seed = options.seed.unwrap_or_else(rand::random);

@@ -1,4 +1,4 @@
-//! Ranking: which cells stand out, within their biome, in at least two independent ways, kept apart and varied in kind.
+//! Ranking: which cells stand out, within their biome, in at least two independent ways, kept apart.
 
 use super::super::climate::BiomeKind;
 use super::terms::Terms;
@@ -14,7 +14,7 @@ pub struct Params {
     pub apart: f64,
     /// Places kept per biome.
     pub top: usize,
-    /// The least relief, in blocks, a place needs at the landmark and mass windows whatever its rank, so a small bump on a flat plain isn't in the tail.
+    /// The least relief, in blocks, a place needs at the landmark and mass windows, so a small bump isn't ranked.
     pub floor: [f32; 2],
     /// For the null run: shift the mass-scale relief this many grid cells (wrapping), to see what chance alone scores.
     pub null_shift: Option<usize>,
@@ -58,7 +58,7 @@ const CAUSES: [&str; 4] = ["shape", "mass", "steepness", "water"];
 // A cell that qualifies: its score, its index in the grid and its rank in each of the four causes.
 type Candidate = (f32, usize, [f32; 4]);
 
-// The rank of each value among `values`, 0 to 1, ties sharing the middle of their span so a flat field ranks 0.5 everywhere.
+// The rank of each value among `values`, 0 to 1, ties sharing the middle of their span so a flat field ranks 0.5.
 fn ranks(values: &[f32]) -> Vec<f32> {
     let mut sorted = values.to_vec();
     sorted.sort_by(f32::total_cmp);
@@ -95,7 +95,7 @@ pub(super) fn pick(terms: &Terms, water: &[f32], biome: &[u8], dim: usize, param
             .filter_map(|n| {
                 let r = [shape[n], massive[n], steep[n], wet[n]];
                 let big_enough = terms.relief[0][cells[n]].abs() >= params.floor[0] && mass[cells[n]].abs() >= params.floor[1];
-                // shape and steepness both come from the same bump, so they do not count as two causes on their own: the mass or the water has to be one of them
+                // shape and steepness come from the same bump, so they aren't two causes: the mass or the water has to be one
                 let independent = r[1] >= params.tail || r[3] >= params.tail;
                 (big_enough && independent && r.iter().filter(|&&v| v >= params.tail).count() >= 2).then(|| {
                     let mut sorted = r;
@@ -162,7 +162,7 @@ pub(super) fn pick(terms: &Terms, water: &[f32], biome: &[u8], dim: usize, param
     places
 }
 
-/// The places as CSV: biome, rank within the biome, position, kind, score, the terms and the weakest cause. Fixed precision, so equal runs give equal text.
+/// The places as CSV: biome, rank, position, kind, score, terms, weakest cause; fixed precision, so equal runs match.
 pub fn csv(places: &[Place]) -> String {
     let mut out = String::from("biome,rank,x,z,kind,score,relief_landmark,relief_mass,relief_range,steepness,water,above_sea,weakest\n");
     let mut rank = 0usize;
@@ -185,7 +185,7 @@ mod tests {
 
     const DIM: usize = 160;
 
-    // A flat plain of one biome with a peak and a pit in it, each 200 blocks across at 64-block cells, and a hill that is only half as tall.
+    // A flat plain of one biome with a peak and a pit, each 200 blocks across at 64-block cells, and a half-height hill.
     fn world() -> (Vec<f32>, Vec<u8>) {
         let mut heights = vec![100.0f32; DIM * DIM];
         let mut bump = |cx: i64, cz: i64, height: f32, radius: i64| {
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn the_null_run_shifts_only_the_mass_scale() {
-        // a zero shift is the real run; in this synthetic world shape and steepness coincide at every bump, so the null's cost is measured on real worlds, not asserted
+        // a zero shift is the real run; shape and steepness coincide here, so null cost is measured on real worlds
         let real = run(&Params::default());
         assert_eq!(real, run(&Params { null_shift: Some(0), ..Params::default() }));
         assert_ne!(real, run(&Params { null_shift: Some(DIM / 3), ..Params::default() }));

@@ -5,10 +5,10 @@ use bevy::{
     render::view::{ColorGrading, ColorGradingGlobal},
 };
 
-/// Rolls highlights off while keeping shade's colour: ACES turned dark greens neon, AgX and Tony McMapface wash out bright ones.
+/// Rolls highlights off while keeping shade's colour: ACES turned dark greens neon, AgX and Tony McMapface wash out.
 pub const TONEMAPPING: Tonemapping = Tonemapping::SomewhatBoringDisplayTransform;
 
-/// Stops of exposure before tonemapping, so a mid grey stays mid grey; `water.wesl` reads it from the view's colour grading.
+/// Stops of exposure before tonemapping, so a mid grey stays mid grey; `water.wesl` reads it from the colour grading.
 pub(crate) const EXPOSURE: f32 = 0.5;
 
 /// The camera's colour grading out of water: a touch warmer and richer, for a cosy rather than punchy picture.
@@ -28,12 +28,12 @@ pub fn dry_color_grading() -> ColorGrading {
 const WARMTH: f32 = 0.015;
 const SATURATION: f32 = 1.04;
 
-// What the cold country adds to a grade, fully cold: a white balance toward blue, and less colour, a little more in the shadows.
+// What the cold country adds to a grade, fully cold: a white balance toward blue, and less colour, more in shadows.
 const COLD_TEMPERATURE: f32 = -0.02;
 const COLD_SATURATION: f32 = 0.94;
 const COLD_SHADOW_SATURATION: f32 = 0.92;
 
-/// `grading` as the cold country shows it, `cold` from 0 (as it was, exactly) to 1: the same shift on the dry grade as on the underwater one.
+/// `grading` as the cold country shows it, `cold` 0 (unchanged) to 1: same shift on the dry and the underwater grade.
 pub fn cold_color_grading(grading: &ColorGrading, cold: f32) -> ColorGrading {
     let mut cooled = grading.clone();
     cooled.global.temperature += COLD_TEMPERATURE * cold;

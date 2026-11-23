@@ -286,7 +286,7 @@ pub(crate) fn cache_path(dir: &Path, seed: u32, config: WorldConfig) -> PathBuf 
     ))
 }
 
-/// The cached map for `seed`, or a freshly generated one, cached for next time; a cache file that won't load is made again.
+/// The cached map for `seed`, or a fresh one, cached for next time; a cache file that won't load is regenerated.
 pub fn load_or_generate(dir: &Path, seed: u32, config: WorldConfig) -> WorldMap {
     let path = cache_path(dir, seed, config);
     match WorldMap::load(&path) {

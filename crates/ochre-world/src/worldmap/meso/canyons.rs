@@ -1,4 +1,4 @@
-//! Desert canyons: a trench stamped into the map's height down the line the water will take, and a narrow slot cut deeper along it at block level (`map.canyon`).
+//! Desert canyons: a trench in the map's height along the water's line, and a narrow slot cut deeper at block level
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{hash, perlin, unit};
@@ -20,7 +20,7 @@ const FALL: f64 = 0.15;
 // Blocks over the sea the floor stays, and over the sea a canyon needs the plateau to start.
 const SEA_MARGIN: f64 = 6.0;
 const START_ABOVE: f64 = 80.0;
-// The share of a canyon's depth the map's trench holds; the slot cut at block level is the rest, so it is this much deeper again.
+// The share of a canyon's depth the map's trench holds; the block-level slot is the rest, so this much deeper again.
 const SOFT: f64 = 0.6;
 const SLOT_RATIO: f64 = (1.0 - SOFT) / SOFT;
 // The most of the ground's height over the sea the map's trench cuts.
@@ -32,9 +32,9 @@ const EDGE: usize = 60;
 const WADI_ABOVE: f64 = 30.0;
 const WADI_APART: f64 = 60.0;
 
-// A canyon's stretch of floor, as (x, z, height, half width in cells, slot depth in blocks): the map's trench floor, with the slot to be cut below it.
+// A canyon's stretch of floor: (x, z, height, half width in cells, slot depth in blocks); the slot is cut below it.
 type Floor = Vec<(f64, f64, f64, f64, f64)>;
-// A fork's floor rises this many blocks a cell away from the canyon it joins, and its depth and width are these shares of that canyon's.
+// A fork's floor rises this many blocks a cell away from its canyon; its depth and width are shares of the canyon's.
 const RISE: f64 = 1.5;
 const FORK_DEPTH: (f64, f64) = (0.5, 0.8);
 const FORK_HALF: (f64, f64) = (0.6, 0.85);
@@ -44,7 +44,7 @@ fn slot(depth: f64) -> f64 {
     ((depth * SLOT_RATIO / 10.0).round() * 10.0).clamp(0.0, 150.0)
 }
 
-// The floor of a canyon from `start` down the line water will take over `flood`'s filled ground to the sea or the map's edge, so it always drains.
+// The floor of a canyon from `start` down the line water will take over `flood`'s filled ground, so it always drains.
 fn trace(flood: &Flood, dim: usize, start: (usize, usize), depth: f64, half: f64, h: u32) -> Floor {
     let sea = WATER_LEVEL as f64;
     let mut cell = start.1 * dim + start.0;
@@ -83,7 +83,7 @@ fn smoothed(floor: &Floor) -> Floor {
         .collect()
 }
 
-// A fork off `main` at index `k`, heading upstream to one side and rising from the main floor until it meets the ground: ordered from the junction out.
+// A fork off `main` at index `k`, heading upstream to one side and rising from the main floor until it meets ground.
 fn fork(flood: &Flood, dim: usize, main: &Floor, k: usize, side: f64, (depth, half): (f64, f64), h: u32) -> Floor {
     let (x0, z0, level0, ..) = main[k];
     let (up, down) = (main[k.saturating_sub(4)], main[(k + 4).min(main.len() - 1)]);
@@ -106,7 +106,7 @@ fn fork(flood: &Flood, dim: usize, main: &Floor, k: usize, side: f64, (depth, ha
     out
 }
 
-// Lowers `map.height` along `floor` to a trench of its half width, flat in its middle and rising in a steep wall, from the ground as it stood.
+// Lowers `map.height` along `floor` to a trench of its half width, flat in the middle with steep walls.
 fn stamp(map: &mut WorldMap, before: &[f32], floor: &Floor, shield: &mut [f32]) {
     let dim = map.dim();
     for &(px, pz, level, half, _) in floor {
@@ -124,7 +124,7 @@ fn stamp(map: &mut WorldMap, before: &[f32], floor: &Floor, shield: &mut [f32]) 
     }
 }
 
-// Marks `cells` (a chain of neighbours, each with its slot) in `canyon`, each pointing to the next, where nothing is marked yet.
+// Marks `cells` (a chain of neighbours, each with its slot) in `canyon`, each pointing to the next, where unmarked.
 fn mark(canyon: &mut [u8], dim: usize, cells: &[((usize, usize), f64)]) {
     for (n, &((x, z), slot)) in cells.iter().enumerate() {
         let towards = cells.get(n + 1).and_then(|&((nx, nz), _)| NEIGHBOURS.iter().position(|&d| d == (nx as i64 - x as i64, nz as i64 - z as i64)));
@@ -147,7 +147,7 @@ fn cells_of(floor: &Floor, dim: usize) -> Vec<((usize, usize), f64)> {
     cells
 }
 
-/// Cuts up to `count` canyons into desert plateau and `gorges` into wetter plateaus, 90 to 200 blocks deep, swelling and pinching, with forks; the map holds 60% of the depth and `map.canyon` marks the line for block-level slots; trenches join `keep` (landmarks).
+/// Cuts up to `count` desert and `gorges` wetter-plateau canyons, 90 to 200 blocks deep, with forks; map holds 60%
 pub(crate) fn run(map: &mut WorldMap, count: u32, gorges: u32, wadis: u32, keep: &mut [f32]) {
     let dim = map.dim();
     if (count == 0 && gorges == 0 && wadis == 0) || dim <= 2 * EDGE {

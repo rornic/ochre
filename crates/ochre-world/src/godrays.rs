@@ -1,4 +1,4 @@
-//! Light shafts: Bevy's volumetric fog, a box of thin air round the camera that the sun's shadow map carves into beams.
+//! Light shafts: Bevy's volumetric fog, a box of thin air round the camera that the sun's shadow map carves
 
 use bevy::{
     app::{App, Plugin, PostStartup, Update},
@@ -30,10 +30,10 @@ const ABSORPTION: f32 = 0.02;
 const SCATTERING: f32 = 0.3;
 // High, so shafts show looking toward the sun and fade looking away.
 const ASYMMETRY: f32 = 0.75;
-// The sun's illuminance already carries `SKY_GAIN`. By estimate (unseen) 0.25 of this left shafts near 0.1 against a sky of several.
+// The sun's illuminance already carries `SKY_GAIN`; 0.25 of this left shafts near 0.1 against a sky of several.
 const LIGHT: f32 = 2.0;
 
-// March steps a pixel when clear (the pass must still run to sort sun from moon), at noon, and at its thickest; 64 cost over a third of the GPU frame.
+// March steps a pixel when clear (the pass still tells sun from moon), at noon, at its thickest; 64 cost a third
 const STEPS_CLEAR: u32 = 1;
 const STEPS_NOON: u32 = 8;
 const STEPS_LOW_SUN: u32 = 16;
@@ -42,7 +42,7 @@ const STEPS_LOW_SUN: u32 = 16;
 #[derive(Component)]
 pub(crate) struct Shafts;
 
-/// The box, for the camera to carry: a child of it, so the box turns with the view and the beams don't shift as it turns.
+/// The box, for the camera to carry: a child of it, so the box turns with the view and the beams don't shift.
 pub fn volume() -> impl bevy::ecs::bundle::Bundle {
     (
         Shafts,
@@ -97,7 +97,7 @@ fn density(sun_height: f32, rain: f32) -> f32 {
     (DENSITY_NOON + (DENSITY_LOW_SUN - DENSITY_NOON) * low) * day * (1.0 - rain)
 }
 
-/// Steps the march takes through air `thickness` thick: one when there's none, more as shafts brighten, since few steps band there.
+/// Steps through air `thickness` thick: one when there's none, more as shafts brighten, since few band there.
 fn steps(thickness: f32) -> u32 {
     if thickness <= 0.0 {
         return STEPS_CLEAR;

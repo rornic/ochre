@@ -1,4 +1,4 @@
-//! Sea stacks: pillars of rock left standing in shallow water a little off a cliffed coast, as the waves wear the headland back.
+//! Sea stacks: pillars of rock left standing in shallow water off a cliffed coast as waves wear the headland back.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{hash, unit};
@@ -9,7 +9,7 @@ use super::super::shapes::sites_apart;
 use super::super::WorldMap;
 
 const SALT: u32 = 0x1A4D_005A;
-// Land this many blocks over the sea is a cliff, and a stack stands in water between these depths, 2 to 4 cells off it.
+// Land this many blocks over the sea is a cliff; a stack stands in water between these depths, 2 to 4 cells off it.
 const CLIFF: f32 = 25.0;
 const DEPTH: (f32, f32) = (3.0, 28.0);
 const OFF: (usize, usize) = (1, 4);
@@ -47,7 +47,7 @@ fn raise(map: &mut WorldMap, (sx, sz): (usize, usize), radius: f64, height: f64)
     }
 }
 
-/// Raises up to `count` sea stacks, each 20 to 55 blocks over the sea and a cell or so across, in the shallows 2 to 4 cells off a cliffed coast.
+/// Raises up to `count` sea stacks, 20 to 55 blocks over the sea and a cell across, 2 to 4 cells off a cliffed coast.
 pub(crate) fn run(map: &mut WorldMap, count: u32) {
     if count == 0 || map.dim() <= 2 * EDGE {
         return;

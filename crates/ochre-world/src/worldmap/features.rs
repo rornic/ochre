@@ -1,4 +1,4 @@
-//! What the gameplay pass finds and places on the map, stored with it so every machine and system reads the same labels.
+//! What the gameplay pass finds and places on the map, stored with it so every machine reads the same labels.
 
 /// A labelled place, in world coordinates.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -64,7 +64,7 @@ const WEATHER_HEADER: usize = 8;
 const CLOUD_CELLS: f64 = 24.0;
 const CLUSTER_CELLS: f64 = 80.0;
 const CLUSTERING: f64 = 0.8;
-// Cloud drift in blocks a second: whole patterns an hour each way, so it's seamless when Bevy's `globals.time` wraps on the hour.
+// Cloud drift in blocks a second: whole patterns an hour each way, so `globals.time` wrapping on the hour is seamless
 const WIND: Vec2 = Vec2::new(SPAN * 2.0 / 3600.0, SPAN / 3600.0);
 // The clouds are marched at this fraction of the screen's width and height, and blended up to it.
 const TARGET_SCALE: u32 = 2;
@@ -74,7 +74,7 @@ const REFLECTION_BANDS: u32 = 64;
 // Texels across each half of the reflections' map, matching `REFLECTION_TEXELS` in `cloud_march.wesl`.
 const REFLECTION_SIZE: u32 = 512;
 
-// The widest the clouds' target gets, in pixels: smaller windows march at half display resolution, and the dome paints it up to the display's.
+// The widest the clouds' target gets, in pixels: smaller windows march at half resolution, and the dome upscales it.
 const TARGET_WIDTH: u32 = 640;
 
 #[derive(Default)]
@@ -218,7 +218,7 @@ struct CloudView {
     moon: Vec4,
 }
 
-// Where cell (`x`, `z`) lies round a 4D torus, for noise with features about `cells` across that wraps without a seam.
+// Where cell (`x`, `z`) lies round a 4D torus, for noise about `cells` across that wraps without a seam.
 fn torus(x: usize, z: usize, cells: f64) -> [f64; 4] {
     let radius = PATTERN as f64 / (TAU * cells);
     let angle = |c: usize| TAU * c as f64 / PATTERN as f64;
@@ -226,7 +226,7 @@ fn torus(x: usize, z: usize, cells: f64) -> [f64; 4] {
     [x.cos(), x.sin(), z.cos(), z.sin()].map(|v| v * radius)
 }
 
-/// Each cell's rank, 0 clearest to 1 cloudiest, row-major [z][x]: a weather clouding a share of the sky covers the last-ranked, see `sky_cover` in `cloud_bindings.wesl`.
+/// Each cell's rank, 0 clearest to 1 cloudiest, row-major [z][x]: a weather's cloud share covers the last-ranked.
 fn cloud_pattern(seed: u32) -> Vec<f32> {
     let noise = Fbm::<Perlin>::new(seed)
         .set_octaves(3)
@@ -354,7 +354,7 @@ fn spawn_cloud_dome(
     commands.spawn((dome(&mut meshes, material, camera), CloudDome));
 }
 
-// Refits the cloud target on resize and rebinds its readers, whose bind groups would otherwise freeze the old texture on screen.
+// Refits the cloud target on resize and rebinds its readers, whose bind groups would otherwise keep the old texture.
 fn fit_cloud_target(
     camera: Query<&Camera, With<Camera3d>>,
     march: Option<Res<CloudMarch>>,
@@ -422,7 +422,7 @@ fn aim_cloud_march(
     };
 }
 
-/// The weather round the camera as the clouds' shaders read it: a header, then per cell its cloud share, storm, precipitation and snow share. See `WeatherMap` in `cloud_bindings.wesl`.
+/// The weather round the camera as the cloud shaders read it: a header, then per cell cloud, storm, rain, snow.
 fn weather_map(corner: DVec2, skies: &[Sky]) -> Vec<f32> {
     let most = |of: fn(&Sky) -> f32| skies.iter().map(of).fold(0.0f32, f32::max);
     let mut out = Vec::with_capacity(WEATHER_HEADER + 4 * skies.len());
@@ -614,7 +614,7 @@ fn march_clouds(
     );
     let diagnostics = ctx.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
-    // the reflections' map drifts slowly, so a band of its rows is redrawn each frame and the rest kept, all of it the first time
+    // the reflections' map drifts slowly: a band of rows is redrawn each frame, all of them the first time
     let first = *frame == 0;
     let band = (*frame % REFLECTION_BANDS) * (REFLECTION_SIZE / REFLECTION_BANDS);
     *frame = frame.wrapping_add(1);
@@ -680,7 +680,7 @@ mod tests {
     // How thick an overcast is at its thinnest; matches `OVERCAST_FILL` there.
     const OVERCAST_FILL: f32 = 0.8;
 
-    // Cloud, 0..1, over a cell ranked `share` when the weather clouds `cloudy` of the sky with `storm` of a storm's cloud; the Rust twin of `sky_cover` in `cloud_bindings.wesl`.
+    // Cloud, 0..1, over a cell ranked `share` when `cloudy` of the sky is clouded; twin of `sky_cover` in the shader.
     fn cover(share: f32, cloudy: f32, storm: f32) -> f32 {
         let scattered = ((share - (1.0 - cloudy)) / cloudy.max(0.05)).clamp(0.0, 1.0);
         let overcast = ochre_base::math::smoothstep(OVERCAST.0, OVERCAST.1, cloudy)

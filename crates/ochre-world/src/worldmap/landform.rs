@@ -1,4 +1,4 @@
-//! Landform classes, decided from the ground alone, never climate or water, so water is worked out over the ground it will stand on.
+//! Landform classes, decided from the ground alone, never climate or water, so water is worked out over them.
 
 use super::climate::{tidy_biomes, window_max, BiomeKind};
 use super::WorldMap;
@@ -12,7 +12,7 @@ pub const MOUNTAIN: u8 = 1;
 const ABOVE: f32 = 150.0;
 const STEEP_ABOVE: f32 = 70.0;
 const STEEP: f32 = 0.4;
-// High or steep ground is mountain only if a peak this far above the sea stands within `PEAK_REACH` cells, else hills.
+// High or steep ground is mountain only if a peak this far above sea stands within `PEAK_REACH` cells, else hills.
 const PEAK: f32 = 300.0;
 const PEAK_REACH: usize = 10;
 
@@ -47,7 +47,7 @@ pub fn run(map: &mut WorldMap) {
         .collect();
 }
 
-/// How much of the ground at a point is tableland, 0..1: terraced sedimentary beds that aren't mountain, between `TABLE_WINDOW` heights, in patches covering about `share`.
+/// How much of the ground at a point is tableland, 0..1: terraced sedimentary beds that aren't mountain.
 pub(super) fn tableland(
     seed: u32,
     share: f64,
@@ -67,7 +67,7 @@ pub(super) fn tableland(
     (1.0 - mountain) * window * smoothstep(cut - 0.04, cut + 0.04, n)
 }
 
-/// Steps the tableland's and mountains' ground into its beds, so water is routed over the treads it will stand on (see `water::UNDER_LAKE`).
+/// Steps tableland and mountain ground into beds, so water routes over the treads it stands on (`water::UNDER_LAKE`).
 pub fn terrace(map: &mut WorldMap, share: f64) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f64;

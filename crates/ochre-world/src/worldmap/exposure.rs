@@ -8,7 +8,7 @@ use ochre_base::WATER_LEVEL;
 const RADIUS: usize = 8;
 const SCALE: f32 = 25.0;
 
-/// Fills `map.exposure`: 0..1 as a byte, 0.5 on level ground, up on crests and down in hollows, averaged over land only.
+/// Fills `map.exposure`: 0..1 as a byte, 0.5 on level ground, up on crests, down in hollows, averaged over land only.
 pub fn run(map: &mut WorldMap) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;

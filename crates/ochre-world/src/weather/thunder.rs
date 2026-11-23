@@ -18,7 +18,7 @@ pub(super) fn next_random(state: &mut u64) -> f32 {
     (*state >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0
 }
 
-/// One clap of thunder from `distance` blocks off: close, sharp cracks over a boom; far, a softer rumble; then a long roll that swells, echoes and dies.
+/// One clap of thunder from `distance` blocks off: close, sharp cracks over a boom; far, a soft rumble; then a roll.
 #[derive(Asset, TypePath)]
 pub(crate) struct Thunder {
     pub(super) distance: f32,
@@ -131,7 +131,7 @@ impl Decodable for Thunder {
     }
 }
 
-// One swell in the roll: when it peaks, how long it takes to, how fast it dies (seconds), how loud, and its lean, -1 left to 1 right.
+// One swell in the roll: when it peaks, time to peak, how fast it dies (seconds), loudness, lean -1 left to 1 right.
 #[derive(Clone, Copy)]
 struct Swell {
     at: f32,
@@ -141,7 +141,7 @@ struct Swell {
     pan: f32,
 }
 
-// One shock in the crack: a single dying sine cycle, sharp up then down: when it comes, how long it lasts (seconds), how loud, its lean.
+// One shock in the crack: a single dying sine cycle: when it comes, how long it lasts (seconds), loudness, lean.
 #[derive(Clone, Copy)]
 struct Shock {
     at: f32,
@@ -230,7 +230,7 @@ impl Iterator for ThunderDecoder {
         let tumble = (*g2 * 70.0).clamp(-0.50, 1.40);
         let ragged = (0.85 + 0.48 * heave + 0.38 * tumble.max(-0.20)).clamp(0.55, 2.20);
 
-        // the roll: spiky noise through three low-passes at 150-500 Hz, brighter near, early and as it heaves or swells, lowest rumble removed
+        // the roll: spiky noise through three low-passes at 150-500 Hz, brighter when near, early or heaving
         let crest = (0.35 * heave.max(0.0) + 0.25 * tumble.max(0.0) + 0.50 * cresting).min(1.4);
         let cut = (0.021 + (0.015 + 0.022 * near) * ops::exp(-t / 3.2) + 0.017 * crest)
             .clamp(0.019, 0.072);
