@@ -53,12 +53,14 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Since, 2026-11-23:** it does show. `OCHRE_RENDER_LOD=0, 1, 2 worldview 1 render 6052 520 24` (a lake bank at 0.3 slope) draws the waterline smooth from chunks, in steps of 2 blocks from level 1 and 4 from level 2, with a strip of bed up to a cell wide that chunks cover with water. On the flat shelf at 6962,-4064 the node's edge is a straight cell line up to about 3 blocks from the chunks' contour. A node's cells have no water cut because its water is whole cells (`water_tops` per cell) and `push_shore` needs the block-resolution reach and fresh-water levels that only chunks have.
 - **Not known:** how visible it is in play. The hand-over lies 192 blocks out, where a 2-block step is about 8 px, and a shot that put a shore there under `full_detail_distance` of 1 and of 12 came out the same, so the game's own hand-over was not isolated.
 - **To fix:** give nodes of cells 1 and 2 a water edge at block resolution, from the region's water tops, cut along the node's own ground, not a bigger `SHORE_CUTS`.
+- **Left alone:** 2026-11-23, not worth a new meshing path until it shows in play.
 
 ## Near-flat banks leave a saw-tooth waterline
 
 - **Seen:** 2026-11-17, in play, lake edges where the sculpted ground lies just under the water. The waterline follows the ground's triangles, so it zigzags instead of running smooth.
 - **Known:** it is the ground's shape meeting the water, not the water mesh. The water plane is hidden wherever the ground is over it, so the visible edge is the ground's own contour at the level, however the shore is cut. Raising `SHORE_CUTS` from 4 to 16 (seed 1, `worldview render` at 6052,520, 7028,-3872, 6962,-4064) moves the edge by under a quarter block and changes the picture only where 4 cuts left a 1/4 block kink, for 3.4 times the water triangles (7,210 to 24,648 in the first view) and no change in `bench` vertex counts (the water is not counted there). At those three banks, whose ground lies 0 to 0.6 under the level for 3 to 40 blocks, the game showed only a mild wobble, not teeth. The teeth in the CPU render come from its flat colour per triangle.
 - **Not known:** where it shows worst in play. A fix has to change either the ground near the water (its look) or lift the water at its edge to meet the ground, a meniscus a tenth of a block high, which is a look to judge by eye.
+- **Left alone:** 2026-11-23, until it shows in play again: both fixes change the shore's look.
 
 ## Sea shores are cut along block edges, not along the ground
 
