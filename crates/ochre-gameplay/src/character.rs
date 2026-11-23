@@ -178,7 +178,7 @@ const SETTLE_SNAP: f32 = 0.6;
 const SPHERES: Body = Body { radius: 0.3, heights: [0.3, 1.0, 1.7] };
 // The tallest rise the body steps up onto sculpted ground without jumping, in blocks; a jump clears a block.
 const SCULPT_STEP: f32 = 0.5;
-// How far up a sculpted face must face to stand on, about 45 degrees from level; steeper it slides down.
+// How far up a sculpted face must face to stand on, about 45 degrees from level; steeper it slides down. Grass is half blended to dirt here (`GRASS_TO` in world.wesl).
 const GROUND_FACING: f32 = 0.7;
 // A rise onto sculpted ground taller than this in a step counts as a step up.
 const SCULPT_RISE_EASE: f32 = 0.25;

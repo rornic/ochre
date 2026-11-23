@@ -42,9 +42,10 @@ const FLATTEN_MAX: f32 = 0.85;
 // is the coarsest mip, which `block_mean` holds.
 const MEAN_BLOCK_RATE: f32 = 1.0;
 
-// Steep ground under vegetation bares to dirt along a ragged edge: none above `STEEP_FROM` up (1 is flat), all below `STEEP_TO`.
-const STEEP_FROM: f32 = 0.8;
-const STEEP_TO: f32 = 0.45;
+// Steep grass blends to dirt from `GRASS_TO` up (1 is flat) to `DIRT_FROM`, half and half at 0.7, where the player stops standing
+// (`GROUND_FACING` in character.rs), so ground mostly grass can be walked up.
+const GRASS_TO: f32 = 0.8;
+const DIRT_FROM: f32 = 0.6;
 
 // How far the land's brightness and warmth drift from a painted material, across patches tens of blocks wide.
 const DRIFT_BRIGHTNESS: f32 = 0.10;
@@ -69,7 +70,7 @@ const RAMP_LIT_TURN: f32 = 0.5;
 // basalt, granite, shale and their compacted forms, by material layer, and a test checks the layers against `MATERIAL_FILES`.
 const ROCK_COOL: vec3<f32> = vec3<f32>(0.93, 0.99, 1.06);
 
-// The grasses, which steep ground bares to dirt, see `STEEP_FROM`. `GRASS_LAYER` and `STEPPE_LAYER` come from `specialize`.
+// The grasses, which steep ground bares to dirt, see `GRASS_TO`. `GRASS_LAYER` and `STEPPE_LAYER` come from `specialize`.
 fn is_grass(layer: i32) -> bool {
     return layer == i32(constants::GRASS_LAYER) || layer == i32(constants::STEPPE_LAYER);
 }
@@ -230,8 +231,7 @@ fn fragment(
         }
         // steep ground bares to dirt, but only grass: rock, scree and sand keep their own look
         let vegetated = mix(select(0.0, 1.0, is_grass(layer)), select(0.0, 1.0, is_grass(other)), toward);
-        let steepness = 1.0 - smoothstep(STEEP_TO, STEEP_FROM, normal.y);
-        let bare = smoothstep(0.3, 0.7, steepness + (fray / 1.5 - 0.5) * 0.3) * vegetated;
+        let bare = (1.0 - smoothstep(DIRT_FROM, GRASS_TO, normal.y)) * vegetated;
         if bare > 0.001 {
             var dirt: vec4<f32>;
             if coarse {
