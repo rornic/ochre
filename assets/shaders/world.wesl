@@ -339,7 +339,7 @@ fn fragment(
 }
     let shaded = lit_normal(smooth_normal, world_position);
     let glow = point_light_glow(world_position, normal, in.position.xy);
-    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a), is_flora(in.color.a));
+    let lighting = painterly_world_light(in.world_position, normal, shaded, sky, in.position.xy, is_leaf(in.color.a));
     color = vec4<f32>(painterly_saturation(color.rgb * (lighting.light + glow), lighting.lit), color.a);
     if icy {
         var to_sun = vec3<f32>(0.0, 1.0, 0.0);

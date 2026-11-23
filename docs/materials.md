@@ -17,7 +17,7 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 - Rock layers are tinted too, in the cold only: the mesher multiplies marble, limestone, granite, shale, basalt and `Rock` faces by a plain grey vertex colour (`GrassTint::weathered_at`, `docs/climate.md`), the same vertex colour that tints grass. The shader multiplies a painted layer by it, then by `ROCK_COOL` for the neutral rocks.
 - The tinted layers (leaves, grass, short grass, seed grass, fern, shrub) are greyscale at the mean the climate tint assumes: 0.25 linear for leaves (`LEAF_TEXTURE_MEAN`), 0.5 for the grasses, 0.3 for the fern, 0.27 for the shrub. Poppy, dandelion and heath keep their colours, the heath a muted deep reddish brown.
 - Shrubs and heath are cut at no more than mip level 5 and at a coverage of 0.3, not the 0.1 that keeps thin grass from vanishing (`BIG_FLORA_*` in `block_texture.wesl`, `FIRST_BIG_FLORA_CELL`). Past level 7, from about 70 blocks, one mip texel is half the sprite, and its average passes a 0.1 cut whole, so the quad above the mound would be drawn solid, a flat slab (half of a heath's quad from 70 blocks, all of a shrub's from 135). A test replays the cut on the layers.
-- Shrubs and heath are plants up to three blocks across: one to a block, drawn as six planes in a star, 30 degrees apart, that reach past it (`SHRUB_HALF_WIDTH` and the rest in `mesh.rs`). A plant's shadow lookup is moved toward the sun and fades out with distance, since its own cut-out shadow falls on its quad. Tests check this, the sprites' clear top and sides, and the leaves' coverage.
+- Shrubs and heath are plants up to three blocks across: one to a block, drawn as six planes in a star, 30 degrees apart, that reach past it (`SHRUB_HALF_WIDTH` and the rest in `mesh.rs`). Plants cast no sun shadow (`world_prepass.wesl`). Tests check the sprites' clear top and sides, and the leaves' coverage.
 - `foliage.py` makes them: leaves from an SDXL candidate with holes cut where it is darkest, plants as brush strokes drawn at 2x and filled with a painting's tone, since SD can't draw a lone plant on transparency.
 - `block_mean` rows come from the layers.
 
@@ -29,7 +29,7 @@ Leaves and ground flora are the last painted tiles: `Tile::foliage_layer` maps t
 
 ## Lighting
 
-Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, soft shadows, cool shadow fill, a saturation gain and a gentler AO, with a warmer haze and grade. It is described in `docs/designs/painterly-lighting.md`.
+Every face, painted or not, is lit by the painterly model (`painterly.wesl`): wrapped sun, painted two-tone shadows, cool shadow fill, an Oklch grade and a gentler AO, with a warmer haze and grade. It is described in `docs/designs/painterly-lighting.md`.
 
 Gravel is tiled three times over (`SCALE` in `materials.py`), since its painted cobbles were a block or more across: the features are that much smaller, and still seamless. Shale draws the grey cracked flagstone that was the stone layer's (`ALIAS` in `materials.py`), and compacted shale is that at 85%. There is no stone layer: its painting went to shale and the layers after it were renumbered, see `NO_LAYER` and `ALIAS` in `materials.py`. Gravel is also pulled halfway to grey (`DESATURATE`), as its orange cobbles read as bright pink scree.
 

@@ -120,8 +120,8 @@ pub(crate) fn spawn_camera(
                 ..default()
             },
             dry_color_grading(),
-            // TAA averages the randomised filter over frames, which hides what's left of the shadow edges' crawl
-            ShadowFilteringMethod::Temporal,
+            // unjittered, so far edges don't fizz while moving, and wide enough to read as soft painted shapes
+            ShadowFilteringMethod::Gaussian,
             // a light darkening toward the corners, which draws the eye in
             Vignette {
                 intensity: 0.35,

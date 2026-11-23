@@ -21,9 +21,11 @@ const MAX_SHADOW_FLOOR: f32 = 0.85;
 // Terrain past the shadows' reach is lit as if this much sun gets through, so it isn't brighter than nearer shadow.
 const FAR_VISIBILITY: f32 = 0.8;
 
-// Saturation gain on the lit colour, in the light and in shadow, so mids are rich and shadows coloured, not grey.
+// Chroma gain on the lit colour, in the light and in shadow, so mids are rich and shadows coloured, not grey.
 const SAT_LIT: f32 = 1.1;
-const SAT_SHADOW: f32 = 1.1;
+const SAT_SHADOW: f32 = 1.2;
+// Radians shade's hue turns toward the shadow tint, per unit of its amount: bounded, so yellow goes green, not grey.
+const SHADE_HUE_TURN: f32 = 1.2;
 
 fn luma(colour: vec3<f32>) -> f32 {
     return dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -51,8 +53,53 @@ fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibil
     return Painterly(mix(fill, full, lit) + moon, lit);
 }
 
-// `colour` with its distance from grey scaled by the gain for how lit it was, keeping its brightness.
+// Linear sRGB to Oklab, see https://bottosson.github.io/posts/oklab/.
+fn oklab(rgb: vec3<f32>) -> vec3<f32> {
+    let lms = mat3x3<f32>(
+        vec3<f32>(0.4122214708, 0.2119034982, 0.0883024619),
+        vec3<f32>(0.5363325363, 0.6806995451, 0.2817188376),
+        vec3<f32>(0.0514459929, 0.1073969566, 0.6299787005),
+    ) * max(rgb, vec3<f32>(0.0));
+    let c = pow(lms, vec3<f32>(1.0 / 3.0));
+    return mat3x3<f32>(
+        vec3<f32>(0.2104542553, 1.9779984951, 0.0259040371),
+        vec3<f32>(0.7936177850, -2.4285922050, 0.7827717662),
+        vec3<f32>(-0.0040720468, 0.4505937099, -0.8086757660),
+    ) * c;
+}
+
+fn linear_srgb(lab: vec3<f32>) -> vec3<f32> {
+    let c = mat3x3<f32>(
+        vec3<f32>(1.0, 1.0, 1.0),
+        vec3<f32>(0.3963377774, -0.1055613458, -0.0894841775),
+        vec3<f32>(0.2158037573, -0.0638541728, -1.2914855480),
+    ) * lab;
+    return mat3x3<f32>(
+        vec3<f32>(4.0767416621, -1.2684380046, -0.0041960863),
+        vec3<f32>(-3.3077115913, 2.6097574011, -0.7034186147),
+        vec3<f32>(0.2309699292, -0.3413193965, 1.7076147010),
+    ) * (c * c * c);
+}
+
+// `hue` turned toward `toward` the short way round, by at most `most` radians.
+fn turn_hue(hue: f32, toward: f32, most: f32) -> f32 {
+    let gap = atan2(sin(toward - hue), cos(toward - hue));
+    return hue + clamp(gap, -most, most);
+}
+
+fn hue_of(rgb: vec3<f32>) -> f32 {
+    let lab = oklab(rgb);
+    return atan2(lab.z, lab.y);
+}
+
+// `colour` graded in Oklch for how lit it was: shade turns toward the shadow hue and gains chroma, lightness kept.
 fn painterly_saturation(colour: vec3<f32>, lit: f32) -> vec3<f32> {
-    let grey = vec3<f32>(luma(colour));
-    return max(grey + (colour - grey) * mix(SAT_SHADOW, SAT_LIT, lit), vec3<f32>(0.0));
+    let lab = oklab(colour);
+    let chroma = length(lab.yz);
+    let shade = 1.0 - lit;
+    let country = shadow_tint();
+    var hue = atan2(lab.z, lab.y);
+    hue = turn_hue(hue, hue_of(country.rgb), shade * SHADE_HUE_TURN * country.w);
+    let graded = chroma * mix(SAT_SHADOW, SAT_LIT, lit);
+    return max(linear_srgb(vec3<f32>(lab.x, graded * cos(hue), graded * sin(hue))), vec3<f32>(0.0));
 }
