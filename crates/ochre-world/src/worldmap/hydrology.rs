@@ -150,25 +150,9 @@ fn open_sea(height: &[f32], dim: usize) -> OpenSea {
         }
     }
     while let Some(i) = stack.pop() {
-        let (x, z) = (i % dim, i / dim);
-        let inside = x > 0 && z > 0 && x + 1 < dim && z + 1 < dim;
         let mut beside = [0usize; 8];
-        let mut count = 0;
-        if inside {
-            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
-                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
-            }
-            count = 8;
-        } else {
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                beside[count] = nz as usize * dim + nx as usize;
-                count += 1;
-            }
-        }
+        let count = cells_beside(i, dim, &mut beside);
+        let inside = count == 8;
         let mut shore = false;
         for &n in &beside[..count] {
             if height[n] >= sea {
@@ -212,26 +196,8 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
     while let Some(i) = queue.pop() {
         let i = i as usize;
         flood.order.push(i as u32);
-        let z = i / dim;
-        let x = i - z * dim;
-        // the cells beside it, all eight in `NEIGHBOURS` order unless it is on the map's edge
         let mut beside = [0usize; 8];
-        let mut count = 0;
-        if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
-            for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
-                *slot = (i as i64 + dz * dim as i64 + dx) as usize;
-            }
-            count = 8;
-        } else {
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x as i64 + dx, z as i64 + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                beside[count] = nz as usize * dim + nx as usize;
-                count += 1;
-            }
-        }
+        let count = cells_beside(i, dim, &mut beside);
         for &n in &beside[..count] {
             if seen[n] {
                 continue;
@@ -247,6 +213,59 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
         }
     }
     flood
+}
+
+// The cells beside `i`, all eight in `NEIGHBOURS` order unless it is on the map's edge, and how many there are.
+#[inline]
+fn cells_beside(i: usize, dim: usize, beside: &mut [usize; 8]) -> usize {
+    let (x, z) = (i % dim, i / dim);
+    if x > 0 && z > 0 && x + 1 < dim && z + 1 < dim {
+        for (slot, (dx, dz)) in beside.iter_mut().zip(NEIGHBOURS) {
+            *slot = (i as i64 + dz * dim as i64 + dx) as usize;
+        }
+        return 8;
+    }
+    let mut count = 0;
+    for (dx, dz) in NEIGHBOURS {
+        let (nx, nz) = (x as i64 + dx, z as i64 + dz);
+        if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
+            continue;
+        }
+        beside[count] = nz as usize * dim + nx as usize;
+        count += 1;
+    }
+    count
+}
+
+/// `priority_flood`'s `filled` alone, which no flood order changes, so a cell raised to its reacher's level skips the heap (Priority-Flood+FIFO).
+pub(super) fn fill_levels(height: &[f32], dim: usize) -> Vec<f32> {
+    let open = open_sea(height, dim);
+    let mut filled = height.to_vec();
+    let mut seen = open.cells;
+    let mut queue = FloodQueue::new();
+    for &i in &open.roots {
+        seen[i as usize] = true;
+        queue.push((height_key(height[i as usize]) as u64) << 32 | i as u64, i);
+    }
+    let mut pit = std::collections::VecDeque::new();
+    while let Some(i) = pit.pop_front().or_else(|| queue.pop()) {
+        let i = i as usize;
+        let mut beside = [0usize; 8];
+        let count = cells_beside(i, dim, &mut beside);
+        for &n in &beside[..count] {
+            if seen[n] {
+                continue;
+            }
+            seen[n] = true;
+            if height[n] <= filled[i] {
+                filled[n] = filled[i];
+                pit.push_back(n as u32);
+            } else {
+                queue.push((height_key(height[n]) as u64) << 32 | n as u64, n as u32);
+            }
+        }
+    }
+    filled
 }
 
 // How many of a key's top bits pick its bucket in `FloodQueue`.
@@ -303,8 +322,8 @@ pub(super) struct Basin {
 
 // The connected runs of cells the flood raised, each one water it filled to its spill point, and
 // the basin each cell is in, or `NONE`.
-pub(super) fn basins(height: &[f32], flood: &Flood, dim: usize) -> (Vec<Basin>, Vec<u32>) {
-    let wet = |i: usize| flood.filled[i] - height[i] > 0.25;
+pub(super) fn basins(height: &[f32], filled: &[f32], dim: usize) -> (Vec<Basin>, Vec<u32>) {
+    let wet = |i: usize| filled[i] - height[i] > 0.25;
     let mut of = vec![NONE; height.len()];
     let mut stack = Vec::new();
     let mut basins = Vec::new();
@@ -316,15 +335,15 @@ pub(super) fn basins(height: &[f32], flood: &Flood, dim: usize) -> (Vec<Basin>, 
         let mut basin = Basin {
             cells: Vec::new(),
             depth: 0.0,
-            spill: flood.filled[start],
+            spill: filled[start],
             floor: start,
         };
         of[start] = id;
         stack.push(start);
         while let Some(i) = stack.pop() {
             basin.cells.push(i);
-            basin.depth = basin.depth.max(flood.filled[i] - height[i]);
-            basin.spill = basin.spill.max(flood.filled[i]);
+            basin.depth = basin.depth.max(filled[i] - height[i]);
+            basin.spill = basin.spill.max(filled[i]);
             if height[i] < height[basin.floor] {
                 basin.floor = i;
             }
@@ -430,13 +449,12 @@ fn fill(height: &mut [f32], flood: &Flood, basin: &Basin) {
 }
 
 /// Fills every basin `wanted` picks up to its spill level, leaving a flat with no pit and no channel cut out of it.
-pub(super) fn fill_where(height: &mut [f32], dim: usize, ties: &[u32], wanted: impl Fn(&Basin) -> bool) {
-    let open = open_sea(height, dim);
-    let flood = flood_over(height, dim, ties, &open);
+pub(super) fn fill_where(height: &mut [f32], dim: usize, wanted: impl Fn(&Basin) -> bool) {
+    let filled = fill_levels(height, dim);
     let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
-    for basin in basins(height, &flood, dim).0.iter().filter(|b| wanted(b)) {
+    for basin in basins(height, &filled, dim).0.iter().filter(|b| wanted(b)) {
         for &i in &basin.cells {
-            height[i] = height[i].max(flood.filled[i]).max(floor);
+            height[i] = height[i].max(filled[i]).max(floor);
         }
     }
 }
@@ -716,7 +734,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
     // draining only fills basins and cuts channels to over the sea, so the open sea is the same all through
     let open = open_sea(&map.height, dim);
     let mut flood = flood_over(&map.height, dim, &ties, &open);
-    let (mut lakes, mut basin_of) = basins(&map.height, &flood, dim);
+    let (mut lakes, mut basin_of) = basins(&map.height, &flood.filled, dim);
     for _ in 0..DRAIN_ROUNDS {
         let mut cut = false;
         for (id, basin) in lakes.iter().enumerate() {
@@ -735,7 +753,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
             break;
         }
         flood = flood_over(&map.height, dim, &ties, &open);
-        (lakes, basin_of) = basins(&map.height, &flood, dim);
+        (lakes, basin_of) = basins(&map.height, &flood.filled, dim);
     }
     let height = map.height.clone();
     let sorted: Vec<Vec<usize>> = lakes
@@ -903,6 +921,25 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
 mod tests {
     use super::*;
     use crate::worldmap::WorldConfig;
+
+    #[test]
+    fn fill_levels_match_the_priority_floods_filled_ground() {
+        let dim = 96;
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        // whole blocks, so flats and ties are common, with sea under 0 and pits everywhere
+        let heights: Vec<f32> = (0..dim * dim)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state % 40) as f32 - 8.0
+            })
+            .collect();
+        let ties: Vec<u32> = (0..(dim * dim) as u32).collect();
+        let filled = fill_levels(&heights, dim);
+        assert_eq!(filled, priority_flood(&heights, dim, &ties).filled);
+        assert!(filled.iter().zip(&heights).filter(|(f, h)| f > h).count() > 100, "the test map has too few pits");
+    }
 
     #[test]
     fn the_flood_queue_pops_in_a_heaps_order() {
