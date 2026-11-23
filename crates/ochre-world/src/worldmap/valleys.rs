@@ -1,7 +1,7 @@
 //! Valleys: long troughs cut into inland ground before water is routed, a pure function of seed and place so block level reads the same field.
 
 use super::climate::{blur_box, closeness, moisture_field, FIELD_BLUR, LAPSE_PER_BLOCK};
-use super::hydrology::{basins, fill_where, flood_ties, priority_flood};
+use super::hydrology::{basins, fill_levels, fill_where};
 use super::landform::MOUNTAIN;
 use super::{par_rows, WaterCell, WorldMap};
 use ochre_base::math::smoothstep_f64 as smoothstep;
@@ -324,18 +324,18 @@ fn flatten(map: &mut WorldMap, favoured: &[f32], keep: &[f32]) {
 }
 
 /// The siting weight of every cell, 0..255 as 0..1, taken from the ground as it stands before any valley is cut.
-fn siting(map: &WorldMap, share: f64, ties: &[u32], favoured: &[f32]) -> (Vec<u8>, Vec<bool>) {
+fn siting(map: &WorldMap, share: f64, favoured: &[f32]) -> (Vec<u8>, Vec<bool>) {
     let dim = map.dim();
     let slope = super::gameplay::slope_layer(map);
     // No valley within about 7 cells of a lake or a basin hydrology will fill, full weight from about 12.
-    let flood = priority_flood(&map.height, dim, ties);
-    let deep = |i: usize| flood.filled[i] - map.height[i] >= BASIN_DEPTH;
+    let filled = fill_levels(&map.height, dim);
+    let deep = |i: usize| filled[i] - map.height[i] >= BASIN_DEPTH;
     let lakes = closeness(map, |i| {
         map.water_kind[i] == WaterCell::Lake as u8 || deep(i)
     });
     // No valley near a big basin's footprint: a lower sump at its flat rim fills the whole basin into a lake.
     let mut big = vec![0.0f32; dim * dim];
-    for basin in basins(&map.height, &flood, dim)
+    for basin in basins(&map.height, &filled, dim)
         .0
         .iter()
         .filter(|b| b.depth >= BASIN_DEPTH && b.cells.len() >= BIG_BASIN)
@@ -368,7 +368,7 @@ fn siting(map: &WorldMap, share: f64, ties: &[u32], favoured: &[f32]) -> (Vec<u8
     });
     // the cells a basin holds before the valleys are cut
     let held = (0..dim * dim)
-        .map(|i| flood.filled[i] - map.height[i] > 0.25)
+        .map(|i| filled[i] - map.height[i] > 0.25)
         .collect();
     (weights, held)
 }
@@ -382,8 +382,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     let dim = map.dim();
     let favoured = favoured_layer(map);
     flatten(map, &favoured, keep);
-    let ties = flood_ties(map);
-    let (mut weights, held) = siting(map, share, &ties, &favoured);
+    let (mut weights, held) = siting(map, share, &favoured);
     // no valley through a landmark
     for (w, k) in weights.iter_mut().zip(keep) {
         *w = (*w as f32 * (1.0 - k)) as u8;
@@ -404,7 +403,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     });
     // Fill each shallow basin the valleys made up to its dam, or it becomes a lake that floods the flat ground round it. A deep one is left alone: filling it would
     // plug the valley, and a channel cut out of it leaves a dry slot across the plain.
-    fill_where(&mut heights, dim, &ties, |basin| {
+    fill_where(&mut heights, dim, |basin| {
         let new = basin.cells.iter().filter(|&&i| !held[i]).count();
         let inside = basin.cells.iter().filter(|&&i| map.valley[i] > 0).count();
         let valley_basin = (new >= NEW_CELLS && new * 3 >= basin.cells.len()) || (inside >= VALLEY_BASIN_CELLS && inside * 3 >= basin.cells.len() * 2);
@@ -436,10 +435,9 @@ pub fn run_alpine(map: &mut WorldMap) {
     });
     map.alpine = weights;
     let valley = Valley::alpine(map);
-    let ties = flood_ties(map);
     // the cells a basin holds before the valleys are cut
-    let flood = priority_flood(&map.height, dim, &ties);
-    let held: Vec<bool> = (0..dim * dim).map(|i| flood.filled[i] - map.height[i] > 0.25).collect();
+    let filled = fill_levels(&map.height, dim);
+    let held: Vec<bool> = (0..dim * dim).map(|i| filled[i] - map.height[i] > 0.25).collect();
     let mut heights = std::mem::take(&mut map.height);
     par_rows(dim, &mut heights, |row, cells| {
         for (col, cell) in cells.iter_mut().enumerate() {
@@ -453,7 +451,7 @@ pub fn run_alpine(map: &mut WorldMap) {
         }
     });
     // Fill each shallow basin the cut made up to its dam, so the water runs down the floor and does not stand in a chain of lakes; a deep one is left as a tarn.
-    fill_where(&mut heights, dim, &ties, |basin| {
+    fill_where(&mut heights, dim, |basin| {
         let new = basin.cells.iter().filter(|&&i| !held[i]).count();
         let inside = basin.cells.iter().filter(|&&i| map.alpine[i] > 0).count();
         let valley_basin = (new >= NEW_CELLS && new * 3 >= basin.cells.len()) || (inside >= VALLEY_BASIN_CELLS && inside * 3 >= basin.cells.len() * 2);
