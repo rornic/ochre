@@ -55,8 +55,14 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 ## Near-flat banks leave a saw-tooth waterline
 
 - **Seen:** 2026-11-17, in play, lake edges where the sculpted ground lies just under the water. The waterline follows the ground's triangles, so it zigzags instead of running smooth.
-- **Known:** it is the ground's shape meeting the shore cut, not the water mesh alone.
-- **Not known:** the fix. Raising `SHORE_CUTS` (`mesh.rs`) gives a finer cut and was not tried against it, and smoothing the ground there would change the look.
+- **Known:** it is the ground's shape meeting the water, not the water mesh. The water plane is hidden wherever the ground is over it, so the visible edge is the ground's own contour at the level, however the shore is cut. Raising `SHORE_CUTS` from 4 to 16 (seed 1, `worldview render` at 6052,520, 7028,-3872, 6962,-4064) moves the edge by under a quarter block and changes the picture only where 4 cuts left a 1/4 block kink, for 3.4 times the water triangles (7,210 to 24,648 in the first view) and no change in `bench` vertex counts (the water is not counted there). At those three banks, whose ground lies 0 to 0.6 under the level for 3 to 40 blocks, the game showed only a mild wobble, not teeth. The teeth in the CPU render come from its flat colour per triangle.
+- **Not known:** where it shows worst in play. A fix has to change either the ground near the water (its look) or lift the water at its edge to meet the ground, a meniscus a tenth of a block high, which is a look to judge by eye.
+
+## Sea shores are cut along block edges, not along the ground
+
+- **Seen:** 2026-11-23, on seed 1 at 5025,-432 (a flat shelf 0.55 under the sea, rising 2 blocks in one) in the game and in `worldview render`. The sea's edge runs in straight block-aligned steps and square corners, where a lake's follows the ground.
+- **Known:** `push_shore` and the reach over the bank apply only to fresh water (`top_block` needs `water_block_level`, which only lakes and rivers have), so the sea's top faces end at the block edge.
+- **Not known:** how visible it is from the beach at eye height, or whether the shelf is typical.
 
 ## A chunk's edge lower than the LOD node beside it opens a gap from outside
 
