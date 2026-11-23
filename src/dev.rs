@@ -3,8 +3,7 @@ use std::env::{var, var_os};
 use ochre_gameplay::flythrough::FlightConfig;
 use ochre_world::{SpawnAt, WorldOptions};
 
-/// What the `OCHRE_*` environment variables set, for the sandbox and tools to pass on: `OchrePlugins` and the plugins
-/// themselves read no environment. `DevEnv::default()` sets none of it.
+/// What the `OCHRE_*` environment variables set, for the sandbox and tools to pass on; the plugins read no environment.
 #[derive(Default)]
 pub struct DevEnv {
     /// `OCHRE_SEED`, `OCHRE_WORLD_DIR`, `OCHRE_CHARACTER=off` and `OCHRE_SPAWN=x,z[,lift]`.

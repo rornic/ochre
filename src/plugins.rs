@@ -30,12 +30,8 @@ pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     )
 }
 
-/// Every Ochre plugin, for a game that wants the lot. Turn parts off with `.disable::<P>()` and swap them with
-/// `.set(P { .. })`, as with Bevy's `DefaultPlugins`. Needs `DefaultPlugins`, with `task_pool_plugin()` set, added first.
-///
-/// `TerrainPlugin` is the one the rest stand on. The rest each work without the others: where a plugin reads another's
-/// resource it makes its own blank one, so what's disabled is simply absent. `settings.plugins` starts `FrostPlugin` and
-/// `GodrayPlugin` disabled, as the two that cost frame time or look.
+/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins`, which it needs added first with `task_pool_plugin()` set.
+/// Only `TerrainPlugin` is needed by the rest; `settings.plugins` starts `FrostPlugin` and `GodrayPlugin` disabled.
 pub struct OchrePlugins {
     pub settings: Settings,
     world: World,

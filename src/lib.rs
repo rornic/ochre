@@ -1,10 +1,4 @@
-//! Ochre, a voxel engine for Bevy.
-//!
-//! Each part is its own crate, re-exported here:
-//! - [`ochre_base`]: blocks, biomes, terrain sources and the world's fixed heights
-//! - [`ochre_terrain`]: chunk storage, generation, meshing and octree LODs
-//! - [`ochre_world`]: world maps with erosion, rivers and climate, and the sky, clouds and weather
-//! - [`ochre_gameplay`]: the player, collision, wildlife and the debug overlay
+//! Ochre, a voxel engine for Bevy, re-exporting its crates: `ochre_base`, `ochre_terrain`, `ochre_world` and `ochre_gameplay`.
 
 pub mod dev;
 pub mod plugins;
