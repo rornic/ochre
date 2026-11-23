@@ -479,7 +479,7 @@ fn test_known_empty_nodes_have_nothing_to_mesh() {
 
     let mut empty = 0;
     for &key in &nodes {
-        let meshed = generate_lod_mesh(regions.clone(), key).is_some();
+        let meshed = generate_lod_mesh(regions.clone(), key, None).is_some();
         if super::spawn::known_empty(key, &regions) {
             assert!(!meshed, "{key:?} was taken as empty but has a mesh");
             empty += 1;
@@ -694,4 +694,23 @@ fn test_full_detail_changes_only_where_the_stand_ins_change() {
             }
         }
     }
+}
+
+#[test]
+fn flora_shrinks_away_from_within_full_detail_to_within_level_one() {
+    // the game's layout, see assets/settings.toml
+    let layout = LodLayout::new(16, 1024, 2).with_full_detail_distance(12);
+    let fade = layout.flora_fade();
+    let chunk = crate::chunk::CHUNK_SIZE as f32;
+    assert!(0.0 < fade.start && fade.start < fade.mid && fade.mid < fade.end, "{fade:?}");
+    // full detail draws at least this far, and level 2 draws no flora
+    assert!(fade.mid <= (layout.full_detail_distance - 0.87) * chunk, "{fade:?}");
+    assert!(fade.end <= (layout.reach(1) - 2.0) * chunk, "{fade:?}");
+    // shorter plants go first, the shortest well within full detail and the tallest at the end
+    let heights: Vec<f32> = (0..=40).map(|i| i as f32 * 0.1).collect();
+    assert!(heights.windows(2).all(|h| fade.gone_at(h[0]) <= fade.gone_at(h[1])));
+    assert!(fade.gone_at(0.3) > fade.start && fade.gone_at(0.3) < fade.mid);
+    assert_eq!(fade.end, fade.gone_at(3.0));
+    // and those that outlast full detail are the tall ones a LOD node draws
+    assert!(fade.gone_at(0.6) <= fade.mid && fade.gone_at(0.8) > fade.mid);
 }

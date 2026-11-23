@@ -34,6 +34,7 @@ fn style(ambient_occlusion: bool, textured: bool) -> MeshStyle {
         textured,
 
         tree_shapes: false,
+        far_flora: None,
     }
 }
 
@@ -793,7 +794,7 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
             let crown = tree.base + I64Vec3::Y * (tree.trunk - 1);
             let key = LodKey::containing(ChunkCoordinate(crown.div_euclid(I64Vec3::splat(16))), 3);
             assert!(key.cell_size() <= super::buffers::BOX_TEXTURE_MAX_CELL);
-            let mesh = super::lod::generate_lod_mesh(regions.clone(), key)?;
+            let mesh = super::lod::generate_lod_mesh(regions.clone(), key, None)?;
             // and one that holds a textured box, which a node whose ground is bare of trees round the crown does not
             (untextured_flags(&mesh.opaque).last() == Some(&0.0)).then_some((tree, mesh))
         })
@@ -3644,7 +3645,7 @@ fn every_lod_level_draws_the_trees_of_a_forest() {
         }
         let (mut boxes, mut leaf, mut logs, mut total) = (0, 0, 0, 0);
         for key in keys {
-            let Some(m) = super::lod::generate_lod_mesh(regions.clone(), key) else { continue };
+            let Some(m) = super::lod::generate_lod_mesh(regions.clone(), key, None) else { continue };
             boxes += LodBlocks::sample(&regions, key).boxes.len();
             leaf += leaf_vertices(&m.opaque);
             let Some(VertexAttributeValues::Float32x4(colors)) = m.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
@@ -3812,7 +3813,7 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
         let chunk = I64Vec3::new(sx, sampler.ground_top(sx, sz) - 1, sz).div_euclid(I64Vec3::splat(CHUNK_SIZE as i64));
         for level in 1..=4u8 {
             let key = LodKey::containing(ChunkCoordinate(chunk), level);
-            let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key) else { continue };
+            let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key, None) else { continue };
             let mesh = meshes.opaque;
             let (Some(VertexAttributeValues::Float32x3(positions)), Some(VertexAttributeValues::Float32x2(uvs)), Some(Indices::U32(indices))) =
                 (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_UV_0), mesh.indices())
@@ -4200,4 +4201,46 @@ fn test_trunks_far_into_the_negative_world_are_not_read_by_the_shader_as_sculpte
     let bark: Vec<f32> = uvs.iter().zip(colours).filter(|(_, c)| c[3].round() as u8 == Tile::LogBark as u8 || c[3].round() as u8 == Tile::LogEnd as u8).map(|(uv, _)| uv[0]).collect();
     assert!(bark.len() > 8, "{} bark vertices", bark.len());
     assert!(bark.iter().all(|&u| u > -512.0), "bark at uv.x {}", bark.iter().cloned().fold(f32::MAX, f32::min));
+}
+
+// A level-1 node draws full detail's own plants, and of them only the tufts that outlast `FloraFade::mid`.
+#[test]
+fn level_one_draws_the_tall_plants_full_detail_grows() {
+    let regions = test_regions();
+    let fade = crate::lod::LodLayout::new(16, 1024, 2).with_full_detail_distance(12).flora_fade();
+    let (mut plants, mut agree) = (0, 0);
+    let mut flora_vertices = 0;
+    let (mut shrubs, mut short_shrubs) = (0, 0);
+    for (x, z) in (-12..12).flat_map(|x| (-12..12).map(move |z| (x * 3, z * 3))) {
+        if plants > 2000 {
+            break;
+        }
+        let ground = regions.terrain().sample(x as f64 * 32.0 + 16.0, z as f64 * 32.0 + 16.0).height;
+        let y = (ground as i64).div_euclid(32);
+        for key in [y - 1, y].map(|y| LodKey { level: 1, coord: I64Vec3::new(x, y, z) }) {
+            for &(world, block) in &LodBlocks::sample_with(&regions, key, true).plants {
+                let chunk = generate_chunk(regions.clone(), ChunkCoordinate(world.as_i64vec3().div_euclid(I64Vec3::splat(16))));
+                let local = world.rem_euclid(IVec3::splat(16)).as_u16vec3();
+                plants += 1;
+                agree += (chunk.get_block_at(local) == block) as usize;
+            }
+            let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key, Some(fade)) else { continue };
+            let Some(VertexAttributeValues::Float32x4(colors)) = meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { continue };
+            for alpha in colors.iter().map(|c| c[3]).filter(|&a| a > Tile::FIRST_FLORA.atlas_cell() - 0.5) {
+                let code = alpha - alpha.round();
+                let height = (code / super::FLORA_HEIGHT_CODE * 0.5 + 0.5) * super::FLORA_HEIGHT_SPAN;
+                assert!(fade.gone_at(height + super::FLORA_HEIGHT_STEP + 0.01) > fade.mid, "a {height} block tuft is gone before {}", fade.mid);
+                flora_vertices += 1;
+                // a shrub in the open stands 1.8 to 2.5 blocks in full detail, and so as tall here
+                if alpha.round() == Tile::Shrub.atlas_cell() {
+                    shrubs += 1;
+                    short_shrubs += (height < 1.7) as usize;
+                }
+            }
+        }
+    }
+    assert!(plants > 500 && flora_vertices > 0, "{plants} plants, {flora_vertices} flora vertices");
+    // a low bough full detail plants over the ground is the one difference, see `far_plants`
+    assert!(agree * 100 >= plants * 98, "{agree} of {plants} plants agree with full detail");
+    assert!(shrubs > 0 && short_shrubs * 50 <= shrubs, "{short_shrubs} of {shrubs} shrub vertices are under a roof");
 }

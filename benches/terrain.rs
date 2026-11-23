@@ -231,13 +231,13 @@ fn lod_nodes(c: &mut Criterion) {
             })
             .collect();
         for &key in &keys {
-            generate_lod_mesh(store.clone(), key);
+            generate_lod_mesh(store.clone(), key, None);
         }
         let mut next = 0;
         group.bench_function(format!("level_{level}"), |b| {
             b.iter(|| {
                 next = (next + 1) % keys.len();
-                black_box(generate_lod_mesh(store.clone(), keys[next]))
+                black_box(generate_lod_mesh(store.clone(), keys[next], None))
             })
         });
     }

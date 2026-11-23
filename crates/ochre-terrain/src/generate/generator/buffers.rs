@@ -1,4 +1,5 @@
 use crate::chunk::CHUNK_SIZE;
+use crate::lod::FloraFade;
 use bevy::asset::RenderAssetUsages;
 use bevy::math::{IVec3, Vec3};
 use bevy::render::mesh::Indices;
@@ -292,6 +293,8 @@ pub(super) struct MeshStyle {
     pub(super) textured: bool,
     // trees drawn as low-poly shapes, see `trees_mesh`
     pub(super) tree_shapes: bool,
+    // how flora shrinks away, which a LOD node draws its tall plants by, see `BlockSource::plants`
+    pub(super) far_flora: Option<FloraFade>,
 }
 
 pub struct ChunkMeshes {
@@ -389,7 +392,9 @@ pub(super) struct GrassTint {
     // the block the mesh's local origin is, so what grows where can follow the world and not repeat per mesh
     pub(super) origin: IVec3,
     // how many blocks one local unit is, to find where a local position is in the world
-    scale: f32,
+    pub(super) scale: f32,
+    // where the local origin is in blocks, block centres on whole numbers, which `origin` rounds down
+    local_origin: Vec3,
 }
 
 impl GrassTint {
@@ -423,7 +428,13 @@ impl GrassTint {
             brown: climates.iter().map(|c| 1.0 - smoothstep(BROWN_FULL_BELOW, BROWN_NONE_ABOVE, c.temperature)).collect(),
             origin: origin.floor().as_ivec3(),
             scale,
+            local_origin: origin,
         }
+    }
+
+    // Where a point in blocks, block centres on whole numbers, is in the mesh's local units.
+    pub(super) fn local_of(&self, world: Vec3) -> Vec3 {
+        (world - self.local_origin) / self.scale
     }
 
     // Whether grass here is varied by `mosaic`, so its faces mustn't merge into quads that would smear the patches.
@@ -662,6 +673,7 @@ mod russet_tests {
             shade: vec![1.0; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
+            local_origin: Vec3::new(1000.0, 0.0, -2000.0),
         }
     }
 
@@ -677,6 +689,7 @@ mod russet_tests {
             shade: vec![1.0; 4],
             origin: IVec3::new(1000, 0, -2000),
             scale: 1.0,
+            local_origin: Vec3::new(1000.0, 0.0, -2000.0),
         };
         for (temperatures, humidities, over) in [
             (&[0.03, 0.06, 0.08, 0.10, 0.12][..], &[0.0, 0.1, 0.2, 0.4, 0.6][..], OVER_COLD),

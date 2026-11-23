@@ -11,7 +11,7 @@ mod tests;
 
 pub(crate) use apply::{load_lods, refresh_lod_visibility, retire_lods};
 pub use key::LodKey;
-pub use layout::LodLayout;
+pub use layout::{FloraFade, LodLayout};
 pub use loader::{GenerateLodMesh, LodLoader, LodNode};
 
 pub(crate) use selection::update_lod_selection;

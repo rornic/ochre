@@ -1,5 +1,6 @@
 use super::key::LodKey;
 use crate::chunk::ChunkCoordinate;
+use crate::chunk::CHUNK_SIZE;
 use crate::generate::columns::COARSE_CELL;
 
 /// The narrowest level 1's ring may be, in chunks, however far full detail reaches: two of its
@@ -116,5 +117,52 @@ impl LodLayout {
     /// How far full-detail chunks reach: a level-1 node in range, plus its diagonal.
     pub fn full_detail_reach(self) -> u32 {
         (self.full_detail_distance + 2.0 * 3f32.sqrt()).ceil() as u32
+    }
+
+    /// Where ground flora shrinks away with distance: the shortest within full detail, the tallest out into level 1, so no
+    /// edge shows where full detail ends or where flora stops being drawn.
+    pub fn flora_fade(self) -> FloraFade {
+        let chunk = CHUNK_SIZE as f32;
+        // a level-1 node in range draws as chunks, and the camera stands anywhere in its own chunk
+        let mid = (self.full_detail_distance - 1.0).max(1.0) * chunk;
+        // and the farthest level-1 node is a node short of its reach, past which level 2 draws no flora
+        let level_one = (self.reach(1) - 2.0) * chunk;
+        FloraFade {
+            start: mid * FloraFade::START,
+            mid,
+            end: (mid + (level_one - mid) * FloraFade::END).max(mid),
+        }
+    }
+}
+
+/// How ground flora shrinks into its roots with distance from the camera, in blocks. Every plant starts shrinking at
+/// `start`. The shorter ones are gone by `mid`, where full detail can end, and the tallest last until `end`, so LOD nodes
+/// draw only plants tall enough to outlast `mid`. `foliage.wesl` draws `gone_at` from the shader defs `specialize` sets.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FloraFade {
+    pub start: f32,
+    pub mid: f32,
+    pub end: f32,
+}
+
+impl FloraFade {
+    // where shrinking starts, as a share of `mid`, and where the tallest are gone, as a share of the way from `mid` to level 1's end
+    const START: f32 = 0.55;
+    const END: f32 = 0.6;
+    // the heights in blocks plants are ranked between, the shortest gone first, and the rank of the shortest that lasts past `mid`
+    pub const HEIGHTS: (f32, f32) = (0.4, 1.3);
+    pub const KEEP: f32 = 0.3;
+    // where the shortest are gone, as a share of the way from `start` to `mid`
+    pub const FIRST_GONE: f32 = 0.35;
+
+    /// How far from the camera a plant `height` blocks tall has shrunk away to nothing.
+    pub fn gone_at(self, height: f32) -> f32 {
+        let rank = ((height - Self::HEIGHTS.0) / (Self::HEIGHTS.1 - Self::HEIGHTS.0)).clamp(0.0, 1.0);
+        if rank < Self::KEEP {
+            let first = self.start + (self.mid - self.start) * Self::FIRST_GONE;
+            first + (self.mid - first) * rank / Self::KEEP
+        } else {
+            self.mid + (self.end - self.mid) * (rank - Self::KEEP) / (1.0 - Self::KEEP)
+        }
     }
 }

@@ -324,6 +324,7 @@ mod tests {
                 let materials = TerrainMaterials::new(
                     DebugSettings::default(),
                     8,
+                    crate::lod::FloraFade { start: 0.0, mid: 0.0, end: 0.0 },
                     &ShaderInputs::default(),
                     &mut assets,
                 );

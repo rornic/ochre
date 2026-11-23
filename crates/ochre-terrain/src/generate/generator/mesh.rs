@@ -23,6 +23,7 @@ use ochre_base::block::Face;
 use ochre_base::block::Tile;
 use ochre_base::noise::unit;
 use crate::floor::Floor;
+use crate::lod::FloraFade;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -354,13 +355,15 @@ pub(super) fn mesh_blocks(
             light,
         );
     }
-    // flora only grows at full detail, so coarser cells have none to look for
     if cell_size == 1 {
-        mesh_flora(&non_air, &mut opaque, grass_tint, source, light, &floor);
+        let plants = non_air.iter().filter(|(_, block)| block.is_flora()).map(|&(coord, block)| (coord + grass_tint.origin, block));
+        mesh_flora(plants, &mut opaque, grass_tint, source, light, &floor, None);
         if style.tree_shapes {
             // a trunk reaches a block down into sculpted ground, which can lie below its block's top
             mesh_trees(&faces, &mut opaque, grass_tint, light, 1.0);
         }
+    } else if let Some(fade) = style.far_flora {
+        mesh_flora(source.plants().iter().copied(), &mut opaque, grass_tint, source, light, &floor, Some(fade));
     }
     // sky light there is rarely bright under a canopy, and these boxes are too small to shade smoothly
     const BOX_LIGHT: f32 = 0.8;
@@ -555,6 +558,8 @@ const FLORA_ROOT_SHADE: f32 = 0.65;
 // stand a little over a block, where nothing is above them.
 const SIZE_RANGE: (f32, f32) = (0.7, 1.25);
 const WIDTH_RANGE: (f32, f32) = (0.6, 1.3);
+// How much wider a LOD node draws a clump's one plant than full detail's first, for the others it leaves out.
+const FAR_CLUMP_WIDTH: f32 = 1.5;
 // How far a block's further plants stand off its centre, at the most.
 const FLORA_EXTRA_REACH: f32 = 0.3;
 // Shrubs and heath are one plant to a block, drawn as six planes in a star that reach well past it: their quad's height
@@ -601,10 +606,12 @@ struct Tuft {
 
 // Flora as two quads crossed, both sides drawn as block meshes cull one, v = 0 at the top so
 // `foliage.wesl` sways the tips, and facing up to light like the grass.
-fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, atlas_cell: f32, tint: Vec3, lit: f32) {
+// `scale` is how many blocks one of the mesh's units is.
+fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atlas_cell: f32, tint: Vec3, lit: f32) {
+    let alpha = atlas_cell + flora_height_code(tuft.height * scale);
     let (root, tip) = (
-        (tint * FLORA_ROOT_SHADE).extend(atlas_cell).to_array(),
-        tint.extend(atlas_cell).to_array(),
+        (tint * FLORA_ROOT_SHADE).extend(alpha).to_array(),
+        tint.extend(alpha).to_array(),
     );
     let (sin, cos) = libm::sincosf(tuft.angle);
     for across in [Vec3::new(cos, 0.0, sin), Vec3::new(-sin, 0.0, cos)] {
@@ -631,6 +638,18 @@ fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, atlas_cell: f32, tint: Vec3
             [lit; 4],
         );
     }
+}
+
+// A plant's height in blocks rides in its vertex alpha's fraction, about the atlas cell, so `foliage.wesl` can shrink it
+// into its root with distance: up to `FLORA_HEIGHT_SPAN` blocks, coded within `FLORA_HEIGHT_CODE` of the cell, which a
+// half-float keeps to about a sixth of a block. `foliage.wesl`'s `flora_height` reads it back.
+pub(crate) const FLORA_HEIGHT_SPAN: f32 = 4.0;
+pub(crate) const FLORA_HEIGHT_CODE: f32 = 0.4;
+// A half-float's step at the flora's cells, 32 to 39, is 1/32, so a coded height is good to half that many heights a unit.
+pub(crate) const FLORA_HEIGHT_STEP: f32 = FLORA_HEIGHT_SPAN / (2.0 * FLORA_HEIGHT_CODE) / 64.0;
+
+fn flora_height_code(height: f32) -> f32 {
+    ((height / FLORA_HEIGHT_SPAN).clamp(0.0, 1.0) * 2.0 - 1.0) * FLORA_HEIGHT_CODE
 }
 
 // The plants in flora blocks: a first of the block's kind, as tall and wide as it varies, and
@@ -708,24 +727,29 @@ const ROOT_REACH: (f32, f32) = (2.0, 0.6);
 // How much of the slope it stands on a plant leans with.
 const SLOPE_LEAN: f32 = 0.5;
 
+// Flora's plants, each a block in the world and its kind, drawn in the mesh `grass_tint` places. A LOD node passes `far`, and
+// draws only the plants that outlast its `mid`, the nearest its plants are drawn, since nearer ones are full detail's.
 fn mesh_flora(
-    non_air: &[(IVec3, BlockType)],
+    plants: impl IntoIterator<Item = (IVec3, BlockType)>,
     buffers: &mut MeshBuffers,
     grass_tint: &GrassTint,
     source: &impl BlockSource,
     light: &impl Deref<Target = SkyLight>,
     floor: &Floor,
+    far: Option<FloraFade>,
 ) {
+    let scale = grass_tint.scale;
+    let cell = |world: IVec3| grass_tint.local_of(world.as_vec3()).round().as_ivec3();
     // a root on sculpted ground, and which way the ground there faces
     let rooted = |root: Vec3| {
-        floor.surface(root, ROOT_REACH.0, ROOT_REACH.1).map_or((root, Vec3::Y), |(y, facing)| (root.with_y(y - ROOT_SINK), facing))
+        floor
+            .surface(root, ROOT_REACH.0 / scale, ROOT_REACH.1 / scale)
+            .map_or((root, Vec3::Y), |(y, facing)| (root.with_y(y - ROOT_SINK / scale), facing))
     };
-    for &(coord, block) in non_air {
-        if !block.is_flora() {
-            continue;
-        }
-        // by where it is in the world, so every chunk's flora isn't the same
-        let world = coord + grass_tint.origin;
+    // a half-float vertex alpha codes a height to within `FLORA_HEIGHT_STEP`, which the shader may read as taller
+    let drawn = |height: f32| far.is_none_or(|fade| fade.gone_at(height + FLORA_HEIGHT_STEP) > fade.mid);
+    for (world, block) in plants {
+        // by where it is in the world, so every chunk's flora isn't the same, and a LOD node's is full detail's
         let jitter = |salt: u32| hash01(world, salt);
         let grass = matches!(
             block,
@@ -733,7 +757,8 @@ fn mesh_flora(
         );
         let shorten = if grass { GRASS_SHORTEN } else { FLORA_SHORTEN };
         // grasses may stand a little over a block, where the cell above is open
-        let room = !source.block(coord + IVec3::Y).is_opaque();
+        // a LOD node looks a cell up, past the ground's own cell, which the plant's block can share
+        let room = !source.block(cell(world + IVec3::Y * if far.is_some() { 2 } else { 1 })).is_opaque();
         let long = block == BlockType::LongGrass;
         let tallest = if long && room { LONG_GRASS_HEIGHT.1 } else if grass && room { SIZE_RANGE.1 } else { 1.0 };
         let base_height = if long {
@@ -741,10 +766,24 @@ fn mesh_flora(
         } else {
             ((1.0 - jitter(3) * shorten) * between(SIZE_RANGE, jitter(4))).min(tallest)
         };
+        let big = match block {
+            BlockType::Shrub => Some((SHRUB_HEIGHT, SHRUB_HALF_WIDTH)),
+            BlockType::Heath => Some((HEATH_HEIGHT, HEATH_HALF_WIDTH)),
+            BlockType::BigFern => Some((BIG_FERN_HEIGHT, BIG_FERN_HALF_WIDTH)),
+            _ => None,
+        };
+        // under a roof or a branch a big plant stays within its block
+        let big_height = big.map(|(heights, _)| between(heights, jitter(3)).min(if room { f32::MAX } else { 1.0 }));
+        if !drawn(big_height.unwrap_or(base_height)) {
+            continue;
+        }
         let reach = (0.5 - FLORA_INSET) * std::f32::consts::SQRT_2;
         let tile = block.tile(Face::Side);
+        // a block's foot, its centre being on whole numbers
+        // in local units, and only offsets after, so full detail's sums are as small as its chunk's coordinates
+        let foot = grass_tint.local_of(world.as_vec3()) - Vec3::Y * (0.5 / scale);
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
-        let ground = coord.as_vec3() - Vec3::Y * 0.5;
+        let ground = foot;
         let tint = if tile.tinted() {
             let tint = grass_tint.cold_at(ground);
             // the long grasses in the cold go oxblood, to bridge between the heath, the short ones less so
@@ -764,47 +803,37 @@ fn mesh_flora(
         } else {
             Vec3::ONE
         };
-        let lit = light.level(coord) as f32 / MAX_LIGHT as f32;
-        let big = match block {
-            BlockType::Shrub => Some((SHRUB_HEIGHT, SHRUB_HALF_WIDTH)),
-            BlockType::Heath => Some((HEATH_HEIGHT, HEATH_HALF_WIDTH)),
-            BlockType::BigFern => Some((BIG_FERN_HEIGHT, BIG_FERN_HALF_WIDTH)),
-            _ => None,
+        // a LOD cell the ground tops out in is solid and dark, though the plant stands in the air over it
+        let above = if far.is_some() { 2 } else { 0 };
+        let lit = (0..=above).map(|up| light.level(cell(world + IVec3::Y * up))).max().unwrap_or(0) as f32 / MAX_LIGHT as f32;
+        let tuft = |(root, ground): (Vec3, Vec3), height: f32, half_width: f32, angle: f32| Tuft {
+            root,
+            ground,
+            height: height / scale,
+            half_width: half_width / scale,
+            angle,
+            lean: Vec3::ZERO,
         };
-        if let Some((heights, widths)) = big {
-            // under a roof or a branch it stays within its block
-            let height = between(heights, jitter(3)).min(if room { f32::MAX } else { 1.0 });
+        if let (Some((_, widths)), Some(height)) = (big, big_height) {
             let angle = jitter(5) * std::f32::consts::FRAC_PI_2;
-            let big_root = rooted(
-                coord.as_vec3() - Vec3::Y * 0.5 + Vec3::new((jitter(1) - 0.5) * FLORA_JITTER, 0.0, (jitter(2) - 0.5) * FLORA_JITTER),
-            );
+            let big_root = rooted(foot + Vec3::new((jitter(1) - 0.5) * FLORA_JITTER, 0.0, (jitter(2) - 0.5) * FLORA_JITTER) / scale);
             // three crossed pairs, 30 degrees apart, so it fills in seen from above and not a star of arms
             for turn in [0.0, std::f32::consts::FRAC_PI_6, std::f32::consts::FRAC_PI_3] {
-                push_tuft(
-                    buffers,
-                    &Tuft {
-                        root: big_root.0,
-                        ground: big_root.1,
-                        height,
-                        half_width: between(widths, jitter(4)),
-                        angle: angle + turn,
-                        lean: Vec3::ZERO,
-                    },
-                    tile.atlas_cell(),
-                    tint,
-                    lit,
-                );
+                let tuft = tuft(big_root, height, between(widths, jitter(4)), angle + turn);
+                push_tuft(buffers, &tuft, scale, tile.atlas_cell(), tint, lit);
             }
             continue;
         }
-        // the first plant is where it always was, the rest stand round it
-        let extras = match block {
+        // the first plant is where it always was, the rest stand round it, and a LOD node draws the clump as one plant a
+        // little wider, as a block is a few pixels across past full detail
+        let extras = if far.is_some() { 0 } else { match block {
             // a clump of long grass is thick, and each blade as tall
             BlockType::LongGrass => 2 + (jitter(10) < 0.6) as u32,
             _ if grass => 1 + (jitter(10) < 0.55) as u32,
             BlockType::Fern => (jitter(10) < 0.5) as u32,
             _ => (jitter(10) < 0.4) as u32,
-        };
+        } };
+        let clump = if far.is_some() { FAR_CLUMP_WIDTH } else { 1.0 };
         for k in 0..=extras {
             let salt = 20 * k;
             let (x, z) = if k == 0 {
@@ -823,25 +852,16 @@ fn mesh_flora(
             } else {
                 base_height * between((0.5, 0.95), jitter(salt + 3))
             };
-            let (root, ground) = rooted(coord.as_vec3() - Vec3::Y * 0.5 + Vec3::new(x, 0.0, z));
-            push_tuft(
-                buffers,
-                &Tuft {
-                    root,
-                    ground,
-                    height,
-                    half_width: reach * between(WIDTH_RANGE, jitter(salt + 4)),
-                    angle: if k == 0 {
-                        std::f32::consts::FRAC_PI_4
-                    } else {
-                        jitter(salt + 5) * std::f32::consts::PI
-                    },
-                    lean: Vec3::ZERO,
-                },
-                tile.atlas_cell(),
-                tint,
-                lit,
-            );
+            if !drawn(height) {
+                continue;
+            }
+            let angle = if k == 0 {
+                std::f32::consts::FRAC_PI_4
+            } else {
+                jitter(salt + 5) * std::f32::consts::PI
+            };
+            let tuft = tuft(rooted(foot + Vec3::new(x, 0.0, z) / scale), height, clump * reach * between(WIDTH_RANGE, jitter(salt + 4)), angle);
+            push_tuft(buffers, &tuft, scale, tile.atlas_cell(), tint, lit);
         }
     }
 }

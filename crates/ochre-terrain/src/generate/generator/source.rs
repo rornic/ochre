@@ -19,6 +19,11 @@ pub(super) trait BlockSource {
     fn block(&self, coord: IVec3) -> BlockType;
     fn non_air(&self) -> Vec<(IVec3, BlockType)>;
 
+    /// A LOD node's flora, each a block in the world and its plant, which its cells are too coarse to hold.
+    fn plants(&self) -> &[(IVec3, BlockType)] {
+        &[]
+    }
+
     /// The terrain itself, without the skirts `block` adds around a LOD node's edges.
     fn terrain(&self, coord: IVec3) -> BlockType {
         self.block(coord)
@@ -615,6 +620,10 @@ impl<S: BlockSource> BlockSource for TreeFaces<'_, S> {
 
     fn non_air(&self) -> Vec<(IVec3, BlockType)> {
         self.rest.clone()
+    }
+
+    fn plants(&self) -> &[(IVec3, BlockType)] {
+        self.source.plants()
     }
 
     fn surface_top(&self, coord: IVec3) -> Option<f32> {

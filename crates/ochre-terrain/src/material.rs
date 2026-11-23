@@ -178,6 +178,8 @@ pub struct ChunkMaterial {
     pub non_cutout: bool,
     /// Blocks before a painted material repeats, compiled into the shaders.
     pub period: u32,
+    /// `FloraFade`'s start, mid and end, in blocks, compiled into the shaders, see `FloraFade`.
+    pub flora_fade: [u32; 3],
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -185,6 +187,7 @@ pub struct ChunkMaterialKey {
     pub debug: DebugSettings,
     pub non_cutout: bool,
     pub period: u32,
+    pub flora_fade: [u32; 3],
     /// Solid and wholly drawn, so it discards nothing, see `ChunkMaterial::opaque`.
     pub opaque: bool,
 }
@@ -195,6 +198,7 @@ impl From<&ChunkMaterial> for ChunkMaterialKey {
             debug: material.debug,
             non_cutout: material.non_cutout,
             period: material.period,
+            flora_fade: material.flora_fade,
             opaque: material.opaque(),
         }
     }
@@ -287,6 +291,9 @@ impl Material for ChunkMaterial {
             first_big_flora_cell,
             water_level(),
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
+            ShaderDefVal::UInt("FLORA_FADE_START".into(), key.bind_group_data.flora_fade[0]),
+            ShaderDefVal::UInt("FLORA_FADE_MID".into(), key.bind_group_data.flora_fade[1]),
+            ShaderDefVal::UInt("FLORA_FADE_END".into(), key.bind_group_data.flora_fade[2]),
         ];
         // compiled in or out, so the switches leave no trace of the code they turn off
         if key.bind_group_data.debug.still_leaves {
@@ -336,6 +343,7 @@ impl TerrainMaterials {
     pub fn new(
         debug: DebugSettings,
         period: u32,
+        flora_fade: crate::lod::FloraFade,
         inputs: &ShaderInputs,
         assets: &mut TerrainAssets,
     ) -> Self {
@@ -352,6 +360,7 @@ impl TerrainMaterials {
             debug,
             non_cutout: false,
             period,
+            flora_fade: [flora_fade.start, flora_fade.mid, flora_fade.end].map(|d| d as u32),
         });
         let base_chunk = assets.chunk.get(&chunk).unwrap().clone();
         let solid_chunk = assets.chunk.add(ChunkMaterial {
@@ -603,6 +612,7 @@ mod tests {
             debug: Default::default(),
             non_cutout,
             period: 4,
+            flora_fade: [0; 3],
         };
         let full = crate::fade::FULLY_VISIBLE;
         let fading = bevy::math::Vec4::new(0.0, 0.5, 0.0, 0.0);
@@ -703,6 +713,20 @@ mod tests {
             .take_while(|line| !line.starts_with(')'))
             .map(|line| line.split(',').next().unwrap().trim().parse().unwrap())
             .collect()
+    }
+
+    #[test]
+    fn test_the_foliage_shader_shrinks_flora_as_flora_fade_says() {
+        use crate::lod::FloraFade;
+        let shader = std::fs::read_to_string(asset("shaders/foliage.wesl")).unwrap();
+        let constant = |name: &str| shader.split(&format!("const {name}: ")).nth(1).unwrap().lines().next().unwrap().to_string();
+        let heights = FloraFade::HEIGHTS;
+        assert_eq!(format!("vec2<f32> = vec2<f32>({:?}, {:?});", heights.0, heights.1), constant("FLORA_HEIGHTS"));
+        assert_eq!(format!("f32 = {:?};", FloraFade::KEEP), constant("FLORA_KEEP"));
+        assert_eq!(format!("f32 = {:?};", FloraFade::FIRST_GONE), constant("FLORA_FIRST_GONE"));
+        use crate::generate::generator::{FLORA_HEIGHT_CODE, FLORA_HEIGHT_SPAN};
+        assert_eq!(format!("f32 = {FLORA_HEIGHT_SPAN:?};"), constant("FLORA_HEIGHT_SPAN"));
+        assert_eq!(format!("f32 = {FLORA_HEIGHT_CODE:?};"), constant("FLORA_HEIGHT_CODE"));
     }
 
     #[test]

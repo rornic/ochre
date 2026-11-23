@@ -74,6 +74,7 @@ fn main() {
         chunks(&regions, spawn);
     }
     lods(&regions, spawn);
+    flora_ring(&regions, spawn);
 }
 
 fn chunks(regions: &Arc<RegionStore>, spawn: I64Vec3) {
@@ -148,9 +149,13 @@ fn lods(regions: &Arc<RegionStore>, spawn: I64Vec3) {
             })
         })
     };
+    // the game's own flora fade, so level 1 carries the plants it draws
+    let flora = ochre_engine::settings::Settings::read("assets/settings.toml")
+        .map(|s| s.renderer.lod_layout().flora_fade())
+        .ok();
     let mesh = |level: u8| {
         keys(level)
-            .filter_map(|key| generate_lod_mesh(regions.clone(), key))
+            .filter_map(|key| generate_lod_mesh(regions.clone(), key, flora))
             .map(|meshes| meshes.opaque.count_vertices())
             .sum::<usize>()
     };
@@ -177,5 +182,36 @@ fn lods(regions: &Arc<RegionStore>, spawn: I64Vec3) {
         "{:>16}: {total:>8.1?}, {} vertices",
         "lod total",
         vertices / 3
+    );
+}
+
+// The level-1 nodes the game draws round the spawn, between full detail and level 2, with flora and without, for what
+// drawing the tallest plants past full detail costs.
+fn flora_ring(regions: &Arc<RegionStore>, spawn: I64Vec3) {
+    let Ok(settings) = ochre_engine::settings::Settings::read("assets/settings.toml") else {
+        return;
+    };
+    let layout = settings.renderer.lod_layout();
+    let anchor = ChunkCoordinate(spawn);
+    let centre = LodKey::containing(anchor, 1).coord;
+    let across = (layout.reach(1) / 2.0).ceil() as i64 + 1;
+    let keys: Vec<LodKey> = (-across..=across)
+        .flat_map(|x| (-across..=across).flat_map(move |z| (-1..=1).map(move |y| LodKey { level: 1, coord: centre + I64Vec3::new(x, y, z) })))
+        .filter(|&key| !layout.splits(key, anchor) && LodKey::containing(ChunkCoordinate(key.min_chunk()), 2).distance(anchor) < layout.reach(1))
+        .collect();
+    let count = |flora| {
+        keys.iter()
+            .filter_map(|&key| generate_lod_mesh(regions.clone(), key, flora))
+            .map(|meshes| meshes.opaque.count_vertices())
+            .sum::<usize>()
+    };
+    let start = Instant::now();
+    let with = count(Some(layout.flora_fade()));
+    let took = start.elapsed();
+    let without = count(None);
+    println!(
+        "{:>16}: {took:>8.1?}  {with} vertices over {} nodes, {without} without flora",
+        "level 1 ring",
+        keys.len()
     );
 }
