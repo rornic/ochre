@@ -41,6 +41,11 @@ const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
 const FALL_DEPTH: f32 = 1.0;
 const FALL_RIPPLES: f32 = 0.6;
 const FALL_FOAM: f32 = 0.5;
+// A fall's sheet is this white under its streaks near, and this white from `FALL_FAR` blocks off, where its streaks are too fine to see and its body reads as white water.
+const FALL_BODY: vec2<f32> = vec2<f32>(0.15, 0.5);
+const FALL_FAR: vec2<f32> = vec2<f32>(30.0, 250.0);
+// Where a pool meets a fall's sheet it churns white, this much at the sheet, easing off over the columns round it.
+const FALL_CHURN: f32 = 0.85;
 const FOAM_SPEED: f32 = 0.45;
 const FOAM_BAND: f32 = 0.35;
 // How many radians the shore-distance band (0..1, see vertex_shore_distance) spans -
@@ -745,6 +750,16 @@ fn fragment(
     }
 }
 
+    // the pool's surface churns white beside a fall's sheet (a vertex's swell share, B, is none there), but not on the sheet's calm high side, whose back is marked by a negative A
+    var churn = 0.0;
+@if(VERTEX_COLORS) {
+    if in.color.a >= 0.0 && dist < FOAM_FADE_END {
+        let near = 1.0 - in.color.b;
+        let n = smooth_noise(world_position.xz / 1.5 + vec2<f32>(time * 0.7, -time * 0.5)) * 0.6 + smooth_noise(world_position.xz / 0.7 - vec2<f32>(time * 0.4, time * 0.9)) * 0.4;
+        churn = FALL_CHURN * near * smoothstep(0.2, 0.55, n + near * 0.6) * (1.0 - smoothstep(FOAM_FADE_START, FOAM_FADE_END, dist));
+    }
+}
+
     let to_eye = -view_to_world / dist;
     // blocks a pixel spans across the water here, worked out where every fragment does
     let footprint = max(length(dpdx(world_position.xz)), length(dpdy(world_position.xz)));
@@ -758,10 +773,12 @@ fn fragment(
     if (abs(normal.y) < 0.5 || normal.y < -0.5) && fresh_surface {
         // the sea's own water, without its swell, and the foam of a fall's streaks over it
         scene = water(world_position, normal, to_eye, in.position, FALL_DEPTH, footprint, dist, tint, sea, ocean, Swell(0.0, vec2<f32>(0.0), 0.0), true);
-        scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), FALL_FOAM * fall_streak(world_position, normal, time));
+        let body = mix(FALL_BODY.x, FALL_BODY.y, smoothstep(FALL_FAR.x, FALL_FAR.y, dist));
+        let white = clamp(body + FALL_FOAM * fall_streak(world_position, normal, time), 0.0, 1.0);
+        scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), white);
     } else if outside {
         scene = water(world_position, normal, to_eye, in.position, depth, footprint, dist, tint, sea, ocean, waves, false);
-        scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), foam);
+        scene = mix(scene, scene_colour(FOAM_COLOR) * daylight(uncurved(world_position)), max(foam, churn));
     } else if normal.y > 0.5 {
         // the back of the top of a fall's water is seen from the air under it, not from within the water
 @if(VERTEX_COLORS) {

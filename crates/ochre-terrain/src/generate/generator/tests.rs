@@ -4155,6 +4155,48 @@ fn test_lake_and_river_beds_take_the_ground_round_them_and_the_sea_keeps_its_san
     assert!(share(&sea) > 0.9, "the shallow sea's beds aren't sand: {sea:?}");
 }
 
+// A chunk lays water only where the map holds it, and in a cliff's cut beside such water: no single blocks of it stuck to a fall's cliff.
+#[test]
+fn test_round_falls_no_water_stands_apart_from_the_water_the_map_holds() {
+    use ochre_world::worldmap::{character::world_config, generate, WorldConfig, WorldTerrain};
+    let map = Arc::new(generate(6, world_config(6, WorldConfig::default())));
+    let terrain = Arc::new(WorldTerrain::new(map));
+    let mut falls = terrain.falls();
+    falls.sort_by(|a, b| b.2.total_cmp(&a.2));
+    let regions = Arc::new(RegionStore::new(terrain));
+    let mut sampler = regions.sampler();
+    let (mut water, mut strays) = (0, Vec::new());
+    for &(fx, fz, drop, level) in falls.iter().take(12) {
+        let (cx, cz) = ((fx as i64).div_euclid(16), (fz as i64).div_euclid(16));
+        let (y0, y1) = ((level - drop) as i64 / 16 - 1, level as i64 / 16 + 1);
+        let mut chunks = HashMap::new();
+        for (x, y, z) in (cx - 1..=cx + 1).flat_map(|x| (y0..=y1).flat_map(move |y| (cz - 1..=cz + 1).map(move |z| (x, y, z)))) {
+            chunks.insert((x, y, z), generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(x, y, z))));
+        }
+        let at = |x: i64, y: i64, z: i64| {
+            let local = U16Vec3::new(x.rem_euclid(16) as u16, y.rem_euclid(16) as u16, z.rem_euclid(16) as u16);
+            chunks[&(x.div_euclid(16), y.div_euclid(16), z.div_euclid(16))].get_block_at(local)
+        };
+        for x in cx * 16 - 15..cx * 16 + 31 {
+            for z in cz * 16 - 15..cz * 16 + 31 {
+                if sampler.water_top(x, z) > sampler.ground_top(x, z) {
+                    continue;
+                }
+                for y in (y0 * 16).max(WATER_LEVEL + 1)..(y1 + 1) * 16 {
+                    if at(x, y, z) != BlockType::Water {
+                        continue;
+                    }
+                    water += 1;
+                    if [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|&(dx, dz)| at(x + dx, y, z + dz) != BlockType::Water) {
+                        strays.push((x, y, z));
+                    }
+                }
+            }
+        }
+    }
+    assert!(strays.is_empty(), "{} of {water} water blocks in dry columns touch no water, e.g. {:?}", strays.len(), &strays[..strays.len().min(4)]);
+}
+
 #[test]
 fn test_trunks_far_into_the_negative_world_are_not_read_by_the_shader_as_sculpted_ground() {
     use crate::generate::trees::trees_near;
@@ -4240,4 +4282,35 @@ fn tuft_on_a_cliff_keeps_its_size() {
         let reach = Vec3::from(buffers.vertices.iter().map(|v| v.position).fold([0.0f32; 3], |a, p| [a[0].max(p[0].abs()), a[1].max(p[1].abs()), a[2].max(p[2].abs())]));
         assert!(reach.max_element() < 6.0, "{ground}: vertices reach {reach}");
     }
+}
+
+// A rapid that runs down a ramp, however steeply and across the map's grid, is a surface, not walls of water standing in it:
+// seed 6's river runs down 5 blocks in 9 columns at (-8197, 15214), which drew a fin of sheet on each column it stepped.
+#[test]
+fn test_a_rapid_is_a_sloped_surface_with_no_walls_of_water_in_it() {
+    use bevy::render::mesh::{Indices, VertexAttributeValues};
+    use ochre_world::worldmap::{character::world_config, generate, WorldConfig, WorldTerrain};
+    let map = Arc::new(generate(6, world_config(6, WorldConfig::default())));
+    let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
+    let coord = ChunkCoordinate(I64Vec3::new(-513, 13, 950));
+    let mut neighbours = vec![None; 26];
+    for (dx, dy, dz) in (-1..=1).flat_map(|x| (-1..=1).flat_map(move |y| (-1..=1).map(move |z| (x, y, z)))) {
+        if (dx, dy, dz) != (0, 0, 0) {
+            let at = ChunkCoordinate(coord.0 + I64Vec3::new(dx, dy, dz));
+            neighbours[neighbor_26_index(dx as i32, dy as i32, dz as i32)] = Some(Arc::new(generate_chunk(regions.clone(), at)));
+        }
+    }
+    let meshes = generate_chunk_mesh_with(Arc::new(generate_chunk(regions.clone(), coord)), neighbours, coord, &regions, true);
+    let water = meshes.water.expect("the rapid has water");
+    let Some(VertexAttributeValues::Float32x3(pos)) = water.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };
+    let Some(VertexAttributeValues::Float32x3(normal)) = water.attribute(Mesh::ATTRIBUTE_NORMAL) else { panic!() };
+    let Some(Indices::U32(indices)) = water.indices() else { panic!() };
+    let walls = indices
+        .chunks(3)
+        .filter(|t| {
+            let ys = t.iter().map(|&i| pos[i as usize][1]);
+            normal[t[0] as usize][1] < 0.5 && ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min) > 0.01
+        })
+        .count();
+    assert_eq!(0, walls, "{walls} triangles of water walls in a rapid");
 }

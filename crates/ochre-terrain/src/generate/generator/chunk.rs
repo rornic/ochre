@@ -109,8 +109,22 @@ pub fn generate_chunk_with(
                 cliff
             };
             let bank = water_by.is_some();
-            // ground cut open beside fresh water floods to its level, not left as air under it
-            let flood_top = water_by.map_or(water_top, |top| top.max(water_top));
+            // ground cut open floods only where fresh water stands in a column beside it, at its height, or the cut is a stray block of water
+            let (world_x, world_z) = (chunk_pos.0.x * size + x, chunk_pos.0.z * size + z);
+            let beside = if cliff > 0.0 && bank {
+                [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|(dx, dz)| {
+                    (heights.ground_top(world_x + dx, world_z + dz), heights.water_top(world_x + dx, world_z + dz))
+                })
+            } else {
+                [(i64::MAX, 0); 4]
+            };
+            let flood_top = |y: i64| {
+                beside
+                    .iter()
+                    .filter(|&&(ground, top)| ground <= y && y < top)
+                    .map(|&(_, top)| top)
+                    .fold(water_top, i64::max)
+            };
             let bulge = cliff.ceil() as i64;
             // above the ground and the water, the column is air here whatever its climate
             if world_y >= (ground_top(column_height) + bulge).max(water_top) {
@@ -147,7 +161,6 @@ pub fn generate_chunk_with(
                 temperature,
                 shore_top,
             ) == BlockType::Snow;
-            let (world_x, world_z) = (chunk_pos.0.x * size + x, chunk_pos.0.z * size + z);
             // a spring's rim and the bed of its pool are the biome's own block
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
@@ -157,7 +170,7 @@ pub fn generate_chunk_with(
                 cliff != 0.0 && !bank && {
                     let over = column_block(biomes, biome, column_height, column_height, slope, temperature, shore_top);
                     let density = -0.5 + cliff * cliff_density(seed, world_x, column_height, world_z, column_height);
-                    density > 0.0 && cut_cliff(over, true, column_height, temperature, flood_top) == BlockType::Rock
+                    density > 0.0 && cut_cliff(over, true, column_height, temperature, water_top) == BlockType::Rock
                 }
             });
             let soil = soil_depth(slope);
@@ -174,7 +187,8 @@ pub fn generate_chunk_with(
                         column_height,
                         slope,
                         temperature,
-                        shore_top,
+                        // the shore only picks the bank's material: water over dry ground is the column's own
+                        if y < column_height { shore_top } else { water_top },
                     ),
                     y,
                     column_height,
@@ -204,7 +218,7 @@ pub fn generate_chunk_with(
                 }
                 let density = (column_height - y) as f64 - 0.5
                     + cliff * cliff_density(seed, world_x, y, world_z, column_height);
-                let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top);
+                let cut = cut_cliff(block, density > 0.0, y, temperature, flood_top(y));
                 // a glacier's built-up faces are ice, not the stone a cliff builds elsewhere
                 if cut == BlockType::Rock && block != BlockType::Rock && ice_cliffs {
                     BlockType::Ice

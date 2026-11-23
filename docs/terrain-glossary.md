@@ -63,7 +63,7 @@ Small forms a biome lays over its ground. Each is a pure function of seed and po
 
 ## Water
 
-**Waterfall.** Water dropping over a step in the ground. Here a river on steep ground runs in treads (short level reaches) and falls between them, 2.5 to over 20 blocks, drawn as a curtain of water.
+**Waterfall.** Water dropping over a step in the ground. Here a river on steep ground runs in treads (short level reaches) and falls between them, 2.5 to over 20 blocks, drawn as a curtain of water, white from afar, with mist where it lands.
 
 **Tread and lip.** A tread is the level reach of river above a fall, and the lip is the edge it spills over. The ground under a tread is cut a little into the slope so the water needs no bank.
 

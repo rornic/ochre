@@ -27,6 +27,8 @@ const TREAD_DROP: f32 = 4.0;
 const FALL_MIN: f32 = 5.0;
 // Two falls closer than this many blocks along a river are one: the shelf between them is a column or two of water.
 const MIN_TREAD: f32 = 4.0;
+// How many blocks before its lip a fall's bed steps down to the lower tread: the sheet is this thick, which a coarse LOD's cells still hit.
+const SHEET_THICKNESS: f32 = 4.0;
 // Points an interval is looked at in for its lip.
 const LIP_SEARCH: usize = 16;
 // How many cells on a river is followed to the still water it ends in.
@@ -174,6 +176,40 @@ impl RiverProfiles {
             }
         }
         out
+    }
+
+    /// The level `blocks` along the stretch that starts in `cell`, which may be further than its end, on the stretch after it,
+    /// if a lip lies between: a fall's bed steps down before it, but a rapid, which only runs down a ramp, keeps its own.
+    fn level_ahead(&self, cell: usize, t: f32, blocks: f32) -> f32 {
+        let chord = |n: usize| {
+            let s = &self.stretches[n];
+            ((s.b.0 - s.a.0).powi(2) + (s.b.1 - s.a.1).powi(2)).sqrt() as f32
+        };
+        // whether stretch `n` has a lip from `from` to `to`, as fractions of it
+        let lip_in = |n: usize, from: f32, to: f32| {
+            let points = PROFILE_POINTS as f32;
+            self.lips.get(n).is_some_and(|lips| {
+                lips.iter().enumerate().any(|(k, &lip)| {
+                    let at = (k as f32 + lip) / points;
+                    !lip.is_nan() && at >= from && at < to
+                })
+            })
+        };
+        let n = self.index[cell] as usize;
+        let t_end = t + blocks / chord(n).max(1.0);
+        if t_end <= 1.0 {
+            return self.level(cell, if lip_in(n, t, t_end) { t_end } else { t });
+        }
+        let next = self.index.get(self.stretches[n].to).filter(|&&m| m != Self::NONE);
+        let Some(&m) = next else {
+            return self.level(cell, if lip_in(n, t, 1.0) { 1.0 } else { t });
+        };
+        let into = ((t_end - 1.0) * chord(n) / chord(m as usize).max(1.0)).min(1.0);
+        if lip_in(n, t, 1.0) || lip_in(m as usize, 0.0, into) {
+            self.level(self.stretches[n].to, into)
+        } else {
+            self.level(cell, t)
+        }
     }
 
     fn level(&self, cell: usize, t: f32) -> f32 {
@@ -826,13 +862,10 @@ impl WorldMap {
                     }
                 }
                 let distance = best_d2.sqrt() as f32;
-                let width = stretch.width_at(best_t);
                 let surface = profiles.level(i, best_t as f32);
-                // the bed steps down two blocks before the water, so at a lip the water stands in a column to the lower bed: the fall
-                let chord = ((stretch.b.0 - stretch.a.0).powi(2)
-                    + (stretch.b.1 - stretch.a.1).powi(2))
-                .sqrt();
-                let ahead = profiles.level(i, (best_t + 2.0 / chord.max(1.0)).min(1.0) as f32);
+                // the bed steps down before the water does, so at a lip the water stands in a column down to the lower tread's bed: the sheet of the fall
+                let ahead = profiles.level_ahead(i, best_t as f32, SHEET_THICKNESS);
+                let width = stretch.width_at(best_t);
                 // nearest the water first, not the centre line, so a wide river wins over a narrow one
                 let margin = distance - width / 2.0;
                 // a ford is shallow however wide the river is there
@@ -1009,6 +1042,63 @@ mod tests {
         assert_eq!((50.0, 40.0), (at(2.3), at(2.7)));
         // and no lip: the straight run between points
         assert_eq!(45.0, profiles_level_without_lips(&data, 2.5));
+    }
+
+    #[test]
+    fn test_the_bed_steps_down_before_a_lip_on_the_next_stretch_too() {
+        let stretch = |from, to, a: f64| Stretch {
+            from,
+            to,
+            a: (a, 0.0),
+            b: (a + 32.0, 0.0),
+            m0: [0.0; 2],
+            m1: [0.0; 2],
+            width: 4.0,
+            end_width: 4.0,
+            into_river: false,
+        };
+        // a lip half way along the next stretch's first interval, which a sheet 4 blocks thick reaches back to
+        let mut lower = [40.0; PROFILE_POINTS + 1];
+        lower[0] = 50.0;
+        let mut lips = [f32::NAN; PROFILE_POINTS];
+        lips[0] = 0.5;
+        let profiles = RiverProfiles {
+            index: vec![0, 1, RiverProfiles::NONE],
+            data: vec![[50.0; PROFILE_POINTS + 1], lower],
+            lips: vec![[f32::NAN; PROFILE_POINTS], lips],
+            stretches: vec![stretch(0, 1, 0.0), stretch(1, 2, 32.0)],
+            ..RiverProfiles::default()
+        };
+        assert_eq!(50.0, profiles.level_ahead(0, 0.5, SHEET_THICKNESS));
+        assert_eq!(40.0, profiles.level_ahead(0, 0.95, SHEET_THICKNESS));
+        // and the last stretch's end has nothing past it
+        assert_eq!(40.0, profiles.level_ahead(1, 0.95, SHEET_THICKNESS));
+    }
+
+    #[test]
+    fn test_the_bed_keeps_to_the_level_down_a_rapid_with_no_lip() {
+        // a ramp from 50 to 45 over the stretch, steeper than the sheet's two blocks over its thickness: no fall, so no step
+        let data = std::array::from_fn(|k| 50.0 - 5.0 * k as f32 / PROFILE_POINTS as f32);
+        let stretch = Stretch {
+            from: 0,
+            to: 1,
+            a: (0.0, 0.0),
+            b: (32.0, 0.0),
+            m0: [0.0; 2],
+            m1: [0.0; 2],
+            width: 4.0,
+            end_width: 4.0,
+            into_river: false,
+        };
+        let profiles = RiverProfiles {
+            index: vec![0, RiverProfiles::NONE],
+            data: vec![data],
+            lips: vec![[f32::NAN; PROFILE_POINTS]],
+            stretches: vec![stretch],
+            ..RiverProfiles::default()
+        };
+        assert_eq!(profiles.level(0, 0.4), profiles.level_ahead(0, 0.4, SHEET_THICKNESS));
+        assert_eq!(profiles.level(0, 0.95), profiles.level_ahead(0, 0.95, SHEET_THICKNESS));
     }
 
     fn profiles_level_without_lips(data: &[f32; PROFILE_POINTS + 1], k: f32) -> f32 {
