@@ -4155,6 +4155,48 @@ fn test_lake_and_river_beds_take_the_ground_round_them_and_the_sea_keeps_its_san
     assert!(share(&sea) > 0.9, "the shallow sea's beds aren't sand: {sea:?}");
 }
 
+// A chunk lays water only where the map holds it, and in a cliff's cut beside such water: no single blocks of it stuck to a fall's cliff.
+#[test]
+fn test_round_falls_no_water_stands_apart_from_the_water_the_map_holds() {
+    use ochre_world::worldmap::{character::world_config, generate, WorldConfig, WorldTerrain};
+    let map = Arc::new(generate(6, world_config(6, WorldConfig::default())));
+    let terrain = Arc::new(WorldTerrain::new(map));
+    let mut falls = terrain.falls();
+    falls.sort_by(|a, b| b.2.total_cmp(&a.2));
+    let regions = Arc::new(RegionStore::new(terrain));
+    let mut sampler = regions.sampler();
+    let (mut water, mut strays) = (0, Vec::new());
+    for &(fx, fz, drop, level) in falls.iter().take(12) {
+        let (cx, cz) = ((fx as i64).div_euclid(16), (fz as i64).div_euclid(16));
+        let (y0, y1) = ((level - drop) as i64 / 16 - 1, level as i64 / 16 + 1);
+        let mut chunks = HashMap::new();
+        for (x, y, z) in (cx - 1..=cx + 1).flat_map(|x| (y0..=y1).flat_map(move |y| (cz - 1..=cz + 1).map(move |z| (x, y, z)))) {
+            chunks.insert((x, y, z), generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(x, y, z))));
+        }
+        let at = |x: i64, y: i64, z: i64| {
+            let local = U16Vec3::new(x.rem_euclid(16) as u16, y.rem_euclid(16) as u16, z.rem_euclid(16) as u16);
+            chunks[&(x.div_euclid(16), y.div_euclid(16), z.div_euclid(16))].get_block_at(local)
+        };
+        for x in cx * 16 - 15..cx * 16 + 31 {
+            for z in cz * 16 - 15..cz * 16 + 31 {
+                if sampler.water_top(x, z) > sampler.ground_top(x, z) {
+                    continue;
+                }
+                for y in (y0 * 16).max(WATER_LEVEL + 1)..(y1 + 1) * 16 {
+                    if at(x, y, z) != BlockType::Water {
+                        continue;
+                    }
+                    water += 1;
+                    if [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|&(dx, dz)| at(x + dx, y, z + dz) != BlockType::Water) {
+                        strays.push((x, y, z));
+                    }
+                }
+            }
+        }
+    }
+    assert!(strays.is_empty(), "{} of {water} water blocks in dry columns touch no water, e.g. {:?}", strays.len(), &strays[..strays.len().min(4)]);
+}
+
 #[test]
 fn test_trunks_far_into_the_negative_world_are_not_read_by_the_shader_as_sculpted_ground() {
     use crate::generate::trees::trees_near;

@@ -817,7 +817,8 @@ fn fill_column(
     rock: &mut dyn FnMut(i64) -> BlockType,
 ) {
     let size = CHUNK_SIZE as i32;
-    let block_at = |y| column_block(biomes, biome, y, height, gradient, temperature, shore_top);
+    // the shore only picks the bank's material: water over dry ground is the column's own
+    let block_at = |y| column_block(biomes, biome, y, height, gradient, temperature, if y < height { shore_top } else { water_top });
     let top = ground_top(height);
     for cy in -1..=size {
         let bottom = base.y + cy as i64 * cell;
