@@ -6,6 +6,8 @@
 
 A 64 km voxel world with erosion-carved rivers, lakes and seas, streamed with octree LODs out to 32km.
 
+![Flying over red rock country, rivers, lakes and plains](images/flyover.webp)
+
 https://github.com/user-attachments/assets/2ed1a420-5e0e-4f3f-ac09-f39bcf45d7f6
 
 ## Features
