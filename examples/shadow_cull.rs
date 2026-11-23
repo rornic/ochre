@@ -1,11 +1,4 @@
-// What the sun's shadow cascades would draw, headless (no window or GPU): loads the start area
-// with the renderer settings from assets/settings.toml, then, for a range of sun heights and
-// directions relative to the camera, builds the cascades with Bevy's own `build_directional_light_cascades`
-// and counts the terrain meshes and triangles each cascade's frustum lets through, as
-// `check_dir_light_mesh_visibility` does, against what the camera's own view draws. Run with:
-//   cargo run --release --example shadow_cull -- [shadow distance in blocks] [cascades] [camera pitch in degrees]
-// Counts are CPU-side submissions, so they say how much geometry the shadow pass is given, not
-// how long the GPU takes over it.
+// Headless count of the terrain meshes and triangles each shadow cascade admits, against the camera's view; CPU-side submissions, not GPU time.
 use std::time::{Duration, Instant};
 
 use bevy::camera::primitives::{Aabb, Frustum};
@@ -68,8 +61,7 @@ struct Caster {
     class: usize,
 }
 
-// How many of `mesh`'s triangles are leaves and ground flora, by the atlas cell in vertex alpha.
-// Needs the mesh unpacked, see `main`.
+// How many of `mesh`'s triangles are leaves and ground flora, by the atlas cell in vertex alpha; needs it unpacked, see `main`.
 fn cutouts(mesh: &Mesh) -> (usize, usize) {
     let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
     else {

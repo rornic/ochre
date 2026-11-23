@@ -1,10 +1,4 @@
-// Runs the chunk and LOD loading systems headless (no window or GPU) with the
-// renderer settings from assets/settings.toml: lets the start area load, flies the
-// player along +x, then stops. Every 2 seconds it reports, by distance in chunks,
-// surface chunks with nothing visible drawing them, and full-detail chunks still
-// drawn outside the full-detail area, and logs frames slower than 100ms. Run with:
-//   cargo run --release --example lod_sim -- [speed in blocks/s, default 80] [seconds moving, default 10] [up]
-// `up` flies straight up instead, checking every frame for holes under the camera.
+// Flies the player along +x (or up) through the headless loading systems, reporting surface chunks nothing draws and stale full-detail chunks.
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
@@ -181,15 +175,13 @@ fn report(app: &mut App, layout: LodLayout, pos: Vec3) -> Report {
                 .sample((cx * size + size / 2) as f64, (cz * size + size / 2) as f64)
                 .height
                 .max(WATER_LEVEL as f64);
-            // the chunk holding the ground's top block, which is rounded as chunks round it (`bed_top`): truncated, a
-            // height just over a chunk's top (32.9) named the buried chunk under it, a hole that was never there
+            // the chunk holding the ground's top block, rounded as chunks round it (`bed_top`): truncating named the buried chunk for a height just over a chunk's top (32.9)
             let c = ChunkCoordinate(I64Vec3::new(cx, (h.round() as i64 - 1).div_euclid(size), cz));
             let shown = |key: LodKey| lod_vis.get(&key).copied().unwrap_or(false);
             let drawn = chunk_vis(&c).unwrap_or(false)
                 || (1..=layout.max_level).any(|l| {
                     shown(LodKey::containing(c, l))
-                        // coarse cells draw the ground at their cell's average height, which can
-                        // be in the node above or below the one this sample's height is in
+                        // coarse cells draw the ground at their average height, which can be in a neighbouring node
                         || coarse_ground(noise, cx, cz, l).is_some_and(|ground| shown(LodKey::containing(ground, l)))
                 });
             if !drawn {
@@ -263,8 +255,7 @@ fn report(app: &mut App, layout: LodLayout, pos: Vec3) -> Report {
     }
 }
 
-// The chunk holding the ground a coarse LOD level draws over chunk column (`cx`, `cz`): the
-// height of the cell around the chunk's centre, as the level's column grid samples it.
+// The chunk holding the ground a coarse LOD level draws over column (`cx`, `cz`), from the cell at the chunk's centre.
 fn coarse_ground(
     noise: &dyn TerrainSource,
     cx: i64,

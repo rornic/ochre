@@ -1,16 +1,5 @@
-// A browser viewer for a seed's whole world, for debugging world generation: pan and zoom, stack
-// layers (height, hillshade, blocks, biomes, trees, water, climate, roughness, features...), click
-// a spot for every number there, and export the view as a PNG to share.
-//   cargo run --release --example worldview -- [seed] [port]
-// then open http://127.0.0.1:8777 (default port). A seed new to the game's map cache (`OCHRE_WORLD_DIR`) takes a few seconds.
-// Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or
-// fewer they come from `RegionStore` ground, water and slope, which is what chunks are built from.
-// Export writes target/worldview/<seed>-<x>_<z>-<scale>.png, prints the path and downloads it too:
-//   curl 'http://127.0.0.1:8777/export?seed=42&layers=height,hillshade,water:0.6&x=0&z=0&w=1024&h=1024&scale=4' -o view.png
-// Rough: one world in memory at a time, tree density only (not individual trees), localhost only.
-// It also runs the probe commands in `probe.rs`, once from the command line or on the held world over HTTP:
-//   cargo run --release --example worldview -- <seed> slice <x> <z> x 64 380 460
-//   curl 'http://127.0.0.1:8777/probe?seed=42&cmd=line+100+-200+x+16'
+// A browser viewer for a seed's world at http://127.0.0.1:8777, with an `/export` PNG route and the `probe.rs` commands from the command line or `/probe`.
+// Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or fewer from `RegionStore`, which is what chunks are built from.
 mod probe;
 
 use std::collections::HashMap;

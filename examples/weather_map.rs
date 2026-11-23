@@ -1,16 +1,4 @@
-//! The weather over a whole world, from its seeded `Forecast`, without a window: how often each
-//! biome sees rain, and maps of the storms drifting over it.
-//!
-//!   cargo run --release --example weather_map -- --seed 1 [--days 30] [--out target/weather_map]
-//!   cargo run --release --example weather_map -- --seed 1 --snow
-//!
-//! `--snow` instead finds where and when it snows longest by day in the taiga, tundra and
-//! glaciers, within the first `--days` (at most 12), and prints the command to start a game there.
-//!
-//! Prints, per biome over `--days` game days: the share of the time it rains, the share of days
-//! with any rain, and how long runs of wet days and of dry days last on average. Writes `<out>/seed<N>-day<D>.png` for a few moments
-//! over those days: biomes faded under the clouds (white), storm cloud (dark) and rain (blue), the
-//! spawn in red and an arrow of the storms' drift.
+//! Rain per biome over `--days` game days and PNG maps of the storms from a seed's `Forecast`; `--snow` finds the longest snowfall and prints a game command for it.
 use std::{path::Path, sync::Arc};
 
 use bevy::math::DVec2;
@@ -208,8 +196,7 @@ fn main() {
         return;
     }
 
-    // how often it rains in each biome, and whether it comes in spells: a day is wet if it rains
-    // at all, sampled every quarter of a game hour
+    // a day is wet if it rains at all, sampled every quarter of a game hour
     const GRID: usize = 32;
     const SAMPLES_A_DAY: u64 = 24;
     // no cloud to speak of below this share of the sky
@@ -333,8 +320,7 @@ const STORM_ABOVE: f32 = 0.5;
         );
     }
 
-    // what it costs the game: the clouds' 64 by 64 grid round the camera, worked out every half
-    // second, and the camera's own weather each frame (nine asks, with the rainbow's look back)
+    // what it costs the game: the clouds' 64 by 64 grid every half second, and the camera's weather each frame (nine asks)
     let around = DVec2::new(sx as f64, sz as f64) - DVec2::splat(32.0 * 1_100.0);
     let _ = forecast.map(around, 64, 1_100.0, 0);
     let start = std::time::Instant::now();

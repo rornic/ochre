@@ -430,9 +430,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "dryrivers" => {
-            // map river cells with no river or lake water in their own square at block scale (every 4 blocks), told apart
-            // into those whose river is drawn a few blocks off (the meander) and those with none on their line, which
-            // are sorted by where the cell sits on its river, driest first by how far the ground lies under the map's own
+            // map river cells with no water in their own square (sampled every 4 blocks), split into meandered a few blocks off and none on their line
             let limit: usize = opt(args, 4, 12)?;
             let dim = map.dim();
             let cell = map.config.map_cell;
@@ -454,8 +452,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                         matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
                     })
                 });
-                // the line is the meander undone to a block or two, as wide as a stream is, so look 3 blocks round it, along
-                // the middle of the stretch, not its ends, which the next stretch shares
+                // the line is the meander undone to a block or two, so look 3 blocks round it along the middle of the stretch, not its shared ends
                 wet[i] = square_wet[i]
                     || terrain.river_course(i, 32).is_some_and(|RiverCourse { end, line, .. }| {
                         let wet_at = |k: usize| {
@@ -560,8 +557,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "course" => {
-            // the river stretch that starts in the map cell at x,z: its reach and levels, and the blocks' ground, dry
-            // ground, map height and water at points along it as they lay it (meander included)
+            // the river stretch starting in the map cell at x,z: its levels, and the blocks' ground and water along it, meander included
             let (u, v) = map.to_cell(x as f64, z as f64);
             let dim = map.dim();
             let i = map.index((u.round() as usize).min(dim - 1), (v.round() as usize).min(dim - 1));
@@ -575,8 +571,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "steps" => {
-            // how terraced gentle ground is: of points on a slope of 0.2 to 1 over 8 blocks, the share whose ground
-            // is near level over 1 block (a tread), sampled every 2 blocks, both ways
+            // how terraced gentle ground is: the share of points on a 0.2 to 1 slope over 8 blocks that are near level over 1 block, sampled every 2 blocks
             let half: i64 = arg(args, 4)?;
             let h = |x: i64, z: i64| terrain.sample(x as f64, z as f64).height;
             let (mut slopes, mut treads) = (0usize, 0usize);
@@ -776,9 +771,7 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
     Ok(out)
 }
 
-// The chunks round (`x`, `z`) meshed as the game meshes them, drawn from above at `azimuth` degrees with an orthographic
-// camera, each face its tile's mean colour times its vertex colour, lit by one sun. Plants and leaves are left out, as
-// their cards would draw solid.
+// The chunks round (`x`, `z`) meshed as the game does, drawn orthographically from above, each face its tile's mean colour times its vertex colour, sun-lit; plants and leaves are left out.
 fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, out: &str) -> Result<String, String> {
     use bevy::math::Vec3;
     use bevy::render::mesh::{Indices, Mesh, VertexAttributeValues};
@@ -1056,8 +1049,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         let c = (triangles[t][0].0 + triangles[t][1].0 + triangles[t][2].0) / 3.0;
         (c.x - x as f32).abs() < half as f32 * 0.8 && (c.z - z as f32).abs() < half as f32 * 0.8
     };
-    // OCHRE_RENDER_ZFIGHT=<blocks>: pixels where a second triangle, sharing no corner with the front one, lies within that depth of it, where the
-    // game's depth test would flicker between the two; counted by whether each lies in a node's side plane, and painted magenta
+    // OCHRE_RENDER_ZFIGHT=<blocks>: pixels painted magenta where a second triangle, sharing no corner with the front one, lies within that depth and the depth test would flicker
     if let Some(eps) = std::env::var("OCHRE_RENDER_ZFIGHT").ok().and_then(|e| e.parse::<f32>().ok()) {
         let mut fighting = vec![false; (w * h) as usize];
         // [front kind][other kind][same mesh], kinds as `tri_side`
@@ -1177,8 +1169,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
     }
     img.save(out).map_err(|e| format!("{out}: {e}"))?;
-    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays from the point and says, for each, whether the first ground triangle it meets faces it (the point is outside the
-    // drawn ground) or faces away (the point is inside the drawn ground, where a camera sees through it)
+    // OCHRE_RENDER_INSIDE=x,y,z: casts 26 rays and says whether each first meets a ground triangle facing it (outside the ground) or away (inside, where a camera sees through)
     if let Some(p) = std::env::var("OCHRE_RENDER_INSIDE").ok().and_then(|s| {
         let v: Vec<f32> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
         (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
@@ -1230,8 +1221,7 @@ fn render(regions: &Arc<RegionStore>, x: i64, z: i64, half: i64, azimuth: f32, o
         }
         println!("from {p}: first ground hit faces the point on {facing} rays, faces away on {away}, nothing on {none}; nearest hit {nearest:.2} blocks");
     }
-    // by slope, each triangle's own face: walkable (normal.y over 0.4, as `GROUND_FACING`), steep (up to a wall), and a wall or overhang (normal.y under 0.1),
-    // with the share of the ground area each holds; and the interior's open edges, which a sealed surface has none of, the plants and leaves left out
+    // the ground area share by each triangle's own slope (walkable over 0.4 normal.y as `GROUND_FACING`, steep, wall or overhang under 0.1), and the interior's open edges, which a sealed surface lacks
     {
         let (mut area, mut count) = ([0.0f32; 3], [0usize; 3]);
         let key = |p: Vec3| ((p.x * 16.0).round() as i64, (p.y * 16.0).round() as i64, (p.z * 16.0).round() as i64);
