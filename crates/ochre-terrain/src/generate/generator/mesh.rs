@@ -262,6 +262,10 @@ pub(super) fn mesh_blocks(
                 for v in face.iter_mut().filter(|v| v.position[1] <= -0.5) {
                     v.position[1] = -0.5 - lowering - 1.0;
                 }
+                let pool = source.water_level(block_coord.x + offset.x, block_coord.z + offset.z);
+                if let Some(drop) = top_level.zip(pool).map(|(top, pool)| top - pool).filter(|&drop| drop >= MIST_FROM) {
+                    push_mist(&mut spray, block_coord, i, drop, block_coord.y as f32 - 0.5 - lowering - 1.0);
+                }
             }
             // a step down to a column whose surface meets this one's is closed by the sloped tops
             let beside = (block_coord.x + offset.x, block_coord.z + offset.z);
@@ -425,6 +429,9 @@ const SPRAY_SLOPE: f32 = 0.3;
 // Rising plumes and scattering droplets thrown up at each.
 const SPRAY_PLUMES: u32 = 2;
 const SPRAY_DROPLETS: u32 = 4;
+// A fall at least this high throws up mist where its sheet lands, the more of it and the bigger its puffs the higher it is.
+const MIST_FROM: f32 = 8.0;
+const MIST_PUFFS: u32 = 3;
 // Bubbles rising through each block of a spring's pool.
 const SPRING_BUBBLES: u32 = 3;
 // The share of them left out at random.
@@ -434,6 +441,17 @@ const SPRAY_GAPS: f32 = 0.45;
 fn spray_random(block_coord: IVec3, i: usize, k: u32) -> [f32; 3] {
     let seed = (block_coord.y as u32).wrapping_mul(97) ^ (i as u32 * 64 + k * 3);
     [0, 1, 2].map(|j| unit(seed + j, block_coord.x, block_coord.z) as f32)
+}
+
+// Mist off the foot of a fall's sheet at block `block_coord`, face `i`: big slow puffs, bigger the farther the water fell, which show from far off.
+fn push_mist(spray: &mut MeshBuffers, block_coord: IVec3, i: usize, drop: f32, foot: f32) {
+    let out = FACE_NORMAL_OFFSET[i].as_vec3();
+    let size = (0.5 + drop * 0.03).min(4.0);
+    for k in 0..MIST_PUFFS {
+        let [u, v, seed] = spray_random(block_coord, i, k + 40);
+        let at = Vec3::new(block_coord.x as f32, foot, block_coord.z as f32) + out * (0.6 + v) + Vec3::new(out.z, 0.0, out.x).abs() * (u - 0.5);
+        spray.push_particle(at, out * 1.2 + Vec3::Y * (1.0 + size * 0.5), seed, size, false, spray_random(block_coord, i, k + 50)[0]);
+    }
 }
 
 // A spring's pool bubbles up from its bed through the surface `height` up the block at `block_coord`.
