@@ -1,4 +1,4 @@
-// Headless count of the terrain meshes and triangles each shadow cascade admits, against the camera's view; CPU-side submissions, not GPU time.
+// Headless count of terrain meshes and triangles each shadow cascade admits; CPU-side submissions, not GPU time.
 use std::time::{Duration, Instant};
 
 use bevy::camera::primitives::{Aabb, Frustum};
@@ -61,7 +61,7 @@ struct Caster {
     class: usize,
 }
 
-// How many of `mesh`'s triangles are leaves and ground flora, by the atlas cell in vertex alpha; needs it unpacked, see `main`.
+// How many of `mesh`'s triangles are leaves and ground flora, by the atlas cell in vertex alpha; needs it unpacked.
 fn cutouts(mesh: &Mesh) -> (usize, usize) {
     let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
     else {

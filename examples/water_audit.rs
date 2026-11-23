@@ -1,4 +1,4 @@
-// Samples terrain round rivers, lakes and coasts at block scale and counts what looks wrong, one `AUDIT` line a kind, for diffing sweeps.
+// Samples terrain round rivers, lakes and coasts at block scale and counts what looks wrong, one `AUDIT` line a kind.
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -141,7 +141,7 @@ fn edge_picks(map: &WorldMap, kind: WaterCell) -> Vec<usize> {
         .collect()
 }
 
-// Dry cells more than 2 blocks under a neighbouring lake or sea level, where water would stand held only by the cells' edges.
+// Dry cells over 2 blocks under a neighbouring lake or sea level, where water would stand held only by cell edges.
 fn uncontained(map: &WorldMap) -> usize {
     let dim = map.dim() as i64;
     let mut count = 0;
@@ -184,7 +184,7 @@ fn main() {
             continue;
         }
         let (x, z) = map.cell_centre(i % dim, i / dim);
-        // how far the river's bed is cut under the ground it would have with no river, at the deepest wet column near the centre
+        // how far the river bed is cut under the ground without the river, at the deepest wet column near centre
         let mut cut = 0.0f64;
         for dz in (-48..=48).step_by(12) {
             for dx in (-48..=48).step_by(12) {

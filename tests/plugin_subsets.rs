@@ -1,4 +1,4 @@
-//! Every `OchrePlugins` plugin but the terrain's can be left out without a panic, headless; `TerrainRenderPlugin` stays for its material assets.
+//! Every `OchrePlugins` plugin but the terrain's can be left out without a panic, headless; the render plugin stays.
 use std::time::Duration;
 
 use bevy::app::{PluginGroup, ScheduleRunnerPlugin};

@@ -109,7 +109,7 @@ pub fn fbm(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32) -> f64 {
     total / norm
 }
 
-/// How much of a `wavelength` feature survives in cells `cell` wide, 0..1, with no `sin` call so single blocks stay portable.
+/// How much of a `wavelength` feature survives in cells `cell` wide, 0..1, with no `sin` so blocks stay portable.
 pub fn resolved(wavelength: f64, cell: f64) -> f64 {
     if cell <= 1.0 {
         return 1.0;
@@ -122,7 +122,7 @@ pub fn resolved(wavelength: f64, cell: f64) -> f64 {
     libm::sin(angle) / angle
 }
 
-/// `fbm` with each octave faded by `resolved`, so wide cells see a mean instead of aliasing differently per LOD; `fbm` for single blocks.
+/// `fbm` with each octave faded by `resolved`, so wide cells see a mean, not aliasing that differs per LOD.
 pub fn fbm_filtered(seed: u32, x: f64, z: f64, wavelength: f64, octaves: u32, cell: f64) -> f64 {
     let (mut frequency, mut amplitude, mut total, mut norm) = (1.0 / wavelength, 1.0, 0.0, 0.0);
     let mut octave_wavelength = wavelength;

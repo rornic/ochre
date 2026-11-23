@@ -115,7 +115,7 @@ impl Walker<'_> {
         self.body.heights.last().copied().unwrap_or(0.0) + self.body.radius
     }
 
-    // The room over feet at `feet`, up to the lowest face looking down over the footprint, or a height and a step if none.
+    // Headroom over `feet` to the lowest downward face over the footprint, or a height and a step if none.
     pub(crate) fn headroom(&self, feet: Vec3) -> f32 {
         let reach = self.height() + self.step;
         let mut room = reach;
@@ -167,7 +167,7 @@ impl Walker<'_> {
             .max_by(f32::total_cmp)
     }
 
-    // Moves the body at `feet` by `delta`: across first, a little at a time, against walls, then up or down onto the ground.
+    // Moves the body by `delta`: across in small steps against walls, then up or down onto the ground.
     pub(crate) fn walk(&self, feet: Vec3, delta: Vec3, standing: bool, across_blocks: &dyn Fn(Vec3, Vec3) -> Vec3) -> Moved {
         let mut moved = Moved { feet, ..Default::default() };
         let across = Vec3::new(delta.x, 0.0, delta.z);
@@ -175,7 +175,7 @@ impl Walker<'_> {
         let stand = |p: Vec3| p.with_y(self.ground_under(p, self.snap).unwrap_or(p.y).max(p.y));
         for _ in 0..steps {
             let next = across_blocks(moved.feet, across / steps as f32);
-            // standing, walls are judged at the height it will stand at, or the lift onto the ground flips the answer the step after
+            // standing, walls are judged at the height it will stand at, or the lift onto the ground flips the answer
             let judged = if standing { stand(next) } else { next };
             let next = self.wall_out(judged, &mut moved.wall).with_y(next.y);
             // too low under a ceiling, standing where it would stand there, it goes no further, unless it's backing out of one
@@ -224,7 +224,7 @@ impl Walker<'_> {
                 };
             }
         }
-        // pressing into a wall, a step that would end a little behind where it began is a bounce off the wall, so it keeps only its slide along it
+        // pressing into a wall, a step ending a little behind its start is a bounce, so it keeps only its slide
         let way = across.normalize_or_zero();
         let back = (moved.feet - feet).with_y(0.0).dot(way);
         if standing && moved.grounded && back < 0.0 && back > -BOUNCE {
@@ -401,7 +401,7 @@ mod tests {
 
     // ---- spike: which staircase faces a jumping player can climb (docs/meso-spike.md) ----
 
-    // `n` ledges from x = 1, each `rise` high with a flat top `tread` deep and a vertical face, over ground at 0. Its triangles and its height at x.
+    // `n` ledges from x = 1, each `rise` high with a flat `tread` and vertical face, over ground at 0.
     #[allow(clippy::type_complexity)]
     fn stairs(rise: f32, tread: f32, n: usize) -> (Vec<[Vec3; 3]>, impl Fn(Vec3, f32, f32) -> Option<f32>) {
         let quad = |a: Vec3, b: Vec3, c: Vec3, d: Vec3| [[a, b, c], [a, c, d]];
@@ -420,7 +420,7 @@ mod tests {
         })
     }
 
-    // How high a player reaches in 12 s walking at +x at 4 blocks a second and jumping at every chance, with the game's jump speed and gravity (`player.rs`).
+    // Height reached in 12 s walking +x at 4 blocks/s, jumping at every chance, at the game's jump speed and gravity.
     fn climb(rise: f32, tread: f32, n: usize) -> f32 {
         let (triangles, ground) = stairs(rise, tread, n);
         let w = walker(&triangles, &ground);
@@ -463,7 +463,7 @@ mod tests {
         // a rise of a step or a jump is climbed, one past both is a wall whatever the tread
         assert!(climb(1.0, 1.0, 6) > 5.9, "a step-high stair is climbed");
         assert!(climb(4.0, 1.0, 6) < 4.0, "a four-block face is not");
-        // measured limits at jump speed 9, gravity 32, step 1: a 2.15 ledge is climbed and 2.2 is a wall, 0.2 deep gives footing and 0.1 doesn't
+        // measured at jump 9, gravity 32, step 1: a 2.15 ledge is climbed, 2.2 is a wall; 0.2 deep holds, 0.1 doesn't
         assert!(climb(2.15, 1.0, 6) > 12.9 && climb(2.2, 1.0, 6) < 2.0);
         assert!(climb(1.5, 0.2, 6) > 8.9 && climb(1.5, 0.1, 6) < 2.0);
     }

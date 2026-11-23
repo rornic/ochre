@@ -72,7 +72,7 @@ const SHADOW_BLUR_LEVELS: f32 = 4.0;
 // A shadow map's nearest texels are still a few of a foliage layer's 512, so its holes are cut at least this blurred.
 const SHADOW_BLUR_BASE: f32 = 4.0;
 
-// The mip a leaf or plant is cut at: as in the main pass for the view's own depth, so the two agree, and for the sun's
+// The mip a leaf or plant is cut at: as in the main pass for the view's own depth, so they agree, and for the sun's
 // shadows, whose cut-out holes finer than a shadow map's texels would flicker as the sun moves, going from dappled to
 // solid as the holes blur.
 fn cut_level(in: prepass_io::VertexOutput) -> f32 {

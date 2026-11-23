@@ -1,4 +1,4 @@
-// Rain falling round the camera, see `weather::RainMaterial`: a box of streaks, each carrying a fixed spot in its position and its corner in uv, falling here wrapped round the camera.
+// Rain falling round the camera (`weather::RainMaterial`): a box of streaks, each with a fixed spot, wrapped round it
 
 import bevy_pbr::render::{
     forward_io::{Vertex, VertexOutput},
@@ -6,7 +6,7 @@ import bevy_pbr::render::{
     view_transformations::position_world_to_clip,
 };
 
-// x: how hard it's raining, 0..1; y: how bright the light on it is; zw: the wind, in blocks a second across the ground.
+// x: how hard it's raining, 0..1; y: how bright the light on it is; zw: the wind, in blocks a second.
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> rain: vec4<f32>;
 
 // Matches `RAIN_BOX` in `weather.rs`.

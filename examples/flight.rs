@@ -1,4 +1,4 @@
-// A scripted headless camera flight (settle, walk, sprint, fly high) through the loading systems, reporting each leg as `key: value` lines for diffing builds.
+// A scripted headless camera flight (settle, walk, sprint, fly high) through the loading systems; `key: value` a leg
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};

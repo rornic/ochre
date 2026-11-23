@@ -51,7 +51,7 @@ impl Plain {
         self
     }
 
-    /// Bares ground below `line` blocks over the sea that the climate would snow over: grass, gravel from gradient `scree`.
+    /// Bares ground below `line` blocks over the sea that climate would snow over: grass, gravel from gradient `scree`.
     pub fn with_thaw(mut self, line: i64, scree: f64) -> Self {
         self.thaw = Some((line, scree));
         self

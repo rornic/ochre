@@ -1,4 +1,4 @@
-// A rainbow after the rain, see `weather::RainbowMaterial`: a ring round the point opposite the sun, uv.x from the band's inside to outside, fading where it would dip below the camera.
+// A rainbow after rain (`weather::RainbowMaterial`): a ring round the point opposite the sun, fading below the camera
 
 import bevy_pbr::render::{forward_io::VertexOutput, mesh_view_bindings as view_bindings};
 

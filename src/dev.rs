@@ -3,7 +3,7 @@ use std::env::{var, var_os};
 use ochre_gameplay::flythrough::FlightConfig;
 use ochre_world::{SpawnAt, WorldOptions};
 
-/// What the `OCHRE_*` environment variables set, for the sandbox and tools to pass on; the plugins read no environment.
+/// What the `OCHRE_*` environment variables set, for the sandbox and tools; the plugins read no environment.
 #[derive(Default)]
 pub struct DevEnv {
     /// `OCHRE_SEED`, `OCHRE_WORLD_DIR`, `OCHRE_CHARACTER=off` and `OCHRE_SPAWN=x,z[,lift]`.
@@ -18,7 +18,7 @@ pub struct DevEnv {
     pub stats: bool,
     /// `OCHRE_FLIGHT`, with `OCHRE_FLIGHT_WARMUP` and `OCHRE_FLIGHT_FRAMES`.
     pub flight: Option<FlightConfig>,
-    /// `OCHRE_REMOTE`, the port for `RemoteControlPlugin`: a port from 1024 up, off for `0`, `off` or `false`, else Bevy's 15702.
+    /// `OCHRE_REMOTE`, the `RemoteControlPlugin` port: 1024 up, off for `0`, `off` or `false`, else Bevy's 15702.
     pub remote: Option<u16>,
 }
 

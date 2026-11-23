@@ -1,4 +1,4 @@
-// Flies the player along +x (or up) through the headless loading systems, reporting surface chunks nothing draws and stale full-detail chunks.
+// Flies the player along +x (or up) through the headless loading systems, reporting undrawn and stale chunks
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
@@ -20,7 +20,7 @@ use ochre_terrain::world::World;
 #[derive(Component)]
 struct SimCamera;
 
-// OCHRE_PROBE=x,y,z: after loading, decodes the packed meshes of the groups round the point and says how many triangles each has within 3 blocks of it
+// OCHRE_PROBE=x,y,z: after loading, counts each nearby group's triangles within 3 blocks of the point
 fn probe_mesh(app: &mut App, p: Vec3) {
     use bevy::mesh::{Indices, VertexAttributeValues};
     let world = app.world_mut();
@@ -175,7 +175,7 @@ fn report(app: &mut App, layout: LodLayout, pos: Vec3) -> Report {
                 .sample((cx * size + size / 2) as f64, (cz * size + size / 2) as f64)
                 .height
                 .max(WATER_LEVEL as f64);
-            // the chunk holding the ground's top block, rounded as chunks round it (`bed_top`): truncating named the buried chunk for a height just over a chunk's top (32.9)
+            // the chunk holding the ground's top block, rounded as `bed_top` does: truncating named the buried chunk
             let c = ChunkCoordinate(I64Vec3::new(cx, (h.round() as i64 - 1).div_euclid(size), cz));
             let shown = |key: LodKey| lod_vis.get(&key).copied().unwrap_or(false);
             let drawn = chunk_vis(&c).unwrap_or(false)
@@ -255,7 +255,7 @@ fn report(app: &mut App, layout: LodLayout, pos: Vec3) -> Report {
     }
 }
 
-// The chunk holding the ground a coarse LOD level draws over column (`cx`, `cz`), from the cell at the chunk's centre.
+// The chunk holding the ground a coarse LOD level draws over column (`cx`, `cz`), from the cell at the chunk's centre
 fn coarse_ground(
     noise: &dyn TerrainSource,
     cx: i64,

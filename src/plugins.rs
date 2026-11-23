@@ -21,7 +21,7 @@ use ochre_world::{
 use crate::dev::DevEnv;
 use crate::settings::Settings;
 
-/// Builds the world `OchrePlugins` plays in, from `settings.world`. Takes seconds, so call it before the window opens.
+/// Builds the world `OchrePlugins` plays in, from `settings.world`. Takes seconds: call it before the window opens.
 pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     ochre_world::load_world(
         settings.renderer.lod_layout().region_reach() as u32,
@@ -30,7 +30,7 @@ pub fn load_world(settings: &Settings, options: &WorldOptions) -> World {
     )
 }
 
-/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins` (added first, with `task_pool_plugin()`); `settings.plugins` starts `FrostPlugin` and `GodrayPlugin` disabled.
+/// Every Ochre plugin, disabled or swapped as in `DefaultPlugins`; `settings.plugins` starts frost and godrays off.
 pub struct OchrePlugins {
     pub settings: Settings,
     world: World,

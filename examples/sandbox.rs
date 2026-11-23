@@ -13,7 +13,7 @@ fn window_size() -> Option<(u32, u32)> {
 
 fn main() {
     let settings = Settings::read("assets/settings.toml").expect("Failed to read settings.toml");
-    // a flight is 1080p, and unsynced only when its frames are saved, as its real-time run keeps the desktop's compositor its share of the GPU
+    // a flight is 1080p, unsynced only when saving frames, so a real-time run leaves the compositor its GPU share
     let flight = std::env::var_os("OCHRE_FLIGHT").is_some();
     let flight_frames = std::env::var_os("OCHRE_FLIGHT_FRAMES").is_some();
     // made before the window exists: a window whose app is busy for seconds has wedged the desktop's shell

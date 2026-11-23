@@ -1,6 +1,6 @@
-// Frost: a thin crystalline skin over ground the cold would freeze but the generator left bare, thicker the colder it is, and a rime on the
-// tips of plants. Angular plates up close that fade to soft patches far away, a bright rim just inside the edges, and a glitter of tiny
-// facets that catch the sun. See `docs/designs/snow-and-frost.md`. Everything here is a function of where the fragment is, so it is the same in every pass and on every LOD.
+// Frost: a thin crystalline skin over ground the cold would freeze but the generator left bare, thicker the colder,
+// and a rime on plant tips: angular plates up close fading to soft patches far off, a bright rim, a glitter of facets
+// A function of where the fragment is only, so the same in every pass and LOD; `docs/designs/snow-and-frost.md`.
 
 import super::curvature::{cold, eye, uncurved};
 import super::hash::{hash2, hash3, value_noise};
@@ -18,12 +18,12 @@ const PLATE: f32 = 0.38;
 // The stretches patches gather in and thin out over, in blocks, and how hard they weigh on the cover.
 const CLUMP: f32 = 380.0;
 const CLUMPING: f32 = 2.2;
-// How far, over what scale in blocks, slow noise pushes the patches' coordinates about, so their edges wander off the noise's square lattice.
+// How far, over what scale in blocks, slow noise pushes the patches' coordinates, so edges wander off the lattice.
 const WARP_SCALE: f32 = 90.0;
 const WARP_BY: f32 = 45.0;
 // Blocks to a pixel over which the plates and the small patches fade out, so far frost is soft and doesn't shimmer.
 const FINE_FADE: vec2<f32> = vec2<f32>(0.06, 0.26);
-// Frost's albedo, a cool off-white well under fresh snow's, the rim's lift over it, and how much of the ground's own light and dark it keeps.
+// Frost's albedo, a cool off-white well under fresh snow's, the rim's lift over it, and how much ground light shows
 const FROST_ALBEDO: vec3<f32> = vec3<f32>(0.66, 0.72, 0.80);
 const RIM_LIFT: vec3<f32> = vec3<f32>(1.2, 1.28, 1.4);
 const GROUND_SHOWS: f32 = 0.7;
@@ -36,7 +36,7 @@ const GLITTER_SHARP: f32 = 10.0;
 // A sparkle's swell and fade, in radians a second, and how much of it shows with the sun nowhere near its facet.
 const TWINKLE_RATE: vec2<f32> = vec2<f32>(0.4, 1.2);
 const TWINKLE_BASE: f32 = 0.3;
-// The sheen: how tight the sun's lobe on the plates is, how far a plate leans off flat, how strongly it shines, and its tint.
+// The sheen: how tight the sun's lobe on the plates is, a plate's lean off flat, how strongly it shines, its tint
 const SHEEN_SHARP: f32 = 18.0;
 const SHEEN_TILT: f32 = 0.18;
 const SHEEN_COLOUR: vec3<f32> = vec3<f32>(0.9, 1.0, 1.15);
@@ -98,8 +98,8 @@ fn plate(p: vec2<f32>) -> Plate {
     return Plate(next - nearest, id, centre);
 }
 
-// The frost at a fragment `world_position` (as drawn, curved), looking `up` (the lit normal's y), under baked `sky` light, `block_rate`
-// blocks to a pixel, with the sun at `to_sun` and the clock at `time`. `tip` is -1 for ground, and for a plant sprite 0 at its foot to 1 at its tip.
+// The frost at `world_position` (as drawn, curved), looking `up` (the lit normal's y), under baked `sky` light,
+// `block_rate` blocks to a pixel; `tip` is -1 on ground, 0 at a plant's foot to 1 at its tip
 fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: f32, to_sun: vec3<f32>, time: f32) -> Frost {
     let about = cold();
     if about.camera.z < 0.5 {
@@ -110,7 +110,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
     let ground = about.camera.x - (real.y - f32(constants::WATER_LEVEL)) / about.rule.x;
     let freezing = 1.0 - smoothstep(about.rule.y, about.rule.y + about.rule.z, ground);
     let plant = tip >= 0.0;
-    // a plant sprite is a vertical plane, where x and z alone would make vertical stripes, so height and both diagonals are mixed in
+    // a plant sprite is a vertical plane, where x and z alone would stripe, so height and both diagonals are mixed in
     let mapped = select(real.xz, vec2<f32>(real.x + real.z, real.y * 1.3 + real.x - real.z), plant);
     let facing = select(smoothstep(0.15, 0.6, up), 1.0, plant);
     let cover = freezing * about.camera.y * facing * smoothstep(0.3, 0.8, sky);
@@ -120,7 +120,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
     // big patches everywhere, plates and small patches only while a pixel is well under a block
     let fine = 1.0 - smoothstep(FINE_FADE.x, FINE_FADE.y, block_rate);
     let cell = plate(mapped / PLATE);
-    // away from a seam a plate is judged as a whole, at its middle, so edges follow plates; at a seam it is judged here, so neighbours blend and no edge is a step
+    // away from a seam a plate is judged whole at its middle so edges follow plates; at a seam, here, so they blend
     let inside = smoothstep(0.0, 0.4, cell.seam) * fine;
     let judged = mix(mapped, cell.centre * PLATE, inside);
     let warp = (vec2<f32>(value_noise(judged / WARP_SCALE + vec2<f32>(3.0, 59.0)), value_noise(judged / WARP_SCALE + vec2<f32>(83.0, 27.0))) - 0.5) * WARP_BY;
@@ -131,7 +131,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
     // mid-sized breakup that holds out to the distance, so far frost is broken ground and not white blobs
     let mid = (value_noise(turned(flowed, 1.1) / 4.5 + vec2<f32>(7.0, 91.0)) - 0.5) * 0.55 * (1.0 - smoothstep(0.3, 1.6, block_rate));
     let mid2 = (value_noise(turned(flowed, 2.7) / 1.7 + vec2<f32>(63.0, 19.0)) - 0.5) * 0.4 * (1.0 - smoothstep(0.12, 0.7, block_rate));
-    // averaging narrows the spread of the noise, so it is stretched back out around its middle, and the clumps lift and sink whole stretches
+    // averaging narrows the noise's spread, so it is stretched back out around its middle; clumps lift and sink it
     let field = (mix(big, small, 0.25 * fine) - 0.5) * 2.0 + 0.5 + (clump - 0.5) * CLUMPING + mid + mid2;
     // the colder it is, the lower the bar a patch has to clear, and each plate has a bar of its own
     // a fine grain on top, so the fade out is ragged and not a clean gradient
@@ -153,7 +153,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
         thin = 0.1;
     }
     let seam = (1.0 - smoothstep(0.0, 0.3, cell.seam)) * fine;
-    // sheen: each plate leans a little its own way, so the sun's lobe breaks across plates, and the sky shows at grazing angles; plants have none
+    // sheen: each plate leans its own way, so the sun's lobe breaks across plates and the sky shows at grazing angles
     let seen = normalize(eye() - real);
     var sheen = 0.0;
     if !plant {
@@ -163,7 +163,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
         let sky_glance = pow(1.0 - max(dot(plane, seen), 0.0), 4.0) * 0.35;
         sheen = (lobe + sky_glance) * amount * mix(1.0, 0.5, thin);
     }
-    // sparkles: tiny round facets, each with a random tilt, that swell and fade on their own clock and flare when the sun catches them; none past a few blocks
+    // sparkles: tiny randomly tilted facets that swell and fade on their own clock and flare in the sun; none far off
     var glitter = 0.0;
     let near = 1.0 - smoothstep(0.05, 0.14, block_rate);
     if near > 0.0 && amount > 0.25 {
@@ -187,7 +187,7 @@ fn frost_at(world_position: vec3<f32>, up: f32, sky: f32, block_rate: f32, tip: 
     return Frost(amount, thin, rim, seam, glitter, sheen);
 }
 
-// `albedo` under frost: toward a cool off-white that keeps most of the ground's own light and dark and shows through where it's thin,
+// `albedo` under frost: toward a cool off-white keeping most of the ground's light and dark, showing through thin
 // with dark seams between plates, a bright rim, and the glitter added.
 fn frosted(albedo: vec3<f32>, frost: Frost) -> vec3<f32> {
     let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));

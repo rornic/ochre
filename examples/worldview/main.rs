@@ -1,5 +1,5 @@
-// A browser viewer for a seed's world at http://127.0.0.1:8777, with an `/export` PNG route and the `probe.rs` commands from the command line or `/probe`.
-// Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or fewer from `RegionStore`, which is what chunks are built from.
+// A browser viewer for a seed's world on port 8777, with an `/export` PNG route and the `probe.rs` commands.
+// Zoomed out (above 2 blocks a pixel) tiles come from `WorldTerrain::sample_for_cell`; at 2 or fewer, `RegionStore`.
 mod probe;
 
 use std::collections::HashMap;
@@ -335,7 +335,7 @@ fn layer_pixel(w: &World, v: &View, name: &str, c: &Col) -> Option<(Rgb, f32)> {
             };
             (colour, 1.0)
         }
-        // the meso scorer's inputs, 0 to 1: a valley carved through the range, alpine ground, how open to the wind, and how near water
+        // the meso scorer's inputs, 0 to 1: a valley through the range, alpine ground, wind exposure, nearness to water
         "valley" => (lerp([25.0, 25.0, 35.0], [60.0, 210.0, 170.0], b(&map.valley)), 1.0),
         "alpine" => (lerp([25.0, 25.0, 35.0], [230.0, 230.0, 245.0], b(&map.alpine)), 1.0),
         "exposure" => (lerp([40.0, 70.0, 150.0], [240.0, 150.0, 50.0], b(&map.exposure)), 1.0),
@@ -900,7 +900,7 @@ fn handle(server: &Server, mut stream: TcpStream) {
             reply(stream, "200 OK", "text/plain", "", body.as_bytes());
         }
         "/places" => {
-            // the most distinctive places per biome as CSV, see `ochre_world::worldmap::meso`; `null=1` shifts the mass-scale relief to show what chance scores
+            // the most distinctive places per biome as CSV; `null=1` shifts mass-scale relief to show chance scores
             let world = server.world(seed);
             let mut params = meso::Params::default();
             params.top = num("top", params.top as f64) as usize;

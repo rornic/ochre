@@ -3,7 +3,7 @@
 use crate::math::smoothstep_f64;
 use crate::noise::{perlin, perlin3};
 
-// Gradients where cliffs start (about half a range's columns exceed the first) and are fully formed (nine in ten are under the second).
+// Gradients where cliffs start (half a range's columns exceed the first) and are fully formed (90% under the second).
 const CLIFF_GRADIENT: (f64, f64) = (1.0, 2.8);
 const CLIFF_REACH: f64 = 9.0;
 
@@ -22,7 +22,7 @@ pub fn cliff_reach_boosted(gradient: f64, boost: f64) -> f64 {
 
 const VERTICAL_SQUASH: f64 = 0.7;
 
-/// Noise in -1..1 that cliffs are cut from, where `height - y + reach * cliff_density` crosses zero; it varies `VERTICAL_SQUASH` as fast with height round `ground`, or the surface folds over and pits.
+/// Noise in -1..1 that cliffs are cut from; varies `VERTICAL_SQUASH` as fast with height round `ground`, or it folds.
 pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
     let squashed = ground as f64 + (y - ground) as f64 * VERTICAL_SQUASH;
     let (fx, fy, fz) = (x as f64 + 0.5, squashed + 0.5, z as f64 + 0.5);
@@ -33,7 +33,7 @@ pub fn cliff_density(seed: u32, x: i64, y: i64, z: i64, ground: i64) -> f64 {
 const MEADOW_WAVELENGTH: f64 = 55.0;
 const MEADOW_OVER: f64 = 0.12;
 
-/// Whether (`x`, `z`) is in a patch of meadow, which clings to mountain faces otherwise bare rock; about a third of the ground.
+/// Whether (`x`, `z`) is in a meadow patch, which clings to otherwise bare mountain faces; a third of the ground.
 pub fn meadow_patch(seed: u32, x: f64, z: f64) -> bool {
     perlin(seed ^ 0x3EAD, x / MEADOW_WAVELENGTH, z / MEADOW_WAVELENGTH) > MEADOW_OVER
 }

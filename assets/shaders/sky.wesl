@@ -1,4 +1,4 @@
-// The atmosphere's sky as the camera sees it, read from the environment map Bevy fills each frame, so all that must match the sky follows the sun.
+// The atmosphere's sky as the camera sees it, from the environment map Bevy fills each frame, so it follows the sun.
 
 import bevy_pbr::render::mesh_view_bindings as view_bindings;
 import bevy_render::maths::quat_rotate;
@@ -35,7 +35,7 @@ fn read_cube(direction: vec3<f32>, mip: f32, diffuse: bool) -> vec3<f32> {
 }
 }
 
-// Where the sun and moon are among the view's directional lights: the patched `bevy_pbr` sorts the volumetric sun first, see `Cargo.toml`.
+// Where the sun and moon are among the view's directional lights; patched `bevy_pbr` sorts the volumetric sun first.
 const SUN_LIGHT: u32 = 0u;
 const MOON_LIGHT: u32 = 1u;
 
@@ -48,7 +48,7 @@ fn night_factor() -> f32 {
     return 1.0 - smoothstep(-0.2, 0.02, sun_height);
 }
 
-// The faint glow of the night sky, brightest along the horizon, which the atmosphere leaves black once the sun is far down.
+// The faint night-sky glow, brightest along the horizon, which the atmosphere leaves black once the sun is far down.
 const GLOW_ZENITH: vec3<f32> = vec3<f32>(0.0008, 0.0016, 0.005);
 const GLOW_HORIZON: vec3<f32> = vec3<f32>(0.004, 0.007, 0.016);
 

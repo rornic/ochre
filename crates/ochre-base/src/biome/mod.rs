@@ -64,7 +64,7 @@ pub trait Biome: Send + Sync {
         TreeScale::default()
     }
 
-    // How much of the frost the cold would give its ground it keeps, 0..1: a tundra or taiga thaws what the climate alone would freeze.
+    // Share of the frost the cold would give its ground that it keeps, 0..1: tundra and taiga thaw it.
     fn frost(&self) -> f32 {
         1.0
     }
@@ -298,7 +298,7 @@ impl Biomes {
     }
 }
 
-// Grass at the four corners of the climate square, in sRGB: parched straw hot and dry, lush green hot and wet, duller when cold.
+// Grass at the climate square's four corners, sRGB: parched straw hot and dry, lush green hot and wet, duller cold.
 const GRASS_HOT_DRY: [f32; 3] = [184.0, 164.0, 96.0];
 const GRASS_HOT_WET: [f32; 3] = [40.0, 130.0, 12.0];
 const GRASS_COLD_DRY: [f32; 3] = [140.0, 128.0, 88.0];

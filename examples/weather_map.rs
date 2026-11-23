@@ -1,4 +1,4 @@
-//! Rain per biome over `--days` game days and PNG maps of the storms from a seed's `Forecast`; `--snow` finds the longest snowfall and prints a game command for it.
+//! Rain per biome over `--days` game days and PNG maps of a seed's storms; `--snow` finds the longest snowfall.
 use std::{path::Path, sync::Arc};
 
 use bevy::math::DVec2;
@@ -12,7 +12,6 @@ use ochre_world::{
 
 // The moments mapped, in days.
 const MOMENTS: [f64; 5] = [0.5, 1.25, 2.5, 4.0, 5.75];
-// Pixels across a map.
 const PIXELS: usize = 512;
 
 fn biome_colour(kind: BiomeKind) -> [f32; 3] {
@@ -320,7 +319,7 @@ const STORM_ABOVE: f32 = 0.5;
         );
     }
 
-    // what it costs the game: the clouds' 64 by 64 grid every half second, and the camera's weather each frame (nine asks)
+    // the game's cost: the clouds' 64 by 64 grid every half second, and the camera's weather each frame (nine asks)
     let around = DVec2::new(sx as f64, sz as f64) - DVec2::splat(32.0 * 1_100.0);
     let _ = forecast.map(around, 64, 1_100.0, 0);
     let start = std::time::Instant::now();

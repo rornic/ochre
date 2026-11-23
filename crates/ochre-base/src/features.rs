@@ -1,4 +1,4 @@
-//! Relief features: small landforms a biome lays over its ground, each a pure function of seed and position returning at most `MAX_OFFSET` blocks either way.
+//! Relief features: small landforms a biome lays over its ground, pure in seed and position, at most `MAX_OFFSET`.
 
 use crate::math::smoothstep_f64 as smoothstep;
 use crate::noise::{fbm, hash, perlin, ridged};
@@ -63,7 +63,7 @@ pub fn offset(kind: ReliefKind, seed: u32, x: f64, z: f64, cell: f64, ctx: &Reli
     (raw * detail).clamp(-MAX_OFFSET, MAX_OFFSET)
 }
 
-// Broad, asymmetric glacial hills above the open tundra, thick or thin by province so they cluster rather than form a lattice.
+// Broad, asymmetric glacial hills over open tundra, clustered by province rather than in a lattice.
 fn tundra_hills(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let gentle = 1.0 - smoothstep(0.3, 0.6, ctx.gradient);
     if gentle <= 0.0 {
@@ -108,7 +108,7 @@ fn unit_of(h: u32, salt: u32) -> f64 {
     hash(h, salt as i32, 0) as f64 / 4_294_967_296.0
 }
 
-// Slots 2 to 5 wide, 8 to 18 deep and 40 to 150 long cut across a convex slope in belts, bridged every 15 to 30 blocks.
+// Slots 2 to 5 wide, 8 to 18 deep, 40 to 150 long, cut across a convex slope in belts, bridged every 15 to 30 blocks.
 fn crevasses(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let g = ctx.gradient;
     let gentle = smoothstep(0.1, 0.15, g) * (1.0 - smoothstep(0.6, 0.7, g));
@@ -181,7 +181,7 @@ fn seracs(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * steep
 }
 
-// Round ice-cored mounds on flat ground, 5 to 14 high and 7 to 18 in radius, in drifts; two rotated lattices and a smooth field keep them off any grid.
+// Round ice-cored mounds on flat ground, 5 to 14 high, 7 to 18 radius, in drifts; rotated lattices avoid a grid.
 fn pingos(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let flat = 1.0 - smoothstep(0.08, 0.15, ctx.gradient);
     if flat <= 0.0 {
@@ -288,7 +288,7 @@ fn drumlins(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * gentle
 }
 
-// Wind-carved ridges (up to 5 high) and troughs (up to 2.5 deep), 60 to 200 long, along the wind in patches on ground gentler than 0.35.
+// Wind-carved ridges (up to 5 high) and troughs (up to 2.5 deep), 60 to 200 long, along the wind, on ground < 0.35
 fn yardangs(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let gentle = 1.0 - smoothstep(0.2, 0.35, ctx.gradient);
     let patch = smoothstep(-0.05, 0.25, fbm(seed ^ 0x7A9D, x, z, 900.0, 1));
@@ -387,7 +387,7 @@ fn hummocks(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     best * flat
 }
 
-// Round bumps on a grid of `size` block cells, each held with `chance` scaled by its 1200 block province; radius and height range between the pairs, rolling or peaked.
+// Round bumps on a grid of `size` cells, each held with `chance` scaled by its 1200 block province.
 struct Bumps {
     salt: u32,
     size: f64,
@@ -444,7 +444,7 @@ fn mogotes(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     bumps(seed, x, z, &Bumps { salt: 0x40C2, size: 90.0, chance: 0.35, radius: (8.0, 16.0), height: (10.0, 18.0), peaked: true }) * gentle
 }
 
-// Shallow hollows 3 to 7 deep and 28 to 56 across in the forest floor, where an old tree's roots lifted the ground and rotted.
+// Shallow hollows 3 to 7 deep, 28 to 56 across, where an old tree's roots lifted and rotted the ground.
 fn dells(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     let flat = 1.0 - smoothstep(0.15, 0.3, ctx.gradient);
     if flat <= 0.0 {
@@ -460,7 +460,7 @@ fn stepped(rise: f64, step: f64) -> f64 {
     (base + smoothstep(0.65, 1.0, along - base)) * step
 }
 
-// The jungle floor broken into ledges at three scales (90 across and 13 high, 28 and 4.5, 9 and 0.6), each seed taller or shorter.
+// Jungle floor broken into ledges at three scales (90 across 13 high, 28 and 4.5, 9 and 0.6), each seed varying.
 fn ledges(seed: u32, x: f64, z: f64, ctx: &ReliefCtx) -> f64 {
     // a little less on the level, and none on cliffs, which are steep enough already
     let room = (0.6 + 0.4 * smoothstep(0.0, 0.15, ctx.gradient)) * (1.0 - smoothstep(1.0, 1.5, ctx.gradient));

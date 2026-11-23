@@ -1,4 +1,4 @@
-// Headless like `lod_sim`: times frames with the water still, then after breaking the banks nearest the camera, with how much is flowing.
+// Headless like `lod_sim`: times frames with the water still, then after breaking the banks nearest the camera.
 use std::time::{Duration, Instant};
 
 use bevy::math::I64Vec3;
@@ -28,7 +28,7 @@ fn setup(mut commands: Commands, world: Res<World>) {
 
 const SIDES: [I64Vec3; 4] = [I64Vec3::X, I64Vec3::NEG_X, I64Vec3::Z, I64Vec3::NEG_Z];
 
-// Up to `count` banks round `centre`, nearest first and 8 blocks apart: a solid block with still water on one side and air on the other.
+// Up to `count` banks round `centre`, nearest first, 8 blocks apart: solid, still water one side, air the other.
 fn banks(world: &World, centre: I64Vec3, count: usize) -> Vec<I64Vec3> {
     let reach = 4;
     let middle = ChunkCoordinate::containing(centre).0;

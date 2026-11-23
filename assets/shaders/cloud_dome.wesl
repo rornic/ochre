@@ -41,7 +41,7 @@ fn scene_distance(frag_coord: vec2<f32>, direction: vec3<f32>) -> f32 {
     return FAR;
 }
 
-// Rain seen from afar as grey shafts under storm clouds (pale ones of snow, below): light lost per block in the heaviest rain (5 km hides about 60%).
+// Rain seen from afar as grey shafts under storm clouds (pale for snow): light lost per block in the heaviest rain.
 const SHAFT_EXTINCTION: f32 = 1.0 / 5000.0;
 // The most of what's behind any ray of rain hides, so the land always shows through.
 const SHAFT_MOST: f32 = 0.6;
@@ -52,13 +52,14 @@ const SHAFT_STEPS: i32 = 16;
 const SHAFT_SUNLIT: f32 = 0.08;
 const SHAFT_SKYLIT: f32 = 0.45;
 const SHAFT_STORM_DARK: f32 = 0.55;
-// Snow hangs pale: it takes more light than rain as hard and scatters far more of its light back, under a storm's dark cloud too.
+// Snow hangs pale: it takes more light than rain as hard and scatters far more back, under a storm's dark cloud too.
 const SNOW_EXTINCTION: f32 = 1.0 / 3500.0;
 const SNOW_SUNLIT: f32 = 0.2;
 const SNOW_SKYLIT: f32 = 0.9;
 const SNOW_STORM_DARK: f32 = 0.3;
 
-// The rain along a ray from `eye` until `limit`, packed as the clouds' march packs them (sunlit, sky-lit and hazed light in xyz, how much it hides in w), at full resolution so the land's depth cuts it off.
+// The rain along a ray from `eye` until `limit`, packed as the clouds' march packs it (light in xyz, cover in w),
+// at full resolution so the land's depth cuts it off.
 fn rain_shafts(eye: vec3<f32>, direction: vec3<f32>, limit: f32, bend: f32, jitter: f32) -> vec4<f32> {
     if most_precipitation() < 0.01 {
         return vec4<f32>(0.0);
@@ -91,7 +92,7 @@ fn rain_shafts(eye: vec3<f32>, direction: vec3<f32>, limit: f32, bend: f32, jitt
     return vec4<f32>(gathered, cover) * min(1.0, SHAFT_MOST / max(cover, 1e-4));
 }
 
-// The march's target at `uv` by cubic B-spline, in four taps of the linear sampler: bilinear's texels show as squares and kinks once edges are cut sharp.
+// The march's target at `uv` by cubic B-spline in four taps of the linear sampler: bilinear shows texels as squares.
 fn smooth_target(uv: vec2<f32>) -> vec4<f32> {
     let size = vec2<f32>(textureDimensions(cloud_target));
     let p = uv * size - 0.5;

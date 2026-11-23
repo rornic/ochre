@@ -11,7 +11,7 @@ const FLORA_SWAY: f32 = 0.16;
 // bends one way in a gust rather than wobbling about upright.
 const FLORA_LEAN: f32 = 0.35;
 
-// The world's prevailing wind in x and z, see `ChunkMaterial::wind`: zero until set, which reads as the old fixed direction.
+// The world's prevailing wind in x and z (`ChunkMaterial::wind`): zero until set, which reads as the old fixed wind.
 @group(constants::MATERIAL_BIND_GROUP) @binding(14) var<uniform> wind: vec4<f32>;
 // How far apart, in blocks, the broad gust bands that cross open ground are, along the wind.
 const BAND_BLOCKS: f32 = 190.0;
@@ -23,7 +23,7 @@ fn wind_direction() -> vec2<f32> {
     return normalize(wind.xy);
 }
 
-// How hard the wind pushes at `world` at `time`, about -1.2..1.2: a quick gust plus slow broad bands rolling along the wind.
+// How hard the wind pushes at `world` at `time`, about -1.2..1.2: a quick gust plus slow broad bands along the wind.
 fn gust_at(world: vec2<f32>, time: f32) -> f32 {
     let along = dot(world, wind_direction());
     return 0.7 * sin(time * 1.3 + along * 0.13) + 0.5 * sin(time * 0.55 + along * 6.2831853 / BAND_BLOCKS);
@@ -59,7 +59,7 @@ fn flora_height(vertex_alpha: f32) -> f32 {
     return (code / FLORA_HEIGHT_CODE * 0.5 + 0.5) * FLORA_HEIGHT_SPAN;
 }
 
-// How far a plant `height` blocks tall at `world` has shrunk into its root, 0..1, the tallest lasting longest: `FloraFade::gone_at`.
+// How far a plant `height` blocks tall at `world` has shrunk into its root, 0..1, tallest last (`FloraFade::gone_at`)
 const FLORA_HEIGHTS: vec2<f32> = vec2<f32>(0.4, 1.3);
 const FLORA_KEEP: f32 = 0.3;
 const FLORA_FIRST_GONE: f32 = 0.35;

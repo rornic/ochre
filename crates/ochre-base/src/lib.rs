@@ -1,4 +1,4 @@
-//! The types every Ochre crate shares: blocks, biomes, what a terrain source answers, and the world's sea level and vertical bounds.
+//! The types every Ochre crate shares: blocks, biomes, terrain sources, sea level and vertical bounds.
 
 pub mod biome;
 pub mod block;

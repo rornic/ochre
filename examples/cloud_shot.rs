@@ -1,4 +1,4 @@
-// Renders the sky and clouds to a PNG with no window, and prints the clouds' GPU times, for judging their look and cost headlessly.
+// Renders the sky and clouds to a PNG with no window and prints the clouds' GPU times, to judge look and cost.
 // `cargo run --release --example cloud_shot -- out.png [width=1920] [height=1080] [yaw=0] [pitch=15] [eye height=200]`; `OCHRE_TIME` sets the time of day, `CLOUD_SPIN` turns the camera that many degrees a frame.
 use std::time::Duration;
 

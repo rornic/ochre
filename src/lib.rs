@@ -1,4 +1,4 @@
-//! Ochre, a voxel engine for Bevy, re-exporting its crates: `ochre_base`, `ochre_terrain`, `ochre_world` and `ochre_gameplay`.
+//! Ochre, a voxel engine for Bevy, re-exporting `ochre_base`, `ochre_terrain`, `ochre_world` and `ochre_gameplay`.
 
 pub mod dev;
 pub mod plugins;

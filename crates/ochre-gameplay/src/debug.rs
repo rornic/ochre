@@ -34,7 +34,7 @@ const CPU_PASSES_SHOWN: usize = 5;
 // what a stretch of the frame's main schedules is called, between marks laid in `Main`'s order
 const MAIN_STAGES: [&str; 5] = ["first", "pre", "update", "post", "last"];
 
-/// F1 toggles a text readout of climate, targeted block, frame cost and loaded terrain; `stats` starts it shown and prints `STATS` lines.
+/// F1 toggles a text readout of climate, block, frame cost and terrain; `stats` starts it shown and prints `STATS`.
 #[derive(Default)]
 pub struct DebugOverlayPlugin {
     pub stats: bool,
@@ -51,7 +51,7 @@ impl Plugin for DebugOverlayPlugin {
         if !app.is_plugin_added::<RenderDiagnosticsPlugin>() {
             app.add_plugins(RenderDiagnosticsPlugin);
         }
-        // a mark before First and one after each of First, RunFixedMainLoop, Update, PostUpdate and Last time the main world's stretches
+        // marks bracket First, RunFixedMainLoop, Update, PostUpdate and Last to time the main world's stretches
         app.init_resource::<MainTimes>();
         let mut order = app.world_mut().resource_mut::<MainScheduleOrder>();
         order.insert_before(First, Mark(0));
@@ -371,7 +371,7 @@ fn update_overlay(
     text.0 = out;
 }
 
-// Every 2 s, logs ground near the camera that nothing draws: a built group hidden with no visible LOD node over it, or a chunk marked as drawn by a group that isn't there.
+// Every 2 s, logs ground nothing draws: a hidden group with no visible LOD node, or a drawn chunk with no group
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn check_holes(
     time: Res<Time>,

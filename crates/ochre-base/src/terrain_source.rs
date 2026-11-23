@@ -46,7 +46,6 @@ pub enum SpringPart {
     Pool,
 }
 
-/// The rocks down one column.
 pub trait RockColumn {
     /// The blocks `y` is among that are all one rock, as `start..end`, and the block stone is drawn as in them.
     fn bed(&mut self, y: i64) -> (i64, i64, crate::block::BlockType);
@@ -75,7 +74,7 @@ pub trait TerrainSource: Send + Sync {
 
     fn biomes(&self) -> &Biomes;
 
-    /// The terrain as a cell `cell` wide sees it, features too fine for it fading to their average; `sample` for single blocks.
+    /// The terrain seen by a cell `cell` wide: features too fine for it fade to their average; `sample` is per block.
     fn sample_for_cell(&self, x: f64, z: f64, cell: f64) -> TerrainSample;
 
     /// The rock down the column at (x, z), `Stone` throughout where the source has no geology.
@@ -99,22 +98,22 @@ pub trait TerrainSource: Send + Sync {
         0.0
     }
 
-    /// How far the column at (x, z) stands over the ground round it, 0..1: 0.5 on level ground, up on crests, down in hollows.
+    /// How far the column at (x, z) stands over the ground round it, 0..1: 0.5 level, up on crests, down in hollows.
     fn exposure(&self, _x: f64, _z: f64) -> f32 {
         0.5
     }
 
-    /// The climate grass and flora are tinted by at (x, z): `climate` shifted by the lie of the land, so ridges, hollows and banks read differently.
+    /// The climate grass and flora are tinted by at (x, z): `climate` shifted by the lie of the land.
     fn tint_climate(&self, x: f64, z: f64) -> Climate {
         self.climate(x, z)
     }
 
-    /// How much lusher (above 0) or thinner (below 0) the lie of the land makes cover at (x, z), in humidity: banks and hollows up, crests and high ground down. Grass tint and tree density both read it.
+    /// Humidity added (above 0) or removed (below 0) by the lie of the land: banks and hollows up, crests down.
     fn vigour(&self, _x: f64, _z: f64) -> f32 {
         0.0
     }
 
-    /// How many times the map's tree density a tree cell at (x, z) keeps for the lie of the land: more on banks and in hollows, fewer on crests and high ground. 1 where it makes no difference.
+    /// Multiple of the map's tree density a cell keeps for the lie of the land: more in hollows, fewer on crests.
     fn tree_lie(&self, _x: f64, _z: f64) -> f64 {
         1.0
     }
@@ -124,7 +123,7 @@ pub trait TerrainSource: Send + Sync {
         0.0
     }
 
-    /// How close the column at (x, z) is to a river, lake or pond, 0..1: 1 on the water, falling to 0 within about 100 blocks.
+    /// How close the column at (x, z) is to a river, lake or pond, 0..1: 1 on the water, 0 beyond about 100 blocks.
     fn water_closeness(&self, _x: f64, _z: f64) -> f32 {
         0.0
     }
@@ -164,7 +163,6 @@ pub trait TerrainSource: Send + Sync {
         self.sample(x, z).biome
     }
 
-    /// The water over the column at (x, z).
     fn water(&self, x: f64, z: f64) -> Water {
         let sample = self.sample(x, z);
         if sample.water_kind != WaterKind::None {

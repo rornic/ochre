@@ -112,7 +112,7 @@ pub(crate) fn spawn_camera(
             },
         ))
         .insert((
-            // In focus 8 blocks out, blurred ~1px at 16 blocks and ~2px from 150 on, so LOD seams soften. Gaussian is cheaper than Bokeh.
+            // In focus 8 blocks out, ~1px blurred at 16 and ~2px from 150, so LOD seams soften; cheaper than Bokeh.
             DepthOfField {
                 mode: DepthOfFieldMode::Gaussian,
                 focal_distance: 8.0,
@@ -152,7 +152,7 @@ const MURK_DISTANCE: f32 = 48.0;
 // Where the fog underwater in a river or lake is thick enough to hide everything, in blocks.
 const FRESH_FOG_END: f32 = 160.0;
 
-/// A sphere of the fog's colour round the camera that hides the unfogged sky underwater; always drawn, shown by alpha alone, since removing the atmosphere recompiled every material's shaders on the first dive.
+/// A fog-coloured sphere round the camera hiding the unfogged sky underwater; shown by alpha, avoiding recompiles.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub(crate) struct MurkMaterial {
     #[uniform(0)]
@@ -204,7 +204,7 @@ fn murk(meshes: &mut Assets<Mesh>, materials: &mut Assets<MurkMaterial>) -> (imp
     (bundle, Murk(material))
 }
 
-// Restores the DistanceFog/DepthOfField/ClearColor snapshotted on entering water, not hardcoded dry defaults that could drift from setup_scene's.
+// Restores the fog, depth of field and clear colour snapshotted on entering water, not dry defaults that could drift.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn update_underwater_effects(
     world: Res<World>,
@@ -289,24 +289,24 @@ pub(crate) fn update_underwater_effects(
     }
 }
 
-// How far the cold country has pulled the camera's grade, 0 to 1, and the grade as it was before that, kept to put back exactly.
+// How far the cold country has pulled the camera's grade, 0 to 1, and the grade before that, to put back exactly.
 #[derive(Resource, Default)]
 pub(crate) struct ColdGrade {
     eased: f32,
     clean: Option<ColorGrading>,
 }
 
-// Seconds for the cold grade to cover most of the way to the country the camera is in, for the cold is sensed in steps.
+// Seconds for the cold grade to cover most of the way to the camera's country, as the cold is sensed in steps.
 const COLD_GRADE_EASE: f32 = 2.0;
 
-// Puts back the grade under the cold's, before `update_underwater_effects` snapshots or sets it, so it sees only its own.
+// Puts back the grade under the cold's before `update_underwater_effects` snapshots or sets it.
 pub(crate) fn lift_cold_grade(mut cold: ResMut<ColdGrade>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
     if let (Some(clean), Ok(mut grading)) = (cold.clean.take(), camera.single_mut()) {
         *grading = clean;
     }
 }
 
-// Lays the cold's grade, and the hot country's, over whatever grade the camera has now, easing in and out of the cold by how warm the surroundings are.
+// Lays the cold and hot country's grade over the camera's, easing in and out of the cold by how warm it is.
 pub(crate) fn apply_cold_grade(
     around: Option<Res<Surroundings>>,
     feel: Option<Res<EasedFeel>>,
@@ -346,7 +346,7 @@ mod tests {
     #[derive(Resource, Default)]
     struct Wet(bool);
 
-    // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade put back once on leaving the water.
+    // Stands in for `update_underwater_effects`: saturation absolute while wet, the dry grade restored once on leaving.
     fn fake_underwater(wet: Res<Wet>, mut was: Local<bool>, mut camera: Query<&mut ColorGrading, With<Camera3d>>) {
         let mut grading = camera.single_mut().unwrap();
         if wet.0 {

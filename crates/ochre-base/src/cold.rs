@@ -1,10 +1,10 @@
-//! What cold does to the land: where snow settles, and the frost that comes just before it, in one place for the mesher and the shaders.
+//! Where snow settles and the frost just before it, shared by the mesher and the shaders.
 
 use crate::math::smoothstep;
 
 /// Height above the sea where snow starts to settle in a temperate climate (temperature 0.5).
 pub const SNOW_LINE: i64 = 950;
-/// How many blocks the snow line climbs per unit of temperature, which is also how many blocks of height cool the ground by one.
+/// Blocks the snow line climbs per unit of temperature, equal to blocks of height that cool the ground by one.
 pub(crate) const SNOW_LINE_PER_DEGREE: f64 = 2600.0;
 /// At or above this temperature it's too hot for snow, and the heights are bare rock.
 pub const SNOW_MAX_TEMPERATURE: f32 = 0.62;
@@ -15,7 +15,7 @@ pub const SNOWCAP_ABOVE: i64 = 1700;
 /// Below this temperature even the grass is under a layer of snow.
 pub const SNOWY_GRASS_TEMPERATURE: f32 = 0.25;
 
-/// What the ground's temperature is at the snow line, in any climate: the line climbs as the climate warms at the rate height cools it.
+/// Ground temperature at the snow line in any climate: the line climbs as warmth rises at the rate height cools.
 pub(crate) const SNOW_TEMPERATURE: f32 = 0.5 - SNOW_LINE as f32 / SNOW_LINE_PER_DEGREE as f32;
 /// How far warmer than snow's the ground's temperature may be and still have frost.
 pub(crate) const FROST_BAND: f32 = 0.12;
@@ -30,7 +30,7 @@ pub(crate) fn ground_temperature(sea_temperature: f32, above_sea: f32) -> f32 {
     sea_temperature - above_sea / SNOW_LINE_PER_DEGREE as f32
 }
 
-/// How cold enough for frost the ground is, 0 to 1: full at the snow line's temperature, easing out over `FROST_BAND`; `frost.wesl` does the same sum.
+/// Frost cover, 0..1: full at the snow line's temperature, easing out over `FROST_BAND`; `frost.wesl` repeats it.
 pub fn frost_cold(sea_temperature: f32, above_sea: f32) -> f32 {
     1.0 - smoothstep(SNOW_TEMPERATURE, SNOW_TEMPERATURE + FROST_BAND, ground_temperature(sea_temperature, above_sea))
 }

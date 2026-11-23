@@ -23,17 +23,17 @@ struct CloudView {
 @group(constants::MATERIAL_BIND_GROUP) @binding(9) var cloud_history: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(10) var cloud_history_sampler: sampler;
 
-// The share of each frame kept over the history, and more for each target pixel moving shifted the clouds by, as their depth that reprojects the history is only an average.
+// Share of each frame kept over the history, more per target pixel moved: an average depth reprojects imprecisely.
 const BLEND: f32 = 0.12;
 const BLEND_PER_PIXEL: f32 = 0.03;
-// A still camera takes this little of each frame, so the clouds' edges settle instead of flickering, rising to `BLEND` as it turns or moves.
+// A still camera takes this little of each frame so edges settle instead of flickering, rising to `BLEND` as it moves
 const BLEND_STILL: f32 = 0.05;
-// A ray that met no cloud at all is sure of it, so takes far more, or moving trails the history's clouds over what they uncover.
+// A ray that met no cloud is sure of it and takes far more, or moving trails the history over what it uncovers.
 const CLEAR_PER_PIXEL: f32 = 0.5;
-// A clear ray reprojects the history from no nearer than this: in the slab it enters at the camera, which reprojects nowhere, so clear rays lost their history and edges flickered.
+// A clear ray reprojects the history from no nearer than this: nearer, in the slab at the camera, it loses it
 const CLEAR_DEPTH: f32 = 2500.0;
 
-// Few samples a pixel, offset per pixel and frame and blended into the history to add up; fewer leave edges noisy, and inside the slab, where history is mostly discarded, every frame shows it.
+// Few samples a pixel, offset per pixel and frame and blended into the history; fewer leave edges noisy in the slab.
 const STEPS: i32 = 12;
 // Steps and octaves for the reflections' sky map: few, as waves blur them.
 const REFLECTED_STEPS: i32 = 4;
@@ -51,7 +51,7 @@ fn last_seen(direction: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5, select(0.0, 1.0, seen));
 }
 
-// The history at `uv` by Catmull-Rom in five taps of the linear sampler: bilinear's blur, taken again every frame the view turns, thins small clouds until they shrink.
+// The history at `uv` by Catmull-Rom in five taps of the linear sampler: repeated bilinear blur shrinks small clouds.
 fn sharp_history(uv: vec2<f32>) -> vec4<f32> {
     let size = vec2<f32>(textureDimensions(cloud_history));
     let pos = uv * size;
@@ -85,7 +85,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let ray = march_ray(eye, direction, bend, FAR, STEPS, 3, jitter, cloud_view.sun.xyz, cloud_view.eye.w);
     let cover = 1.0 - ray.through;
     let marched = vec4<f32>(ray.gathered, cover);
-    // last frame saw what was gathered where it lies, or the slab where the ray met nothing; moving shifts it against the sky
+    // last frame saw what was gathered where it lies, or the slab where the ray met nothing; moving shifts it
     let depth = select(max(cloud_entry(eye, direction, bend), CLEAR_DEPTH), ray.depth / cover, cover > 0.01);
     let sky = last_seen(direction);
     let last = select(sky, last_seen(direction * depth + eye - cloud_view.last_eye.xyz), depth < FAR);
@@ -99,18 +99,18 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     return mix(sharp_history(last.xy), marched, blend);
 }
 
-// How cold the ground under the camera is for the aurora, 0..1: none with frost off, half at the snow line's temperature, full a frost band below it.
+// How cold the ground under the camera is for the aurora, 0..1: none with frost off, half at the snow line
 fn aurora_chill() -> f32 {
     let about = cold();
     let ground = about.camera.x - (about.camera.w - f32(constants::WATER_LEVEL)) / about.rule.x;
     return (1.0 - smoothstep(about.rule.y - about.rule.z, about.rule.y + about.rule.z, ground)) * step(0.5, about.camera.z);
 }
 
-// The clouds water reflects, laid out as `sky_disc` and `overhead` read them, seen from no higher than water lies so a camera above them still sees their undersides.
+// The clouds water reflects, laid out as `sky_disc` and `overhead` read them, seen from no higher than the water.
 @fragment
 fn reflection(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let eye = cloud_view.eye.xyz;
-    // the first two texels lie outside the disc, so hold the clouds from the eye itself toward the sun and moon, see `disc_showing`
+    // the first two texels lie outside the disc, so hold the clouds from the eye toward the sun and moon
     let texel = vec2<i32>(in.position.xy);
     // the third holds the cold for the aurora, which the sky's pipelines have no buffer to read it from
     if texel.y == 0 && texel.x == 2 {

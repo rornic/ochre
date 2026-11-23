@@ -42,7 +42,7 @@ const FLATTEN_MAX: f32 = 0.85;
 // is the coarsest mip, which `block_mean` holds.
 const MEAN_BLOCK_RATE: f32 = 1.0;
 
-// Steep grass blends to dirt from `GRASS_TO` up (1 is flat) to `DIRT_FROM`, half and half at 0.7, where the player stops standing
+// Steep grass blends to dirt from `GRASS_TO` (1 is flat) to `DIRT_FROM`, half and half at 0.7 where standing stops
 // (`GROUND_FACING` in character.rs), so ground mostly grass can be walked up.
 const GRASS_TO: f32 = 0.8;
 const DIRT_FROM: f32 = 0.6;
@@ -66,11 +66,11 @@ const BLEND_SPAN: f32 = 0.1;
 // How far toward its wall a ramp is lit, at the most: it meets the wall in a crease, not a turn.
 const RAMP_LIT_TURN: f32 = 0.5;
 
-// Neutral rock under the warm key reads peach, where grass only reads sunny, so it's cooled a little. This covers stone,
-// basalt, granite, shale and their compacted forms, by material layer, and a test checks the layers against `MATERIAL_FILES`.
+// Neutral rock under the warm key reads peach, where grass reads sunny, so it's cooled a little: stone, basalt,
+// granite, shale and their compacted forms by material layer; a test checks the layers against `MATERIAL_FILES`.
 const ROCK_COOL: vec3<f32> = vec3<f32>(0.93, 0.99, 1.06);
 
-// The grasses, which steep ground bares to dirt, see `GRASS_TO`. `GRASS_LAYER` and `STEPPE_LAYER` come from `specialize`.
+// The grasses, which steep ground bares to dirt. `GRASS_LAYER` and `STEPPE_LAYER` come from `specialize`.
 fn is_grass(layer: i32) -> bool {
     return layer == i32(constants::GRASS_LAYER) || layer == i32(constants::STEPPE_LAYER);
 }
@@ -138,7 +138,7 @@ fn fragment(
     // sculpted ground, see `nets.rs`: projected three ways, blending to a second material, its facets cut here
     let sculpted = in.uv.x < -512.0;
     // the triangle's own normal, in the stored normals' terms (z reversed), and how much of it a sculpted vertex takes
-    // from the position relative to the camera, as world positions this far out are too coarse to difference between pixels
+    // from the position relative to the camera: world positions this far out are too coarse to difference per pixel
     let view_at = position_ndc_to_view(frag_coord_to_ndc(in.position));
     let flat_side = normalize(direction_view_to_world(cross(dpdy(view_at), dpdx(view_at))));
     var facet = 0.0;
@@ -148,8 +148,8 @@ fn fragment(
     facet = select(0.0, fract(in.uv_b.y) / SCULPT_FACET_SPAN, sculpted);
     coarse = in.uv_b.y > 0.5;
 }
-    // a sculpted blend: tinted side (1 second, 2 first, 0 both), weight toward the second, frayed cut; facets only on rock
-    // a weight of 0 sits on a band's edge, which packing the mesh can land either side of, so the side is read from a quarter in
+    // a sculpted blend: tinted side (1 second, 2 first, 0 both), weight to the second, frayed cut; facets only on rock
+    // a weight of 0 sits on a band's edge that mesh packing can land either side of, so read the side from a quarter in
     let sculpt_side = floor((in.uv.y + 0.25) / 2.0);
     let sculpt_weight = clamp(in.uv.y - sculpt_side * 2.0, 0.0, 1.0);
     let unbent = uncurved(world_position);
@@ -247,7 +247,7 @@ fn fragment(
     } else if painted {
         if block_rate < MEAN_BLOCK_RATE {
             color = material_sample(in.uv, layer, painted_footprint);
-            // a ramp (stored flat) keeps its own projection: it rises only 0.3, so the wall's `-y` barely moves across it and streaks
+            // a ramp (stored flat) keeps its own projection: it rises only 0.3, so the wall's `-y` barely moves
             if wall_blend > 0.001 && normal.y <= 0.99 {
                 color = mix(color, material_sample(wall_uv, layer, wall_footprint), wall_blend);
             }

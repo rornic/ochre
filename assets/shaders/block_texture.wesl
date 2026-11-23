@@ -27,7 +27,6 @@ fn is_flora_cell(vertex_alpha: f32) -> bool {
     return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5;
 }
 
-// Texels along a foliage layer.
 const FOLIAGE_TEXELS: f32 = 512.0;
 
 // A leaf or plant's colour at `uv`: leaves repeat their layer every block, a sprite is drawn once, kept inside its
@@ -51,8 +50,8 @@ fn foliage_level(distance: f32, viewport_height: f32, focal: f32) -> f32 {
     return clamp(log2(max(blocks_per_pixel * FOLIAGE_TEXELS, 1.0)), 0.0, log2(FOLIAGE_TEXELS));
 }
 
-// Blurred alpha loses thin leaves and stems, which average below the cut, so it's scaled up as the level climbs to cut at
-// a lower coverage: a field of grass stays a field rather than fading out a few blocks away.
+// Blurred alpha loses thin leaves and stems, which average below the cut, so the cut lowers with the level:
+// a field of grass stays a field rather than fading out a few blocks away.
 const COVERAGE_CUT_FAR: f32 = 0.1;
 const COVERAGE_LEVELS: f32 = 5.0;
 fn foliage_cut(alpha: f32, level: f32, far: f32) -> f32 {
@@ -60,9 +59,9 @@ fn foliage_cut(alpha: f32, level: f32, far: f32) -> f32 {
     return min(alpha * 0.5 / cut, 1.0);
 }
 
-// Shrubs and heath are broad solid sprites, not thin blades, so the blur and the lowered cut that keep a meadow from thinning
-// out would draw them as flat slabs: past level 6 or so a mip texel is half the sprite and its average passes the cut
-// whole, the quad drawn solid above the mound. They are cut at no more than this level and at a higher coverage.
+// Shrubs and heath are broad solid sprites, so the blur and lowered cut that keep a meadow from thinning would draw
+// them as flat slabs: past level 6 a mip texel is half the sprite and its average passes the cut whole.
+// They are cut at no more than this level and at a higher coverage.
 const BIG_FLORA_MAX_LEVEL: f32 = 5.0;
 const BIG_FLORA_CUT_FAR: f32 = 0.3;
 
@@ -70,7 +69,7 @@ fn is_big_flora_cell(vertex_alpha: f32) -> bool {
     return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5;
 }
 
-// A leaf or plant's alpha from mip `level`, which averages away holes smaller than the lookup's footprint, scaled by `foliage_cut`.
+// A leaf or plant's alpha from mip `level`, which averages away holes under the footprint; scaled by `foliage_cut`.
 // Any other tile is wholly drawn.
 fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, blurred: f32) -> f32 {
     let layer = foliage_layer(vertex_alpha);
@@ -250,7 +249,7 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 }
 
 // What a tile averages to: the mean linear colour of each atlas cell's opaque texels, in atlas
-// order. The block-textures skill's `materials.py` rewrites them, and `material.rs`'s tests check them against the materials.
+// order. The block-textures skill's `materials.py` rewrites them; `material.rs`'s tests check them.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
     var means = array<vec3<f32>, 40>(
         vec3<f32>(0.1612, 0.1542, 0.1649), // stone

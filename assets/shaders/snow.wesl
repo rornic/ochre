@@ -1,4 +1,4 @@
-// Snow falling round the camera, see `weather::SnowMaterial`: a box of flakes as `rain.wesl`'s is of streaks, drifting with the wind, swaying, wrapped round the camera, each a soft dot facing it.
+// Snow falling round the camera (`weather::SnowMaterial`): a box of flakes as `rain.wesl`'s is of streaks, soft dots.
 
 import bevy_pbr::render::{
     forward_io::{Vertex, VertexOutput},
@@ -6,12 +6,12 @@ import bevy_pbr::render::{
     view_transformations::position_world_to_clip,
 };
 
-// x: how hard it's snowing, 0..1; y: how bright the light on it is; zw: the wind it drifts on, in blocks a second across the ground.
+// x: how hard it's snowing, 0..1; y: how bright the light on it is; zw: the wind it drifts on, blocks a second.
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> snow: vec4<f32>;
 
 // Matches `SNOW_BOX` in `weather.rs`.
 const BOX: vec3<f32> = vec3<f32>(40.0, 24.0, 40.0);
-// Fall speed in blocks a second, a flake's radius and sway either side of its path in blocks, and sway speed in turns a second.
+// Fall speed in blocks a second, a flake's radius and sway either side of its path in blocks, sway speed in turns/s.
 const FALL: f32 = 1.4;
 const RADIUS: f32 = 0.035;
 const SWAY: f32 = 0.45;

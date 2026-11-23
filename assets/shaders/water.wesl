@@ -37,7 +37,7 @@ const DEEP_OCEAN_END: f32 = 14.0;
 const CHUNK_SIZE: f32 = 16.0;
 
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.95, 0.98, 0.97);
-// A fall's sheet is lit as fresh water, as thick as this in blocks, with its ripples this much steeper, and the streaks of foam over it this white at most.
+// A fall's sheet is lit as fresh water this many blocks thick, with ripples this much steeper, foam this white
 const FALL_DEPTH: f32 = 1.0;
 const FALL_RIPPLES: f32 = 0.6;
 const FALL_FOAM: f32 = 0.5;
@@ -49,7 +49,7 @@ const FOAM_PHASE_SCALE: f32 = 5.0;
 // Scales how much of the lapping envelope gets revealed as foam cells - pushes
 // coverage up for a denser look without changing where/how fast the envelope moves.
 const FOAM_DENSITY: f32 = 1.2;
-// Foam is painted as ribbons: strokes of white with wavering edges, this many blocks across, thresholded between these
+// Foam is painted as ribbons: strokes of white with wavering edges, this many blocks across, thresholded between
 // edges of the lapping envelope, and broken up by up to this much of it, which only takes foam away.
 const FOAM_RIBBON_SIZE: f32 = 3.0;
 const FOAM_RIBBON_EDGE: vec2<f32> = vec2<f32>(0.04, 0.14);
@@ -217,7 +217,7 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 
 @if(VERTEX_COLORS) {
-    // is_top (B channel) is how much of the swell a vertex keeps: only the surface moves, and beside a fall none, so it meets the sheet.
+    // is_top (B channel) is how much of the swell a vertex keeps: only the surface moves, and beside a fall none.
     //
     // shore_factor (R channel) damps the swell toward 0 right at the shore: land's wall
     // geometry is static, so an undamped wave can lift water's edge above the adjacent
@@ -317,7 +317,7 @@ fn reflected_sky(direction: vec3<f32>) -> vec3<f32> {
     return sky_colour(up) * (1.0 - night.a) + night.rgb;
 }
 
-// `sky` with clouds over it, from the sky map rather than the screen's cloud target, which left a seam in the water where the reflected way left the screen.
+// `sky` with clouds over it, from the sky map not the screen's cloud target, which left a seam at the screen's edge
 fn under_clouds(sky: vec3<f32>, origin: vec3<f32>, direction: vec3<f32>, keep: f32) -> vec3<f32> {
     if keep <= 0.0 {
         return sky;
@@ -328,7 +328,7 @@ fn under_clouds(sky: vec3<f32>, origin: vec3<f32>, direction: vec3<f32>, keep: f
     let meets = origin + up * max(0.5 * (BASE + TOP) - origin.y, 0.0) / up.y;
     let seen = normalize(meets - vec3<f32>(eye.x, min(eye.y, LAND_TOP), eye.z));
     var marched = textureSampleLevel(cloud_reflection, cloud_reflection_sampler, sky_disc(seen), 0.0);
-    // but far off that way slants through more of the clouds than this ray does, smearing them, so there the clouds straight over are read
+    // far off that way slants through more cloud than this ray does, smearing it, so clouds straight over are read
     let slant = smoothstep(1e-4, 2e-3, 1.0 - dot(up, seen));
     if slant > 0.0 {
         let off = abs(meets.xz - eye.xz) / OVERHEAD_REACH;
@@ -401,9 +401,9 @@ const FRESH_SCATTER: vec3<f32> = vec3<f32>(0.03, 0.10, 0.14);
 const LAKE_REFLECT_MAX: f32 = 0.5;
 const SEA_REFLECT_MAX: f32 = 0.18;
 const SEA_GLINT: f32 = 0.25;
-// How much of the clouds' reflection the sea keeps: none, as a rough sea smears them out, and drawn they're a mirror's copy of the sky.
+// How much of the clouds' reflection the sea keeps: none, as a rough sea smears them out and a drawn one mirrors them
 const SEA_CLOUDS: f32 = 0.0;
-// The water must lie this far over the sea for its surface to be fresh, which has no surf and none of the ocean's depth tint.
+// The water must lie this far over the sea for its surface to be fresh, with no surf or ocean depth tint.
 const FRESH_ABOVE_SEA: f32 = 0.6;
 // The sea's look fades out over this many blocks of surface above that, wandered by up to this many either way.
 const SEA_BLEND: f32 = 3.0;
@@ -414,7 +414,7 @@ const FRESH_TINT: f32 = 0.1;
 const REFRACTION: f32 = 0.035;
 // How strong the ripples are.
 const FRESH_RIPPLES: f32 = 0.15;
-// Fresh water's speed downhill per unit of slope, in blocks a second, its most, and how much more rippled it is at that.
+// Fresh water's speed downhill per unit of slope, in blocks a second, its most, and how much more rippled it is then.
 const FLOW_SPEED: f32 = 12.0;
 const FLOW_MAX: f32 = 4.0;
 const FLOW_ROUGHEN: f32 = 1.5;
@@ -474,7 +474,7 @@ fn stroke_noise(xz: vec2<f32>, time: f32, scale: f32) -> f32 {
     return 0.65 * smooth_noise(q) + 0.35 * smooth_noise(q * 2.3 + vec2<f32>(7.1, 3.7));
 }
 
-// stroke_noise at `base` times the nearest two powers of two over the pixel's footprint, faded between, so strokes stay anchored in the world and never rescale with the view.
+// stroke_noise at `base` times the two nearest powers of two over the pixel footprint, faded, anchoring strokes
 fn stroke_lod(xz: vec2<f32>, time: f32, base: f32, footprint: f32) -> f32 {
     let level = log2(max(footprint * 2.0, 1.0));
     let octave = floor(level);
@@ -626,7 +626,7 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
     plain = mix(plain, deep, ocean);
 
     let wander = stroke_lod(world_position.xz, time, 2.0, footprint);
-    // bands come from the smooth body without the bed, which passes through as the ratio, or its pixel detail crosses band edges as jagged streaks
+    // bands come from the smooth body without the bed, passed through as the ratio, or its pixel detail streaks
     let ratio = clamp(paint_banded(plain, BODY_BAND, wander) / max(plain, vec3<f32>(1e-4)), vec3<f32>(0.4), vec3<f32>(2.5));
     body *= ratio;
 
@@ -665,7 +665,7 @@ fn water_below(world_position: vec3<f32>, to_eye: vec3<f32>, frag_coord: vec4<f3
     return mix(scatter, above, mix(BELOW_CLEAR.x, BELOW_CLEAR.y, window));
 }
 
-// One column's streak at height `y`: water dropping at the column's own speed, sharp at its head and trailing off up the fall.
+// One column's streak at height `y`: water dropping at its own speed, sharp at the head, trailing off up the fall.
 fn fall_strand(column: f32, y: f32, time: f32) -> f32 {
     let speed = 6.0 + 4.0 * hash2(vec2<f32>(column, 3.0));
     let along = (y + time * speed) / 5.0;
@@ -674,7 +674,7 @@ fn fall_strand(column: f32, y: f32, time: f32) -> f32 {
     return pick * smoothstep(0.0, 0.1, tail) * (1.0 - tail);
 }
 
-// How much of a fall's sheet is a white streak at `world_position`: strands half a block apart, each tapering into the next sideways.
+// How much of a fall's sheet is a white streak at `world_position`: strands half a block apart, tapering sideways.
 fn fall_streak(world_position: vec3<f32>, normal: vec3<f32>, time: f32) -> f32 {
     let across = dot(world_position.xz, vec2<f32>(-normal.z, normal.x)) * 2.0 - 0.5;
     let column = floor(across);
@@ -712,7 +712,7 @@ fn fragment(
     let sea = 1.0 - smoothstep(0.0, SEA_BLEND, over_sea);
     ocean *= sea;
 @if(!VERTEX_COLORS) {
-    // LOD water has no depth or shore to calm the swell by, and is far enough out to be deep, so is the sea at full size: left flat it's a mirror
+    // LOD water has no depth or shore to calm the swell and is far out enough to be deep, so is the sea at full size
     if sea > 0.0 {
         waves = swell(world_position.xz, time, dist, 1.0, 1.0);
         waves.slope *= sea;
@@ -739,7 +739,7 @@ fn fragment(
         let lap = smoothstep(1.0 - FOAM_BAND, 1.0, sin(phase)) * in.color.r;
         let coverage = clamp(lap * FOAM_DENSITY, 0.0, 1.0);
 
-        // painted as ribbons: the lapping envelope with a wavering edge, thresholded to a flat stroke of white, drifting slowly
+        // painted as ribbons: the lapping envelope with a wavering edge, thresholded to white, drifting slowly
         let wobble = smooth_noise(world_position.xz / FOAM_RIBBON_SIZE + vec2<f32>(time * 0.05, 0.0)) * 0.6 + smooth_noise(world_position.xz / (FOAM_RIBBON_SIZE * 0.4) - vec2<f32>(0.0, time * 0.08)) * 0.4;
         let ribbon = smoothstep(FOAM_RIBBON_EDGE.x, FOAM_RIBBON_EDGE.y, coverage - (1.0 - wobble) * FOAM_WOBBLE);
         let fade = 1.0 - smoothstep(FOAM_FADE_START, FOAM_FADE_END, dist);
@@ -750,7 +750,7 @@ fn fragment(
     let to_eye = -view_to_world / dist;
     // blocks a pixel spans across the water here, worked out where every fragment does
     let footprint = max(length(dpdx(world_position.xz)), length(dpdy(world_position.xz)));
-    // which side of the surface's plane the eye is on, as a slope rising away from it is seen from above though over the eye
+    // which side of the surface's plane the eye is on: a slope rising away is seen from above though over the eye
     let outside = dot(view_position - world_position, normal) > 0.0;
 
     // water is its own sight of what's under it, so is drawn over it, not blended, and keeps

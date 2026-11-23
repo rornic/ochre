@@ -11,7 +11,7 @@ struct WeatherMap {
     corner: vec4<f32>,
     // the most precipitation anywhere on the grid in x, and the most storm cloud in y
     most: vec4<f32>,
-    // per cell: the share of sky clouded over, how much of a storm's dark cloud, precipitation, and the share of it falling as snow
+    // per cell: share of sky clouded over, a storm's dark cloud, precipitation, and its share falling as snow
     cells: array<vec4<f32>>,
 }
 
@@ -33,7 +33,7 @@ struct Weather {
 const FAIR_CLOUD: f32 = 0.45;
 // How far a storm's thick cloud fills the gaps in the pattern, and how much of its shape it keeps.
 const STORM_FILL: f32 = 0.75;
-// Past this share of the sky clouded over, the gaps close into an overcast, fully by the second, as thick as this at its thinnest.
+// Past this share of sky clouded over, gaps close into an overcast, fully by the second, this thick at its thinnest
 const OVERCAST: vec2<f32> = vec2<f32>(0.75, 0.97);
 const OVERCAST_FILL: f32 = 0.8;
 
@@ -67,7 +67,8 @@ fn most_storm() -> f32 {
     return select(0.0, cloud_weather.most.y, cloud_weather.corner.w >= 2.0);
 }
 
-// How much cloud there is, 0..1, where the pattern ranks `share` (0..1, cloudiest last): the weather's share of sky, closing into an overcast as it nears all, thickening under a storm.
+// How much cloud there is, 0..1, where the pattern ranks `share` (0..1, cloudiest last): the weather's share of sky,
+// closing into an overcast as it nears all, thickening under a storm.
 fn sky_cover(share: f32, weather: Weather) -> f32 {
     let cloudy = weather.cloud;
     // only the divisor is floored, so the last clouds thin out to nothing instead of snapping off

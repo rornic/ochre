@@ -1,4 +1,4 @@
-// The sun, sky and cloud light on a point, for the land (`world.wesl`) and any material a game adds that should be lit as the land is.
+// The sun, sky and cloud light on a point, for the land (`world.wesl`) and any game material lit as the land is.
 
 import bevy_pbr::render::{
     mesh_view_bindings as view_bindings,
@@ -27,11 +27,12 @@ fn sky_ambient(sky: f32, normal: vec3<f32>) -> vec3<f32> {
     return CAVE_AMBIENT + open_sky(normal) * pow(clamp(sky, 0.0, 1.0), SKY_LIGHT_CURVE);
 }
 
-// The normal bias is a share of a cascade's texel size, so it moves a far shadow's edge by blocks: it eases down to this share of itself between these distances.
+// The normal bias is a share of a cascade's texel size, so a far shadow's edge moves by blocks: it eases down here
 const FAR_NORMAL_BIAS: f32 = 0.33;
 const NORMAL_BIAS_FADE: vec2<f32> = vec2<f32>(60.0, 400.0);
 
-// The ground's facets are about a block across and tilted a little differently, so a face the sun grazes is shadowed by its own neighbours in teeth that jump as the sun steps: the lookup is lifted toward the sun by this many blocks, past the facets.
+// Ground facets are about a block across and tilted, so a face the sun grazes is shadowed by neighbours in teeth
+// that jump as the sun steps: the lookup is lifted toward the sun by this many blocks, past the facets.
 const FACET_LIFT: f32 = 0.6;
 
 fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32>) -> f32 {
@@ -50,11 +51,11 @@ fn sun_shadow(world_position: vec4<f32>, normal: vec3<f32>, frag_coord: vec2<f32
     return mix(shadow, FAR_VISIBILITY, smoothstep(reach * SHADOW_FADE_START, reach, -view_z));
 }
 
-// How far toward the sun a plant's shadow lookup is moved, in blocks, and the distances between which its shadows fade out.
+// How far toward the sun a plant's shadow lookup moves, in blocks, and the distances over which its shadows fade.
 const FLORA_SHADOW_BIAS: f32 = 0.3;
 const FLORA_SHADOW_FADE: vec2<f32> = vec2<f32>(40.0, 120.0);
 
-// The light on a face, shadowed by the land and the clouds, and moonlight, kept out of caves by sky light but not shadowed, see `painterly.wesl`.
+// The light on a face, shadowed by land and clouds, plus unshadowed moonlight kept out of caves by sky light.
 fn painterly_world_light(world_position: vec4<f32>, normal: vec3<f32>, shaded: vec3<f32>, sky: f32, frag_coord: vec2<f32>, leaf: bool, flora: bool) -> Painterly {
     let gate = smoothstep(0.0, SUN_SKY_GATE, sky);
     var to_sun = vec3<f32>(0.0, 1.0, 0.0);

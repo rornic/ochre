@@ -19,7 +19,7 @@ const FPS: u32 = 60;
 const BLOCK_CLEARANCE: f32 = 4.0;
 // Blocks a flight keeps over the top of any tree near its path.
 const TREE_CLEARANCE: f32 = 6.0;
-// Seconds either side the lift over the ground looks for the highest it needs, and eases over, so it rises and settles in long curves.
+// Seconds either side the lift looks for the highest ground it needs, and eases over, so it curves in and out.
 const LIFT_REACH: f32 = 2.5;
 
 /// Flies a recorded flight, if one is set. Does nothing otherwise.
@@ -64,7 +64,7 @@ impl Plugin for FlythroughPlugin {
     }
 }
 
-/// A flight read from `OCHRE_FLIGHT`: a key a line, `seconds x z height yaw pitch day`, `#` comments; yaw is compass degrees and may pass 360, day 0 is midnight and 0.5 noon.
+/// A flight from `OCHRE_FLIGHT`: a key a line `seconds x z height yaw pitch day`, `#` comments; yaw in degrees
 #[derive(Resource)]
 struct Flight {
     keys: Vec<Key>,
@@ -86,7 +86,7 @@ struct Flight {
 // seconds, x, z, blocks over the ground, yaw and pitch in degrees, time of day
 type Key = [f32; 7];
 
-// Seconds of warmup, the heights worked out a sample every this many seconds, and how long the last key is held before the game exits.
+// Seconds of warmup, the sampling interval for heights, and how long the last key is held before the game exits.
 const FLIGHT_WARMUP: f32 = 25.0;
 const HEIGHT_STEP: f32 = 1.0 / 30.0;
 const FLIGHT_TAIL: f32 = 1.0;
@@ -119,7 +119,7 @@ fn parse_keys(text: &str) -> Result<Vec<Key>, String> {
     Ok(keys)
 }
 
-// The keys at `t` seconds: each value on a Hermite curve with monotone tangents, so it never overshoots a key, and still at the ends.
+// The keys at `t` seconds: each value on a Hermite curve with monotone tangents, so it never overshoots a key.
 fn sample_keys(keys: &[Key], t: f32) -> Key {
     let last = keys.len() - 1;
     let i = (0..last).find(|&i| t < keys[i + 1][0]).unwrap_or(last - 1);
@@ -224,7 +224,7 @@ fn fly_keys(
     }
 }
 
-// The highest ground or water round `p`'s column, from the terrain itself, as the blocks far along the path aren't loaded yet.
+// The highest ground or water round `p`'s column, from the terrain itself, as far-along blocks aren't loaded yet.
 pub(crate) fn ground_height(world: &World, p: Vec3) -> f32 {
     let terrain = world.region_store.terrain();
     let mut top = f32::MIN;
@@ -264,7 +264,7 @@ fn block_height(world: &World, p: Vec3) -> f32 {
     floor
 }
 
-// The lift over each frame: never under what it `need`s, the highest need within `reach` frames either side, eased twice over that span so it curves in and out.
+// The lift over each frame: never under its `need`, the highest need within `reach` frames, eased twice over it.
 fn smooth_lift(need: &[f32], reach: usize) -> Vec<f32> {
     let window = |i: usize| i.saturating_sub(reach)..(i + reach + 1).min(need.len());
     let mut lift: Vec<f32> = (0..need.len())
