@@ -173,6 +173,16 @@ fn hold_over(ground: f64, base: f64, w: Still) -> f64 {
     ground + (held - ground) * w.near
 }
 
+// `ground` held over every still water in `by` but the one the point is in, `wet`.
+fn hold_by(mut ground: f64, base: f64, by: &[Option<Still>; 4], wet: Option<Still>) -> f64 {
+    for &w in by.iter().flatten() {
+        if !wet.is_some_and(|v| v.is(&w)) {
+            ground = hold_over(ground, base, w);
+        }
+    }
+    ground
+}
+
 // `ground` held to still water at `level` by the side its map smooth ground `base` is on: under it the ground stays under by as much as the smooth ground is (up to `HOLD`), over it, over by as much, so detail never crosses the water's edge.
 fn contain(ground: f64, base: f64, level: f64, under: bool) -> f64 {
     let t = (base - level).abs().min(HOLD);
@@ -201,6 +211,13 @@ fn meander(seed: u32, x: f64, z: f64) -> (f64, f64) {
             + perlin(seed ^ salt ^ 0x55, x / 80.0, z / 80.0) * 9.0
     };
     (bend(0x3EA1), bend(0x3EA2))
+}
+
+// The point the meander moves to (`x`, `z`), found by undoing it twice.
+fn unmeander(seed: u32, x: f64, z: f64) -> (f64, f64) {
+    let (mx, mz) = meander(seed, x, z);
+    let (mx, mz) = meander(seed, x - mx, z - mz);
+    (x - mx, z - mz)
 }
 
 /// One river stretch's reach (how far along it, 0..1, the river goes), water level at each profile point and points along it.
@@ -422,11 +439,7 @@ impl WorldTerrain {
         self.map.build_river_profiles(
             &self.tangents,
             &|x, z| self.valley_floor(x, z, self.map.height_at(x, z) as f64),
-            &|x, z| {
-                let (mx, mz) = meander(seed, x, z);
-                let (mx, mz) = meander(seed, x - mx, z - mz);
-                (x - mx, z - mz)
-            },
+            &|x, z| unmeander(seed, x, z),
             &|x, z| {
                 let base = self.map.height_at(x, z) as f64;
                 self.still_round(x, z)
@@ -444,9 +457,7 @@ impl WorldTerrain {
         let line = (0..=pieces)
             .map(|k| {
                 let (x, z) = stretch.point(k as f64 / pieces as f64);
-                let (mx, mz) = meander(seed, x, z);
-                let (mx, mz) = meander(seed, x - mx, z - mz);
-                (x - mx, z - mz)
+                unmeander(seed, x, z)
             })
             .collect();
         Some(RiverCourse { end, levels, line })
@@ -459,9 +470,8 @@ impl WorldTerrain {
             .falls()
             .into_iter()
             .map(|(x, z, drop, level)| {
-                let (mx, mz) = meander(seed, x, z);
-                let (mx, mz) = meander(seed, x - mx, z - mz);
-                (x - mx, z - mz, drop, level)
+                let (x, z) = unmeander(seed, x, z);
+                (x, z, drop, level)
             })
             .collect()
     }
@@ -768,11 +778,7 @@ impl WorldTerrain {
                 wet = Some(w);
             }
         }
-        for &w in by.iter().flatten() {
-            if !wet.is_some_and(|v: Still| v.is(&w)) {
-                ground = hold_over(ground, base, w);
-            }
-        }
+        ground = hold_by(ground, base, by, wet);
         // inland of the sea the ground never sinks under it, or it would flood as a pond cut off from it
         if wet.is_none() {
             ground = ground.max(WATER_LEVEL as f64 + LAND_ABOVE_SEA);
@@ -926,6 +932,16 @@ impl WorldTerrain {
             .collect()
     }
 
+    // The map cell nearest a point.
+    fn nearest_cell(&self, x: f64, z: f64) -> usize {
+        let (u, v) = self.map.to_cell(x, z);
+        let max = (self.map.dim() - 1) as f64;
+        self.map.index(
+            u.round().clamp(0.0, max) as usize,
+            v.round().clamp(0.0, max) as usize,
+        )
+    }
+
     // The cell whose climate biome a point takes: the point drifted by a slow warp so climate edges meander without closing into islands, or `at` where that would leave the land.
     fn climate_cell(&self, x: f64, z: f64, at: usize) -> usize {
         let seed = self.map.seed;
@@ -933,12 +949,7 @@ impl WorldTerrain {
             perlin(seed ^ 0x3E41, x / DRIFT_WAVELENGTH, z / DRIFT_WAVELENGTH),
             perlin(seed ^ 0x3E42, x / DRIFT_WAVELENGTH, z / DRIFT_WAVELENGTH),
         );
-        let (u, v) = self.map.to_cell(x + dx * DRIFT, z + dz * DRIFT);
-        let max = (self.map.dim() - 1) as f64;
-        let j = self.map.index(
-            u.round().clamp(0.0, max) as usize,
-            v.round().clamp(0.0, max) as usize,
-        );
+        let j = self.nearest_cell(x + dx * DRIFT, z + dz * DRIFT);
         if self.map.height[j] < WATER_LEVEL as f32 || self.map.height[at] < WATER_LEVEL as f32 {
             at
         } else {
@@ -954,12 +965,7 @@ impl WorldTerrain {
     // `biome_at` with how far the map's tree density (its cell's own biome's) is off here: in a patch of the biome across a class boundary, up to that biome's density, easing across the patch's edge.
     fn biome_and_trees(&self, x: f64, z: f64, cell: f64) -> (BiomeId, f64) {
         let (x, z) = self.wandered(x, z);
-        let (u, v) = self.map.to_cell(x, z);
-        let max = (self.map.dim() - 1) as f64;
-        let i = self.map.index(
-            u.round().clamp(0.0, max) as usize,
-            v.round().clamp(0.0, max) as usize,
-        );
+        let i = self.nearest_cell(x, z);
         let j = self.climate_cell(x, z, i);
         let mut kind = self.map.biome[j] as usize;
         let mut shift = 0.0;
@@ -1008,12 +1014,7 @@ impl WorldTerrain {
         let (biome, trees_shift) = self.biome_and_trees(x, z, cell);
         let base = self.remembered_height(x, z) as f64;
         // where rivers are laid, drawn off the map's lines by the meander, if any reach this cell
-        let (u, v) = map.to_cell(x, z);
-        let max = (map.dim() - 1) as f64;
-        let here = map.index(
-            u.round().clamp(0.0, max) as usize,
-            v.round().clamp(0.0, max) as usize,
-        );
+        let here = self.nearest_cell(x, z);
         let meandered = (!self.profiles.near(here).is_empty()).then(|| {
             let (mx, mz) = meander(seed, x, z);
             (x + mx, z + mz)
@@ -1114,11 +1115,7 @@ impl WorldTerrain {
             .filter(|r| shaped(r))
             .any(|r| r.distance < r.width / 2.0)
         {
-            for &w in by.iter().flatten() {
-                if !wet.is_some_and(|v: Still| v.is(&w)) {
-                    ground = hold_over(ground, base, w);
-                }
-            }
+            ground = hold_by(ground, base, &by, wet);
         }
         // a river rises in a bowl, held in a rim of ground over its level, but where the river runs out
         if let Some((distance, surface)) = spring {
@@ -1189,12 +1186,7 @@ impl WorldTerrain {
                     if margin.is_some_and(|d| d <= NEIGHBOUR_MEANDER_REACH) {
                         return true;
                     }
-                    let (mu, mv) = map.to_cell(mx, mz);
-                    let cell = map.index(
-                        mu.round().clamp(0.0, max) as usize,
-                        mv.round().clamp(0.0, max) as usize,
-                    );
-                    let (width, mouth) = self.profiles.neighbour_bounds(cell);
+                    let (width, mouth) = self.profiles.neighbour_bounds(self.nearest_cell(mx, mz));
                     mouth || margin.is_some_and(|d| d <= NEIGHBOUR_MEANDER_REACH + width)
                 }));
         let sample = TerrainSample {
