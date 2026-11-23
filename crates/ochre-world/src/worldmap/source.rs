@@ -36,6 +36,8 @@ const TERRACE_CELL: f64 = 32.0;
 // Cells this wide or wider take their own biome, not a patchwork near a class boundary, whose patches are about `ZONE_PATCH` blocks.
 const ZONE_CELL: f64 = 16.0;
 const ZONE_PATCH: f64 = 12.0;
+// Across this share of a patch's edge (of the noise level it takes the other biome at) tree density eases from one biome's to the other's.
+const ZONE_EASE: f64 = 0.5;
 // Relief features need ground this high over the sea.
 const RELIEF_ABOVE_SEA: f64 = 6.0;
 // A kopje's heap shows bare rock where it stands this many blocks over the plain.
@@ -974,6 +976,12 @@ impl WorldTerrain {
     // The biome of the cell nearest a point, found a little to one side by a wandering offset so
     // the edges between biomes wander too, rather than following the cells' squares.
     fn biome_at(&self, x: f64, z: f64, cell: f64) -> BiomeId {
+        self.biome_and_trees(x, z, cell).0
+    }
+
+    // `biome_at` with how far the map's tree density, which is its cell's own biome's, is off by here: where a block
+    // is in a patch of the biome across a class boundary, up to that biome's density, easing across the patch's edge.
+    fn biome_and_trees(&self, x: f64, z: f64, cell: f64) -> (BiomeId, f64) {
         let (x, z) = self.wandered(x, z);
         let (u, v) = self.map.to_cell(x, z);
         let max = (self.map.dim() - 1) as f64;
@@ -985,23 +993,28 @@ impl WorldTerrain {
         // the climate biome, with the ground's modifier on it: high ground on a volcanic province is volcanic
         // whatever the climate, bare basalt on its slopes, and mountain landform is mountain
         let mut kind = self.map.biome[j] as usize;
+        let mut shift = 0.0;
         // near a class boundary a block may take the biome across it, in patches that thin out with the margin
         let margin = self.map.biome_margin[j];
         if margin < 255 && cell < ZONE_CELL {
             let n = (fbm_filtered(self.map.seed ^ 0xB10D, x, z, ZONE_PATCH, 1, cell) + 1.0) / 2.0;
-            if n < 0.5 * (1.0 - margin as f64 / 255.0) {
-                kind = self.map.biome_alt[j] as usize;
+            let level = 0.5 * (1.0 - margin as f64 / 255.0);
+            let alt = self.map.biome_alt[j] as usize;
+            let across = self.biomes.tree_density(self.kinds[alt]) - self.biomes.tree_density(self.kinds[kind]);
+            shift = across * (1.0 - smoothstep(level * (1.0 - ZONE_EASE), level * (1.0 + ZONE_EASE), n));
+            if n < level {
+                kind = alt;
             }
         }
         if self.map.geology[i] == super::geology::VOLCANIC
             && self.map.height_at(x, z) as f64 - WATER_LEVEL as f64 >= VOLCANIC_FROM
         {
-            return self.volcanic_kinds[kind];
+            return (self.volcanic_kinds[kind], 0.0);
         }
         if self.map.landform[i] == super::landform::MOUNTAIN {
-            return self.mountain_kinds[kind];
+            return (self.mountain_kinds[kind], 0.0);
         }
-        self.kinds[kind]
+        (self.kinds[kind], shift)
     }
 
     #[cfg(test)]
@@ -1022,7 +1035,7 @@ impl WorldTerrain {
     ) -> (TerrainSample, bool) {
         let map = &self.map;
         let seed = map.seed;
-        let biome = self.biome_at(x, z, cell);
+        let (biome, trees_shift) = self.biome_and_trees(x, z, cell);
         let base = self.remembered_height(x, z) as f64;
         // where rivers are laid, drawn off the map's lines by the meander, if any reach this cell
         let (u, v) = map.to_cell(x, z);
@@ -1234,7 +1247,7 @@ impl WorldTerrain {
             trees: if wet || spring_part != SpringPart::None {
                 0.0
             } else {
-                map.bilinear_bytes(&map.trees, x, z) as f64 / 255.0
+                (map.bilinear_bytes(&map.trees, x, z) as f64 / 255.0 + trees_shift).clamp(0.0, 1.0)
                     * grove(seed, x, z, cell, self.biomes.tree_scale(biome).clearings)
             },
             water_surface,
@@ -1326,7 +1339,9 @@ impl TerrainSource for WorldTerrain {
 
     fn tree_bound(&self, x: f64, z: f64) -> f64 {
         // the lie of the land can raise a cell's chance over the map's density, never lower the bound
-        self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0 * self.tree_lie(x, z).max(1.0)
+        let density = self.map.bilinear_bytes(&self.map.trees, x, z) as f64 / 255.0;
+        // and a patch of a denser biome across a class boundary can raise it too
+        (density + self.biome_and_trees(x, z, 1.0).1.max(0.0)).min(1.0) * self.tree_lie(x, z).max(1.0)
     }
 
     fn mountain_cover(&self, x: f64, z: f64) -> f32 {
@@ -1724,6 +1739,50 @@ mod river_bank_tests {
             mixed > 20,
             "only {mixed} of {zones} zone points take the biome across"
         );
+    }
+
+    #[test]
+    fn tree_density_eases_to_the_biome_a_block_takes_across_a_class_boundary_and_stays_bounded() {
+        let config = super::super::WorldConfig {
+            size: 65536,
+            map_cell: 128,
+            ..Default::default()
+        };
+        let terrain = WorldTerrain::new(Arc::new(super::super::generate(1, config)));
+        let map = &terrain.map;
+        let max = (map.dim() - 1) as f64;
+        let (mut taken, mut kept) = (0, 0);
+        for k in 0..40_000u32 {
+            let (x, z) = ((k % 200) as f64 * 320.0 - 32000.0, (k / 200) as f64 * 320.0 - 32000.0);
+            let (wx, wz) = terrain.wandered(x, z);
+            let (u, v) = map.to_cell(wx, wz);
+            let i = map.index(u.round().clamp(0.0, max) as usize, v.round().clamp(0.0, max) as usize);
+            let j = terrain.climate_cell(wx, wz, i);
+            let (biome, shift) = terrain.biome_and_trees(x, z, 1.0);
+            assert_eq!(0.0, terrain.biome_and_trees(x, z, ZONE_CELL).1, "wide cells keep the map's density at {x},{z}");
+            if map.biome_margin[j] == 255 {
+                assert_eq!(0.0, shift, "a cell well inside its biome shifts at {x},{z}");
+                continue;
+            }
+            let (own, alt) = (terrain.kinds[map.biome[j] as usize], terrain.kinds[map.biome_alt[j] as usize]);
+            let across = terrain.biomes.tree_density(alt) - terrain.biomes.tree_density(own);
+            if biome != own && biome != alt {
+                continue;
+            }
+            assert!(shift * across >= 0.0 && shift.abs() <= across.abs() + 1e-12, "shift {shift} outside 0..{across} at {x},{z}");
+            if biome == alt {
+                taken += 1;
+                assert!(shift.abs() >= 0.5 * across.abs() - 1e-12, "{shift} of {across} in the other biome at {x},{z}");
+            } else {
+                kept += 1;
+                assert!(shift.abs() <= 0.5 * across.abs() + 1e-12, "{shift} of {across} in its own biome at {x},{z}");
+            }
+            if !terrain.sample(x, z).water_kind.eq(&WaterKind::None) {
+                continue;
+            }
+            assert!(terrain.sample(x, z).trees <= terrain.tree_bound(x, z), "trees over the bound at {x},{z}");
+        }
+        assert!(taken > 20 && kept > 20, "{taken} taken and {kept} kept zone points");
     }
 
     #[test]
