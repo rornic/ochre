@@ -1,6 +1,6 @@
 ---
 name: record-flythrough
-description: Record Ochre as a 1920x1080 60 fps mp4 with the game's own sound and music, flying a path through the world with the time of day changing along it. Use when asked for a trailer, a flythrough, a showcase video or a screen recording of the game, or to show a place at sunrise or night.
+description: Record Ochre as a 1920x1080 60 fps mp4 with the game's own sound, flying a path through the world with the time of day changing along it. Use when asked for a trailer, a flythrough, a showcase video or a screen recording of the game, or to show a place at sunrise or night.
 ---
 
 # Record flythrough
@@ -26,11 +26,9 @@ One key a line, `seconds x z height yaw pitch day`, `#` for comments. The camera
 
 To plan a route use the `worldview` skill and sample `info` heights. Seed 4's tundra is a plateau near y 100 with foothills up to 190 at (10500, -21000) and a glacier range of 700 to 1100 behind them to the north-west. `tundra.flight` flies it for two minutes: low under the aurora, a look round, up the foothills, the sunrise from the top, then down and low over the plateau in daylight. `tundra-day.flight` is a three minute day on the same seed: a short high look at the glacier in the morning, a low run east across the plateau and the strait while the day runs on, the highest point of the far ridge, then a slow sweep back over the tundra as the sun sets and the aurora comes up. A leg over about 90 blocks a second is too fast to read as flying, and the world has to stream in as the camera goes. The aurora only shows over cold ground, in the north (-z).
 
-`steppe.flight` is the steppe's on seed 1, 248 seconds long to hold `steppe4.ogg` whole: the music starts about 5 s in, not the 3 that `record.sh` asks for, since its timer runs from the game's start and the flight's from when the player exists, so the flight runs a few seconds past the track's end (a first take ended at 240 s, with the track's last 3 s cut off): slow and low through the calm intro and outro, and fast, up to about 80 blocks a second, through the loud middle, high and low in turn, with the speed following the track's drive. `steppe_flight.py steppe4.wav steppe.flight` writes it, from the route, heights, look and time of day at the top of the script (in seconds of the track) and the track's loudness over time, and `steppe-path.csv` beside it for checking the route: the whole path should stay over steppe, or the music crossfades to another biome's track. Record it with `OCHRE_MUSIC_TRACK=steppe4 record.sh steppe.flight out.mp4 1`: `OCHRE_MUSIC_TRACK` plays the track whose file name has that in it, since the first pick is random otherwise. `steppe4.ogg` is not committed, so only that machine can record it.
-
 ## How it works
 
-1. The flight runs in real time (`OCHRE_FLIGHT=<file>`) with `PULSE_SINK` pointing the game at a null sink, and ffmpeg records the sink's monitor from the moment the game logs `flythrough: flying`. `OCHRE_MUSIC_DELAY` starts the music three seconds into the flight, so it is in the take (it otherwise starts after a random 10 to 40 s of silence).
+1. The flight runs in real time (`OCHRE_FLIGHT=<file>`) with `PULSE_SINK` pointing the game at a null sink, and ffmpeg records the sink's monitor from the moment the game logs `flythrough: flying`.
 2. It runs again with `OCHRE_FLIGHT_FRAMES=<dir>`, which switches the clock to a fixed 60 fps and saves `frame_NNNNN.png` for every frame, however long each takes to draw.
 3. ffmpeg joins them, with the sound brought to -16 LUFS (the game mixes it at about -37).
 
@@ -43,5 +41,4 @@ The code is in `crates/ochre-gameplay/src/flythrough.rs` (`Flight`).
 - **Run with `BEVY_ASSET_ROOT` set** to the repo root, or a binary run from anywhere else finds no assets and draws a black window. `record.sh` sets it.
 - **Never `pkill -f` or `pgrep -f` a pattern the command itself contains**, since it matches your own shell and kills it (exit 144). Other sessions run their own games too, so kill only the pids you started. `record.sh` does.
 - **The game must run on after the last frame.** It saves screenshots on other threads, and exiting at once left the last four of 721 unwritten. `DRAIN_FRAMES` holds it for two seconds.
-- **The sound can silently be missing.** If `PULSE_SINK` does not take, the script moves the game's stream onto the sink with `pactl move-sink-input`, and warns if it finds none. `check.py` correlates the audio with `cold.ogg` to prove the music is in it.
-- **Publish a recording only with music that may be published.** `cold.ogg` was made on a paid Suno plan and is committed. The other tracks are free-tier, non-commercial and local only, so a flight that plays them is for private use.
+- **The sound can silently be missing.** If `PULSE_SINK` does not take, the script moves the game's stream onto the sink with `pactl move-sink-input`, and warns if it finds none. `check.py --music <track> --music-at <seconds>` correlates the audio with a track the game plays, to prove it is in the take.

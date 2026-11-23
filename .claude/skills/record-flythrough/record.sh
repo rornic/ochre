@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Records a flight (OCHRE_FLIGHT, see crates/ochre-gameplay/src/flythrough.rs) as a 1920x1080, 60 fps mp4 with the game's own sound.
 # usage: record.sh <flight file> <out.mp4> [seed]
-# env:   MUSIC_LEAD=3 seconds into the flight the first track starts (0 for a clip crossfaded into another), WARMUP=45 seconds the world loads before each run, CRF=18, PRESET=medium (x264), SOUND=<wav from an earlier run of the same flight, skips step 1>, WORK=<dir> for the frames (about 2.5 MB each, kept if KEEP_WORK=1)
+# env:   WARMUP=45 seconds the world loads before each run, CRF=18, PRESET=medium (x264), SOUND=<wav from an earlier run of the same flight, skips step 1>, WORK=<dir> for the frames (about 2.5 MB each, kept if KEEP_WORK=1)
 #
 # Three steps, because a screen capture of the desktop got a third of the frames it should and the game cannot render in step with
 # the sound at the same time:
@@ -50,8 +50,7 @@ if [ -n "${SOUND:-}" ]; then
 else
   echo "== 1/3 the sound, in real time: $warmup s of warmup, then the flight"
   sink=$(pactl load-module module-null-sink sink_name=ochre_rec sink_properties=device.description=ochre_rec)
-  # the music's first track starts three seconds into the flight, which `OCHRE_MUSIC_DELAY` counts from the game's start
-  env "${game_env[@]}" PULSE_SINK=ochre_rec OCHRE_NOVSYNC=1 OCHRE_MUSIC_DELAY=$((warmup + ${MUSIC_LEAD:-3})) \
+  env "${game_env[@]}" PULSE_SINK=ochre_rec OCHRE_NOVSYNC=1 \
     "$bin" >"$work/sound.log" 2>&1 &
   game=$!
   # move the game's sound stream onto the sink if `PULSE_SINK` did not take it

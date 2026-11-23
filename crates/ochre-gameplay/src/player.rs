@@ -269,7 +269,7 @@ fn footfall(before: f32, after: f32) -> bool {
 }
 
 /// Whether the cursor is held in the window, so the mouse turns the player.
-pub(crate) fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> bool {
+pub fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>) -> bool {
     cursor
         .single()
         .is_ok_and(|cursor| cursor.grab_mode != CursorGrabMode::None)
@@ -277,7 +277,7 @@ pub(crate) fn cursor_grabbed(cursor: Query<&CursorOptions, With<PrimaryWindow>>)
 
 /// Holds the cursor in the window once it's clicked into, and lets it go on Escape or when the
 /// window loses focus.
-pub(crate) fn grab_cursor(
+pub fn grab_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut windows: Query<(&Window, &mut CursorOptions), With<PrimaryWindow>>,

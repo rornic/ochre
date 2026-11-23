@@ -9,7 +9,7 @@ use bevy::winit::WinitPlugin;
 use ochre_engine::settings::Settings;
 use ochre_engine::{load_world, OchrePlugins};
 use ochre_gameplay::{
-    birds::BirdPlugin, breaking::BreakingPlugin, critters::CritterPlugin, debug::DebugOverlayPlugin,
+    birds::BirdPlugin, debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
     remote::RemoteControlPlugin,
 };
@@ -20,7 +20,6 @@ use ochre_world::{
     ambience::AmbiencePlugin,
     clouds::CloudPlugin,
     godrays::GodrayPlugin,
-    music::MusicPlugin,
     sky::SkyPlugin,
     sky_dome::{NightSkyPlugin, SunGlarePlugin},
     weather::WeatherPlugin,
@@ -91,10 +90,7 @@ fn each_plugin_can_be_left_out() {
     run("GodrayPlugin", without!(GodrayPlugin));
     run("PlayerPlugin", without!(PlayerPlugin));
     run("FootstepPlugin", without!(FootstepPlugin));
-    run("BreakingPlugin", without!(BreakingPlugin));
     run("AmbiencePlugin", without!(AmbiencePlugin));
-    run("MusicPlugin", without!(MusicPlugin));
-    run("CritterPlugin", without!(CritterPlugin));
     run("BirdPlugin", without!(BirdPlugin));
     run("DebugOverlayPlugin", without!(DebugOverlayPlugin));
     run("FlythroughPlugin", without!(FlythroughPlugin));
@@ -110,10 +106,7 @@ fn each_plugin_can_be_left_out() {
         GodrayPlugin,
         PlayerPlugin,
         FootstepPlugin,
-        BreakingPlugin,
         AmbiencePlugin,
-        MusicPlugin,
-        CritterPlugin,
         BirdPlugin,
         DebugOverlayPlugin,
         FlythroughPlugin

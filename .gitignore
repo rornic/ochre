@@ -2,10 +2,3 @@
 /.claude/skills/block-textures/out
 __pycache__/
 /worlds
-/assets/sounds/music/*
-!/assets/sounds/music/cold.ogg
-!/assets/sounds/music/forest.ogg
-!/assets/sounds/music/grassland.ogg
-!/assets/sounds/music/rainforest.ogg
-!/assets/sounds/music/savanna.ogg
-!/assets/sounds/music/steppe.ogg

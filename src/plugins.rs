@@ -1,6 +1,6 @@
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 use ochre_gameplay::{
-    birds::BirdPlugin, breaking::BreakingPlugin, critters::CritterPlugin, debug::DebugOverlayPlugin,
+    birds::BirdPlugin, debug::DebugOverlayPlugin,
     flythrough::FlythroughPlugin, footsteps::FootstepPlugin, player::PlayerPlugin,
     remote::RemoteControlPlugin,
 };
@@ -12,7 +12,6 @@ use ochre_world::{
     ambience::AmbiencePlugin,
     clouds::CloudPlugin,
     godrays::GodrayPlugin,
-    music::MusicPlugin,
     sky::{SkyPlugin, START_TIME},
     sky_dome::{NightSkyPlugin, SunGlarePlugin},
     weather::WeatherPlugin,
@@ -52,7 +51,7 @@ impl OchrePlugins {
         }
     }
 
-    /// With the sky, weather, music, overlay and recording options `dev` carries.
+    /// With the sky, weather, overlay and recording options `dev` carries.
     pub fn with_dev(mut self, dev: DevEnv) -> Self {
         self.dev = dev;
         self
@@ -88,13 +87,7 @@ impl PluginGroup for OchrePlugins {
             .add(GodrayPlugin)
             .add(PlayerPlugin::default())
             .add(FootstepPlugin)
-            .add(BreakingPlugin)
             .add(AmbiencePlugin)
-            .add(MusicPlugin {
-                first_delay: dev.music_delay,
-                track: dev.music_track.clone(),
-            })
-            .add(CritterPlugin)
             .add(BirdPlugin)
             .add(DebugOverlayPlugin { stats: dev.stats })
             .add(FlythroughPlugin { flight: dev.flight })

@@ -16,11 +16,11 @@ https://github.com/user-attachments/assets/2ed1a420-5e0e-4f3f-ac09-f39bcf45d7f6
 - **Water that behaves.** Lakes, rivers and seas sit at consistent levels and don't leak. Water flows into space you open beside it.
 - **Sky.** A day and night cycle with sun, moon and stars, atmospheric scattering, volumetric clouds and weather including rain.
 - **Atmospheric audio.** Wind that follows altitude, plus ambient loops for forest, desert, crickets, owls, waves, leaves, rain and underwater.
-- **Life.** Birds and ground critters.
+- **Life.** Birds.
 
 ## Run it
 
-A simple sandbox example is included to showcase atmospheric audio, foliage, water, critters and basic weather.
+A simple sandbox example is included to showcase atmospheric audio, foliage, water, birds and basic weather.
 
 ```
 cargo run --release --example sandbox

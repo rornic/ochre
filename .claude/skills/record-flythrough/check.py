@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Checks a recording from record.sh: its size and frame rate, that the frames are not repeats, that it has sound, and that the music is in it.
+"""Checks a recording from record.sh: its size and frame rate, that the frames are not repeats, that it has sound, and, given a track, that the track is in it.
 
 usage: check.py <video.mp4> [--music <track.ogg>] [--music-at <seconds>] [--listen-at <seconds>]
 
---music-at is when the track starts in the video: record.sh starts it 3 s into the flight (the default). --listen-at is where in the
+--music-at is when the track starts in the video (3 s by default). --listen-at is where in the
 video the 8 s that are compared begin, 12 s after the music starts unless told, so a video shorter than 20 s needs it.
 Needs numpy. The sound is checked by cross-correlating 8 s of the video's audio with the track's first 60 s: the peak should be many
 standard deviations over the rest, and sit where the track would be if it started at --music-at.
@@ -22,7 +22,7 @@ def run(cmd):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
-    ap.add_argument("--music", default="assets/sounds/music/cold.ogg")
+    ap.add_argument("--music")
     ap.add_argument("--music-at", type=float, default=3.0)
     ap.add_argument("--listen-at", type=float)
     args = ap.parse_args()
@@ -59,6 +59,9 @@ def main():
         cmd += ["-t", str(seconds)] if seconds else []
         return np.frombuffer(run(cmd + ["-f", "f32le", "-"]), dtype=np.float32)
 
+    if not args.music:
+        print("OK" if ok else "CHECK FAILED")
+        sys.exit(0 if ok else 1)
     track = pcm(args.music, 0, 60)
     start = args.listen_at if args.listen_at is not None else args.music_at + 12  # well after the track's 6 s fade in
     heard = pcm(args.video, start, 8)

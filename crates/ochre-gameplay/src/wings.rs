@@ -11,7 +11,7 @@ use bevy::{
 };
 
 /// Beats every wing, added by whichever of the creatures' plugins comes first.
-pub(crate) struct WingPlugin;
+pub struct WingPlugin;
 
 impl Plugin for WingPlugin {
     fn build(&self, app: &mut App) {
@@ -22,7 +22,7 @@ impl Plugin for WingPlugin {
 /// How a wing beats: how fast, in radians a second, how far either way, held how far up, and
 /// whether it now and then glides with its wings out, as birds do.
 #[derive(Clone, Copy)]
-pub(crate) struct Flap {
+pub struct Flap {
     pub beat: f32,
     pub sweep: f32,
     pub lift: f32,
@@ -38,7 +38,7 @@ struct Wing {
 
 /// A flat wing from its corners: at the body and at the tip, along the leading edge and then
 /// the trailing one. It's mirrored for the other side, and carries uvs across it for a texture.
-pub(crate) fn wing_mesh(corners: [[f32; 3]; 4]) -> Mesh {
+pub fn wing_mesh(corners: [[f32; 3]; 4]) -> Mesh {
     Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::RENDER_WORLD,
@@ -53,7 +53,7 @@ pub(crate) fn wing_mesh(corners: [[f32; 3]; 4]) -> Mesh {
 }
 
 /// Spawns `creature` at `at`, unseen until it's grown, with a body and a pair of wings.
-pub(crate) fn spawn_winged(
+pub fn spawn_winged(
     commands: &mut Commands,
     creature: impl Bundle,
     at: Vec3,

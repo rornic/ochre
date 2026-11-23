@@ -15,12 +15,17 @@ use bevy::render::render_phase::{
 };
 use bevy::render::{diagnostic::RenderDiagnosticsPlugin, Render, RenderApp, RenderSystems};
 
-use crate::breaking::LookedAt;
 use crate::player::Player;
+use ochre_base::block::BlockType;
 use ochre_terrain::chunk::ChunkCoordinate;
 use ochre_terrain::chunk_loader::Chunk;
 use ochre_terrain::lod::LodNode;
+use ochre_terrain::raycast::RayHit;
 use ochre_terrain::world::World;
+
+/// The block the player is looking at, which a game sets for the overlay to show.
+#[derive(Resource, Default, Debug)]
+pub struct LookedAt(pub Option<(RayHit, BlockType)>);
 
 const TOGGLE_KEY: KeyCode = KeyCode::F1;
 const REFRESH_SECONDS: f32 = 0.25;

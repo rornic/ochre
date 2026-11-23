@@ -56,7 +56,6 @@ Each chunk group keeps its sculpted triangles, bucketed by column, as a `Floor` 
 
 - Plants root on the highest upward face within 2 blocks below and 0.6 above their block's foot, and lean half way to its slope. Trunks sink a block into the ground.
 - The player (`contact.rs`) walks the floor with three spheres. Faces steeper than 66 degrees are walls, which stop the player only above a 1-block step unless the ground on top is walkable. Ground comes from a footprint of five height lookups, and a fall lands on any upward face. A move is cut into 0.2-block substeps, and the head checks the faces above it before rising. Without sculpted ground near, it falls back to blocks.
-- Digging is a brush (`breaking.rs`): it removes blocks within 1.5 of the hit on loose ground, or 1 on rock, a rough 0.3 deep, so a dig doesn't print one block's outline in the surface.
 - A water surface reaches up to 1.5 blocks over the shore and is cut along the floor in 4 steps a block, so it meets the bank instead of stopping at block edges.
 - Generation lays a bed on any bank within 2 blocks of water and a block of its level (`columns.rs`), so water never meets a grass edge: sand by the sea, and by a lake or river what the ground there is (`terrain::fresh_bed`): mud where grass would grow on flat ground, gravel where it slopes 0.3 or more, gravel for snow, and rock and sand as they are.
 

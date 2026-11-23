@@ -8,7 +8,7 @@ Root crate `ochre-engine` (`Cargo.toml:[package]`). `lib.rs` re-exports the four
 - `settings.rs:Settings` (`Default`, `Deserialize`, `Clone`, `Copy`) holds `renderer: RendererSettings` (required), `sky: SkySettings` (shadows, owned by `ochre-world`), `plugins: PluginSettings` (`frost` and `godrays`, which start those plugins disabled when false), `debug: DebugSettings` and `world: WorldConfig` (all `#[serde(default)]`).
 - `settings.rs:Settings::read(file)` reads and parses a TOML file, returning `Result<Self, Box<dyn Error>>`.
 - `plugins.rs:OchrePlugins::new(settings, world).with_dev(dev)` is a `PluginGroup`; `load_world(&settings, &WorldOptions)` builds the world for it.
-- `dev.rs:DevEnv::from_env()` reads `OCHRE_SEED`, `OCHRE_WORLD_DIR`, `OCHRE_CHARACTER`, `OCHRE_SPAWN`, `OCHRE_TIME`, `OCHRE_TIMESCALE`, `OCHRE_CLEAR_SKY`, `OCHRE_MUSIC_DELAY`, `OCHRE_STATS`, and `OCHRE_FLIGHT*` into `WorldOptions` and plugin fields. The plugins read no environment.
+- `dev.rs:DevEnv::from_env()` reads `OCHRE_SEED`, `OCHRE_WORLD_DIR`, `OCHRE_CHARACTER`, `OCHRE_SPAWN`, `OCHRE_TIME`, `OCHRE_TIMESCALE`, `OCHRE_CLEAR_SKY`, `OCHRE_STATS`, and `OCHRE_FLIGHT*` into `WorldOptions` and plugin fields. The plugins read no environment.
 - `settings.rs` re-exports `DebugSettings` and `RendererSettings` from `ochre_terrain::settings`, `SkySettings` from `ochre_world`. `WorldConfig` is imported from `ochre_world::worldmap`.
 
 ## Invariants
