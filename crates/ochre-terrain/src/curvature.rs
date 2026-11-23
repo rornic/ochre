@@ -99,17 +99,20 @@ pub struct Curvature {
     pub shadow: [f32; 4],
     /// The haze toward each of 16 compass points: for each the camera's, then 3 rings out, a tint and a density as 4 floats, see `ochre_world::ambience::haze`.
     pub haze: [f32; 256],
+    /// How much of its sway the foliage keeps, 1 for all of it, in `x`: the rest is padding, see `foliage.wesl`.
+    pub sway: [f32; 4],
 }
 
 impl FromWorld for Curvature {
     fn from_world(world: &mut World) -> Self {
-        let buffer = ShaderBuffer::new(vec![0.0f32; 276], RenderAssetUsages::default());
+        let buffer = ShaderBuffer::new(vec![0.0f32; 280], RenderAssetUsages::default());
         Self {
             buffer: world.resource_mut::<Assets<ShaderBuffer>>().add(buffer),
             last: [0.0; 4],
             cold: ochre_base::cold::shader_values(0.0, 1.0, false, 0.0),
             shadow: [0.55, 0.63, 1.0, 0.3],
             haze: [1.0; 256],
+            sway: [1.0, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -134,6 +137,7 @@ fn update_curvature(
         buffer.extend_from_slice(&curvature.cold);
         buffer.extend_from_slice(&curvature.shadow);
         buffer.extend_from_slice(&curvature.haze);
+        buffer.extend_from_slice(&curvature.sway);
     }
     curvature.last = now;
 }

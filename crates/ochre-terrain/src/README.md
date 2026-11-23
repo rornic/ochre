@@ -29,7 +29,7 @@ Full-detail pipeline, per chunk: `chunk_loader.rs:gather_chunks` spawns a `gener
 - `remesh::chunks_reading` must match the light box `generator::LIGHT_MARGIN` and the 26-neighbour read of meshing (`remesh.rs`).
 - Fades are staggered by `FADE_IN_SHARE` so a mesh and its replacement never both leave a pixel undrawn (`fade.rs:set_shown`).
 - `pack` must run as late as possible: after it float attributes can't be read, so `shadow_mesh::split` runs first on the opaque mesh (`pack.rs:pack`, `group.rs:pack_group`, `shadow_mesh.rs:split` panics otherwise).
-- The shared buffer at binding 8 is 16 floats: this frame's bend, last frame's, then the cold (`Curvature.cold`), in the order `Bends` has them in `curvature.wesl`. Water and spray build against it too, so growing it means checking all three materials draw.
+- The shared buffer at binding 8 is 280 floats: this frame's bend, last frame's, the cold (`Curvature.cold`), the shadow tint, the haze, then the foliage's sway (`Curvature.sway`), in the order `Bends` has them in `curvature.wesl`. Water and spray build against it too, so growing it means checking all three materials draw.
 - `RendererSettings::material_period` must be a power of two up to 64 (asserted in `settings.rs`).
 - `render_distance_at` never exceeds the horizon or `MAX_RENDER_DISTANCE`, nor goes under the set distance (`horizon.rs`).
 - Per-frame work is time-budgeted: `GATHER_TIME_BUDGET` 3 ms, `MESH_APPLY_TIME_BUDGET` 4 ms (`chunk_loader.rs`); in-flight generation is capped by `max_in_flight`.
