@@ -1,20 +1,14 @@
-// Fog for ChunkMaterial, WaterMaterial and CloudMaterial, which replace Bevy's PBR fragment
-// stage and so must fog themselves. Each carries the curvature buffer, see `horizon.wesl`.
+// Fog for ChunkMaterial, WaterMaterial and CloudMaterial, which replace Bevy's PBR fragment stage and so fog themselves; each carries the curvature buffer, see `horizon.wesl`.
 
 import bevy_pbr::render::{mesh_view_bindings as view_bindings, pbr_functions::apply_fog};
 import super::curvature::{cold, haze_toward, uncurved};
 import super::horizon::horizon_haze;
 import super::sky::SUN_LIGHT;
 
-// Over this last share of the way to the fog's end, the land fades out altogether into the
-// haze just over its edge, past the fog's opacity: the square edge of the farthest LOD nodes
-// never shows against the sky, and nodes coming into reach fade in as the fog eases out.
+// Over this last share of the way to the fog's end the land fades out into the haze over its edge, so the farthest LOD nodes' square edge never shows and nodes fade in as the fog eases.
 const EDGE_FADE_START: f32 = 0.9;
 
-// The haze thickens exponentially with distance, `FOG_SCALE` of the way to the fog's end for each e-fold,
-// so mountains a few kilometres off are already softened: it's 1 - exp(-d / scale), stretched to just
-// reach full at the end. A quadratic ramp to half at the farthest LOD level's start left all but the
-// last stretch looking crisp.
+// The haze thickens as 1 - exp(-d / scale), `FOG_SCALE` of the way to the fog's end per e-fold and stretched to reach full at the end, so mountains a few km off are softened; a quadratic ramp left all but the last stretch crisp.
 const FOG_SCALE: f32 = 0.16;
 
 // The haze's own colour is a pale grey at the horizon, so over the land it is given more colour, easing back to the sky's own by the fog's end, where the land fades into it.
@@ -29,16 +23,12 @@ const THIN_FROM: f32 = 150.0;
 const THIN_FULL: f32 = 500.0;
 const THIN_TO: f32 = 0.25;
 
-// Looking steeply down from well above the ground the air in the way is thin: the haze fades over these look-down slopes (drop over distance) and
-// drops, in blocks, to `DOWN_TO` of itself, so it keeps to the horizon and doesn't wash the land under a high camera.
+// Looking steeply down from well above the ground the air is thin: the haze fades over these look-down slopes (drop over distance) and drops in blocks to `DOWN_TO` of itself, keeping it to the horizon.
 const DOWN_SLOPE: vec2<f32> = vec2<f32>(0.08, 0.5);
 const DOWN_DROP: vec2<f32> = vec2<f32>(60.0, 250.0);
 const DOWN_TO: f32 = 0.2;
 
-// Mist: where the camera's ground is cold enough for frost, by the sum `frost.wesl` does, a low mist of its own lies over the fog's. Its
-// density is `MIST_PER_BLOCK` at the ground under the camera and falls by an e-fold every `MIST_HEIGHT` blocks above it, so it pools in
-// hollows and thins away as the camera climbs. `MIST_MAX` of the view is as much as it hides, and the haze goes `MIST_PALE` of the way
-// to a cool white.
+// Mist over the fog where the camera's ground is cold enough for frost (by `frost.wesl`'s sum): `MIST_PER_BLOCK` dense at the ground, an e-fold thinner every `MIST_HEIGHT` blocks up; it hides at most `MIST_MAX` and the haze goes `MIST_PALE` toward cool white.
 const MIST_PER_BLOCK: f32 = 0.02;
 const MIST_HEIGHT: f32 = 28.0;
 const MIST_MAX: f32 = 0.85;
@@ -52,8 +42,7 @@ fn mist(view_position: vec3<f32>) -> f32 {
     return (1.0 - smoothstep(about.rule.y, about.rule.y + about.rule.z, ground)) * step(0.5, about.camera.z);
 }
 
-// How much of the view the mist hides over `across` blocks from `view_position` to the real `height`, `chill` being `mist`: the
-// density, which falls with height over the ground, averaged along the way up or down the line of sight.
+// How much of the view the mist hides over `across` blocks from `view_position` to the real `height`, `chill` being `mist`: its density averaged along the line of sight.
 fn mist_hides(view_position: vec3<f32>, height: f32, across: f32, chill: f32) -> f32 {
     // lower ground than the camera's has its own mist lying on it, not the camera's ground's: from a ridge the lowlands aren't under a sheet of it
     let base = min(cold().camera.w, height);
@@ -65,11 +54,7 @@ fn mist_hides(view_position: vec3<f32>, height: f32, across: f32, chill: f32) ->
     return MIST_MAX * (1.0 - exp(-MIST_PER_BLOCK * chill * across * mean));
 }
 
-// `color` at `world_position` behind the camera's fog. Above water it thickens only with
-// distance across the land, not up or down, so it hides the far edge of the world in the
-// haze along the horizon without greying out the ground below when flying high.
-// Underwater, Bevy's linear murk closes in every way. `WATER_LEVEL` comes from the
-// material's `specialize`.
+// `color` at `world_position` behind the fog: above water it thickens with distance across the land only, so high flight doesn't grey the ground; underwater Bevy's linear murk closes in every way. `WATER_LEVEL` comes from the material's `specialize`.
 fn fogged(color: vec4<f32>, world_position: vec3<f32>, frag_coord: vec2<f32>) -> vec4<f32> {
     let fog = view_bindings::fog;
     let view_position = view_bindings::view.world_position.xyz;

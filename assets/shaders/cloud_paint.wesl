@@ -26,15 +26,15 @@ const BROAD: f32 = 3.0;
 const VEIL: f32 = 0.45;
 const WISP: vec2<f32> = vec2<f32>(0.06, 0.2);
 const WISP_RATE: vec2<f32> = vec2<f32>(0.012, 0.03);
-// The lowest a ray looks to meet the clouds' plane, so strokes stop stretching to the horizon, where the clouds have faded.
 // How much the strokes lighten and darken the paint itself, as brush grain.
 const GRAIN: f32 = 0.07;
-// How far a cloud's shadows are lifted toward the lit side.
 // How far haze softens a shape's edge in cover and the steps between its bands, and thins its body, at the most.
 const HAZE_EDGE: f32 = 0.22;
 const HAZE_BAND: f32 = 0.3;
 const HAZE_THIN: f32 = 0.3;
+// How far a cloud's shadows are lifted toward the lit side.
 const LIFT: f32 = 0.15;
+// The lowest a ray looks to meet the clouds' plane, so strokes stop stretching to the horizon, where the clouds have faded.
 const FLATTEST: f32 = 0.1;
 
 // The point a ray meets the clouds' plane at, drifting with them, so strokes stay put on a cloud as it blows.

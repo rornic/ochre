@@ -1,5 +1,4 @@
-// Clouds' shadows on the land: where the sun's rays cross the cloud layer, looked up in
-// its pattern, so they drift with the clouds however far out. See `clouds.rs`.
+// Clouds' shadows on the land: where the sun's rays cross the cloud layer, looked up in its pattern so they drift with the clouds. See `clouds.rs`.
 
 import bevy_pbr::render::mesh_view_bindings as view_bindings;
 import super::sky::SUN_LIGHT;
@@ -18,8 +17,7 @@ fn cloud_shadow(world_position: vec3<f32>) -> f32 {
         return 1.0;
     }
     let under = world_position.xz + to_sun.xz * ((layer - world_position.y) / to_sun.y);
-    // `globals.time` wraps on the hour, when the wind has carried the clouds a whole
-    // number of patterns, see `clouds::WIND`
+    // `globals.time` wraps on the hour, when the wind has carried the clouds a whole number of patterns, see `clouds::WIND`
     let drift = cloud_layer.zw * view_bindings::globals.time;
     let share = textureSampleLevel(cloud_pattern, cloud_sampler, (under - drift) / cloud_layer.y, 0.0).r;
     let weather = weather_at(under);

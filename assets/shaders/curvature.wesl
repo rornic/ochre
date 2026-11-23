@@ -1,5 +1,4 @@
-// Bends the land away from the camera as if the world were round, see `curvature.rs`. Only
-// how it's drawn: the world itself stays flat.
+// Bends the land away from the camera as if the world were round, see `curvature.rs`; only how it's drawn, the world stays flat.
 
 struct Bend {
     // the camera's position, not the view's: the sun's shadow passes see the light's

@@ -67,8 +67,7 @@ fn most_storm() -> f32 {
     return select(0.0, cloud_weather.most.y, cloud_weather.corner.w >= 2.0);
 }
 
-// How much cloud there is, 0..1, where the pattern ranks `share` (0..1, the cloudiest last) and the weather is `weather`:
-// the share of the sky the weather clouds over, closing into an overcast as that nears all of it, and thickening under a storm.
+// How much cloud there is, 0..1, where the pattern ranks `share` (0..1, cloudiest last): the weather's share of sky, closing into an overcast as it nears all, thickening under a storm.
 fn sky_cover(share: f32, weather: Weather) -> f32 {
     let cloudy = weather.cloud;
     // only the divisor is floored, so the last clouds thin out to nothing instead of snapping off

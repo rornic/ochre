@@ -1,6 +1,4 @@
-// Rain falling round the camera, see `weather::RainMaterial`. The mesh is a box of streaks
-// that each carry a fixed spot in their position and which corner they are in their uv;
-// they fall here, wrapped round the camera so the box goes wherever it does.
+// Rain falling round the camera, see `weather::RainMaterial`: a box of streaks, each carrying a fixed spot in its position and its corner in uv, falling here wrapped round the camera.
 
 import bevy_pbr::render::{
     forward_io::{Vertex, VertexOutput},
@@ -8,8 +6,7 @@ import bevy_pbr::render::{
     view_transformations::position_world_to_clip,
 };
 
-// x: how hard it's raining, 0..1; y: how bright the light on it is; zw: the wind, in blocks
-// a second across the ground.
+// x: how hard it's raining, 0..1; y: how bright the light on it is; zw: the wind, in blocks a second across the ground.
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> rain: vec4<f32>;
 
 // Matches `RAIN_BOX` in `weather.rs`.
@@ -42,8 +39,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.world_position = vec4<f32>(world, 1.0);
     out.position = position_world_to_clip(world);
     out.world_normal = vec3<f32>(0.0, 1.0, 0.0);
-    // how far through the box it is, to fade it out before it wraps round, and only some
-    // of the streaks show in lighter rain
+    // how far through the box it is, to fade out before it wraps, and only some streaks show in lighter rain
     let through = abs(offset) / (BOX * 0.5);
     let edge = max(through.x, max(through.y, through.z));
     let shown = step(seed, rain.x);
