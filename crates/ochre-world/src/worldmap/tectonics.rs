@@ -1,5 +1,4 @@
-//! A regional tectonic snapshot. Plates carry motion, not a pre-drawn mountain mask.
-//! Noise bends the boundaries and breaks up ridges; compression decides where uplift occurs.
+//! A regional tectonic snapshot: plates carry motion, not a mountain mask; noise bends boundaries and compression decides uplift.
 
 use super::{par_rows, WorldConfig, WorldMap};
 use ochre_base::math::smoothstep_f64 as smooth;
@@ -63,8 +62,7 @@ pub struct Plate {
     age: f64,
 }
 
-/// The rock a plate is made of, drawn once per plate: a basin of layered sedimentary rock, an old
-/// metamorphic shield, or a volcanic plate. A range takes the rock of one plate of the pair it stands on.
+/// The rock a plate is made of, drawn once per plate: layered sedimentary basin, old metamorphic shield or volcanic; a range takes the rock of one plate of its pair.
 pub(crate) const ROCK_BASIN: u8 = 0;
 pub(crate) const ROCK_SHIELD: u8 = 1;
 pub(crate) const ROCK_VOLCANIC: u8 = 2;
@@ -290,10 +288,7 @@ impl Tectonics {
         }
     }
 
-    /// The rock each plate is made of, `ROCK_BASIN`, `ROCK_SHIELD` or `ROCK_VOLCANIC`, given how many land cells each
-    /// plate owns. Rock is shared out by land, so every world is about half basin, three tenths shield and two
-    /// tenths volcanic, the largest plates going to whichever rock is furthest short of its share (with some
-    /// chance in it, so the biggest continent is not always basin).
+    /// The rock of each plate given its land cells, shared out by land to about half basin, 3/10 shield and 2/10 volcanic: the largest plates go to the rock furthest short, with some chance.
     pub fn plate_rocks(&self, land: &[usize]) -> Vec<u8> {
         let n = self.plates.len();
         let total: f64 = land.iter().sum::<usize>().max(1) as f64;
@@ -345,8 +340,7 @@ impl Tectonics {
                 nearest = (d, i);
             }
         }
-        // Compact, continuous support includes every nearby plate. Selecting only N nearest
-        // sites would introduce a height seam whenever the Nth and (N+1)th swap order.
+        // every nearby plate counts: picking only the N nearest sites would seam the height wherever the Nth and (N+1)th swap order
         let reach = self.half * 2.0 / (self.plates.len() as f64).sqrt() * 0.35;
         let mut weights = [0.0; 64];
         for (i, _) in self.plates.iter().enumerate() {
@@ -430,8 +424,7 @@ impl Tectonics {
                         * 350.0
                         * libm::exp(-((continental_side + 1500.0) / 1000.0).powi(2));
                 }
-                // Oceanic convergence builds a chain on one side of the trench. The
-                // stable plate order keeps the overriding side fixed across the boundary.
+                // oceanic convergence builds a chain on one side of the trench; the stable plate order fixes the overriding side
                 let ocean_pair = (1.0 - la) * (1.0 - lb);
                 let arc = libm::exp(-((signed - 2200.0) / 1400.0).powi(2));
                 let islands = smooth(0.25, 0.72, ridged(self.seed ^ 0xB03, along, 0.0, 3500.0, 3));
@@ -445,15 +438,13 @@ impl Tectonics {
                     * 240.0
                     * libm::exp(-((signed + 1200.0) / 900.0).powi(2));
 
-                // Continental extension opens a trough between raised shoulders;
-                // in the ocean it creates a broad submarine spreading ridge.
+                // continental extension opens a trough between raised shoulders, in the ocean a broad spreading ridge
                 let rift = libm::exp(-(signed / 1200.0).powi(2));
                 let shoulders = libm::exp(-((signed.abs() - 2600.0) / 1500.0).powi(2));
                 valley += divergent * pair_weight * land * 240.0 * rift;
                 uplift += divergent * pair_weight * land * 220.0 * shoulders;
                 spreading += divergent * pair_weight * (1.0 - land) * 420.0 * belt;
-                // Strike-slip motion makes a narrower linear depression without
-                // raising an artificial wall across the drainage network.
+                // strike-slip makes a narrow depression, with no wall across the drainage
                 valley +=
                     lateral * pair_weight * land * 150.0 * libm::exp(-(signed / 850.0).powi(2));
                 let rise =

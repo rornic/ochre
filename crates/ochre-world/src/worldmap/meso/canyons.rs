@@ -44,8 +44,7 @@ fn slot(depth: f64) -> f64 {
     ((depth * SLOT_RATIO / 10.0).round() * 10.0).clamp(0.0, 150.0)
 }
 
-// The floor of a canyon from `start` down the line the water will take over `flood`'s filled ground, to the sea or the map's edge, so it always drains.
-// Positions are the cells' own.
+// The floor of a canyon from `start` down the line water will take over `flood`'s filled ground to the sea or the map's edge, so it always drains.
 fn trace(flood: &Flood, dim: usize, start: (usize, usize), depth: f64, half: f64, h: u32) -> Floor {
     let sea = WATER_LEVEL as f64;
     let mut cell = start.1 * dim + start.0;
@@ -148,9 +147,7 @@ fn cells_of(floor: &Floor, dim: usize) -> Vec<((usize, usize), f64)> {
     cells
 }
 
-/// Cuts up to `count` canyons into desert plateau and `gorges` into the plateaus of the wetter biomes, each a drop of 90 to 200 blocks (less where the
-/// plateau is low), swelling and pinching, with forks off its deeper reaches, and adds the trenches to `keep` (landmarks), so the flattening and the valleys leave them be. The map's trench holds 60% of the depth,
-/// and `map.canyon` marks the line for a slot at block level. A gorge is a canyon with rain on it, so the water the last run routes puts a river through it.
+/// Cuts up to `count` canyons into desert plateau and `gorges` into wetter plateaus, 90 to 200 blocks deep, swelling and pinching, with forks; the map holds 60% of the depth and `map.canyon` marks the line for block-level slots; trenches join `keep` (landmarks).
 pub(crate) fn run(map: &mut WorldMap, count: u32, gorges: u32, wadis: u32, keep: &mut [f32]) {
     let dim = map.dim();
     if (count == 0 && gorges == 0 && wadis == 0) || dim <= 2 * EDGE {

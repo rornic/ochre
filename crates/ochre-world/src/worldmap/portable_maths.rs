@@ -1,5 +1,4 @@
-//! A seed makes the same world on every machine: no platform maths library in world generation,
-//! and no dependence on how many threads it runs on.
+//! A seed makes the same world on every machine: no platform maths in generation, no dependence on thread count.
 
 use std::path::{Path, PathBuf};
 

@@ -1,5 +1,4 @@
-//! Base relief for the biomes whose ground the tectonics leave too flat: jungle gets steep ridged hills, savanna long low swells and glacier ice ridges,
-//! laid over the map's height after the landmarks, in proportion to how much of each cell's surroundings is that biome.
+//! Base relief for biomes the tectonics leave too flat: jungle's steep ridged hills, savanna's long low swells, glacier ice ridges, in proportion to each cell's surroundings.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm, hash, ridged, unit};

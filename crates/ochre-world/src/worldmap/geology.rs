@@ -71,8 +71,7 @@ impl Rock {
     }
 }
 
-// The province describes a vertical column. Sedimentary provinces contain beds;
-// volcanic and metamorphic provinces are treated as massive rock for this first iteration.
+// A province describes a vertical column: sedimentary ones contain beds, volcanic and metamorphic ones are massive rock.
 const GENERIC: u8 = 0;
 pub(super) const SEDIMENTARY: u8 = 1;
 pub(super) const VOLCANIC: u8 = 2;
@@ -83,9 +82,7 @@ const GRANITE_UPLIFT: f32 = 450.0;
 // Beds average this thick, each boundary wandering by up to `BED_WANDER` of it from an even spacing.
 const BED: f64 = 160.0;
 const BED_WANDER: f64 = 0.5;
-// The share of beds that are soft (half clay, half shale) runs between these over a few hundred kilometres: mostly
-// hard benches at the first (mesa country), mostly clay and shale slopes at the second (badlands). The rest are
-// limestone or sandstone as the facies noise favours.
+// The share of beds that are soft (half clay, half shale) drifts between these over a few hundred kilometres, mesa country at the first, badlands at the second; the rest are limestone or sandstone by facies.
 const SOFT_SHARE: (f64, f64) = (0.30, 0.70);
 const BADLAND_WAVELENGTH: f64 = 12000.0;
 // The facies noise is over this many blocks, and sways from sandstone to limestone between these two values.
@@ -145,8 +142,7 @@ fn layer(seed: u32, scale: f64, y: f64) -> (i32, f64, f64) {
     (k, bottom, top)
 }
 
-/// The share of soft beds in the stack at (`x`, `z`) before the highest ground hardens them: it drifts between
-/// mesa country and badlands, so a world's sedimentary lands differ from place to place.
+/// The share of soft beds in the stack at (`x`, `z`) before the highest ground hardens them.
 pub(super) fn base_soft(seed: u32, x: f64, z: f64) -> f64 {
     let badland = smoothstep(
         0.4,
@@ -156,8 +152,7 @@ pub(super) fn base_soft(seed: u32, x: f64, z: f64) -> f64 {
     SOFT_SHARE.0 + (SOFT_SHARE.1 - SOFT_SHARE.0) * badland
 }
 
-// The bed at height `y` of a stack: uneven in thickness, and clay or hard rock by a hash of its number alone, so
-// the stack never repeats, the hard rock being limestone where `facies` is high and sandstone where it is low.
+// The bed at height `y` of a stack: uneven in thickness, clay or hard rock by a hash of its number so the stack never repeats; hard rock is limestone where `facies` is high, sandstone where low.
 fn bed(seed: u32, facies: f64, y: f64, phase: f64, base_soft: f64) -> Bed {
     let (k, bottom, top) = layer(seed, BED, y);
     let r = unit(seed ^ 0xBED6, k, 0);
@@ -246,8 +241,7 @@ pub(super) fn generate(map: &mut WorldMap) {
 // High ground this many blocks over the sea, before erosion, is taken as a range for rock: the landform comes later.
 const RANGE_PROXY: f32 = 200.0;
 
-// Each connected stretch of high ground is the rock most of it is, so a range stands on one rock and is not cut
-// between two where plates' belts meet or an edge of a province crosses it.
+// Each connected stretch of high ground takes the rock most of it is, so no range is split between two where belts or province edges cross it.
 fn one_rock_per_range(map: &mut WorldMap) {
     let dim = map.dim();
     let high = |i: usize| map.height[i] >= RANGE_PROXY && map.continentalness[i] >= -0.2;
@@ -336,8 +330,7 @@ impl WorldMap {
         self.rock_in(i, y, self.strata_offset[i], soft)
     }
 
-    /// `rock_at_cell`, remembering the bed found in `span`: a bed is over a hundred blocks thick, so ground that
-    /// moves a little keeps the rock it had, and the bed noise runs once a cell.
+    /// `rock_at_cell`, remembering the bed found in `span`: beds are over a hundred blocks thick, so the bed noise runs once a cell.
     pub(super) fn rock_in_span(&self, span: &mut BedSpan, i: usize, y: f32) -> Rock {
         let phase = self.strata_offset[i];
         let up = (y - phase) as f64;
@@ -388,9 +381,7 @@ impl WorldMap {
         }
     }
 
-    /// `height` at (`x`, `z`), `above_sea` blocks up, stepped through the beds of the stack there where the ground
-    /// is sedimentary: hard beds as benches with cliff faces, clay as slopes. It is a function of height and the
-    /// slow drift of the stack alone, so rising ground climbs through the steps in turn and never falls back.
+    /// `height` at (`x`, `z`) stepped through the beds there where the ground is sedimentary: hard beds as benches with cliffs, clay as slopes; monotone in height, so rising ground never steps back.
     pub(super) fn terraced(&self, x: f64, z: f64, height: f64, above_sea: f64) -> f64 {
         let high = smoothstep(25.0, 110.0, above_sea);
         let phase = self.bilinear(&self.strata_offset, x, z) as f64;

@@ -25,13 +25,12 @@ const ALPINE_EDGE: usize = 5;
 // A basin the ranges' valleys made this many blocks deep or less is filled; a deeper one is left a mountain lake.
 const ALPINE_SHALLOW_BASIN: f32 = 45.0;
 
-// Cells each way steppe is smoothed over, how far toward that it is pulled, the heights over the sea it is pulled between,
-// the cells each way a mountain keeps it off, and the cells each way the zone's edge is softened over.
-const PLAIN_EDGE: usize = 40;
+// Steppe is smoothed over RADIUS cells each way and pulled PULL of the way toward that between ABOVE heights over the sea, kept MOUNTAIN cells off mountains, its zone's edge softened over EDGE cells.
 const PLAIN_RADIUS: usize = 60;
 const PLAIN_PULL: f64 = 0.9;
 const PLAIN_ABOVE: (f64, f64) = (20.0, 80.0);
 const PLAIN_MOUNTAIN: usize = 8;
+const PLAIN_EDGE: usize = 40;
 // Slopes above this are mountain faces, and no valley is cut into them.
 const FLAT_BELOW: (f64, f64) = (0.2, 0.4);
 // A basin with this many cells, a third of it, that no basin held before the cut was made by the valleys.
@@ -90,8 +89,7 @@ pub const STEPPE: ValleyProfile = ValleyProfile {
     base: 0.25,
 };
 
-/// The valleys cut through ranges: long, deep, wide-floored troughs a few kilometres apart, a meadow and a river on the floor to rest and cross by, walls that
-/// rise over several hundred blocks with cliff bands, and the ridges between left standing.
+/// The valleys cut through ranges: long, deep, wide-floored troughs a few kilometres apart with a meadow and river on the floor, walls rising several hundred blocks with cliff bands, ridges left standing.
 pub const ALPINE: ValleyProfile = ValleyProfile {
     period: 5200.0,
     stretch: 2.5,
@@ -373,8 +371,7 @@ fn siting(map: &WorldMap, share: f64, favoured: &[f32]) -> (Vec<u8>, Vec<bool>) 
     (weights, held)
 }
 
-/// Flattens steppe ground but where `keep` holds a landmark, then cuts the valleys into `map.height` and stores their siting weight in
-/// `map.valley`. A `share` of 0 changes nothing.
+/// Flattens steppe but where `keep` holds a landmark, then cuts valleys into `map.height` and stores their siting weight in `map.valley`; a `share` of 0 changes nothing.
 pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     if share <= 0.0 {
         return;
@@ -401,8 +398,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
             *cell -= (cut.depth * cut.soft * weight) as f32;
         }
     });
-    // Fill each shallow basin the valleys made up to its dam, or it becomes a lake that floods the flat ground round it. A deep one is left alone: filling it would
-    // plug the valley, and a channel cut out of it leaves a dry slot across the plain.
+    // Fill each shallow basin the valleys made up to its dam, or it floods the flat ground round it; a deep one is left, as filling would plug the valley and a channel out of it leaves a dry slot across the plain.
     fill_where(&mut heights, dim, |basin| {
         let new = basin.cells.iter().filter(|&&i| !held[i]).count();
         let inside = basin.cells.iter().filter(|&&i| map.valley[i] > 0).count();
@@ -412,8 +408,7 @@ pub fn run(map: &mut WorldMap, share: f64, keep: &[f32]) {
     map.height = heights;
 }
 
-/// Cuts the ranges' valleys into `map.height` and stores their siting weight in `map.alpine`: mountain ground only, fading toward the foothills, never
-/// deep enough to leave less than the profile's margin over the sea.
+/// Cuts the ranges' valleys into `map.height` and stores their siting weight in `map.alpine`: mountain ground only, fading toward the foothills, never below the profile's margin over the sea.
 pub fn run_alpine(map: &mut WorldMap) {
     let dim = map.dim();
     let p = ALPINE;

@@ -1,6 +1,4 @@
-//! Landmarks (meso slice 2): big raised forms and bowls, sited by a rule table over the map's own layers, the form drawn from the rock
-//! under the site, laid with the other stamped shapes before the passes are carved. A biome has landmarks if the table has rows for it.
-//! See `docs/meso-slice1-decision.md`.
+//! Landmarks: big raised forms and bowls sited by a rule table over the map's layers, the form drawn from the rock beneath; see `docs/meso-slice1-decision.md`.
 
 use ochre_base::math::smoothstep_f64 as smoothstep;
 use ochre_base::noise::{fbm, hash, unit};
@@ -46,8 +44,7 @@ const BEDDED: &[u8] = &[SEDIMENTARY, METAMORPHIC];
 const KARST: &[u8] = &[SEDIMENTARY];
 const ANY: &[u8] = &[];
 
-// Sized from the slice 1 baseline: 130 blocks of relief over about 190 blocks reads from 4 km, and 250 over 750 as a mass. Every biome keeps
-// a massif and a bowl that form on any rock, so a site never lacks a row.
+// Sized from the slice 1 baseline: 130 blocks of relief over about 190 reads from 4 km, 250 over 750 as a mass; every biome keeps a massif and a bowl on any rock, so a site never lacks a row.
 const TABLE: &[Row] = &[
     Row { biome: BiomeKind::Steppe, primitive: Primitive::Butte, rock: CAPPED, weight: 0.35, radius: (2.5, 4.0), height: (150.0, 260.0) },
     Row { biome: BiomeKind::Steppe, primitive: Primitive::Massif, rock: ANY, weight: 0.25, radius: (7.0, 11.0), height: (250.0, 380.0) },
@@ -113,8 +110,7 @@ pub struct Landmark {
     pub height: f64,
 }
 
-// The biome of each cell, if the table has rows for it and a landmark could stand on the ground: the climate's own classification of its warmth
-// at height and its moisture, before the climate pass decides.
+// The biome of each cell if the table has rows for it and a landmark could stand there: the climate's classification of its warmth at height and moisture, before the climate pass decides.
 pub(super) fn biomes(map: &WorldMap) -> Vec<Option<BiomeKind>> {
     let dim = map.dim();
     let (temperature, moisture) = moisture_field(map);
@@ -239,8 +235,7 @@ fn satellites(map: &WorldMap, keep: &[f32], (sx, sz): (usize, usize), radius: f6
         .collect()
 }
 
-/// Lays landmarks on steppe and tundra, each `apart` cells from the others, into `map.height`. Returns them, and a mask of how
-/// much each cell belongs to one (1 inside, easing off past its radius), which the steppe's flattening leaves alone.
+/// Lays landmarks, each `apart` cells from the others, into `map.height`; returns them and a mask of how much each cell belongs to one (1 inside, easing off past its radius), which the steppe's flattening leaves alone.
 pub(crate) fn run(map: &mut WorldMap, apart: f64) -> (Vec<Landmark>, Vec<f32>) {
     // sited closer so the count holds, then each kept by a chance that swells and thins over patches: dart throwing alone packs a near-regular lattice
     let wavelength = apart * PATCH;

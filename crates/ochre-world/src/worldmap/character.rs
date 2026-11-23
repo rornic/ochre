@@ -1,5 +1,4 @@
-//! What kind of world a seed makes: how many plates, how high the relief, how warm, which way the
-//! wind blows. Each is drawn from the seed within a range, so seeds differ in more than their shapes.
+//! What kind of world a seed makes: plates, relief, warmth, wind, each drawn from the seed within a range.
 
 use ochre_base::noise::unit;
 
@@ -72,8 +71,7 @@ fn round(value: f64, decimals: i32) -> f64 {
     (value * scale).round() / scale
 }
 
-/// What a seed decides about its landforms, worked out where it is used rather than stored in the
-/// config or the map file, so a new landform adds no file format change. `OCHRE_CHARACTER=off` does not touch them.
+/// What a seed decides about its landforms, derived where used and never stored, so a new landform changes no file format.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LandformKnobs {
     /// About how much of the sedimentary lowland is tableland.
@@ -163,8 +161,7 @@ pub fn derive(seed: u32, mut config: WorldConfig) -> WorldConfig {
     config
 }
 
-/// The config a world for `seed` is made with, for the tools: `OCHRE_CHARACTER=off` keeps `config` as given. The game passes
-/// `WorldOptions::character` to `world_config_with` instead.
+/// The config a world for `seed` is made with, for the tools: `OCHRE_CHARACTER=off` keeps `config` as given.
 pub fn world_config(seed: u32, config: WorldConfig) -> WorldConfig {
     let off = std::env::var("OCHRE_CHARACTER").is_ok_and(|v| v == "off");
     world_config_with(seed, config, !off)

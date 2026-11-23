@@ -2,12 +2,10 @@
 
 use super::super::climate::blur_box;
 
-/// Half-widths of the three relief windows, in grid cells: with the default 64-block step, about 128, 512 and 1,536 blocks. The first is the scale of a
-/// landmark (a few map cells), the second of a massif or a bowl, the third of a range or a basin.
+/// Half-widths of the three relief windows in grid cells (128, 512 and 1,536 blocks at the default step): a landmark, a massif or bowl, a range or basin.
 pub(super) const WINDOWS: [usize; 3] = [2, 8, 24];
 
-/// Half-width, in grid cells, the ground is smoothed over before anything is measured: a feature has to be about three cells (190 blocks at the default step)
-/// across to count, so a thin spike a few blocks wide, which a landmark is not, does not score as a peak.
+/// Half-width in grid cells the ground is smoothed over before measuring: a feature must be about three cells (190 blocks) across, so a thin spike doesn't score as a peak.
 pub(super) const FOOTPRINT: usize = 1;
 
 pub(super) struct Terms {

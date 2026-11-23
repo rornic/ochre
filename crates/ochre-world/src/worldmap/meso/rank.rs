@@ -14,8 +14,7 @@ pub struct Params {
     pub apart: f64,
     /// Places kept per biome.
     pub top: usize,
-    /// The least relief, in blocks, a place needs at the landmark and the mass window, whatever its rank: ranking is within a biome, so on a flat plain a
-    /// small bump would otherwise be in the tail.
+    /// The least relief, in blocks, a place needs at the landmark and mass windows whatever its rank, so a small bump on a flat plain isn't in the tail.
     pub floor: [f32; 2],
     /// For the null run: shift the mass-scale relief this many grid cells (wrapping), to see what chance alone scores.
     pub null_shift: Option<usize>,
@@ -280,8 +279,7 @@ mod tests {
 
     #[test]
     fn the_null_run_shifts_only_the_mass_scale() {
-        // a zero shift is the real run, and any other changes which cells line up. In this synthetic world shape and steepness already coincide at every
-        // bump, so how much the null costs is measured on real worlds and written into the baseline, not asserted here.
+        // a zero shift is the real run; in this synthetic world shape and steepness coincide at every bump, so the null's cost is measured on real worlds, not asserted
         let real = run(&Params::default());
         assert_eq!(real, run(&Params { null_shift: Some(0), ..Params::default() }));
         assert_ne!(real, run(&Params { null_shift: Some(DIM / 3), ..Params::default() }));

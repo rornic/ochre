@@ -45,8 +45,7 @@ fn path(flood: &Flood, dim: usize, start: (usize, usize), len: usize) -> Vec<(f6
         .collect()
 }
 
-// Raises `map.height` along `line` by up to `height`, a ridge `half` cells to a side that rises over its first cells and falls over its last,
-// from the ground as it stood, leaving `keep` (landmarks) alone.
+// Raises `map.height` along `line` by up to `height`, a ridge `half` cells to a side easing in and out at its ends, from the ground in `before`, leaving `keep` (landmarks) alone.
 fn raise(map: &mut WorldMap, before: &[f32], line: &[(f64, f64)], half: f64, height: f64, h: u32, keep: &[f32]) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f64;
@@ -68,8 +67,7 @@ fn raise(map: &mut WorldMap, before: &[f32], line: &[(f64, f64)], half: f64, hei
     }
 }
 
-/// Raises up to `count` eskers on taiga and tundra ground, each 30 to 130 cells long and 14 to 30 blocks high along the line the water takes, the
-/// ground over the sea 15 blocks or more, leaving `keep` (landmarks) alone.
+/// Raises up to `count` eskers on taiga and tundra ground 15 or more blocks over the sea, each 30 to 130 cells long and 14 to 30 blocks high along the line the water takes.
 pub(crate) fn run(map: &mut WorldMap, count: u32, keep: &[f32]) {
     let dim = map.dim();
     if count == 0 || dim <= 2 * EDGE {

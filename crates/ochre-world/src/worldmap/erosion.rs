@@ -1,16 +1,11 @@
-//! Weathering: droplets of rain wear gullies and valleys into the slopes and lay the silt in
-//! flats, then thermal erosion slumps whatever is left steeper than rock holds.
-//!
-//! Droplets run in tiles, four rounds each tile apart from the next of its round, so tiles run on
-//! all cores and a seed still gives the same map: nothing races on a shared grid.
+//! Weathering: rain droplets wear gullies and lay silt, then thermal erosion slumps what is steeper than rock holds; droplets run in four rounds of non-touching tiles, so cores share the work and a seed still gives one map.
 
 use super::geology::BedSpan;
 use super::hydrology::{accumulate, priority_flood, NONE};
 use super::{par_rows, WorldMap};
 use ochre_base::WATER_LEVEL;
 
-// Heights are scaled down by this for the droplets, which are tuned for ground that rises
-// about as much as a cell is wide over a range's flank.
+// Heights are scaled down by this for the droplets, tuned for ground rising about a cell's width over a range's flank.
 const HEIGHT_SCALE: f32 = 1.0 / 120.0;
 const DROPLETS_PER_CELL: f32 = 0.12;
 const ROUNDS: u32 = 2;
@@ -182,8 +177,7 @@ fn hydraulic_round(grid: &mut [f32], map: &WorldMap, round: u32, shift: usize) {
             .flat_map(|tz| (0..tiles).map(move |tx| (tx, tz)))
             .filter(|&(tx, tz)| (tx % 2) + 2 * (tz % 2) == phase)
             .collect();
-        // each thread takes the next tile as it finishes one, since a range's tiles take far longer than the sea's; a
-        // phase's windows don't overlap, so the order they are written back in changes nothing, and it is kept anyway
+        // threads take the next tile as they finish one, as a range's tiles take far longer than the sea's; windows don't overlap, so write-back order changes nothing
         let next = std::sync::atomic::AtomicUsize::new(0);
         let mut results: Vec<_> = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..super::worker_threads())
@@ -302,8 +296,7 @@ pub(crate) fn thermal(map: &mut WorldMap) {
     let mut delta = vec![0.0f32; dim * dim];
     for _ in 0..THERMAL_PASSES {
         let h = &map.height;
-        // Both sides of a transfer use the donor's exposed rock and the same
-        // threshold, so distributing the shed material still conserves mass.
+        // both sides of a transfer use the donor's exposed rock and one threshold, so shed material conserves mass
         let mut talus = vec![0.0f32; dim * dim];
         par_rows(dim, &mut talus, |row, cells| {
             for (col, slot) in cells.iter_mut().enumerate() {
@@ -369,14 +362,12 @@ pub(crate) fn thermal(map: &mut WorldMap) {
     }
 }
 
-// Stream power: ground wears at a rate that grows with the water through it and the slope, so
-// the lines water gathers along cut into valleys and the ridges between them stand.
+// Stream power: ground wears faster with more water and steeper slope, so gathered water cuts valleys and leaves ridges.
 const STREAM_PASSES: usize = 6;
 // Per pass, with the water as the square root of the area drained in cells.
 const STREAM_K: f32 = 0.03;
 
-/// Cuts valleys along the lines water gathers, solving each pass for the new heights outward
-/// from the sea in one sweep, which holds at any rate of wear.
+/// Cuts valleys along the lines water gathers, solving each pass outward from the sea in one sweep, stable at any rate of wear.
 pub(crate) fn stream_power(map: &mut WorldMap) {
     let dim = map.dim();
     let sea = WATER_LEVEL as f32;

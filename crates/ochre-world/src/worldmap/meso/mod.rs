@@ -1,7 +1,4 @@
-//! Scores a generated world for distinctive places, from the ground a player sees at 4 km: relief of either sign at three scales, and steepness, ranked
-//! within each biome. It only reads. It adds no layer to the map, never runs in `generate`, and so never moves `MAP_HASH`. See `docs/designs/meso-scale-geography.md`.
-//!
-//! Every number here is a first pass, provisional until the baseline (`docs/meso-baseline.csv`) shows what the world gives.
+//! Meso-scale geography: the landmarks, canyons, eskers, stacks, ponds and relief laid during generation, and `score`, a read-only ranking of a finished world's distinctive places; see `docs/designs/meso-scale-geography.md`.
 
 pub mod canyons;
 pub mod eskers;
