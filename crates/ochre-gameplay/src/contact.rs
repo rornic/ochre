@@ -40,7 +40,6 @@ pub(crate) fn nearest_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
     a + ab * (vb * denom) + ac * (vc * denom)
 }
 
-// What a move over sculpted ground did.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Moved {
     pub(crate) feet: Vec3,

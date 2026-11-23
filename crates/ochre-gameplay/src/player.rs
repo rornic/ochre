@@ -385,7 +385,6 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-/// Spawns the player at the world's spawn with its camera.
 fn spawn_player(
     mut commands: Commands,
     mut assets: ViewAssets,

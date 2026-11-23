@@ -67,7 +67,6 @@ impl Surface {
         }
     }
 
-    /// Whether `feet` are pushing through grass or other ground flora.
     fn in_flora(world: &World, feet: Vec3) -> bool {
         world
             .get_block_at((feet + Vec3::Y * 0.1).round().as_i64vec3())
@@ -84,7 +83,6 @@ impl Surface {
     }
 }
 
-/// A foot comes down on `surface`.
 #[derive(Message)]
 pub struct Footstep {
     pub surface: Surface,

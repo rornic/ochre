@@ -190,7 +190,6 @@ const SHORT_HOP_GRAVITY: f32 = 2.5;
 // Landing: the slowest fall that counts.
 const LAND_MIN_SPEED: f32 = 7.0;
 
-/// Moves the body at `position` by `dt` seconds of `input` through `env`.
 pub fn step_character(
     state: &mut CharacterState,
     position: &mut Vec3,

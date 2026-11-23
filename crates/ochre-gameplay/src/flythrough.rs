@@ -77,7 +77,6 @@ struct Flight {
     drain: u32,
     // when the player first existed, which the warmup counts from
     started: Option<Instant>,
-    // when the flight began
     flying: Option<Instant>,
     // the camera's height at each sample along the flight, worked out up front
     height: Vec<f32>,
