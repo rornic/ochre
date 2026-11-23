@@ -6,6 +6,8 @@
 //   worldview <seed> png <x> <z> <half> <out.png> [pixels_per_block]
 //   worldview <seed> route <x> <z> [cells]
 //   worldview <seed> sites|valley|falls|features|edges <x> <z> ...
+//   worldview <seed> dryrivers 0 0 [n]          river cells with no water in their square, by kind, and those with none on their line
+//   worldview <seed> course <x> <z>              the river stretch from one map cell: levels, and the blocks' ground and water along it
 // Real blocks, from `generate_chunk_with`, so the cliff pass, trees and flora can each be switched off:
 //   worldview <seed> slice <x> <z> <x|z> <len> <y0> <y1> [flags]   a vertical cross-section, one letter a block
 //   worldview <seed> top <x> <z> <half> <out.png> [flags]           top-down surface blocks, 1 pixel a block
@@ -24,9 +26,9 @@ use image::{Rgb, RgbImage};
 use ochre_base::terrain_source::{TerrainSource, WaterKind};
 use ochre_terrain::generate::region_store::RegionStore;
 use ochre_world::worldmap::valleys::Valley;
-use ochre_world::worldmap::{WaterCell, WorldMap, WorldTerrain, NEIGHBOURS};
+use ochre_world::worldmap::{RiverCourse, WaterCell, WorldMap, WorldTerrain, NEIGHBOURS, NO_FLOW};
 
-const USAGE: &str = "commands: info line grid png route sites valley falls features edges slice top passes render";
+const USAGE: &str = "commands: info line grid png route sites valley falls features edges course dryrivers slice top passes render";
 
 macro_rules! outln {
     ($out:expr, $($t:tt)*) => {{
@@ -428,32 +430,148 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
             }
         }
         "dryrivers" => {
-            // map river cells with no river or lake water anywhere in them at block scale (every 4 blocks), the
-            // driest first by how far the ground lies under the map's own: water the map has and the blocks lose
+            // map river cells with no river or lake water in their own square at block scale (every 4 blocks), told apart
+            // into those whose river is drawn a few blocks off (the meander) and those with none on their line, which
+            // are sorted by where the cell sits on its river, driest first by how far the ground lies under the map's own
             let limit: usize = opt(args, 4, 12)?;
             let dim = map.dim();
             let cell = map.config.map_cell;
-            let rivers: Vec<usize> = (0..dim * dim).filter(|&i| map.water_kind[i] == WaterCell::River as u8).collect();
-            let mut dry = Vec::new();
+            let river = WaterCell::River as u8;
+            let rivers: Vec<usize> = (0..dim * dim).filter(|&i| map.water_kind[i] == river).collect();
+            // the meander moves a river up to 43 blocks off the map's line, so a 32 block cell can miss its own river
+            let mut broken: Vec<(usize, f32)> = Vec::new();
+            let mut square_wet = vec![false; dim * dim];
+            let mut wet = vec![false; dim * dim];
+            let mut lowest = vec![f64::MAX; dim * dim];
+            let is_wet = |x: f64, z: f64| matches!(terrain.sample(x, z).water_kind, WaterKind::River | WaterKind::Lake);
             for &i in &rivers {
                 let (wx, wz) = map.cell_centre(i % dim, i / dim);
                 let (x0, z0) = (wx as i64 - cell / 2, wz as i64 - cell / 2);
-                let mut lowest = f64::MAX;
-                let wet = (0..cell).step_by(4).any(|dz| {
+                square_wet[i] = (0..cell).step_by(4).any(|dz| {
                     (0..cell).step_by(4).any(|dx| {
                         let s = terrain.sample((x0 + dx) as f64, (z0 + dz) as f64);
-                        lowest = lowest.min(s.height);
+                        lowest[i] = lowest[i].min(s.height);
                         matches!(s.water_kind, WaterKind::River | WaterKind::Lake)
                     })
                 });
-                if !wet {
-                    dry.push((map.water_surface[i] as f64 - lowest, wx, wz, map.water_surface[i], map.flow[i]));
+                // the line is the meander undone to a block or two, as wide as a stream is, so look 3 blocks round it, along
+                // the middle of the stretch, not its ends, which the next stretch shares
+                wet[i] = square_wet[i]
+                    || terrain.river_course(i, 32).is_some_and(|RiverCourse { end, line, .. }| {
+                        let wet_at = |k: usize| {
+                            let (x, z) = line[k];
+                            k as f32 <= end * 32.0 && (-3..=3).any(|dz| (-3..=3).any(|dx| is_wet(x + dx as f64, z + dz as f64)))
+                        };
+                        let share = (0..=32).filter(|&k| wet_at(k)).count() as f32 / ((end * 32.0).floor() + 1.0);
+                        if share < 0.5 && end == 1.0 {
+                            broken.push((i, share));
+                        }
+                        (4..=28).any(wet_at)
+                    });
+            }
+            let next = |i: usize| -> Option<usize> {
+                let d = map.down[i];
+                if d == NO_FLOW {
+                    return None;
+                }
+                let (dx, dz) = NEIGHBOURS[d as usize];
+                let (nx, nz) = ((i % dim) as i64 + dx, (i / dim) as i64 + dz);
+                ((0..dim as i64).contains(&nx) && (0..dim as i64).contains(&nz)).then(|| map.index(nx as usize, nz as usize))
+            };
+            let mut fed = vec![false; dim * dim];
+            for &i in &rivers {
+                if let Some(n) = next(i) {
+                    fed[n] = true;
                 }
             }
+            let mut wet_fed = vec![false; dim * dim];
+            for &i in &rivers {
+                if wet[i] {
+                    if let Some(n) = next(i) {
+                        wet_fed[n] = true;
+                    }
+                }
+            }
+            let displaced = rivers.iter().filter(|&&i| !square_wet[i] && wet[i]).count();
+            let mut dry = Vec::new();
+            for &i in rivers.iter().filter(|&&i| !wet[i]) {
+                // follow the map's path to the first cell that is not river
+                let (mut j, mut steps, mut wet_below) = (i, 0usize, false);
+                let mouth = loop {
+                    match next(j) {
+                        None => break None,
+                        Some(n) if map.water_kind[n] == river => {
+                            wet_below |= wet[n];
+                            j = n;
+                            steps += 1;
+                            if steps > 4096 {
+                                break None;
+                            }
+                        }
+                        Some(n) => break Some(n),
+                    }
+                };
+                let mouth_kind = mouth.map(|n| WaterCell::from_u8(map.water_kind[n]));
+                let drop = mouth.map_or(0.0, |n| map.water_surface[i] as f64 - map.water_surface[n] as f64);
+                let kind = match (fed[i], wet_fed[i], wet_below, mouth_kind) {
+                    (false, _, _, _) => "source: no river upstream",
+                    (_, true, true, _) => "gap: wet cells above and below",
+                    (_, true, false, Some(WaterCell::Lake | WaterCell::Ocean)) if drop > 4.0 => "wet above, fall to a lake or sea",
+                    (_, true, false, _) => "wet above, nothing wet below",
+                    (_, false, true, _) => "dry above, wet below",
+                    (_, false, false, Some(WaterCell::Lake | WaterCell::Ocean)) if drop > 4.0 => "dry run, fall to a lake or sea",
+                    (_, false, false, Some(WaterCell::Lake | WaterCell::Ocean)) => "dry run into a lake or sea",
+                    (_, false, false, _) => "dry run ending on land",
+                };
+                let (wx, wz) = map.cell_centre(i % dim, i / dim);
+                dry.push((map.water_surface[i] as f64 - lowest[i], wx, wz, map.water_surface[i], map.flow[i], kind, drop, i));
+            }
             dry.sort_by(|a, b| b.0.total_cmp(&a.0));
-            outln!(out, "{} of {} river cells have no water in them at block scale", dry.len(), rivers.len());
-            for (under, wx, wz, surface, flow) in dry.iter().take(limit) {
-                outln!(out, "{wx:.0},{wz:.0} map surface {surface:.1}, lowest ground {:.1} under it, flow {flow:.0}", under);
+            let square_dry = rivers.iter().filter(|&&i| !square_wet[i]).count();
+            outln!(out, "{square_dry} of {} river cells have no water in their own square, {displaced} of those have it on their line a few blocks off (the meander, by design)", rivers.len());
+            outln!(out, "{} river cells have water along under half of their line (a gap), {} none in the middle of it:", broken.len(), dry.len());
+            let mut kinds: std::collections::BTreeMap<&str, Vec<usize>> = Default::default();
+            for (n, d) in dry.iter().enumerate() {
+                kinds.entry(d.5).or_default().push(n);
+            }
+            for (kind, at) in &kinds {
+                let mut under: Vec<f64> = at.iter().map(|&n| dry[n].0).collect();
+                under.sort_by(f64::total_cmp);
+                let median_flow = {
+                    let mut f: Vec<f32> = at.iter().map(|&n| dry[n].4).collect();
+                    f.sort_by(f32::total_cmp);
+                    f[f.len() / 2]
+                };
+                outln!(
+                    out,
+                    "{:5}  {kind}: ground under map median {:.1}, worst {:.1}, median flow {median_flow:.0}; worst at {:.0},{:.0}",
+                    at.len(),
+                    under[under.len() / 2],
+                    under[under.len() - 1],
+                    dry[at[0]].1,
+                    dry[at[0]].2
+                );
+            }
+            for (under, wx, wz, surface, flow, kind, drop, i) in dry.iter().take(limit) {
+                let course = terrain.river_course(*i, 1).map_or("no stretch".to_string(), |RiverCourse { end, levels, .. }| {
+                    format!("reaches {end:.2}, levels {:.1} to {:.1}", levels[0], levels[levels.len() - 1])
+                });
+                outln!(out, "{wx:.0},{wz:.0} map surface {surface:.1}, lowest ground {under:.1} under it, flow {flow:.0}, {kind} (drop to mouth {drop:.1}); {course}");
+            }
+        }
+        "course" => {
+            // the river stretch that starts in the map cell at x,z: its reach and levels, and the blocks' ground, dry
+            // ground, map height and water at points along it as they lay it (meander included)
+            let (u, v) = map.to_cell(x as f64, z as f64);
+            let dim = map.dim();
+            let i = map.index((u.round() as usize).min(dim - 1), (v.round() as usize).min(dim - 1));
+            let Some(RiverCourse { end, levels, line }) = terrain.river_course(i, 16) else {
+                return Err("no river stretch starts in that cell".into());
+            };
+            outln!(out, "map {:?} surface {:.1} width {:.1}, reaches {end:.2}, levels {:?}", WaterCell::from_u8(map.water_kind[i]), map.water_surface[i], map.river_width[i], levels.map(|l| (l * 10.0).round() / 10.0));
+            for (k, (px, pz)) in line.into_iter().enumerate() {
+                let s = terrain.sample(px, pz);
+                outln!(out, "{k:2} {px:8.1},{pz:8.1} ground {:.1} map {:.1} {:?} {:.1}", s.height, map.height_at(px, pz), s.water_kind, s.water_surface);
             }
         }
         "steps" => {

@@ -226,6 +226,13 @@ fn meander(seed: u32, x: f64, z: f64) -> (f64, f64) {
     (bend(0x3EA1), bend(0x3EA2))
 }
 
+/// One river stretch's reach (how far along it, 0..1, the river goes), water level at each profile point and points along it.
+pub struct RiverCourse {
+    pub end: f32,
+    pub levels: [f32; super::water::PROFILE_POINTS + 1],
+    pub line: Vec<(f64, f64)>,
+}
+
 /// Terrain read from a `WorldMap`, with detail laid over its ground.
 pub struct WorldTerrain {
     map: Arc<WorldMap>,
@@ -456,6 +463,21 @@ impl WorldTerrain {
                     .any(|w| w.under(base))
             },
         )
+    }
+
+    /// The river stretch that starts in `cell`, with `pieces + 1` points along it as the blocks lay it, meander included.
+    pub fn river_course(&self, cell: usize, pieces: usize) -> Option<RiverCourse> {
+        let (end, levels, stretch) = self.profiles.course(cell)?;
+        let seed = self.map.seed;
+        let line = (0..=pieces)
+            .map(|k| {
+                let (x, z) = stretch.point(k as f64 / pieces as f64);
+                let (mx, mz) = meander(seed, x, z);
+                let (mx, mz) = meander(seed, x - mx, z - mz);
+                (x - mx, z - mz)
+            })
+            .collect();
+        Some(RiverCourse { end, levels, line })
     }
 
     /// Where the rivers' water falls, as (x, z, drop, level above the fall).

@@ -27,7 +27,7 @@ mod water_closeness;
 use std::sync::Arc;
 
 pub use features::{Feature, FeatureKind};
-pub use source::WorldTerrain;
+pub use source::{RiverCourse, WorldTerrain};
 
 /// Stamped on every saved map and world. Bump it whenever generation changes what it makes: edits
 /// players make are stored against the generated terrain, so a world from another version is refused.
