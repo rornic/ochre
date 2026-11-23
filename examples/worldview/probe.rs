@@ -8,6 +8,8 @@
 //   worldview <seed> sites|valley|falls|features|edges <x> <z> ...
 //   worldview <seed> dryrivers 0 0 [n]          river cells with no water in their square, by kind, and those with none on their line
 //   worldview <seed> course <x> <z>              the river stretch from one map cell: levels, and the blocks' ground and water along it
+//   worldview <seed> strays <x> <z> <half> [n]   water blocks the chunks lay in columns the map holds none in, round the n falls in a box
+//   worldview <seed> mist <x> <z> <half> <y0> <y1>  the spray particles chunks over a box mesh: a fall's mist puffs, and the rest
 // Real blocks, from `generate_chunk_with`, so the cliff pass, trees and flora can each be switched off:
 //   worldview <seed> slice <x> <z> <x|z> <len> <y0> <y1> [flags]   a vertical cross-section, one letter a block
 //   worldview <seed> top <x> <z> <half> <out.png> [flags]           top-down surface blocks, 1 pixel a block
@@ -28,7 +30,7 @@ use ochre_terrain::generate::region_store::RegionStore;
 use ochre_world::worldmap::valleys::Valley;
 use ochre_world::worldmap::{RiverCourse, WaterCell, WorldMap, WorldTerrain, NEIGHBOURS, NO_FLOW};
 
-const USAGE: &str = "commands: info line grid png route sites valley falls features edges course dryrivers slice top passes render";
+const USAGE: &str = "commands: info line grid png route sites valley falls features edges course dryrivers strays mist slice top passes render";
 
 macro_rules! outln {
     ($out:expr, $($t:tt)*) => {{
@@ -366,7 +368,13 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
         }
         "falls" => {
             // every fall in the world, the tallest first: drop, level above, then a spawn line for it
-            let mut falls = terrain.falls();
+            let width = |x: f64, z: f64| {
+                let (u, v) = map.to_cell(x, z);
+                let dim = map.dim() as f64;
+                map.river_width[map.index(u.round().clamp(0.0, dim - 1.0) as usize, v.round().clamp(0.0, dim - 1.0) as usize)]
+            };
+            let min_width: f32 = opt(args, 5, 0.0)?;
+            let mut falls: Vec<_> = terrain.falls().into_iter().filter(|f| width(f.0, f.1) >= min_width).collect();
             falls.sort_by(|a, b| b.2.total_cmp(&a.2));
             let bins = [
                 (2.5, 4.0),
@@ -388,11 +396,94 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                 .take(opt(args, 4, 12)?)
             {
                 outln!(out, 
-                    "drop {drop:.1} from {level:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={:.0},{:.0},12 OCHRE_LOOK={fx:.0},{level:.0},{fz:.0}",
+                    "drop {drop:.1} from {level:.0} width {:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={:.0},{:.0},12 OCHRE_LOOK={fx:.0},{level:.0},{fz:.0}",
+                    width(*fx, *fz),
                     fx - 20.0,
                     fz - 20.0
                 );
             }
+        }
+        "strays" => {
+            // water blocks in columns the map holds no water in, round each fall in a box: on the ground's top a shore cap, over it a cut that flooded
+            let half: i64 = arg(args, 4)?;
+            let cap: usize = opt(args, 5, 40)?;
+            let mut blocks = Blocks::new(regions.clone(), ChunkPasses::ALL);
+            let mut sampler = regions.sampler();
+            let mut falls: Vec<_> = terrain.falls().into_iter().filter(|f| (f.0 as i64 - x).abs() <= half && (f.1 as i64 - z).abs() <= half).collect();
+            falls.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
+            let (mut caps, mut cuts, mut exposed, mut seen) = (0u64, 0u64, 0u64, std::collections::HashSet::new());
+            let mut examples = Vec::new();
+            for &(fx, fz, drop, level) in falls.iter().take(cap) {
+                for px in fx as i64 - 24..=fx as i64 + 24 {
+                    for pz in fz as i64 - 24..=fz as i64 + 24 {
+                        if !seen.insert((px, pz)) {
+                            continue;
+                        }
+                        let ground = sampler.ground_top(px, pz);
+                        if sampler.water_top(px, pz) > ground {
+                            continue;
+                        }
+                        for y in ((level - drop) as i64 - 6).max(1)..=level as i64 + 8 {
+                            if blocks.at(px, y, pz) != BlockType::Water {
+                                continue;
+                            }
+                            let open = [(1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, 1, 0)]
+                                .iter()
+                                .any(|&(dx, dy, dz)| matches!(blocks.at(px + dx, y + dy, pz + dz), BlockType::Air | BlockType::Leaves));
+                            exposed += open as u64;
+                            if y >= ground {
+                                caps += 1;
+                            } else {
+                                cuts += 1;
+                            }
+                            if examples.len() < 6 {
+                                examples.push((px, y, pz));
+                            }
+                        }
+                    }
+                }
+            }
+            outln!(out, "water blocks in dry columns round {} falls: {caps} on the ground's top, {cuts} in cut ground under it, {exposed} with air beside or over; e.g. {examples:?}", falls.len().min(cap));
+        }
+        "mist" => {
+            // the spray particles the chunks round a spot mesh, mist puffs (0.5 blocks or more) and the rest
+            use ochre_terrain::generate::generator::{generate_chunk, generate_chunk_mesh_with};
+            let (half, y0, y1): (i64, i64, i64) = (arg(args, 4)?, arg(args, 5)?, arg(args, 6)?);
+            let mut chunks: HashMap<(i64, i64, i64), Arc<ChunkData>> = HashMap::new();
+            let mut chunk_at = |c: (i64, i64, i64)| {
+                chunks
+                    .entry(c)
+                    .or_insert_with(|| Arc::new(generate_chunk(regions.clone(), ChunkCoordinate(I64Vec3::new(c.0, c.1, c.2)))))
+                    .clone()
+            };
+            let (mut puffs, mut small, mut biggest) = (0u32, 0u32, 0f32);
+            for cx in (x - half).div_euclid(16)..=(x + half).div_euclid(16) {
+                for cz in (z - half).div_euclid(16)..=(z + half).div_euclid(16) {
+                    for cy in y0.div_euclid(16)..=y1.div_euclid(16) {
+                        let mut neighbours = vec![None; 26];
+                        for (dx, dy, dz) in (-1..=1).flat_map(|dx| (-1..=1).flat_map(move |dy| (-1..=1).map(move |dz| (dx, dy, dz)))) {
+                            let at = ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1)) as usize;
+                            if at != 13 {
+                                neighbours[if at < 13 { at } else { at - 1 }] = Some(chunk_at((cx + dx, cy + dy, cz + dz)));
+                            }
+                        }
+                        let coord = ChunkCoordinate(I64Vec3::new(cx, cy, cz));
+                        let meshes = generate_chunk_mesh_with(chunk_at((cx, cy, cz)), neighbours, coord, regions, true);
+                        if let Some(bevy::render::mesh::VertexAttributeValues::Float32x4(colours)) =
+                            meshes.spray.as_ref().and_then(|spray| spray.attribute(bevy::render::mesh::Mesh::ATTRIBUTE_COLOR))
+                        {
+                            for quad in colours.chunks(4) {
+                                if quad[0][1] >= 0.5 {
+                                    (puffs, biggest) = (puffs + 1, biggest.max(quad[0][1]));
+                                } else {
+                                    small += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            outln!(out, "{puffs} mist puffs (biggest {biggest:.1} blocks), {small} other spray particles");
         }
         "features" => {
             let half: i64 = opt(args, 4, 1024)?;
