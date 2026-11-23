@@ -594,20 +594,20 @@ pub(super) fn between(range: (f32, f32), unit: f32) -> f32 {
 
 // One plant: two quads crossed at right angles, turned by `angle`, rooted at `root`, with its
 // tips leaning by `lean`.
-struct Tuft {
-    root: Vec3,
+pub(super) struct Tuft {
+    pub(super) root: Vec3,
     // which way the ground under it faces: its foot follows that slope and it leans partway with it
-    ground: Vec3,
-    height: f32,
-    half_width: f32,
-    angle: f32,
-    lean: Vec3,
+    pub(super) ground: Vec3,
+    pub(super) height: f32,
+    pub(super) half_width: f32,
+    pub(super) angle: f32,
+    pub(super) lean: Vec3,
 }
 
 // Flora as two quads crossed, both sides drawn as block meshes cull one, v = 0 at the top so
 // `foliage.wesl` sways the tips, and facing up to light like the grass.
 // `scale` is how many blocks one of the mesh's units is.
-fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atlas_cell: f32, tint: Vec3, lit: f32) {
+pub(super) fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atlas_cell: f32, tint: Vec3, lit: f32) {
     let alpha = atlas_cell + flora_height_code(tuft.height * scale);
     let (root, tip) = (
         (tint * FLORA_ROOT_SHADE).extend(alpha).to_array(),
@@ -616,7 +616,8 @@ fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atlas_cell: f32
     let (sin, cos) = libm::sincosf(tuft.angle);
     for across in [Vec3::new(cos, 0.0, sin), Vec3::new(-sin, 0.0, cos)] {
         let ground = tuft.ground;
-        let slope = |d: Vec3| if ground.y > 0.1 { -(ground.x * d.x + ground.z * d.z) / ground.y } else { 0.0 };
+        // a corner follows the ground up or down at most as far as it is across, so a cliff face doesn't stretch a quad into a spike
+        let slope = |d: Vec3| (-(ground.x * d.x + ground.z * d.z) / ground.y.max(0.1)).clamp(-d.length(), d.length());
         let tilt = Vec3::new(ground.x, 0.0, ground.z) * (SLOPE_LEAN * tuft.height);
         let corner = |side: f32, up: bool| {
             let out = across * (side * tuft.half_width);

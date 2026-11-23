@@ -4264,3 +4264,15 @@ fn level_one_draws_the_tall_plants_full_detail_grows() {
     assert!(agree * 100 >= plants * 98, "{agree} of {plants} plants agree with full detail");
     assert!(shrubs > 0 && short_shrubs * 50 <= shrubs, "{short_shrubs} of {shrubs} shrub vertices are under a roof");
 }
+
+// A plant rooted on near-vertical ground stays about as wide and tall as it is, not stretched into a spike by the slope.
+#[test]
+fn tuft_on_a_cliff_keeps_its_size() {
+    for ground in [Vec3::new(0.99, 0.12, 0.0), Vec3::new(0.7, 0.11, 0.7).normalize(), Vec3::new(1.0, 0.0, 0.0)] {
+        let mut buffers = super::buffers::MeshBuffers::default();
+        let tuft = super::mesh::Tuft { root: Vec3::ZERO, ground, height: 2.5, half_width: 1.8, angle: 0.3, lean: Vec3::ZERO };
+        super::mesh::push_tuft(&mut buffers, &tuft, 1.0, Tile::Shrub.atlas_cell(), Vec3::ONE, 1.0);
+        let reach = Vec3::from(buffers.vertices.iter().map(|v| v.position).fold([0.0f32; 3], |a, p| [a[0].max(p[0].abs()), a[1].max(p[1].abs()), a[2].max(p[2].abs())]));
+        assert!(reach.max_element() < 6.0, "{ground}: vertices reach {reach}");
+    }
+}
