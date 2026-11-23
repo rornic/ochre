@@ -1,10 +1,4 @@
-//! Separate machines will build the same chunks from the same map and seed, and any difference
-//! shows as ghost blocks where their chunks meet. This pins the blocks of a fixed set of chunks.
-//!
-//! The first test builds its map here from integer-hash noise and arithmetic alone, so it checks
-//! chunk generation from a map and nothing upstream. The second runs `worldmap::generate`, which
-//! reaches `exp`, `powf`, `sin` and `cos` only through the `libm` crate, so it is the same on x86-64
-//! and ARM64 too.
+//! Pins a fixed set of chunks' blocks from a synthetic integer-noise map and from `worldmap::generate` (`libm` maths), so a machine that differs fails here, not as ghost blocks at chunk joins.
 
 use std::sync::Arc;
 
@@ -21,8 +15,7 @@ use ochre_world::worldmap::{WaterCell, WorldConfig, WorldMap, WorldTerrain};
 const SEED: u32 = 20_231;
 const DIM: usize = 256;
 
-// A world 8 km across with hills and a range, a lake, a river that widens to the sea, and a
-// biome in each quarter, every number made from `noise` and sums and products.
+// A world 8 km across with hills, a range, a lake, a river widening to the sea and a biome in each quarter, all from `noise` and sums and products.
 fn synthetic_map() -> WorldMap {
     let config = WorldConfig {
         size: DIM as i64 * 32,
@@ -107,8 +100,7 @@ fn hash_chunks(regions: &Arc<RegionStore>, chunks: &[(i64, i64, i64)]) -> u64 {
     h
 }
 
-// Chunks over each kind of ground: the lake, the river's reaches, a range, each biome and the coast,
-// each as the surface chunk and the one under it.
+// Chunks over each kind of ground (lake, river reaches, range, each biome, coast), each as the surface chunk and the one under it.
 fn chunk_set(map: &WorldMap) -> Vec<(i64, i64, i64)> {
     chunks_over(
         map,
@@ -174,8 +166,7 @@ fn test_chunks_from_a_fixed_map_and_seed_hash_the_same_on_every_machine() {
     ] {
         assert!(seen.contains(&(block as u8)), "no {block:?} in the chunks");
     }
-    // pinned: a change here means every machine's chunks changed, and with them any edits stored
-    // as deltas against generated terrain, so bump `worldmap::GENERATOR_VERSION` with it
+    // a change here changes edits stored as deltas against generated terrain, so bump `worldmap::GENERATOR_VERSION` with it
     assert_eq!(4_580_397_193_923_206_550, first, "chunk hash changed");
 }
 

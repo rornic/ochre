@@ -226,8 +226,7 @@ fn test_desert_ground_is_sand_and_other_lowland_grass() {
 
 #[test]
 fn test_a_chunk_knows_its_neighbours_steppe_columns() {
-    // the sculpted mesh's margin draws grass from the neighbours' columns, so the steppe's must be known there or a strip
-    // of plain grass runs along the chunk's border
+    // the sculpted mesh's margin draws grass from the neighbours' columns, so the steppe's must be known there or a strip of plain grass runs along the border
     let regions = RegionStore::new(ochre_world::worldmap::test_terrain(13));
     let terrain = regions.terrain();
     let size = CHUNK_SIZE as i32;
@@ -550,8 +549,7 @@ fn flat_lod(surface_y: i32) -> LodBlocks {
     LodBlocks::new(size, cells, tops, 0, 1)
 }
 
-// Grass two cells of 4 blocks deep, its ground 6 blocks up the node for x < 8 and 7 blocks
-// beyond: both inside the second cell, so its top is lowered. Above the sea, under open sky.
+// Grass two cells of 4 blocks deep, its ground 6 blocks up the node for x < 8 and 7 beyond, both inside the second cell, so its top is lowered; above the sea, under open sky.
 fn sloped_lod() -> LodBlocks {
     let base_y = WATER_LEVEL + 64;
     let size = 16;
@@ -735,8 +733,7 @@ fn handover_tint_gap(seed: u32, node_corner: Vec3, scale: f32) -> f32 {
 
 #[test]
 fn test_grass_tint_barely_changes_where_a_chunk_hands_over_to_a_node() {
-    // nodes of levels 3 and 4, over a few places on two worlds: measured gaps are about 0.01, a hundredth of a channel, so no colour pops where
-    // chunks hand over to a node. Away from water: next to a river's bank wetting a node's tint misses it, see `docs/issues.md`
+    // nodes of levels 3 and 4 over a few places on two worlds: measured gaps are about 0.01, so no colour pops at the hand-over; away from water, as a node's tint misses a river bank's wetting, see `docs/issues.md`
     for (seed, corner) in [(3, Vec3::new(2048.0, 0.0, 2048.0)), (3, Vec3::new(-4096.0, 0.0, 1024.0)), (5, Vec3::new(-2048.0, 0.0, -3072.0))] {
         for scale in [8.0, 16.0] {
             let gap = handover_tint_gap(seed, corner, scale);
@@ -806,8 +803,7 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
         forest_at(5) - bevy::math::I64Vec2::splat(300),
         forest_at(5) + bevy::math::I64Vec2::splat(300),
     );
-    // a LOD node's coarse ground can put a tree on a terrace a few blocks off its true foot, in another node
-    // (the deferred LOD fidelity work), so take the first tree whose crown node has a mesh
+    // a LOD node's coarse ground can put a tree on a terrace a few blocks off its true foot, in another node, so take the first tree whose crown node has a mesh
     let (_, mesh) = trees
         .iter()
         .find_map(|tree| {
@@ -1390,11 +1386,7 @@ fn test_far_forests_are_a_few_canopy_boxes_not_a_box_a_tree() {
             .filter(|b| b.block == BlockType::Leaves)
             .collect();
         assert!(!leaf_boxes.is_empty(), "no canopy at level {level}");
-        // each about as costly as one of the boxes a lone tree's crown is, where every tree was
-        // three, and lone trees at the forest's edge keep theirs: a forest of 35% density merges
-        // fewer crowns than the old 55% did, so the boxes only have to be two thirds of the trees
-        // (at the widest cells a thin forest's crowns stop merging, so there only that no tree
-        // costs more than two boxes is asked)
+        // a forest of 35% density merges fewer crowns than 55% did, so the boxes only have to be two thirds of the trees; at the widest cells a thin forest's crowns stop merging, so there only that no tree costs more than two boxes is asked
         let allowed = if level == 4 {
             inside * 2 / 3
         } else {
@@ -1459,8 +1451,7 @@ fn test_canopy_is_no_bigger_than_the_crowns_under_it() {
                 }
             }
         }
-        // its edges are drawn in to the crowns, so what's extra is the gaps between them inside
-        // it, more of them the wider the columns
+        // its edges are drawn in to the crowns, so what's extra is the gaps between them inside it, more the wider the columns
         assert!(
             drawn <= under * 1.4,
             "canopy {drawn} over {under} under crowns at level {level}"
@@ -1896,8 +1887,7 @@ fn test_compacted_stone_follows_the_local_surface_not_a_fixed_height() {
     assert!(seen >= 2, "only {seen} dry columns found");
 }
 
-// Blocks in the chunk at (`cx`, `cy`, `cz`) with air under a solid block in the same column, and
-// how many columns in it are steep enough for cliffs.
+// Blocks in the chunk at (`cx`, `cy`, `cz`) with air under a solid block in the same column, and how many columns are steep enough for cliffs.
 fn overhangs(regions: &Arc<RegionStore>, (cx, cy, cz): (i64, i64, i64)) -> (usize, usize) {
     use ochre_base::relief::cliff_reach;
     let chunk = super::chunk::generate_chunk_with(
@@ -1945,8 +1935,7 @@ fn test_steep_ground_gets_overhangs_and_gentle_ground_gets_none() {
             if steep_columns >= 256 && steep_caves > 0 && gentle_chunks >= 30 {
                 break 'samples;
             }
-            // After checking gentle chunks, use the coarse map to find steep candidates
-            // without building a full 256-square region for every map probe.
+            // find steep candidates from the coarse map, not a full 256-square region per probe
             if gentle_chunks >= 30 {
                 let across = (map.height[map.index((cx + 1).min(map.dim() - 1), cz)]
                     - map.height[map.index(cx.saturating_sub(1), cz)])
@@ -2040,8 +2029,7 @@ fn test_rivers_leave_no_dry_crevice_beside_their_water() {
                     if s.water_kind == ochre_base::terrain_source::WaterKind::None
                         && s.height < here.water_surface as f64 - 1.5
                     {
-                        // lower than this river's water: only fine if it has fallen away
-                        // downhill, out of the river's banks, which is more than a bank wide
+                        // lower than this river's water: only fine if it has fallen away downhill, out of the banks, more than a bank wide
                         let near_water = (1..=3).any(|k| {
                             let q = terrain
                                 .sample((px - sign * dx * k) as f64, (pz - sign * dz * k) as f64);
@@ -2275,8 +2263,7 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
     let mut heights = regions.sampler();
     let (mut hot_trees, mut high_hot_trees, mut places) = (0, 0, 0);
     for kind in [BiomeKind::Savanna, BiomeKind::Jungle] {
-        // stretches of this biome on ground well over the sea, where the air is cooler, and the
-        // windows round them take in the edges, where other biomes meet it
+        // stretches of this biome well over the sea, where the air is cooler, with windows round them that take in the edges where other biomes meet it
         let spots = (30..dim - 30)
             .step_by(7)
             .flat_map(|z| (30..dim - 30).step_by(7).map(move |x| (x, z)))
@@ -2342,8 +2329,7 @@ fn test_the_foothills_round_a_range_are_much_rougher_than_the_lowland_far_from_o
             }
             let range = map.range[i] as f32 / 255.0;
             let (x, z) = map.cell_centre(cx, cz);
-            // Match the cached f32 height samples directly; this sparse survey does not
-            // need to populate hundreds of complete regions to read four columns each.
+            // match the cached f32 height samples directly, as four columns each don't need hundreds of complete regions
             let h = |x, z| terrain.height(x, z) as f32 as f64;
             let (gx, gz) = (
                 (h(x + 6.0, z) - h(x - 6.0, z)) / 6.0,
@@ -2428,8 +2414,7 @@ fn test_lakes_and_the_sea_have_no_open_block_beside_or_under_their_water() {
                     }
                 }
             }
-            // A regional seed need not contain a lake. The explicit basin guarantees lake
-            // coverage, while the generated seeds exercise their actual coastlines and waters.
+            // a regional seed may hold no lake, so the explicit basin guarantees one while generated seeds exercise real coastlines
             if sites.is_empty() {
                 continue;
             }
@@ -2593,8 +2578,7 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
     let Some(Indices::U32(indices)) = water.indices() else {
         panic!("water indices");
     };
-    // each polygon's vertices are pushed together, so a run of triangles that reaches no further than the last one's
-    // highest vertex is one: a shore's cut surface has polygons of other sizes than a face's four
+    // each polygon's vertices are pushed together, so a run of triangles reaching no further than the last one's highest vertex is one; a shore's cut surface has polygons of other sizes than a face's four
     let mut polygons = Vec::new();
     let mut at = 0;
     while at < indices.len() {
@@ -2680,10 +2664,7 @@ fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
     assert!(rocks.len() >= 3, "only {rocks:?}");
 }
 
-// Every edge of a closed surface is shared by two triangles: a hole or a missing cap leaves one with
-// a single. Vertices are matched by position, to a thousandth of a block, and an edge that has another
-// vertex along it, a T-junction, counts as the pieces between them: the surface is closed there but its
-// vertices don't match, which is the most the bevel's caps against neighbours can ask.
+// Every edge of a closed surface is shared by two triangles; a hole or missing cap leaves one with a single. Vertices match by position to a thousandth of a block, and an edge with another vertex along it (a T-junction) counts as the pieces between them.
 fn open_edges(mesh: &Mesh) -> Vec<String> {
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -2738,8 +2719,7 @@ fn open_edges(mesh: &Mesh) -> Vec<String> {
             }
         }
     }
-    // an edge that lies on another triangle's face, as the grass lip's ledge met the wall under it, is joined: its
-    // own triangle doesn't count, as every edge lies on that
+    // an edge that lies on another triangle's face, as the grass lip's ledge met the wall under it, is joined; its own triangle doesn't count, as every edge lies on that
     let triangles: Vec<[Vec3; 3]> = indices
         .chunks(3)
         .map(|t| {
@@ -2906,8 +2886,7 @@ fn test_surfaces_stay_closed() {
     }
 }
 
-// Columns for the corner xyz / xxy / xxx, rows along z and columns along x, on a floor of stone: x is two high, y
-// one, and z `z_height`.
+// Columns for the corner xyz / xxy / xxx, rows along z and columns along x, on a floor of stone: x is two high, y one, and z `z_height`.
 fn staircase_corner(z_height: u16) -> Vec<(u16, u16, u16)> {
     let height = |row: usize, col: usize| match (row, col) {
         (0, 0) | (1, 0) | (1, 1) | (2, 0) | (2, 1) | (2, 2) => 2,
@@ -2926,8 +2905,7 @@ fn staircase_corner(z_height: u16) -> Vec<(u16, u16, u16)> {
     blocks
 }
 
-// The heights of a 3x3 of columns, read row by row, as the same under turns and flips of the square, so
-// only the smallest of each set is meshed.
+// The heights of a 3x3 of columns, read row by row, the same under turns and flips of the square, so only the smallest of each set is meshed.
 fn canonical_grid(heights: [u8; 9]) -> [u8; 9] {
     let mut best = heights;
     for flip in [false, true] {
@@ -2948,8 +2926,7 @@ fn canonical_grid(heights: [u8; 9]) -> [u8; 9] {
     best
 }
 
-// The blocks of a 3x3 of columns `heights` high (0 to 2) on a floor, each of the block `kind` picks from its
-// place, as (column, height, row).
+// The blocks of a 3x3 of columns `heights` high (0 to 2) on a floor, each of the block `kind` picks from its place, as (column, height, row).
 fn grid_chunk(heights: [u8; 9], kind: impl Fn(usize, usize, u16) -> BlockType) -> ChunkData {
     let mut chunk = ChunkData::default();
     for row in 0..3 {
@@ -2963,8 +2940,7 @@ fn grid_chunk(heights: [u8; 9], kind: impl Fn(usize, usize, u16) -> BlockType) -
     chunk
 }
 
-// Calls `check` with each of the meshes of every arrangement of heights in a 3x3 of columns, up to
-// symmetry: in stone, in grass, and in a mix for one in six, as the kind, the heights and the mesh.
+// Calls `check` with each mesh of every arrangement of heights in a 3x3 of columns, up to symmetry: in stone, in grass, and in a mix for one in six, as the kind, the heights and the mesh.
 fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     let regions = test_regions();
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
@@ -3015,9 +2991,7 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     }
 }
 
-// Every arrangement of heights in a 3x3 of columns, up to symmetry, in stone, in grass and in a mix, has a
-// closed surface: no hole the sky shows through. A test of chosen shapes only finds the
-// holes thought of.
+// Every arrangement of heights in a 3x3 of columns, up to symmetry, in stone, in grass and in a mix, has a closed surface: no hole the sky shows through.
 #[test]
 fn test_no_arrangement_of_columns_leaves_a_hole() {
     let mut failures: Vec<(u32, String, &str)> = Vec::new();
@@ -3150,8 +3124,7 @@ fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
     assert!(holes.is_empty(), "{}", holes.join("\n"));
 }
 
-// Rolling ground over the meeting of eight chunks, each meshed on its own with the others as neighbours, joined:
-// no hole along the seams.
+// Rolling ground over the meeting of eight chunks, each meshed on its own with the others as neighbours, joined: no hole along the seams.
 #[test]
 fn test_chunk_seams_leave_no_hole() {
     let regions = test_regions();
@@ -3335,8 +3308,7 @@ fn test_columns_across_a_chunk_seam_leave_no_hole() {
     );
 }
 
-// Ground that climbs a block a step, along an axis or a diagonal, in one block, in layers and in a surface of its
-// own in each column: no hole in it.
+// Ground that climbs a block a step, along an axis or a diagonal, in one block, in layers and in a surface of its own in each column: no hole in it.
 #[test]
 fn test_steep_ground_a_block_a_step_leaves_no_hole() {
     let surfaces = [
@@ -3866,9 +3838,7 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
                     .collect();
                 let (a, b) = ([n[0], n[1], n[2]], [n[3], n[4], n[5]]);
                 let owner: Vec<[f32; 3]> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| positions[i as usize]).collect();
-                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it. A skirt leans into the node
-                // from the side it hangs on, so it faces across that side, touches it and keeps within its lean of it
-                // from the side it hangs on, so its triangles touch that side and their other corners are copies of a vertex on it, within its lean
+                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it; a skirt leans into the node from its side, so its triangles touch that side and their other corners copy a vertex on it, within its lean
                 let lean = super::lod::MAX_SKIRT_CELLS as f32 * super::nets::SKIRT_LEAN + 0.01;
                 let corners: Vec<usize> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| i as usize).collect();
                 let skirt = [0, 2].iter().any(|&axis| {
@@ -4109,8 +4079,7 @@ fn test_lod_level_zero_lays_a_banks_bed_where_full_detail_does() {
 
 #[test]
 fn test_grass_tint_barely_changes_at_the_handover_near_rivers_either() {
-    // levels 3 and 4 over twelve nodes of seed 5, rivers among them: sampled every 32 blocks the gap averaged 0.045 and
-    // reached 0.15, a river's bank wetting falling between a node's samples
+    // levels 3 and 4 over twelve nodes of seed 5, rivers among them: sampled every 32 blocks the gap averaged 0.045 and reached 0.15, a bank's wetting falling between samples
     let mut gaps = Vec::new();
     for scale in [8.0f32, 16.0] {
         for x in [-2048.0f32, -1024.0, 0.0, 384.0, 512.0, 1024.0] {

@@ -1,7 +1,7 @@
 use crate::generate::trees::hash;
 use ochre_base::block::BlockType;
 use ochre_base::math::smoothstep_f64 as smoothstep;
-use ochre_base::noise::perlin;
+use ochre_base::noise::{fbm, perlin};
 
 // Salts for the flora's hashes, so they don't line up with the trees' or each other.
 const PLANT_SALT: u64 = 0x5EED_F10A;
@@ -9,19 +9,19 @@ const DRIFT_SALT: u64 = 0xD81F_7F10;
 const KIND_SALT: u64 = 0x6A55_0F3B;
 const SHRUB_SALT: u64 = 0x5B2B_0AF1;
 const SHRUB_PATCH_SALT: u64 = 0x9A7C_3D15;
+const STEPPE_PATCH_SALT: u32 = 0x57E9_9E01;
+const STEPPE_FINE_SALT: u32 = 0x57E9_9E02;
+const STEPPE_BARE_SALT: u32 = 0x57E9_9E03;
 
 // Steppe's share of ground carrying a tuft at the thinnest and thickest, and the blocks across its broad patches and the finer variation.
 const STEPPE_GRASS: (f64, f64) = (0.05, 0.42);
 const STEPPE_PATCH: f64 = 180.0;
 const STEPPE_FINE: f64 = 40.0;
-// Bare earth shows on steppe's crests in patches this many blocks across, up to about an eighth of the ground at the most exposed.
+// Bare earth shows on steppe's crests in patches `STEPPE_BARE` blocks across where noise passes `STEPPE_BARE_FROM`, about an eighth of the ground at the most exposed.
 const STEPPE_BARE: f64 = 60.0;
+const STEPPE_BARE_FROM: f64 = 0.71;
 // The share of drifts that hold the steppe's flower, and how thick they grow, against other open ground's flowers.
 const STEPPE_FLOWERS: (f64, f64) = (0.5, 0.8);
-const STEPPE_BARE_FROM: f64 = 0.71;
-const STEPPE_PATCH_SALT: u32 = 0x57E9_9E01;
-const STEPPE_FINE_SALT: u32 = 0x57E9_9E02;
-const STEPPE_BARE_SALT: u32 = 0x57E9_9E03;
 
 // How wide the patches flowers grow in drifts across are, in blocks.
 const DRIFT: i64 = 6;
@@ -33,8 +33,7 @@ const GRASS_DENSITY: f64 = 0.3;
 const FOREST_GRASS_DENSITY: f64 = 0.12;
 // How much of the forest floor, and the ground under a lone tree's crown, is ferns.
 const FERN_DENSITY: f64 = 0.25;
-// How much of the grass is short tufts, in the open and in the shade, and how much is wild
-// grass gone to seed; the rest is tall grass.
+// How much of the grass is short tufts, in the open and in the shade, and wild grass gone to seed; the rest is tall.
 const SHORT_SHARE: f64 = 0.45;
 const SHADED_SHORT_SHARE: f64 = 0.65;
 const SEED_SHARE: f64 = 0.15;
@@ -46,20 +45,16 @@ const SAVANNA_SHORT: f64 = 0.2;
 // How much thicker (or thinner) a biome's floor under trees is in ferns and shaded grass than a forest's.
 const JUNGLE_UNDERSTORY: f64 = 2.0;
 const TAIGA_UNDERSTORY: f64 = 0.5;
-// The temperatures, see `NoiseGenerator::temperature`, the flora thins out between, to none
-// at the first.
+// The temperatures (see `NoiseGenerator::temperature`) the flora thins out between, to none at the first.
 const COLD: (f32, f32) = (0.10, 0.35);
 
-// Shrubs grow in clusters, a carpet of several close together with bare grass between. Each `CLUSTER` block cell holds at most
-// one, centred in it so that its reach stays inside the cell, and a block within the cluster's radius takes a plant by
-// `CLUSTER_DENSITY`. A cluster's radius is between `CLUSTER_RADIUS`'s two, so about five or six plants stand in one.
+// Shrubs grow in carpets with bare grass between: each `CLUSTER`-block cell holds at most one, centred so its reach stays inside, of a radius within `CLUSTER_RADIUS` and planted at `CLUSTER_DENSITY` (five or six plants).
 const CLUSTER: i64 = 16;
 const CLUSTER_MARGIN: i64 = 4;
 const CLUSTER_RADIUS: (f64, f64) = (2.2, 3.2);
 const CLUSTER_DENSITY: f64 = 0.5;
 
-/// The big plant a biome has in its open ground, by name, and the share of its `CLUSTER` cells that hold a cluster of them:
-/// shrubs in warm grassland and in the jungle's shade too, and low heath where it is cold. Forests and deserts have none, and the shade has none but the jungle's.
+/// The big plant a biome has in its open ground, by name, and the share of its `CLUSTER` cells that hold a cluster: shrubs in warm grassland and the jungle's shade, heath in the cold; forests and deserts have none.
 fn shrubs(biome: Option<&str>) -> Option<(BlockType, f64)> {
     match biome {
         Some("grassland") => Some((BlockType::Shrub, 0.35)),
@@ -86,18 +81,18 @@ fn in_cluster(seed: u64, x: i64, z: i64, cells: f64) -> bool {
         cz * CLUSTER + CLUSTER_MARGIN + ((h >> 24) % span) as i64,
     );
     let radius = CLUSTER_RADIUS.0 + (CLUSTER_RADIUS.1 - CLUSTER_RADIUS.0) * unit(h >> 40 | 1);
-    let (dx, dz) = ((x - centre.0) as f64 + 0.0, (z - centre.1) as f64);
+    let (dx, dz) = ((x - centre.0) as f64, (z - centre.1) as f64);
     dx * dx + dz * dz <= radius * radius && unit(hash(seed ^ SHRUB_SALT, x, z)) < CLUSTER_DENSITY
 }
 
-// Large, irregular heath drifts, with the existing small clusters supplying their texture.
+// Large, irregular heath drifts.
 fn heath_drift(seed: u64, x: i64, z: i64) -> bool {
     let seed = seed as u32 ^ 0xD81F_7A31;
     let (x, z) = (x as f64, z as f64);
-    ochre_base::noise::fbm(seed, x, z, 120.0, 3) > -0.04
+    fbm(seed, x, z, 120.0, 3) > -0.04
 }
 
-// Larger, uneven carpets, with centres and radii varying independently from one another.
+// Uneven heath carpets in `CELL`-block cells, each with its own centre and radius.
 fn tundra_heath(seed: u64, x: i64, z: i64) -> bool {
     const CELL: i64 = 24;
     let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
@@ -116,7 +111,7 @@ fn tundra_heath(seed: u64, x: i64, z: i64) -> bool {
             if dx * dx + dz * dz >= (radius + 1.5).powi(2) {
                 continue;
             }
-            let edge = radius + 1.5 * ochre_base::noise::perlin(seed as u32 ^ 0x4EA7, x as f64 / 8.0, z as f64 / 8.0);
+            let edge = radius + 1.5 * perlin(seed as u32 ^ 0x4EA7, x as f64 / 8.0, z as f64 / 8.0);
             if dx * dx + dz * dz < edge * edge && unit(hash(seed ^ SHRUB_SALT, x, z)) < 0.45 {
                 return true;
             }
@@ -138,7 +133,6 @@ fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
-
 // How thick steppe's grass grows at (x, z), 0..1: hollows and broad patches thick, crests thin, with variation inside a patch.
 fn steppe_thickness(seed: u32, x: i64, z: i64, exposure: f32) -> f64 {
     let patch = perlin(seed ^ STEPPE_PATCH_SALT, x as f64 / STEPPE_PATCH, z as f64 / STEPPE_PATCH) * 0.5 + 0.5;
@@ -153,8 +147,7 @@ pub(super) fn steppe_bare(seed: u32, x: i64, z: i64, exposure: f32) -> bool {
     n > STEPPE_BARE_FROM + 0.6 * (1.0 - exposure as f64)
 }
 
-/// The plant on the grass at (x, z), if any: shrubs or heath in patches of the open ground of some biomes,
-/// grasses in the open, ferns in the shade, flowers in drifts of one kind, all thinning out in the cold.
+/// The plant on the grass at (x, z), if any: shrubs or heath in patches, grasses in the open, ferns in the shade, flowers in drifts of one kind, all thinning out in the cold.
 pub(super) fn flora_at(
     seed: u32,
     x: i64,

@@ -29,8 +29,7 @@ use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
 use std::sync::Arc;
 
-// Blocks above the sea desert ground must be before it has cliffs: below it the steep ground is
-// dunes.
+// Blocks above the sea desert ground must be to have cliffs; below that its steep ground is dunes.
 const DESERT_CLIFFS_ABOVE: i64 = 90;
 
 // Blocks under a column's surface the cliff pass leaves alone.
@@ -82,12 +81,12 @@ pub fn generate_chunk_with(
             let column_height = columns.height(x, z);
             let water_top = columns.water_top(x, z);
             let gradient = columns.gradient(x, z);
-            // how far the surface here is cut or built up into cliffs, on steep ground
             // dunes' steep faces are not cliffs: desert has them only up in its mountains
             let dunes = Some(columns.biome(x, z)) == desert
                 && column_height - WATER_LEVEL < DESERT_CLIFFS_ABOVE;
             // a river's or lake's bed isn't cut into cliffs either: rock would stand up through its water
             let fresh_water = water_top > WATER_LEVEL && water_top > column_height;
+            // how far the surface here is cut or built up into cliffs, on steep ground
             let cliff = if !passes.cliffs || dunes || fresh_water {
                 0.0
             } else {
@@ -136,9 +135,9 @@ pub fn generate_chunk_with(
             } else {
                 slope
             };
-            // snow lies deep, in full blocks, with the packed stone only beneath it
             // a bank's ground is chosen by the river or lake beside it, so it's a beach
             let shore_top = columns.shore_top(x, z);
+            // snow lies deep, in full blocks, with the packed stone only beneath it
             let snowy = column_block(
                 biomes,
                 biome,
@@ -153,9 +152,7 @@ pub fn generate_chunk_with(
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
             let ice_cliffs = biomes.block(biome, BlockType::Rock, 20, 0.0) == BlockType::Ice;
-            // whether the cliff builds rock into the air just over the column's top: its top blocks are then rock too, not
-            // grass left buried under the rock (a shell of sandstone a block thick over grass on seed 2925398056 by 1911,6919)
-            // worked out only once a top block asks, as the cliff noise is dear
+            // whether the cliff builds rock just over the column's top, so its top blocks are rock too, not grass buried under it; lazy as the cliff noise is dear
             let built_over = std::cell::LazyCell::new(|| {
                 cliff != 0.0 && !bank && {
                     let over = column_block(biomes, biome, column_height, column_height, slope, temperature, shore_top);
@@ -196,8 +193,7 @@ pub fn generate_chunk_with(
                 if cliff == 0.0 || (y - column_height).abs() > bulge || bank && y >= column_height {
                     return block;
                 }
-                // the top blocks stay, or the cliff noise pits the grass and shows the dirt under it, but under rock the cliff
-                // built over them they are rock as well
+                // the top blocks stay, or the cliff noise pits the grass and shows the dirt, but rock built over them makes them rock
                 if (column_height - SKIN..column_height).contains(&y) {
                     return match block {
                         BlockType::Grass | BlockType::Dirt | BlockType::Snow if *built_over => {
@@ -294,8 +290,7 @@ pub fn generate_chunk_with(
     chunk_data
 }
 
-// The plant on the grass atop column (x, z) of `columns`, whose first column is at `origin` in the world, if any: in the
-// air just over the ground, which the caller makes sure is empty. `trees` are those that may shade it.
+// The plant on the grass atop column (x, z) of `columns` (first column at `origin`), if any, in the air the caller made sure is empty; `trees` may shade it.
 pub(super) fn plant_at(
     columns: &ChunkColumns,
     biomes: &Biomes,
@@ -413,20 +408,16 @@ fn log_cells_around(source: &impl BlockSource) -> Vec<IVec3> {
     logs
 }
 
-// Light falling into the top of a box whose highest block is at `top`, in boxes of `cell`
-// blocks: full sky, less any sea above it.
+// Light falling into the top of a box whose highest block is at `top`, in boxes of `cell` blocks: full sky less any sea above.
 pub(super) fn sky_above(top: i64, cell: i64) -> u8 {
     let water_above = ((WATER_LEVEL - 1 - top) / cell).clamp(0, MAX_LIGHT as i64) as u8;
     MAX_LIGHT.saturating_sub(water_above.saturating_mul(BlockType::Water.light_opacity()))
 }
 
-// How far to each side of a chunk its light takes blocks into account: light that could
-// only arrive from further out would already have faded to deep shade.
+// How far to each side of a chunk its light counts blocks: light from further out would have faded to deep shade.
 pub(crate) const LIGHT_MARGIN: i32 = 8;
 
-// Sky light for the chunk and a block around it, from the chunk and its 26 neighbours, as
-// high as the top of the chunk above, with open sky above that. `remesh::chunks_reading` keeps
-// to the same box.
+// Sky light for the chunk and a block around it, from its 26 neighbours up to the top of the chunk above, open sky beyond; `remesh::chunks_reading` keeps to the same box.
 fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> SkyLight {
     let size = CHUNK_SIZE as i32;
     let min = IVec3::new(-LIGHT_MARGIN, -1, -LIGHT_MARGIN);

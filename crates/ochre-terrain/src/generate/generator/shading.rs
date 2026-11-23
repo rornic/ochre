@@ -67,9 +67,7 @@ pub(super) fn vertex_ao(
     1.0 - (sum / 2.0).clamp(0.0, 1.0) * AO_STRENGTH
 }
 
-// Sky light at a face's corner, 0..1: the average over the cells around the corner on the
-// face's open side, leaving out solid ones, and the diagonal when both sides are solid
-// since light can't reach round to it.
+// Sky light at a face's corner, 0..1: the average over the open cells around it on the face's open side, leaving out the diagonal when both sides are solid, as light can't reach round to it.
 pub(super) fn vertex_light(
     source: &impl BlockSource,
     light: &SkyLight,
@@ -97,16 +95,14 @@ pub(super) fn vertex_light(
     levels.iter().sum::<f32>() / levels.len() as f32 / MAX_LIGHT as f32
 }
 
-// One light level for a whole face, 0..1, in a few coarse steps so neighbouring faces
-// match and merge.
+// One light level for a whole face, 0..1, in coarse steps so neighbouring faces match and merge.
 pub(super) fn face_light(level: u8) -> f32 {
     const STEP: u8 = 3;
     let stepped = (level + STEP / 2) / STEP * STEP;
     stepped.min(MAX_LIGHT) as f32 / MAX_LIGHT as f32
 }
 
-// The share of the cells round a water top-face corner, at its height, that are land, where the
-// shader laps foam.
+// The share of the cells round a water top-face corner, at its height, that are land, where the shader laps foam.
 pub(super) fn vertex_shore_factor(
     source: &impl BlockSource,
     block_coord: IVec3,
@@ -130,9 +126,7 @@ pub(super) fn vertex_shore_factor(
 
 pub(super) const SHORE_DISTANCE_RADIUS: i32 = 3;
 
-// Distance from this top-face corner to the nearest land, 0..1 over `SHORE_DISTANCE_RADIUS`, 1 for
-// none in range. Measured from the corner itself, so every block sharing it agrees, which keeps
-// the foam's travelling phase from tearing at shared edges.
+// Distance from this top-face corner to the nearest land, 0..1 over `SHORE_DISTANCE_RADIUS`, 1 for none; measured from the corner so every block sharing it agrees and the foam's phase doesn't tear.
 pub(super) fn vertex_shore_distance(
     source: &impl BlockSource,
     block_coord: IVec3,

@@ -7,17 +7,13 @@ use bevy::math::UVec2;
 use bevy::math::Vec3;
 use ochre_base::block::BlockType;
 
-// From cells this wide, trees are drawn together as the canopy they make, a few boxes a node,
-// instead of each one as boxes of its own: there are so many in view this far out that their
-// boxes would cost far more than the land under them, and each is only a few pixels across.
+// From cells this wide, trees are drawn together as one canopy of a few boxes a node: boxes for each would cost far more than the land under them.
 pub(super) const CANOPY_CELL: i64 = 16;
 
 // How many points across each column, each way, its canopy's cover is judged from.
 pub(super) const CANOPY_SAMPLES: usize = 4;
 
-// Columns at least this much under crowns are canopy. The rest only darken the ground, by how
-// much of them is, see `LodBlocks::forest_shade`. Higher, and the trees left out of the canopy
-// each need a box of their own; lower, and it fills more of the gaps between crowns.
+// Columns at least this much under crowns are canopy; the rest only darken the ground, see `LodBlocks::forest_shade`.
 pub(super) const CANOPY_COVER: f32 = 0.5;
 
 // Canopy tops are rounded to this many steps a cell, so neighbouring columns merge into one box.
@@ -113,9 +109,7 @@ impl Canopy {
             >= CANOPY_COVER
     }
 
-    // The canopy over this node's columns whose ground is in it, as boxes from the ground up to
-    // the crowns' tops, merged where columns side by side round to the same top, and drawn in at
-    // their edges to the points under crowns, so they're no wider than the trees.
+    // Boxes from the ground up to the crowns' tops over this node's columns, merged where neighbours round to the same top and drawn in to the points under crowns.
     pub(super) fn boxes(
         &self,
         ground_heights: &[f32],
@@ -199,24 +193,19 @@ impl Canopy {
     }
 }
 
-// Coarse cells up to this wide hold real trees. Wider ones, where a crown would be a cube many
-// times its size, tint the ground by how much forest covers it instead, so forests never cut off.
+// Coarse cells up to this wide hold real trees; wider ones tint the ground by the forest over it instead, so forests never cut off.
 pub(super) const TREE_MAX_CELL: i64 = 32;
 
 // Trunks are boxes only up to cells this wide: past them one is far under a pixel.
 pub(super) const TRUNK_MAX_CELL: i64 = 8;
 
-// From cells this wide a crown is a box too, of its real size: as cells it would round up to a
-// cube a cell wide, several times its size.
+// From cells this wide a crown is a box of its real size, as a cell would round it up to several times that.
 pub(super) const BOX_CROWN_CELL: i64 = 8;
 
-// Each tree a cell grows covers this much of its ground, see `Biome::tree_density`, and a cell
-// that's all covered is drawn this fraction as bright.
+// Each tree a cell grows covers this much of its ground (see `Biome::tree_density`), and a cell all covered is drawn this fraction as bright.
 pub(super) const FOREST_COVER: f64 = 1.6;
-
 pub(super) const FOREST_DARKEN: f32 = 0.55;
 
 // Leaves at the foot of a canopy are this much darker than at its top, over this many blocks.
 pub(super) const CANOPY_SHADE: f32 = 0.45;
-
 pub(super) const CANOPY_SHADE_SPAN: f32 = 20.0;
