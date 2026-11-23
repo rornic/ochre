@@ -129,7 +129,7 @@ fn update_curvature(
     curvature.last = now;
 }
 
-/// Loosens each downward frustum side by the most drawn land can drop so curved-in land isn't culled; runs every frame.
+/// Loosens the frustum's lower sides so curved-in land isn't culled; every frame, as Bevy rebuilds it only on moves.
 fn loosen_frustum(
     mut cameras: Query<(&GlobalTransform, &Projection, &mut Frustum), With<Camera3d>>,
 ) {
