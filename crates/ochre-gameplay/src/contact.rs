@@ -172,11 +172,13 @@ impl Walker<'_> {
         let mut moved = Moved { feet, ..Default::default() };
         let across = Vec3::new(delta.x, 0.0, delta.z);
         let steps = (across.length() / SUBSTEP).ceil().max(1.0) as usize;
+        let stand = |p: Vec3| p.with_y(self.ground_under(p, self.snap).unwrap_or(p.y).max(p.y));
         for _ in 0..steps {
             let next = across_blocks(moved.feet, across / steps as f32);
-            let next = self.wall_out(next, &mut moved.wall);
+            // standing, walls are judged at the height it will stand at, or the lift onto the ground flips the answer the step after
+            let judged = if standing { stand(next) } else { next };
+            let next = self.wall_out(judged, &mut moved.wall).with_y(next.y);
             // too low under a ceiling, standing where it would stand there, it goes no further, unless it's backing out of one
-            let stand = |p: Vec3| p.with_y(self.ground_under(p, self.snap).unwrap_or(p.y).max(p.y));
             let (here, there) = (self.headroom(stand(moved.feet)), self.headroom(stand(next)));
             if there < self.height() && there < here {
                 moved.wall -= across.normalize_or_zero();
@@ -194,6 +196,15 @@ impl Walker<'_> {
                 let lift = (height - moved.feet.y).min((room - self.height()).max(0.0));
                 moved.feet.y = if height > moved.feet.y { moved.feet.y + lift } else { height };
                 moved.grounded = true;
+                // walls and ground settled together, so a lift onto a shelf the wall then pushes it off isn't undone the step after
+                for _ in 0..3 {
+                    let out = self.wall_out(moved.feet, &mut moved.wall);
+                    if out == moved.feet {
+                        break;
+                    }
+                    let Some(height) = self.ground_under(out, self.snap) else { break };
+                    moved.feet = out.with_y(height.min(moved.feet.y + (self.headroom(out) - self.height()).max(0.0)));
+                }
             }
             // off walkable ground a fall still lands on whatever looks up, steep or not, so it can't pass into the ground
             _ => {
@@ -212,6 +223,13 @@ impl Walker<'_> {
                     _ => fallen,
                 };
             }
+        }
+        // pressing into a wall, a step that would end a little behind where it began is a bounce off the wall, so it keeps only its slide along it
+        let way = across.normalize_or_zero();
+        let back = (moved.feet - feet).with_y(0.0).dot(way);
+        if standing && moved.grounded && back < 0.0 && back > -BOUNCE {
+            let slid = moved.feet - way * back;
+            moved.feet = slid.with_y(self.ground_under(slid, self.snap).unwrap_or(moved.feet.y));
         }
         // a rise stops at a ceiling over the head
         if delta.y > 0.0 {
@@ -235,6 +253,8 @@ impl Walker<'_> {
 
 // The most the body moves across before walls push it back, in blocks, less than its spheres' radius.
 const SUBSTEP: f32 = 0.2;
+// The furthest back a wall pushes a standing body that counts as a bounce, in blocks; further is a real push out.
+const BOUNCE: f32 = 0.2;
 
 #[cfg(test)]
 mod tests {
