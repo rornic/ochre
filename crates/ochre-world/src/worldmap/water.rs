@@ -1,6 +1,4 @@
-//! Rivers and lakes at block scale. The map stores them per cell: a river is a chain of cells,
-//! each with a width and a water surface, drawn here as segments between cell centres so a
-//! river 6 blocks wide stays 6 blocks wide on a map of 32-block cells.
+//! Rivers and lakes at block scale: a river is a chain of cells drawn as segments between cell centres, so one 6 blocks wide stays so on 32-block cells.
 
 use super::{WaterCell, WorldMap, NEIGHBOURS, NO_FLOW};
 
@@ -21,11 +19,9 @@ pub struct RiverHit {
     pub depth: f32,
 }
 
-// Points a river's water level is worked out at along each stretch between two cells, which is
-// every few blocks: the ground it must lie under is looked at there, not once a cell.
+// Points a river's water level is worked out at along each stretch between two cells (every few blocks), where the ground it must lie under is looked at.
 pub(super) const PROFILE_POINTS: usize = 8;
-// A stretch falling this much a block on average, along its cell, runs in steps: treads cut at most
-// `TREAD_DROP` under the ground's descent, and falls between them, see `stairs`.
+// A stretch falling this much a block on average, along its cell, runs in treads and falls, see `stairs`.
 const STAIR_GRADE: f32 = 0.2;
 const TREAD_DROP: f32 = 4.0;
 // A drop between two profile points this big is a fall, and its lip a step.
@@ -36,11 +32,9 @@ const MIN_TREAD: f32 = 4.0;
 const LIP_SEARCH: usize = 16;
 // How many cells on a river is followed to the still water it ends in.
 const SINK_HOPS: usize = 400;
-// A river into a lake ends where its water would stand this far under the lake's level: the ground there is lower than
-// the lake, and a river that cannot rise cannot feed it. A gorge through higher ground is not that.
+// A river into a lake ends where its water would stand this far under the lake's level, since a river that can't rise can't feed it; a gorge through higher ground isn't that.
 const UNDER_LAKE: f32 = 1.0;
-// How far a river's level may sit over the lake or sea it runs into, a block of height for each
-// 20 blocks it runs back from them, and how far above that it may be and still be brought down.
+// How far a river's level may sit over the lake or sea it runs into, a block for each 20 blocks back (`MOUTH_SLOPE`), and how far above that it may be and still be brought down (`MOUTH_DROP`).
 const MOUTH_SLOPE: f32 = 0.05;
 const MOUTH_DROP: f32 = 8.0;
 // The most, in blocks, a river is dug under the ground at its middle to stay under its banks.
@@ -54,8 +48,7 @@ const MOUTH_CELLS: usize = 6;
 // How steeply, in blocks of height a block, a river comes down from the lake it leaves.
 const OUTLET_SLOPE: f32 = 0.25;
 
-/// How far under the ground beside it a river's water lies, and its banks stand over it at its
-/// edge: up to a block, less for the narrowest streams, which would be cut far too deep.
+/// How far a river's water lies under the ground beside it, and its banks stand over it at its edge: up to a block, less for the narrowest streams, which would be cut far too deep.
 pub(super) fn freeboard(width: f32) -> f32 {
     (width * 0.25).clamp(0.2, 1.0)
 }
@@ -85,9 +78,7 @@ pub(crate) fn depth_for_width(width: f32) -> f32 {
     (0.6 + (width - 1.2).max(0.0) / 3.0).min(12.0)
 }
 
-// A steep stretch's levels as treads and falls: from the second point on, each group of points is held at
-// its lowest, so the water stays under the ground it was graded to, and a group takes points while it has
-// dropped no more than `TREAD_DROP`. The ends are left, which neighbouring stretches share.
+// A steep stretch's levels as treads and falls: from the second point on, each group of points is held at its lowest, so the water stays under the ground it was graded to, taking points while it has dropped no more than `TREAD_DROP`; the ends are left, which neighbouring stretches share.
 fn stairs(data: &mut [f32; PROFILE_POINTS + 1], cell: f32) {
     if (data[0] - data[PROFILE_POINTS]) / cell < STAIR_GRADE {
         return;
@@ -147,26 +138,23 @@ pub struct RiverProfiles {
     data: Vec<[f32; PROFILE_POINTS + 1]>,
     // by interval of each profile, where in it the water falls from one point's level to the next's, 0..1, or NaN
     lips: Vec<[f32; PROFILE_POINTS]>,
-    // how far along the stretch, 0..1, a river that runs into a lake reaches: its curve goes on
-    // past the shore, over land, which would leave a stub of channel there
+    // how far along the stretch, 0..1, a river into a lake reaches: its curve goes on past the shore, which would leave a stub of channel
     ends: Vec<f32>,
     // each profile's course
     stretches: Vec<Stretch>,
     // the course's points `CURVE_PIECES` ways along it, which `river_hits` joins with straight pieces
     curves: Vec<[(f64, f64); CURVE_PIECES + 1]>,
-    // by map cell, the stretches whose water, banks or valley can reach into it, see `index`: the
-    // cell's in `near[near_start[cell]..near_start[cell + 1]]`
+    // by map cell, the stretches that reach into it, see `index`: `near[near_start[cell]..near_start[cell + 1]]`
     near_start: Vec<u32>,
     near: Vec<u32>,
-    // each stretch's river: the stretch at the head of the run of widest feeders it's part of, so one wide
-    // river's stretches are one river, however many of them reach a point, and a tributary is its own
+    // each stretch's river: the head of the run of widest feeders it's part of, so a wide river's stretches are one river and a tributary is its own
     stem: Vec<u32>,
 }
 
 impl RiverProfiles {
     const NONE: u32 = u32::MAX;
 
-    /// The level of the water `t` of the way along the stretch from `cell`, 0..1.
+    /// How far along the stretch from `cell`, 0..1, its river reaches, see `ends`.
     fn end(&self, cell: usize) -> f32 {
         self.ends[self.index[cell] as usize]
     }
@@ -209,8 +197,7 @@ impl RiverProfiles {
         profile[k] + (profile[k + 1] - profile[k]) * along
     }
 
-    /// Lists each stretch in every cell of `map` its water, banks and valley reach into, a cell off its
-    /// line for its curve's bend and `margin` blocks more, so a point need only look at its own cell's.
+    /// Lists each stretch in every cell of `map` its water, banks and valley reach into, a cell off its line for the curve's bend and `margin` blocks more.
     pub fn index(&mut self, map: &WorldMap, margin: f64) {
         self.stem = self.stems();
         self.curves = self
@@ -255,8 +242,7 @@ impl RiverProfiles {
         self.near_start = count;
     }
 
-    // Each stretch's river, see `stem`: a stretch carries on the river of the one it runs into if it's the
-    // widest that runs into it, and is the head of its own if not.
+    // Each stretch's river, see `stem`: it carries on the river of the stretch it runs into if it's the widest that runs into it, else heads its own.
     fn stems(&self) -> Vec<u32> {
         let next = |n: usize| {
             let to = self.index[self.stretches[n].to];
@@ -318,9 +304,7 @@ impl RiverProfiles {
 }
 
 impl WorldMap {
-    /// The highest level of the lake or sea of any cell round cell `i`, or far under any ground if none:
-    /// a cell beside still water stays at least that high, or the water would spill over it, see
-    /// `WorldTerrain::still_round`.
+    /// The highest level of the lake or sea of any cell round cell `i`, or far under any ground if none: a cell beside still water stays at least that high, see `WorldTerrain::still_round`.
     pub(super) fn still_beside(&self, i: usize) -> f32 {
         still_beside(self.dim(), &self.water_kind, &self.water_surface, i)
     }
@@ -336,9 +320,7 @@ impl WorldMap {
         }
     }
 
-    /// The way each river cell's water leaves it: the direction it runs in, a blend of the way it
-    /// came in and the way it goes on, so rivers can be drawn as smooth curves through the cells
-    /// instead of kinked segments between their centres. Zero for cells with no river.
+    /// The way each river cell's water leaves it, a blend of the way it came in and the way it goes on, so rivers draw as smooth curves through the cells; zero for cells with no river.
     pub fn river_tangents(&self) -> Vec<[f32; 2]> {
         let dim = self.dim();
         let direction = |i: usize| -> Option<[f32; 2]> {
@@ -391,8 +373,7 @@ impl WorldMap {
         self.river_hits(profiles, x, z)[0]
     }
 
-    /// The lake cell that drains into cell (`cx`, `cz`), if one does, or into a cell of dry land that
-    /// drains into it: the lake spills over a rim of ground, and the river starts below.
+    /// The lake cell that drains into cell (`cx`, `cz`), if one does, or into a dry cell draining into it: the lake spills over a rim of ground, and the river starts below.
     pub(super) fn outlet_lake(&self, cx: usize, cz: usize) -> Option<(usize, usize)> {
         let kind = |(x, z): (usize, usize)| self.water_kind[self.index(x, z)];
         self.feeders(cx, cz).find_map(|u| {
@@ -441,16 +422,14 @@ impl WorldMap {
         let (sx, sz) = (b.0 - a.0, b.1 - a.1);
         let mut length = (sx * sx + sz * sz).sqrt();
         let along = [(sx / length) as f32, (sz / length) as f32];
-        // a river runs on past the centre of the lake or sea cell it drains into, which may be on
-        // the land at the water's edge, so it reaches the water the land really lets in
+        // a river runs on past the centre of the lake or sea cell it drains into, which may be on land at the water's edge, so it reaches the water the land really lets in
         let extra = self.config.map_cell as f64 * MOUTH_REACH;
         if !into_river {
             b = (b.0 + along[0] as f64 * extra, b.1 + along[1] as f64 * extra);
             length += extra;
         }
         if let Some((ux, uz)) = outlet {
-            // from the middle of the lake cell that drains into it, so the river starts in the lake's
-            // water and not short of it, on the rim's ground
+            // from the middle of the lake cell that drains into it, so the river starts in the lake's water, not short of it on the rim's ground
             let from = self.cell_centre(ux, uz);
             length += ((a.0 - from.0).powi(2) + (a.1 - from.1).powi(2)).sqrt();
             a = from;
@@ -470,8 +449,7 @@ impl WorldMap {
         })
     }
 
-    /// Water levels as the map has them, a straight run between each stretch's cells: what rivers
-    /// are drawn at before `build_river_profiles` sets them to the ground.
+    /// Water levels as the map has them, a straight run between each stretch's cells, before `build_river_profiles` sets them to the ground.
     pub fn flat_river_profiles(&self, tangents: &[[f32; 2]]) -> RiverProfiles {
         let mut profiles = RiverProfiles {
             index: vec![RiverProfiles::NONE; self.height.len()],
@@ -500,10 +478,7 @@ impl WorldMap {
         profiles
     }
 
-    /// Each river stretch's water level every few blocks along it, held under the lowest of the
-    /// `ground` round that point (in the river's own bed and banks, and where its banks end) and
-    /// never rising downstream, so water is dug into the ground it runs over and no bank has to be built
-    /// up to hold it. `centre` moves a point on a stretch's curve to where the river is really drawn.
+    /// Each river stretch's water level every few blocks along it, held under the lowest of the `ground` round that point (its bed, banks and where they end) and never rising downstream, so no bank has to be built up to hold it. `centre` moves a point on a stretch's curve to where the river is really drawn.
     pub fn build_river_profiles(
         &self,
         tangents: &[[f32; 2]],
@@ -539,21 +514,18 @@ impl WorldMap {
                             {
                                 lowest = lowest.min(ground(x + dx, z + dz));
                             }
-                            // a bank much lower than the middle doesn't dig the river in after it: the
-                            // water stands that far over it, and the bank is built up a little
+                            // a bank much lower than the middle doesn't dig the river in after it: the water stands that far over it, and the bank is built up a little
                             *level = lowest.max(middle - MAX_CUT) as f32 - freeboard(width);
                         }
                     }
                 });
             }
         });
-        // a river that leaves a lake starts at the lake's level and comes down from it, through the
-        // rim, so the two waters are joined and not parted by a bank of the rim's ground
+        // a river that leaves a lake starts at the lake's level and comes down from it through the rim, so the waters are joined, not parted by a bank of the rim's ground
         let cell_blocks = self.config.map_cell as f32;
         let mut from_lake = vec![false; stretches.len()];
         for (n, stretch) in stretches.iter().enumerate() {
             let (cx, cz) = (stretch.from % dim, stretch.from / dim);
-            // the lake that drains into this river's first cell, if one does
             let Some((fx, fz)) = self.outlet_lake(cx, cz) else {
                 continue;
             };
@@ -566,8 +538,6 @@ impl WorldMap {
                 *level = level.max(top - back * OUTLET_SLOPE).min(top);
             }
         }
-        // a river runs down to the lake or sea it drains into over its last few cells, if it comes
-        // down to it: one far above it ends in a cliff or a fall
         let at: std::collections::HashMap<usize, usize> = stretches
             .iter()
             .enumerate()
@@ -590,10 +560,7 @@ impl WorldMap {
                 None
             })
             .collect();
-        // a river that drains into a lake is held at the lake's level where its valley floor dips under it: the floor follows
-        // block-level steps the map doesn't have (`valley_floor`), a river never rises, so it would stay under the lake from
-        // that dip on and be cut off at it (below), dry down to the lake. Its banks are levees where the land lies under it
-        // (`channel`).
+        // a river into a lake is held at the lake's level where its valley floor (`valley_floor`, with block-level steps the map lacks) dips under it, since a river never rises and would be cut off there (below), dry down to the lake; its banks are levees (`channel`)
         for (n, lake) in into_lake.iter().enumerate() {
             if let Some(lake) = lake {
                 for cap in caps[n].iter_mut() {
@@ -601,6 +568,7 @@ impl WorldMap {
                 }
             }
         }
+        // a river runs down to the lake or sea it drains into over its last few cells if it comes down to it; one far above it ends in a cliff or a fall
         for n in 0..stretches.len() {
             let mut hops = 0;
             let mut end = stretches[n];
@@ -630,8 +598,7 @@ impl WorldMap {
                 }
             }
         }
-        // downstream of every stretch that runs into it, a river never rises: work from the
-        // sources down
+        // a river never rises, so work from the sources down, each stretch downstream of all that run into it
         let mut inflow = vec![0u32; stretches.len()];
         for s in &stretches {
             if let Some(&next) = at.get(&s.to) {
@@ -647,9 +614,7 @@ impl WorldMap {
             stretches: stretches.clone(),
             ..RiverProfiles::default()
         };
-        // a river into a lake or the sea ends where the land last gives way to the water, with a
-        // rounded end, and goes no further over the land beside it: a pocket of low ground inland of
-        // the shore doesn't count
+        // a river into a lake or the sea ends, rounded, where the land last gives way to the water and goes no further over the land beside it; a pocket of low ground inland of the shore doesn't count
         for (n, stretch) in stretches.iter().enumerate() {
             let into = self.water_kind[stretch.to];
             if into != WaterCell::Lake as u8 && into != WaterCell::Ocean as u8 {
@@ -669,7 +634,6 @@ impl WorldMap {
             }
         }
         let _ = dim;
-        // sources first, every stretch after all that run into it
         let mut order = Vec::with_capacity(stretches.len());
         while let Some(n) = ready.pop() {
             order.push(n);
@@ -688,8 +652,7 @@ impl WorldMap {
                 }
             }
         }
-        // a stream that runs into a river comes down to the river's level over its last cells, so
-        // its water isn't left standing at its own over the river's, as a step beside it
+        // a stream that runs into a river comes down to its level over its last cells, so its water isn't left standing over the river's as a step
         let mut feeders: Vec<Vec<usize>> = vec![Vec::new(); stretches.len()];
         for (n, stretch) in stretches.iter().enumerate() {
             if let Some(&next) = at.get(&stretch.to) {
@@ -747,9 +710,7 @@ impl WorldMap {
                 }
             }
         }
-        // The next stretch can start lower than the preceding one ends. Both represent the
-        // same point, so bring each upstream endpoint down to that shared level. The final
-        // profile interval carries the drop instead of a discontinuity between stretches.
+        // the next stretch can start lower than the preceding one ends: both are the same point, so each upstream endpoint comes down to the shared level, the last profile interval carrying the drop instead of a discontinuity
         for &n in order.iter().rev() {
             if let Some(&next) = at.get(&stretches[n].to) {
                 profiles.data[n][PROFILE_POINTS] = profiles.data[next][0];
@@ -818,9 +779,7 @@ impl WorldMap {
         profiles
     }
 
-    /// The two nearest rivers' water or banks: the nearest, and the nearest that isn't another
-    /// stretch of the same river. Where a stream joins a river the river's bank is the nearer, and
-    /// the stream's water would be dropped a few blocks short of it if only the nearest counted.
+    /// The two nearest rivers' water or banks: the nearest, and the nearest that isn't another stretch of the same river, so a stream that joins a river isn't dropped a few blocks short of it, the river's bank being the nearer.
     pub fn river_hits(&self, profiles: &RiverProfiles, x: f64, z: f64) -> [Option<RiverHit>; 2] {
         let (u, v) = self.to_cell(x, z);
         let max = self.dim() as f64 - 1.0;
