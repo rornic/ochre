@@ -21,6 +21,8 @@ const BLOCK_CLEARANCE: f32 = 4.0;
 const TREE_CLEARANCE: f32 = 6.0;
 // Seconds either side the lift looks for the highest ground it needs, and eases over, so it curves in and out.
 const LIFT_REACH: f32 = 2.5;
+// The least a fixed-height leg keeps over the ground.
+const MIN_CLEARANCE: f32 = 4.0;
 
 /// Flies a recorded flight, if one is set. Does nothing otherwise.
 #[derive(Default)]
@@ -64,7 +66,7 @@ impl Plugin for FlythroughPlugin {
     }
 }
 
-/// A flight from `OCHRE_FLIGHT`: a key a line `seconds x z height yaw pitch day`, `#` comments; yaw in degrees
+/// A flight from `OCHRE_FLIGHT`: a key a line `seconds x z height yaw pitch day [follow]`, `#` comments; yaw in degrees, height over the ground or a fixed y where follow is 0
 #[derive(Resource)]
 struct Flight {
     keys: Vec<Key>,
@@ -82,8 +84,8 @@ struct Flight {
     height: Vec<f32>,
 }
 
-// seconds, x, z, blocks over the ground, yaw and pitch in degrees, time of day
-type Key = [f32; 7];
+// seconds, x, z, blocks over the ground, yaw and pitch in degrees, time of day, how far the height follows the ground (0 is a fixed y)
+type Key = [f32; 8];
 
 // Seconds of warmup, the sampling interval for heights, and how long the last key is held before the game exits.
 const FLIGHT_WARMUP: f32 = 25.0;
@@ -104,9 +106,13 @@ fn parse_keys(text: &str) -> Result<Vec<Key>, String> {
             .map(str::parse::<f32>)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("line {}: {e}", n + 1))?;
+        let numbers = match numbers.len() {
+            7 => [numbers, vec![1.0]].concat(),
+            _ => numbers,
+        };
         let key: Key = numbers
             .try_into()
-            .map_err(|_| format!("line {}: want seconds x z height yaw pitch day", n + 1))?;
+            .map_err(|_| format!("line {}: want seconds x z height yaw pitch day [follow]", n + 1))?;
         if keys.last().is_some_and(|last| key[0] <= last[0]) {
             return Err(format!("line {}: seconds must increase", n + 1));
         }
@@ -172,7 +178,9 @@ fn fly_keys(
             .map(|i| {
                 let key = sample_keys(&state.keys, i as f32 * HEIGHT_STEP);
                 let p = Vec3::new(key[1], 0.0, key[2]);
-                (ground_height(&world, p) + key[3]).max(tree_top(&world, &mut ground, p) + TREE_CLEARANCE)
+                let floor = ground_height(&world, p);
+                let follow = key[7].clamp(0.0, 1.0);
+                (key[3] + floor * follow).max(floor + MIN_CLEARANCE).max(tree_top(&world, &mut ground, p) + TREE_CLEARANCE)
             })
             .collect();
         state.height = smooth_lift(&need, (LIFT_REACH / HEIGHT_STEP) as usize);
@@ -288,8 +296,8 @@ mod tests {
 
     #[test]
     fn test_a_flight_file_reads_keys_and_says_what_is_wrong_with_a_bad_one() {
-        let keys = parse_keys("# a flight\n0 10 20 5 0 0 0.1\n\n4 30 20 5 90 10 0.2 # east\n").unwrap();
-        assert_eq!(keys, vec![[0.0, 10.0, 20.0, 5.0, 0.0, 0.0, 0.1], [4.0, 30.0, 20.0, 5.0, 90.0, 10.0, 0.2]]);
+        let keys = parse_keys("# a flight\n0 10 20 5 0 0 0.1\n\n4 30 20 900 90 10 0.2 0 # east, at a fixed y\n").unwrap();
+        assert_eq!(keys, vec![[0.0, 10.0, 20.0, 5.0, 0.0, 0.0, 0.1, 1.0], [4.0, 30.0, 20.0, 900.0, 90.0, 10.0, 0.2, 0.0]]);
         assert!(parse_keys("0 1 2 3 4 5").unwrap_err().contains("line 1"));
         assert!(parse_keys("0 1 2 3 4 5 x").unwrap_err().contains("line 1"));
         assert!(parse_keys("0 1 2 3 4 5 6\n0 1 2 3 4 5 6").unwrap_err().contains("line 2"));
@@ -299,9 +307,9 @@ mod tests {
     #[test]
     fn test_a_flight_passes_through_its_keys_and_never_overshoots_between() {
         let keys = vec![
-            [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.10],
-            [4.0, 80.0, -40.0, 6.0, 90.0, 20.0, 0.15],
-            [9.0, 90.0, -50.0, 3.0, 360.0, -10.0, 0.22],
+            [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.10, 1.0],
+            [4.0, 80.0, -40.0, 6.0, 90.0, 20.0, 0.15, 0.0],
+            [9.0, 90.0, -50.0, 3.0, 360.0, -10.0, 0.22, 0.5],
         ];
         for key in &keys {
             let at = sample_keys(&keys, key[0]);
@@ -311,7 +319,7 @@ mod tests {
             for step in 0..=40 {
                 let t = pair[0][0] + (pair[1][0] - pair[0][0]) * step as f32 / 40.0;
                 let at = sample_keys(&keys, t);
-                for k in 1..7 {
+                for k in 1..8 {
                     let (lo, hi) = (pair[0][k].min(pair[1][k]), pair[0][k].max(pair[1][k]));
                     assert!((lo - 1e-3..=hi + 1e-3).contains(&at[k]), "value {k} at {t}");
                 }
