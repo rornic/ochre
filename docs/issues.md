@@ -4,6 +4,13 @@ Problems seen in the game or the tools that are not fixed yet. When one is fixed
 
 An entry says where it was seen, what is wrong, and what is known and what is only a guess, so nobody mistakes a guess for the cause. The tectonic world's own defect table, with the water and LOD limits designed in, is in `docs/world-plan.md` (Open defects); this log is for everything else.
 
+## Some flora tufts draw stretched into long spikes
+
+- **Seen:** 2026-11-23 by Rory, and for a while before that. Seed 492107714, steppe, camera at (-5685, 85, 1504) looking at yaw 292, pitch -1. In a clump of the red steppe shrub, one plant's blades shoot up into thin spikes several blocks tall, with their texture smeared along their length. Below them, other blades lie splayed out flat in an X. Shrubs either side of it look normal.
+- **Known:** it was there before the flora distance fade, so the fade's height-shrinking in `foliage.wesl` didn't cause it. It happens at full detail, right in front of the camera.
+- **Not known:** whether the mesher builds these blades too tall (`push_tuft` in `generate/generator/mesh.rs`) or the shader moves their tips too far (`swayed` in `foliage.wesl`), and which plants it affects.
+- **To check:** dump that plant's tuft vertices with a `worldview` probe of the spot. If the mesh is fine there, the shader moves the tips.
+
 ## Steppe grass bends in a hollow while its wind sound is quiet
 
 - **Seen:** 2026-11-16, by design of the steppe change. The wind sound's strength follows how exposed the camera's ground is (`Surroundings::exposure`), and the foliage shader's sway size is the same everywhere (`foliage.wesl`), because a shader has no exposure per vertex.
