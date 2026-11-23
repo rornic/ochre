@@ -86,3 +86,28 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Seen:** 2026-11-19, `worldview <seed> dryrivers 0 0`: 528 of 9,853 river cells on seed 1, 693 of 13,825 on seed 42 and 693 of 12,507 on seed 1337 have no river or lake water anywhere in them (sampled every 4 blocks), after mountain rivers were fixed (they were 1,233, 1,040 and 1,260; see `docs/terrain-perf.md`, Mountain rivers reach their lakes).
 - **Known:** the worst left on seed 1 is at -2704,14928, a map surface of 574 over ground 113 blocks under it. Not looked into.
 - **Not known:** how many are small streams ending in hollows, rivers that stop at a fall onto ground under a lake they don't drain into, or something else.
+
+## Inselbergs do not read as bare rock domes
+
+- **Seen:** 2026-11-23, from the ground at eye height (`OCHRE_CLEAR_SKY`, noon). Seed 6 at -6096,4368 (savanna): ground 65 to 73 over a stretch 650 blocks wide against 45 to 50 round it, flat on top and cut by valley cliff bands, so it shows as a low plateau with a rock slope and no dome. Seed 3 at 3600,21808 (forest): a round dome 70 blocks over 47, but green with trees on it and standing in a lake.
+- **Known:** by `info` along a line through each site; the docs say a bare dome 20 to 45 blocks high on dry, warm sedimentary lowland (`landforms.md`). Both sites are forest or savanna, and the biome is set after the dome is laid.
+- **Not known:** whether the valleys (seed 6) and the later hydrology (seed 3) reshape the dome, or whether the dome's rock is simply not picked out by the block rules. Neither was tested.
+- **To check:** `generate_with(.., false)` to drop the valleys, and a block rule that shows bare rock on a dome.
+
+## Tower karst in a desert reads as sand-covered humps
+
+- **Seen:** 2026-11-23, seed 6 at 7500,14300 (desert), from 700 blocks out and from above. The field shows as rounded rock heaps under sand about 20 blocks high, not steep towers 30 to 70 high; hoodoo-like mushroom rocks stand beside it at 6400,14300.
+- **Known:** the site list puts the field's towers 30 to 69 high (r 1.5 to 4 cells). Climate then made the place desert, which is not the wet lowland the docs name.
+- **Not known:** whether the dunes and yardangs, or erosion, bury the towers, or whether wet-country karst reads right. No wet field was visited.
+
+## A cirque's bowl does not read, only banded cliffs
+
+- **Seen:** 2026-11-23, seed 3 at -5360,8304 (cirque 6 cells, 73 high), from 500 blocks out and 120 up. The walls show as tall stepped cliffs of blue ice over rust-coloured rock, with no bowl floor to read between them.
+- **Known:** the cliff faces are present and high; seed 3's mountains are snow-covered and glacier biome at that height, so the whole view is white and blue.
+- **Not known:** whether the floor is there but hidden by the haze and the angle, or whether the cliff pass makes a headwall of any steep ground here.
+
+## Steep glacier faces are saturated blue with one-block column stripes
+
+- **Seen:** 2026-11-23, seed 3 at -5360,7800 and -4000,9000, facing the walls; also at the foot of the taiga cliff at -6000,9000.
+- **Known:** the ice block's colour is a strong blue against the snow, and steep faces show vertical stripes one block wide, stepping in height down the face.
+- **Not known:** whether the stripes are the cliff pass's 3D noise or the greedy mesher's face merging, or whether the blue is meant.
