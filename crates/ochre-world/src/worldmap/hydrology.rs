@@ -10,6 +10,8 @@ use ochre_base::WATER_LEVEL;
 pub(crate) const RIVER_MIN_AREA: f32 = 400_000.0;
 // No river is narrower, in blocks: one block wide doesn't fill with water reliably.
 const MIN_RIVER_WIDTH: f32 = 2.0;
+// Fewer cells than this in a river that never reaches water, and it is no river.
+const MIN_INLAND_RIVER_CELLS: usize = 30;
 
 // A sortable IEEE key, including negative elevations. Raw float bits sort only positive values.
 fn height_key(value: f32) -> u32 {
@@ -28,9 +30,6 @@ fn key_height(key: u32) -> f32 {
         !key
     })
 }
-// Fewer cells than this in a river that never reaches water, and it is no river.
-const MIN_INLAND_RIVER_CELLS: usize = 30;
-
 // How far apart, in blocks, the hills and hollows of the noise that breaks ties in the flood are.
 const TIE_WAVELENGTH: f64 = 900.0;
 
@@ -175,7 +174,6 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
     for &i in &open.roots {
         let i = i as usize;
         seen[i] = true;
-        // Elevation first, including below sea level, then deterministic flood ties.
         queue.push(
             ((height_key(height[i]) as u64) << 32) | ties[i] as u64,
             i as u32,
@@ -193,7 +191,6 @@ fn flood_over(height: &[f32], dim: usize, ties: &[u32], open: &OpenSea) -> Flood
             seen[n] = true;
             flood.filled[n] = height[n].max(flood.filled[i]);
             flood.down[n] = i as u32;
-            // elevation first, including below sea level, then deterministic flood ties
             queue.push(
                 ((height_key(flood.filled[n]) as u64) << 32) | ties[n] as u64,
                 n as u32,
@@ -332,13 +329,9 @@ pub(super) fn basins(height: &[f32], filled: &[f32], dim: usize) -> (Vec<Basin>,
                 basin.floor = i;
             }
             // all eight ways round, as the flood goes, so a basin is what it filled as one
-            let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-            for (dx, dz) in NEIGHBOURS {
-                let (nx, nz) = (x + dx, z + dz);
-                if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                    continue;
-                }
-                let n = nz as usize * dim + nx as usize;
+            let mut beside = [0usize; 8];
+            let count = cells_beside(i, dim, &mut beside);
+            for &n in &beside[..count] {
                 if of[n] == NONE && wet(n) {
                     of[n] = id;
                     stack.push(n);
@@ -416,22 +409,19 @@ fn drain(height: &mut [f32], flood: &Flood, basin_of: &[u32], id: u32, basin: &B
     cut
 }
 
-// Fills `basin` to its spill level, as the flood found it, and to just over the sea if under it.
-fn fill(height: &mut [f32], flood: &Flood, basin: &Basin) {
+// Fills `basin` to its spill level in `filled`, and to just over the sea if under it.
+fn fill(height: &mut [f32], filled: &[f32], basin: &Basin) {
     let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
     for &i in &basin.cells {
-        height[i] = height[i].max(flood.filled[i]).max(floor);
+        height[i] = height[i].max(filled[i]).max(floor);
     }
 }
 
 /// Fills every basin `wanted` picks up to its spill level, leaving a flat with no pit and no channel cut out of it.
 pub(super) fn fill_where(height: &mut [f32], dim: usize, wanted: impl Fn(&Basin) -> bool) {
     let filled = fill_levels(height, dim);
-    let floor = WATER_LEVEL as f32 + LAND_ABOVE_SEA;
     for basin in basins(height, &filled, dim).0.iter().filter(|b| wanted(b)) {
-        for &i in &basin.cells {
-            height[i] = height[i].max(filled[i]).max(floor);
-        }
+        fill(height, &filled, basin);
     }
 }
 
@@ -648,13 +638,9 @@ fn reroute(
     }
     while let Some((Reverse(bits), i)) = heap.pop() {
         let filled = key_height(bits);
-        let (x, z) = ((i % dim) as i64, (i / dim) as i64);
-        for (dx, dz) in NEIGHBOURS {
-            let (nx, nz) = (x + dx, z + dz);
-            if nx < 0 || nz < 0 || nx >= dim as i64 || nz >= dim as i64 {
-                continue;
-            }
-            let n = nz as usize * dim + nx as usize;
+        let mut beside = [0usize; 8];
+        let count = cells_beside(i, dim, &mut beside);
+        for &n in &beside[..count] {
             if basin_of[n] != id || !seen.insert(n) {
                 continue;
             }
@@ -701,7 +687,7 @@ pub fn run_keeping(map: &mut WorldMap, carve: bool, bowls: &[bool]) {
             if (basin.cells.len() < MIN_LAKE_CELLS && !in_bowl(&basin.cells)) || basin.depth < MIN_LAKE_DEPTH {
                 if basin.depth < FILL_DEPTH && !in_bowl(&basin.cells) {
                     // a hollow this shallow is filled flat: a channel out of it ran for kilometres on level ground and left a dry pit with a ditch out of it
-                    fill(&mut map.height, &flood, basin);
+                    fill(&mut map.height, &flood.filled, basin);
                     cut = true;
                 } else {
                     cut |= drain(&mut map.height, &flood, &basin_of, id as u32, basin, dim);
