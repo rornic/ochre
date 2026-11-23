@@ -35,12 +35,9 @@ use std::cell::LazyCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-// A skirt hangs this many cells under its edge's ground on gentle ground, and as many more as the ground is steep, up to
-// the maximum, since a coarser neighbour's ground can sit that much lower beside it.
+// A skirt hangs this many cells under its edge's ground, more as the ground is steep up to the maximum, since a coarser neighbour's ground can sit that much lower.
 pub(crate) const SKIRT_CELLS: i32 = 3;
 pub(crate) const MAX_SKIRT_CELLS: i32 = 40;
-
-// How far the tops of crown boxes are drawn in: a ball's, and a pine's nearer a cone's.
 
 pub(super) struct LodBlocks {
     pub(super) size: i32,
@@ -99,9 +96,7 @@ impl GridGround<'_> {
     }
 }
 
-// Whether a tree grows, and where, is decided from the noise at its exact position, as the
-// regions full detail reads are made from it, or levels would grow different trees. Only its
-// base stands on the ground this node draws.
+// Whether a tree grows is decided from the noise at its exact position, as full detail's regions are, or levels would grow different trees; only its base stands on this node's ground.
 impl TreeGround for GridGround<'_> {
     fn trees(&mut self, x: i64, z: i64) -> f64 {
         // stored as a byte
@@ -117,8 +112,7 @@ impl TreeGround for GridGround<'_> {
         self.sample(x, z).biome
     }
 
-    // From the climate alone, far cheaper than the whole terrain `trees` takes. The density is
-    // stored as a byte, which can round it up by half a step.
+    // From the climate alone, far cheaper than `trees`' whole terrain; the density is stored as a byte, which can round it up by half a step.
     fn rules_out(&mut self, x: i64, z: i64, chance: f64) -> bool {
         chance >= self.noise.tree_bound(x as f64, z as f64) + 1.0 / 255.0
     }
@@ -149,8 +143,7 @@ impl TreeGround for GridGround<'_> {
 }
 
 impl LodBlocks {
-    // The padded column under a mesh position. A vertex on a cell's edge reads the column on its
-    // far side, close enough for a gradient.
+    // The padded column under a mesh position; a vertex on a cell's edge reads the column on its far side, close enough for a gradient.
     pub(super) fn column_at(&self, position: Vec3) -> usize {
         let column = |c: f32| ((c + 0.5).floor() as i32).clamp(-1, self.size);
         Self::column(self.size, column(position.x), column(position.z))
@@ -170,8 +163,7 @@ impl LodBlocks {
         }
     }
 
-    // From the noise at each cell's centre, with the real trees where the cells are narrow
-    // enough, and forests as a tint on the ground where they're not.
+    // From the noise at each cell's centre, with real trees where cells are narrow enough and forests as a ground tint where not.
     pub(super) fn sample_coarse(regions: &RegionStore, key: LodKey) -> Self {
         let size = CHUNK_SIZE as i32;
         let padded = (size + 2) as usize;
@@ -261,17 +253,7 @@ impl LodBlocks {
                 let trees = trees_near(noise, &mut ground, min, min + span + cell);
                 if cell <= ROCK_MAX_CELL {
                     for rock in rocks_near(noise, &mut ground, min, min + span + cell, cell) {
-                        rock.plant(
-                            base,
-                            cell,
-                            (IVec3::splat(-1), IVec3::splat(size)),
-                            |coord, block| {
-                                let cell = &mut cells[Self::index(size, coord)];
-                                if rock.fits_into(*cell) {
-                                    *cell = block;
-                                }
-                            },
-                        );
+                        plant_rock(&mut cells, base, cell, &rock);
                     }
                 }
                 let canopy = (cell >= CANOPY_CELL).then(|| Canopy::new(&trees, base, cell, size));
@@ -295,17 +277,7 @@ impl LodBlocks {
                         boxes.extend(far_boxes(tree, base, cell));
                     }
                     if cell < BOX_CROWN_CELL {
-                        tree.plant(
-                            base,
-                            cell,
-                            (IVec3::splat(-1), IVec3::splat(size)),
-                            |coord, block| {
-                                let cell = &mut cells[Self::index(size, coord)];
-                                if grows_into(*cell, block) {
-                                    *cell = block;
-                                }
-                            },
-                        );
+                        plant_tree(&mut cells, base, cell, tree);
                     }
                 }
             }
@@ -420,32 +392,12 @@ impl LodBlocks {
             let min = I64Vec2::new(base.x, base.z) - cell;
             trees = trees_near(regions.terrain(), &mut heights, min, min + span + cell);
             for tree in &trees {
-                tree.plant(
-                    base,
-                    cell,
-                    (IVec3::splat(-1), IVec3::splat(size)),
-                    |coord, block| {
-                        let cell = &mut cells[Self::index(size, coord)];
-                        if grows_into(*cell, block) {
-                            *cell = block;
-                        }
-                    },
-                );
+                plant_tree(&mut cells, base, cell, tree);
             }
             if cell <= ROCK_MAX_CELL {
                 rocks = rocks_near(regions.terrain(), &mut heights, min, min + span + cell, cell);
                 for rock in &rocks {
-                    rock.plant(
-                        base,
-                        cell,
-                        (IVec3::splat(-1), IVec3::splat(size)),
-                        |coord, block| {
-                            let cell = &mut cells[Self::index(size, coord)];
-                            if rock.fits_into(*cell) {
-                                *cell = block;
-                            }
-                        },
-                    );
+                    plant_rock(&mut cells, base, cell, rock);
                 }
             }
         }
@@ -543,10 +495,7 @@ impl LodBlocks {
         ((cx + 1) * padded + cz + 1) as usize
     }
 
-    // The cell holding the ground's surface is solid however little of it the ground fills,
-    // and its top drawn at the ground's real height instead, so slopes step a block at a
-    // time however coarse the cells. Only under open air: under water or leaves, and beside
-    // water, the whole cell is drawn, since they fill the cell above from its bottom.
+    // The cell holding the ground's surface is solid however little it fills, its top drawn at the ground's real height so slopes step a block at a time; only under open air, as water and leaves fill the cell above from its bottom.
     pub(super) fn find_surface_top(&self, coord: IVec3) -> Option<f32> {
         let top = self.tops[Self::column(self.size, coord.x, coord.z)];
         let bottom = self.base_y + coord.y as i64 * self.cell;
@@ -668,9 +617,7 @@ impl BlockSource for LodBlocks {
         let block = self.raw(coord);
         let outside = |c: i32| c < 0 || c >= self.size;
         if outside(coord.x) || outside(coord.z) {
-            // The wall hangs from this node's own surface edge, so it's there whatever the cell
-            // beyond holds: that is sampled at this node's resolution, and a coarser neighbour
-            // that draws its ground lower would be left with a gap.
+            // the wall hangs from this node's own surface edge whatever the cell beyond holds, or a coarser neighbour with lower ground would leave a gap
             let inner = IVec3::new(
                 coord.x.clamp(0, self.size - 1),
                 coord.y,
@@ -687,9 +634,7 @@ impl BlockSource for LodBlocks {
                     }
                 }
             }
-            // The ground may run on up into the node above, where there's no air to find, so
-            // cells within the skirt's depth of the column's ground top count too. A buried
-            // node's ground is far above it, so it grows no walls.
+            // the ground may run up into the node above, where there's no air to find, so cells within the skirt's depth of its top count too; a buried node grows no walls
             let ground = self.tops[Self::column(self.size, inner.x, inner.z)];
             let bottom = self.base_y + inner.y as i64 * self.cell;
             if is_solid(self.raw(inner)) && bottom + self.cell > ground - depth as i64 * self.cell {
@@ -743,8 +688,7 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey, flora: Option<F
         )
     });
     let textured = cell_size <= TEXTURE_MAX_CELL_SIZE;
-    // untextured leaves are drawn solid, and textured ones are all past `INNER_LEAVES_REACH`, so
-    // have their holes filled: both hide the leaves behind them
+    // untextured leaves are drawn solid and textured ones are all past `INNER_LEAVES_REACH`, so have their holes filled: both hide the leaves behind them
     let meshes = mesh_blocks(
         &blocks,
         cell_size,
@@ -801,9 +745,29 @@ fn far_plants(regions: &RegionStore, heights: &mut HeightSampler, key: LodKey, t
     plants
 }
 
-// What a lone tree is drawn as in a node whose lowest block is `base` and whose cells are `cell` blocks wide: a prism for its trunk (to
-// 8-block cells, past which it is under a pixel) and a few big cards for its crown, fewer and bigger as the cells widen, like the near
-// crown's but not a smooth ball, which looks out of place beside them.
+// Plants `tree` into the node's padded `cells` where it may grow.
+fn plant_tree(cells: &mut [BlockType], base: I64Vec3, cell: i64, tree: &Tree) {
+    let size = CHUNK_SIZE as i32;
+    tree.plant(base, cell, (IVec3::splat(-1), IVec3::splat(size)), |coord, block| {
+        let at = &mut cells[LodBlocks::index(size, coord)];
+        if grows_into(*at, block) {
+            *at = block;
+        }
+    });
+}
+
+// Plants `rock` into the node's padded `cells` where it fits.
+fn plant_rock(cells: &mut [BlockType], base: I64Vec3, cell: i64, rock: &Rock) {
+    let size = CHUNK_SIZE as i32;
+    rock.plant(base, cell, (IVec3::splat(-1), IVec3::splat(size)), |coord, block| {
+        let at = &mut cells[LodBlocks::index(size, coord)];
+        if rock.fits_into(*at) {
+            *at = block;
+        }
+    });
+}
+
+// What a lone tree is drawn as in a node whose lowest block is `base` and cells `cell` blocks wide: a trunk prism (to 8-block cells) and a few big crown cards, fewer and bigger as the cells widen.
 pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
     let mesh_at = |block: Vec3| (block - base.as_vec3()) / cell as f32 - 0.5;
     let mut boxes = Vec::new();
@@ -842,11 +806,7 @@ pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
     boxes
 }
 
-// Fills the cells up column (`cx`, `cz`) of the node with its lowest block and cell size at
-// `base`, each sampled at its middle, with ground `height` high on its `gradient` at `temperature`.
-// The cell the ground tops out in is solid however little of it the ground fills. Its blocks are
-// chosen by `shore_top`, the water a bank's sand is laid by (`columns::shore_top`), and its water
-// and ice by `water_top`, its own.
+// Fills the cells up column (`cx`, `cz`) of the node at `base`, each sampled at its middle, with ground `height` high on its `gradient` at `temperature`; blocks follow `shore_top` (see `columns::shore_top`) and water and ice `water_top`.
 fn fill_column(
     cells: &mut [BlockType],
     biomes: &Biomes,
@@ -872,28 +832,13 @@ fn fill_column(
             block = BlockType::Snow;
         }
         block = freeze_cell(block, temperature, middle + cell / 2, (cell, water_top));
+        let water = || freeze_cell(BlockType::Water, temperature, middle + cell / 2, (cell, water_top));
         if block == BlockType::Air && bottom < top {
-            // the ground's own block fills the cell, except under water, where the water drawn over
-            // sand is what's seen: shallow water, which a cell's middle misses, would turn to sand
-            block = if water_top > top && water_top > bottom {
-                freeze_cell(
-                    BlockType::Water,
-                    temperature,
-                    middle + cell / 2,
-                    (cell, water_top),
-                )
-            } else {
-                block_at(top - 1)
-            };
+            // the ground's own block fills the cell, except under water, which a cell's middle misses and would turn to sand
+            block = if water_top > top && water_top > bottom { water() } else { block_at(top - 1) };
         } else if block == BlockType::Air && water_top > bottom && water_top > top {
-            // water reaching less than halfway into a cell over the ground is still water there,
-            // drawn up to its real surface: left as air, the sand under it would show
-            block = freeze_cell(
-                BlockType::Water,
-                temperature,
-                middle + cell / 2,
-                (cell, water_top),
-            );
+            // water reaching under halfway into a cell over the ground is still water there, or the sand under it would show
+            block = water();
         }
         block = rocked(block, || rock(middle));
         cells[LodBlocks::index(size, IVec3::new(cx, cy, cz))] =

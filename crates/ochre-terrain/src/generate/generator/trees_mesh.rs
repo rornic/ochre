@@ -1,9 +1,5 @@
-use super::buffers::{GrassTint, MeshBuffers, UNFOLDED};
+use super::buffers::{stored_normal, GrassTint, MeshBuffers, UNFOLDED};
 
-// Bark's texture coordinates along a trunk are worked out from the world's, which are negative for half of it, and a vertex whose `uv.x` is under -512 is
-// drawn by the shader as sculpted ground, with a second material read from the coordinates: bands of dirt up the trunk. So they are taken mod this, which every
-// power of two a material's period can be, up to 64, divides.
-const PERIOD_WRAP: f32 = 64.0;
 use super::mesh::{between, hash01};
 use super::shading::face_light;
 use super::source::{BlockSource, BoxShape, TreeBox, TreeFaces};
@@ -13,6 +9,9 @@ use bevy::math::{IVec3, Vec2, Vec3};
 use ochre_base::block::{BlockType, Face, Tile};
 use std::f32::consts::TAU;
 use std::ops::Deref;
+
+// Bark's texture coordinates go negative for half the world, and a vertex with `uv.x` under -512 is drawn as sculpted ground (bands of dirt up the trunk), so they are taken mod this, which every power-of-two period up to 64 divides.
+const PERIOD_WRAP: f32 = 64.0;
 
 // How much wider than the trunk the lowest log is, where it meets the ground, at most this wide.
 const FLARE: f32 = 1.25;
@@ -120,8 +119,7 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
                 .extend(atlas_cell)
                 .to_array()
         });
-        // the cube's faces along z store their normals reversed
-        let normal = [outward.x, outward.y, -outward.z];
+        let normal = stored_normal(outward);
         self.buffers
             .push_tiled_quad(points.map(|p| p.to_array()), normal, uvs, colors, [lit; 4]);
     }
@@ -215,8 +213,7 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
                 [from.dot(card.right), from.dot(card.up)]
             })
             .collect();
-        // the cube's faces along z store their normals reversed
-        let normal = [card.shading.x, card.shading.y, -card.shading.z];
+        let normal = stored_normal(card.shading);
         let positions: Vec<[f32; 3]> = points.iter().map(|p| p.to_array()).collect();
         self.buffers
             .push_double_sided_fan(&positions, normal, &uvs, &colors, lit);
@@ -241,8 +238,7 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
     }
 }
 
-/// A painted card on a surface leaf: its middle and the directions across it, its outline, and the way
-/// the crown's light treats it, outward from the crown and not from the card itself.
+/// A painted card on a surface leaf: its middle, the directions across it, its outline, and its shading direction, outward from the crown and not from the card itself.
 pub(super) struct Card {
     pub(super) centre: Vec3,
     pub(super) right: Vec3,
@@ -281,8 +277,7 @@ pub(super) fn depth_shade(above: usize) -> f32 {
     (1.0 - DEPTH_DARKEN * above as f32).max(DEPTH_MIN)
 }
 
-/// The card for the leaf whose middle is `middle`, at `world` in the world, open to the air along `open` (the sum of its open
-/// sides), or none if this leaf gets no card.
+/// The card for the leaf whose middle is `middle`, at `world`, open to the air along `open` (the sum of its open sides), or none if it gets no card.
 pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: f32) -> Option<Card> {
     if hash01(world, 90) >= CARD_DENSITY {
         return None;
@@ -330,15 +325,14 @@ pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: 
 // How many sides a far tree's shapes have, seen from too far for more to count.
 const FAR_SIDES: usize = 8;
 
-#[derive(Clone, Copy)]
 // One ring of a far trunk: its middle and its radii across x and z.
+#[derive(Clone, Copy)]
 struct FarRing {
     centre: Vec3,
     radius: Vec2,
 }
 
-/// Draws `tree_box`, which is not a cuboid, as the shape it stands for: a trunk as a bowed prism, a pine's layer as a cone, a
-/// broadleaf's crown as a ball, with smooth normals so the crown shades as a mass. `cell` is the mesh's blocks to a cell.
+/// Draws `tree_box`, which is not a cuboid, as the shape it stands for: a trunk as a bowed prism or a crown card. `cell` is the mesh's blocks to a cell.
 pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec3, cell: f32, light: f32) {
     let (min, max) = (tree_box.min, tree_box.max);
     let (centre, half) = ((min + max) / 2.0, (max - min) / 2.0);
@@ -372,8 +366,7 @@ pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec
             }
         })
         .to_vec();
-    let top = Some(Vec3::new(centre.x + lean.x, max.y, centre.z + lean.y));
-    let bottom: Option<Vec3> = None;
+    let top = Vec3::new(centre.x + lean.x, max.y, centre.z + lean.y);
     let side = tree_box.block.tile(Face::Side).atlas_cell();
     let end = tree_box.block.tile(Face::Top).atlas_cell();
     let colour = |cell: f32| tint.extend(cell).to_array();
@@ -403,23 +396,17 @@ pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec
             triangles.push([a + 1, c, c + 1]);
         }
     }
-    // a cap is a fan from a pole to the ring beside it
-    for (pole, ring, up) in [
-        (top, rings.len() as u32 - 1, 1.0),
-        (bottom, 0, -1.0),
-    ] {
-        let Some(pole) = pole else { continue };
-        let hub = vertices.len() as u32;
-        vertices.push((pole, Vec3::Y * up, [0.0, blocks(pole.y - min.y)], colour(end)));
-        for k in 0..FAR_SIDES as u32 {
-            triangles.push([hub, ring * across + k, ring * across + k + 1]);
-        }
+    // a cap is a fan from a pole to the top ring
+    let ring = rings.len() as u32 - 1;
+    let hub = vertices.len() as u32;
+    vertices.push((top, Vec3::Y, [0.0, blocks(top.y - min.y)], colour(end)));
+    for k in 0..FAR_SIDES as u32 {
+        triangles.push([hub, ring * across + k, ring * across + k + 1]);
     }
     buffers.push_double_sided_mesh(&vertices, light, &triangles);
 }
 
-/// Draws the logs of `faces` as eight-sided prisms: a tree's trunk bowed along its lean, any other log
-/// straight along the logs beside it.
+/// Draws the logs of `faces` as eight-sided prisms: a tree's trunk bowed along its lean, any other log straight along the logs beside it.
 pub(super) fn mesh_trees<S: BlockSource>(
     faces: &TreeFaces<S>,
     buffers: &mut MeshBuffers,

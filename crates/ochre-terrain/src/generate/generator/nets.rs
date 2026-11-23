@@ -1,5 +1,5 @@
 // Ground as one sculpted surface (surface nets, rock by dual contouring), see docs/sculpted-ground.md.
-use super::buffers::{GrassTint, MeshBuffers, Vertex};
+use super::buffers::{stored_normal, GrassTint, MeshBuffers, Vertex};
 use super::shading::face_light;
 use super::source::BlockSource;
 use crate::chunk::CHUNK_SIZE;
@@ -161,8 +161,7 @@ fn noise(seed: u32, p: Vec3) -> f32 {
     lerp(face(0), face(1), t.z)
 }
 
-// `cell_size` blocks to a cell: a chunk's are 1, a LOD node's wider, whose edge hangs a skirt instead of matching.
-// `beside` gets the triangles just past a chunk's edge that its neighbours draw, exact as they draw them, for what stands there.
+// `cell_size` blocks to a cell: a chunk's are 1, a LOD node's wider, whose edge hangs a skirt; `beside` gets the triangles just past a chunk's edge that its neighbours draw, exactly, for what stands there.
 pub(super) fn mesh_nets(
     source: &impl BlockSource,
     buffers: &mut MeshBuffers,
@@ -193,8 +192,7 @@ fn sculpt<const MARGIN: i32>(
     let margin = MARGIN;
     // lumps and wobble are in blocks, over this for cells
     let cell_blocks = cell_size as f32;
-    // blocks by index, x then z then y as the neighbourhood holds them, index `a` being the chunk's block `a - margin`
-    // a constant before monomorphising, as the grid's indexing runs half again as slow without
+    // blocks by index, x then z then y as the neighbourhood holds them, index `a` being the chunk's block `a - margin`; a const as the indexing runs half again as slow without
     let n = const { (SIZE + 2 * MARGIN) as usize };
     let index = |i: usize, j: usize, kk: usize| (i * n + kk) * n + j;
     let local = |i: usize, j: usize, kk: usize| IVec3::new(i as i32 - margin, j as i32 - margin, kk as i32 - margin);
@@ -483,8 +481,7 @@ fn sculpt<const MARGIN: i32>(
                     if here {
                         quad.reverse();
                     }
-                    // a chunk draws the faces over its own solid blocks, as the cube mesher did, so an all-air chunk, which the loader never meshes, draws
-                    // none; a node keeps the low side, as its edges hang skirts
+                    // a chunk draws the faces over its own solid blocks, as the cube mesher did, so an all-air chunk the loader never meshes draws none; a node keeps the low side, as its edges hang skirts
                     let (sol, other) = if here { ((i, j, kk), (i + a, j + b, kk + c)) } else { ((i + a, j + b, kk + c), (i, j, kk)) };
                     let (oi, oj, ok) = if lod {
                         (i, j, kk)
@@ -649,9 +646,7 @@ fn sculpt<const MARGIN: i32>(
             }
         }
     }
-    // inside its cell across each axis a crossing runs along, a vertex can't fold a triangle, however the passes moved it. Only
-    // the vertices of a quad that would fold are held so, a round at a time, as holding one can fold a quad beside it: held
-    // everywhere, a smooth slope of soft ground was pulled back onto its blocks' staircase and read as terraces
+    // held inside its cell across each axis a crossing runs along, a vertex can't fold a triangle; held only where a quad would fold, a round at a time as holding one can fold its neighbour, since held everywhere smooth slopes read as terraces
     const INSET: f32 = 1.0 / 64.0;
     const HOLD_ROUNDS: usize = 4;
     let hold = |offset: &mut Vec3, axes: u8| {
@@ -802,8 +797,7 @@ fn sculpt<const MARGIN: i32>(
                 };
                 buffers.vertices.push(Vertex {
                     position: position.to_array(),
-                    // the cube's faces along z store their normals reversed
-                    normal: [normal.x, normal.y, -normal.z],
+                    normal: stored_normal(normal),
                     uv: [TRIPLANAR - other_tile.atlas_cell(), toward_other + tinted_side],
                 });
                 // tinted as its own material, or the blend's tinted one, drawn in the triangle's
@@ -824,8 +818,7 @@ fn sculpt<const MARGIN: i32>(
     past_bottom.min(buffers.indices.len())
 }
 
-// Each open edge along a node's sides, of the surface drawn from index `start` up to the row past its bottom at `past_bottom`, hangs a wall
-// into the ground, see docs/sculpted-ground.md.
+// Hangs a wall into the ground from each open edge along a node's sides, of the surface from index `start` up to the row past its bottom at `past_bottom`, see docs/sculpted-ground.md.
 fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usize, past_bottom: usize) {
     let side = |c: f32| c == -0.5 || c == SIZE as f32 - 0.5;
     let at = |i: u32| buffers.vertices[i as usize].position;
@@ -836,7 +829,7 @@ fn hang_skirts(source: &impl BlockSource, buffers: &mut MeshBuffers, start: usiz
     // how far, and which way, a vertex's skirt runs: into the ground, in the plane of the side across `axis`, never up
     let reach = |top: u32, axis: usize| {
         let (p, n) = (at(top), buffers.vertices[top as usize].normal);
-        // the cube's faces along z store their normals reversed
+        // undoes `stored_normal`
         let mut inward = Vec3::new(-n[0], -n[1], n[2]);
         inward[axis] = 0.0;
         let inward = if inward.length_squared() > 1e-6 { inward.normalize() } else { Vec3::NEG_Y };

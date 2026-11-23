@@ -11,9 +11,7 @@ use crate::generate::trees::hash;
 use ochre_base::block::{BlockType, TILE_COUNT};
 use ochre_base::terrain_source::TerrainSource;
 
-// Accumulates one mesh's worth of vertex/index/color data - one instance for the
-// opaque blocks, a second for water, so they can become separate `Mesh`es with
-// separate materials (water needs alpha blending, opaque blocks don't).
+// One mesh's vertex, index and colour data: opaque blocks and water get one each, as water needs alpha blending.
 #[derive(Default)]
 pub(super) struct MeshBuffers {
     pub(super) vertices: Vec<Vertex>,
@@ -29,22 +27,23 @@ pub(super) struct MeshBuffers {
     pub(super) blends: Vec<f32>,
 }
 
+// The cube's faces along z store their normals reversed, so every mesh's do.
+pub(super) fn stored_normal(normal: Vec3) -> [f32; 3] {
+    [normal.x, normal.y, -normal.z]
+}
+
 // The value at `(u, v)` across a quad from its values at the four corners, [along ta][along tb].
 fn blend_corners(corners: [[f32; 2]; 2], u: f32, v: f32) -> f32 {
     let along = |c: [f32; 2]| c[0] + (c[1] - c[0]) * v;
     along(corners[0]) + (along(corners[1]) - along(corners[0])) * u
 }
 
-// How a face draws, carried in each vertex's second uv, see `world.wesl`: its own tile, its
-// tile with leaves' holes filled, or its block's mean colour.
+// How a face draws, in each vertex's second uv (see `world.wesl`): its own tile, that tile with leaves' holes filled, or its block's mean colour.
 pub(super) const TEXTURED: f32 = 0.0;
-
 pub(super) const TEXTURED_SOLID: f32 = 0.75;
-
 pub(super) const UNTEXTURED: f32 = 1.0;
 
-// Added to the `x` of a painted face's texture coordinates that the mesh worked out itself, so `material_uv` in
-// `block_texture.wesl` takes them as they are, in blocks along the face's plane from the chunk's corner.
+// Added to the `x` of texture coordinates the mesh worked out itself, so `material_uv` in `block_texture.wesl` takes them as blocks along the face's plane from the chunk's corner.
 pub(super) const UNFOLDED: f32 = 1024.0;
 
 impl MeshBuffers {
@@ -69,9 +68,7 @@ impl MeshBuffers {
         self.push_quad_indices(triangle_start);
     }
 
-    // A spray particle: four corners at `base` the shader spreads to face the camera, thrown along `flow` in blocks
-    // a second, `size` its width in blocks, a droplet scattering, `burst` the phase of its emitter's bursts and `seed`
-    // when in each burst it's thrown.
+    // A spray particle: four corners at `base` the shader turns to the camera, thrown along `flow` in blocks a second; `burst` is its emitter's phase and `seed` when in each burst it goes.
     pub(super) fn push_particle(
         &mut self,
         base: Vec3,
@@ -120,8 +117,7 @@ impl MeshBuffers {
         self.push_quad_indices(triangle_start);
     }
 
-    // As `push_tiled_quad`, drawn from both sides: the one set of vertices, with the indices of
-    // both windings, as the material culls one side of a triangle.
+    // As `push_tiled_quad`, drawn from both sides: one set of vertices with both windings' indices, as the material culls one side.
     pub(super) fn push_double_sided_quad(
         &mut self,
         positions: [[f32; 3]; 4],
@@ -135,8 +131,7 @@ impl MeshBuffers {
         self.indices.extend([0, 2, 1, 1, 2, 3].map(|i| start + i));
     }
 
-    // Triangles over `vertices`, each a position, normal, uv and colour, drawn from both sides with one light, for a shape too small to
-    // be seen closely, whose normals are smooth.
+    // Triangles over `vertices` (position, normal, uv, colour), drawn from both sides with one light, for a shape too small to see closely.
     pub(super) fn push_double_sided_mesh(
         &mut self,
         vertices: &[(Vec3, Vec3, [f32; 2], [f32; 4])],
@@ -145,10 +140,9 @@ impl MeshBuffers {
     ) {
         let start = self.vertices.len() as u32;
         for &(position, normal, uv, color) in vertices {
-            // the cube's faces along z store their normals reversed
             self.vertices.push(Vertex {
                 position: position.to_array(),
-                normal: [normal.x, normal.y, -normal.z],
+                normal: stored_normal(normal),
                 uv,
             });
             self.colors.push(color);
@@ -160,8 +154,7 @@ impl MeshBuffers {
         }
     }
 
-    // A fan of triangles from the first position, the centre, to each of the rest, the rim in order, from both sides, with one
-    // light and normal for all, so its outline can be any shape with that many corners.
+    // A fan from the first position (the centre) to each rim position in order, drawn from both sides with one light and normal.
     pub(super) fn push_double_sided_fan(
         &mut self,
         positions: &[[f32; 3]],
@@ -329,8 +322,7 @@ const OXBLOOD_NONE_ABOVE: f32 = 0.17;
 /// What the cold's long grasses and heath are tinted toward, a deep reddish brown darker than the tan grass round them, so they read by value against the russet ground.
 pub(super) const OXBLOOD_TINT: Vec3 = Vec3::new(0.30, 0.11, 0.08);
 
-// Reddish patches in the cold country's grass, in the world's grid of `RUSSET_PATCH` blocks, where noise is over `RUSSET_FROM`
-// and fully red past `RUSSET_TO`, so about a third of the ground, and a rust-red tint a little darker than the tan.
+// Rust-red patches in the cold country's grass, in a grid of `RUSSET_PATCH` blocks, from noise `RUSSET_FROM` to fully red at `RUSSET_TO`: about a third of the ground.
 const RUSSET_PATCH: f32 = 40.0;
 const RUSSET_SALT: u64 = 0x2E55_E7ED;
 const RUSSET_FROM: f32 = 0.5;
@@ -347,6 +339,7 @@ const BROWN_STRENGTH: f32 = 0.92;
 const MOSAIC_SMALL: f32 = 40.0;
 const MOSAIC_LARGE: f32 = 150.0;
 const MOSAIC_LARGE_SHARE: f32 = 0.55;
+
 struct Patch {
     salt: u64,
     from: f32,
@@ -378,14 +371,13 @@ pub(super) fn rock_darkening(block: BlockType) -> Option<f32> {
     }
 }
 
-// Tints grass by the climate it grows in. Climate drifts over thousands of blocks, so it's
-// sampled at the mesh's four corners and blended across it, rather than at every vertex.
+// Tints grass by the climate it grows in, sampled on a coarse grid over the mesh and blended across it, as climate drifts over thousands of blocks.
 pub(super) struct GrassTint {
     // a square grid of samples over the mesh, row by row from (-x, -z), the outer ones on its edges so neighbouring meshes share their tints along each edge
     pub(super) corners: Vec<Vec3>,
     // how cold it is at the same samples, 0 to 1, over which the long grasses go oxblood, as the heath does, see `oxblood_at`
     cold: Vec<f32>,
-    // and over a warmer ramp, how far grass on the ground goes brown, see `cold_at`
+    // how brown the ground's grass goes at the same samples, 0 to 1, over a warmer ramp than `cold`, see `cold_at`
     brown: Vec<f32>,
     // what the hollows' macro occlusion leaves of the light at the same samples, 0..1, see `shade_at`
     shade: Vec<f32>,
@@ -506,8 +498,7 @@ impl GrassTint {
         }
     }
 
-    // The tint of grass at `local` in the cold: the climate's, pulled to `BROWN_TINT` by how cold it is, so the tundra's grass is brown and
-    // never the olive the dry cold palette gives, and a taiga's fringe fades from its green to brown with the temperature.
+    // The climate's grass tint at `local`, pulled to `BROWN_TINT` by the cold, so the tundra's grass is never the olive the dry cold palette gives.
     pub(super) fn cold_at(&self, local: Vec3) -> Vec3 {
         self.at(local).lerp(BROWN_TINT, self.brown_at(local) * BROWN_STRENGTH)
     }
@@ -547,8 +538,7 @@ const HOLLOW_FROM: f32 = 0.15;
 const HOLLOW_TO: f32 = 0.55;
 const MACRO_AO: f32 = 0.3;
 
-// Blocks between samples across a coarse node, and the most samples along a side of one: a chunk's width, so a node
-// samples where the chunks beside it do and a river's bank wetting, which climbs over about 50 blocks, pops no colour at the handover.
+// Blocks between samples across a coarse node, and the most along a side: a chunk's width, so a node samples where its chunk neighbours do and a river bank's wetting pops no colour at the handover.
 const TINT_SPACING: f32 = 16.0;
 const TINT_MAX_SIDE: usize = 17;
 
@@ -566,13 +556,10 @@ fn grid_blend<T: Copy>(values: &[T], mix: impl Fn(T, T, f32) -> T, local: Vec3) 
     mix(row(j), row(j + 1), v)
 }
 
-// Cells wider than this draw their block's mean colour instead of its texture, which tiles a
-// cell's width of times over a face, since one stretched over a coarse cell would read as a
-// giant block. Past a few blocks a tile is under a pixel and mipmaps down to the mean anyway.
+// Cells wider than this draw their block's mean colour, not a texture tiled over them: past a few blocks a tile is under a pixel and mipmaps to the mean anyway.
 pub(super) const TEXTURE_MAX_CELL_SIZE: i64 = 4;
 
-// Tree boxes keep their leaf texture's holes up to cells this wide. Past it boxes are mostly
-// canopy, too wide to see through, and keep the texture with its holes filled.
+// Tree boxes keep their leaf texture's holes up to cells this wide; wider ones are too thick to see through and fill them.
 pub(super) const BOX_TEXTURE_MAX_CELL: i64 = 8;
 
 // A quad's `uvs` scaled to count blocks across it, so a texture isn't stretched over a whole box.
@@ -610,8 +597,7 @@ const fn v(position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> Vertex {
     }
 }
 
-// A unit cube's faces, in `FACE_NORMAL_OFFSET` order. Side faces put v = 0 at their top, as the
-// atlas's tiles start from their top row.
+// A unit cube's faces, in `FACE_NORMAL_OFFSET` order; side faces put v = 0 at their top, as the atlas's tiles start from their top row.
 pub(super) const CUBE: [[Vertex; 4]; 6] = [
     // front
     [
@@ -677,8 +663,7 @@ mod russet_tests {
         }
     }
 
-    // The tundra reads a temperature of 0.03 to 0.15 and a humidity up to about 0.13 on a seed measured, so this runs well past both: at
-    // every climate there, the base grass is khaki, never green, while grassland stays green.
+    // The tundra reads 0.03 to 0.15 temperature and up to about 0.13 humidity on a seed measured, so this runs past both: its base grass is khaki, never green, while grassland stays green.
     #[test]
     fn test_cold_grass_is_khaki_and_never_green_where_warm_grass_stays_green() {
         use ochre_base::biome::{grass_tint, Climate};
