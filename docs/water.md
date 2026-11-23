@@ -173,6 +173,7 @@ rapid climbing more than a block a column is a ramp, not stairs. Bigger drops ar
   mostly waterfalls.
 - The `worldview` skill to look, and `worldview <seed> info x z` for one column's ground, dry
   ground, smooth ground, water and map cell.
+- `worldview <seed> dryrivers 0 0` counts the map's river cells with no river or lake water in their own 32-block square, and which of them have it on their line a few blocks off: the meander (`source.rs`, up to 43 blocks) draws a river off its map line, so a cell's square can miss its own river. It is 99% of them (seed 1 581 cells, 578 with water on their line; 42 701, 696; 1337 805, 800). The rest are the last cell of a river into the sea, a beach the river stops short of (`ends`, below 0.15). Zero are a stretch with a gap in its water. `worldview <seed> course x z` lists one stretch's reach, levels and the blocks' ground and water along it.
 
 Before this model (seeds 368871838, 5, 2198630850, the default 65 km world): lake walls over 1.5
 blocks 0 / 23 / 16 (6+ blocks: 0 / 6 / 10), dry map cells under a lake's level 32 / 42 / 61. After:

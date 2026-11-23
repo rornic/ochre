@@ -171,6 +171,12 @@ impl RiverProfiles {
         self.ends[self.index[cell] as usize]
     }
 
+    /// The reach, levels and course of the stretch that starts in `cell`, if one does.
+    pub(super) fn course(&self, cell: usize) -> Option<(f32, [f32; PROFILE_POINTS + 1], Stretch)> {
+        let n = *self.index.get(cell).filter(|&&n| n != Self::NONE)? as usize;
+        Some((self.ends[n], self.data[n], self.stretches[n]))
+    }
+
     /// Where each river's water falls: the lip's position on the stretch's curve, the drop and the level above it.
     pub fn falls(&self) -> Vec<(f64, f64, f32, f32)> {
         let mut out = Vec::new();

@@ -88,12 +88,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
 - **Not known:** whether anyone sees it at that distance. Not looked at.
 
-## Some river cells still have no water at block scale
-
-- **Seen:** 2026-11-19, `worldview <seed> dryrivers 0 0`: 528 of 9,853 river cells on seed 1, 693 of 13,825 on seed 42 and 693 of 12,507 on seed 1337 have no river or lake water anywhere in them (sampled every 4 blocks), after mountain rivers were fixed (they were 1,233, 1,040 and 1,260; see `docs/terrain-perf.md`, Mountain rivers reach their lakes).
-- **Known:** the worst left on seed 1 is at -2704,14928, a map surface of 574 over ground 113 blocks under it. Not looked into.
-- **Not known:** how many are small streams ending in hollows, rivers that stop at a fall onto ground under a lake they don't drain into, or something else.
-
 ## Inselbergs do not read as bare rock domes
 
 - **Seen:** 2026-11-23, from the ground at eye height (`OCHRE_CLEAR_SKY`, noon). Seed 6 at -6096,4368 (savanna): ground 65 to 73 over a stretch 650 blocks wide against 45 to 50 round it, flat on top and cut by valley cliff bands, so it shows as a low plateau with a rock slope and no dome. Seed 3 at 3600,21808 (forest): a round dome 70 blocks over 47, but green with trees on it and standing in a lake.
