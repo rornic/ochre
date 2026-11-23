@@ -77,6 +77,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Not known:** whether the rest shows in the game. The renderer is orthographic with no depth precision limit, so the counts are geometry, not the GPU's depth test. Level n beside level n + 1, and a chunk beside a node at the hand-over, were not measured.
 - **To fix:** make the two nodes' vertices on their shared row agree (`docs/sculpted-ground.md`, Open).
 - **Tried, 2026-11-23:** reading 13 rows of real ground past a node's top and bottom makes the shared row agree (332 of 332 vertices) and cuts the counts from 13 to 88 pixels to 1 to 8, but LOD meshing in `bench` went from 175 to 259 ms and the level 1 ring from 1.8 to 2.3 s, measured with other builds running. Held: too dear for a fight not noticed in play. A cheaper way would share only the vertices of the row itself.
+- **Measured quiet, 2026-11-23:** `bench` on that commit (5005be3) against its parent (abcdadd), four alternating pairs on 16 cores with nothing else running: LOD meshing 170.6 to 172.0 ms against 242.4 to 243.3 ms (1.42 times, each level 29 to 52% dearer), the level 1 ring 1.7 s against 2.1 s (one run 3.2 s). Chunk meshing and vertices are unchanged, LOD vertices 119,595 to 119,558. The loaded figures above hold.
 
 ## Rock's facets turn at every vertex in 8-block cells
 
