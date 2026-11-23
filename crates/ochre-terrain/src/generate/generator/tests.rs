@@ -4283,3 +4283,34 @@ fn tuft_on_a_cliff_keeps_its_size() {
         assert!(reach.max_element() < 6.0, "{ground}: vertices reach {reach}");
     }
 }
+
+// A rapid that runs down a ramp, however steeply and across the map's grid, is a surface, not walls of water standing in it:
+// seed 6's river runs down 5 blocks in 9 columns at (-8197, 15214), which drew a fin of sheet on each column it stepped.
+#[test]
+fn test_a_rapid_is_a_sloped_surface_with_no_walls_of_water_in_it() {
+    use bevy::render::mesh::{Indices, VertexAttributeValues};
+    use ochre_world::worldmap::{character::world_config, generate, WorldConfig, WorldTerrain};
+    let map = Arc::new(generate(6, world_config(6, WorldConfig::default())));
+    let regions = Arc::new(RegionStore::new(Arc::new(WorldTerrain::new(map))));
+    let coord = ChunkCoordinate(I64Vec3::new(-513, 13, 950));
+    let mut neighbours = vec![None; 26];
+    for (dx, dy, dz) in (-1..=1).flat_map(|x| (-1..=1).flat_map(move |y| (-1..=1).map(move |z| (x, y, z)))) {
+        if (dx, dy, dz) != (0, 0, 0) {
+            let at = ChunkCoordinate(coord.0 + I64Vec3::new(dx, dy, dz));
+            neighbours[neighbor_26_index(dx as i32, dy as i32, dz as i32)] = Some(Arc::new(generate_chunk(regions.clone(), at)));
+        }
+    }
+    let meshes = generate_chunk_mesh_with(Arc::new(generate_chunk(regions.clone(), coord)), neighbours, coord, &regions, true);
+    let water = meshes.water.expect("the rapid has water");
+    let Some(VertexAttributeValues::Float32x3(pos)) = water.attribute(Mesh::ATTRIBUTE_POSITION) else { panic!() };
+    let Some(VertexAttributeValues::Float32x3(normal)) = water.attribute(Mesh::ATTRIBUTE_NORMAL) else { panic!() };
+    let Some(Indices::U32(indices)) = water.indices() else { panic!() };
+    let walls = indices
+        .chunks(3)
+        .filter(|t| {
+            let ys = t.iter().map(|&i| pos[i as usize][1]);
+            normal[t[0] as usize][1] < 0.5 && ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min) > 0.01
+        })
+        .count();
+    assert_eq!(0, walls, "{walls} triangles of water walls in a rapid");
+}

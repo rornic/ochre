@@ -178,20 +178,37 @@ impl RiverProfiles {
         out
     }
 
-    /// The level `blocks` along the stretch that starts in `cell`, which may be further than its end, on the stretch after it.
+    /// The level `blocks` along the stretch that starts in `cell`, which may be further than its end, on the stretch after it,
+    /// if a lip lies between: a fall's bed steps down before it, but a rapid, which only runs down a ramp, keeps its own.
     fn level_ahead(&self, cell: usize, t: f32, blocks: f32) -> f32 {
         let chord = |n: usize| {
             let s = &self.stretches[n];
             ((s.b.0 - s.a.0).powi(2) + (s.b.1 - s.a.1).powi(2)).sqrt() as f32
         };
+        // whether stretch `n` has a lip from `from` to `to`, as fractions of it
+        let lip_in = |n: usize, from: f32, to: f32| {
+            let points = PROFILE_POINTS as f32;
+            self.lips.get(n).is_some_and(|lips| {
+                lips.iter().enumerate().any(|(k, &lip)| {
+                    let at = (k as f32 + lip) / points;
+                    !lip.is_nan() && at >= from && at < to
+                })
+            })
+        };
         let n = self.index[cell] as usize;
-        let t = t + blocks / chord(n).max(1.0);
-        if t <= 1.0 {
-            return self.level(cell, t);
+        let t_end = t + blocks / chord(n).max(1.0);
+        if t_end <= 1.0 {
+            return self.level(cell, if lip_in(n, t, t_end) { t_end } else { t });
         }
-        match self.index.get(self.stretches[n].to).filter(|&&m| m != Self::NONE) {
-            Some(&m) => self.level(self.stretches[n].to, ((t - 1.0) * chord(n) / chord(m as usize).max(1.0)).min(1.0)),
-            None => self.level(cell, 1.0),
+        let next = self.index.get(self.stretches[n].to).filter(|&&m| m != Self::NONE);
+        let Some(&m) = next else {
+            return self.level(cell, if lip_in(n, t, 1.0) { 1.0 } else { t });
+        };
+        let into = ((t_end - 1.0) * chord(n) / chord(m as usize).max(1.0)).min(1.0);
+        if lip_in(n, t, 1.0) || lip_in(m as usize, 0.0, into) {
+            self.level(self.stretches[n].to, into)
+        } else {
+            self.level(cell, t)
         }
     }
 
@@ -1056,6 +1073,32 @@ mod tests {
         assert_eq!(40.0, profiles.level_ahead(0, 0.95, SHEET_THICKNESS));
         // and the last stretch's end has nothing past it
         assert_eq!(40.0, profiles.level_ahead(1, 0.95, SHEET_THICKNESS));
+    }
+
+    #[test]
+    fn test_the_bed_keeps_to_the_level_down_a_rapid_with_no_lip() {
+        // a ramp from 50 to 45 over the stretch, steeper than the sheet's two blocks over its thickness: no fall, so no step
+        let data = std::array::from_fn(|k| 50.0 - 5.0 * k as f32 / PROFILE_POINTS as f32);
+        let stretch = Stretch {
+            from: 0,
+            to: 1,
+            a: (0.0, 0.0),
+            b: (32.0, 0.0),
+            m0: [0.0; 2],
+            m1: [0.0; 2],
+            width: 4.0,
+            end_width: 4.0,
+            into_river: false,
+        };
+        let profiles = RiverProfiles {
+            index: vec![0, RiverProfiles::NONE],
+            data: vec![data],
+            lips: vec![[f32::NAN; PROFILE_POINTS]],
+            stretches: vec![stretch],
+            ..RiverProfiles::default()
+        };
+        assert_eq!(profiles.level(0, 0.4), profiles.level_ahead(0, 0.4, SHEET_THICKNESS));
+        assert_eq!(profiles.level(0, 0.95), profiles.level_ahead(0, 0.95, SHEET_THICKNESS));
     }
 
     fn profiles_level_without_lips(data: &[f32; PROFILE_POINTS + 1], k: f32) -> f32 {
