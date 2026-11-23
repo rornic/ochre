@@ -3,8 +3,7 @@ use crate::chunk::ChunkCoordinate;
 use crate::chunk::CHUNK_SIZE;
 use crate::generate::columns::COARSE_CELL;
 
-/// The narrowest level 1's ring may be, in chunks, however far full detail reaches: two of its
-/// nodes, so the step from full detail to level 2 is never made at once.
+/// The narrowest level 1's ring may be, in chunks: two nodes, so full detail never steps straight to level 2.
 const LEVEL_ONE_MIN_RING: f32 = 4.0;
 
 /// How the world is split into detail levels, set from the renderer settings.
@@ -12,24 +11,18 @@ const LEVEL_ONE_MIN_RING: f32 = 4.0;
 pub struct LodLayout {
     /// Chunks within this many chunks of the camera are drawn at full detail.
     pub full_detail_distance: f32,
-    // Level n reaches this many chunks times `level_scale` to the n. Full detail can reach
-    // further than this, narrowing level 1's ring, see `with_full_detail_distance`.
+    // Level n reaches this many chunks times `level_scale` to the n; full detail can reach further, see `with_full_detail_distance`.
     lod_base: f32,
     /// Each LOD level up to the set render distance reaches this many times as far as the one before.
     pub level_scale: f32,
-    // The levels that draw out to the set render distance. Any beyond, drawing further for a
-    // view from high up, each reach only twice as far as the one before: nodes double in
-    // width each level, so that adds about as many nodes a level, where `level_scale` times
-    // as far would add more each time.
+    // Levels drawing out to the set render distance; any beyond, for a view from high up, each reach only twice as far, adding about as many nodes a level.
     scaled_levels: u8,
     pub max_level: u8,
     render_distance: f32,
 }
 
 impl LodLayout {
-    /// Uses the fewest LOD levels that draw terrain out to `render_distance` chunks, with full
-    /// detail out to `full_detail_distance` chunks and each level after reaching `level_scale`
-    /// times as far as the one before.
+    /// The fewest LOD levels that draw out to `render_distance` chunks, with full detail to `full_detail_distance` and each level `level_scale` times as far as the last.
     pub fn new(full_detail_distance: u32, render_distance: u32, level_scale: u32) -> Self {
         let full_detail_distance = full_detail_distance.max(1) as f32;
         let layout = Self {
@@ -48,9 +41,7 @@ impl LodLayout {
         }
     }
 
-    /// This layout with full detail out to `distance` chunks instead, and every LOD level reaching
-    /// as far as it did: only level 1's ring moves, starting where full detail ends. It keeps
-    /// `LEVEL_ONE_MIN_RING` however far full detail is asked to reach.
+    /// With full detail out to `distance` chunks and the LOD levels reaching as far as before: only level 1's ring moves, keeping `LEVEL_ONE_MIN_RING`.
     pub fn with_full_detail_distance(self, distance: u32) -> Self {
         let full_detail_distance = (distance.max(1) as f32).min(self.reach(1) - LEVEL_ONE_MIN_RING);
         Self {
@@ -60,8 +51,7 @@ impl LodLayout {
         .with_render_distance(self.render_distance)
     }
 
-    /// This layout drawing out to `render_distance` chunks instead, adding or dropping levels
-    /// beyond the set render distance. Never draws less than full detail reaches.
+    /// Drawing out to `render_distance` chunks instead, adding or dropping levels beyond the set one; never less than full detail reaches.
     pub fn with_render_distance(self, render_distance: f32) -> Self {
         let mut layout = Self {
             max_level: 0,
@@ -89,8 +79,7 @@ impl LodLayout {
         self.lod_base * self.level_scale.powi(scaled as i32) * 2f32.powi(doubled as i32)
     }
 
-    /// How far, in chunks, terrain is built from full-detail regions: LOD nodes with coarser
-    /// cells sample the noise themselves, see `columns::COARSE_CELL`.
+    /// How far, in chunks, terrain is built from full-detail regions; coarser LOD nodes sample the noise themselves, see `columns::COARSE_CELL`.
     pub fn region_reach(self) -> f32 {
         let fine_levels = (0..=self.max_level).take_while(|&level| (1i64 << level) < COARSE_CELL);
         self.reach(fine_levels.last().unwrap_or(0))
@@ -119,8 +108,7 @@ impl LodLayout {
         (self.full_detail_distance + 2.0 * 3f32.sqrt()).ceil() as u32
     }
 
-    /// Where ground flora shrinks away with distance: the shortest within full detail, the tallest out into level 1, so no
-    /// edge shows where full detail ends or where flora stops being drawn.
+    /// Where ground flora shrinks away: shortest within full detail, tallest out into level 1, so no edge shows.
     pub fn flora_fade(self) -> FloraFade {
         let chunk = CHUNK_SIZE as f32;
         // a level-1 node in range draws as chunks, and the camera stands anywhere in its own chunk
@@ -135,9 +123,7 @@ impl LodLayout {
     }
 }
 
-/// How ground flora shrinks into its roots with distance from the camera, in blocks. Every plant starts shrinking at
-/// `start`. The shorter ones are gone by `mid`, where full detail can end, and the tallest last until `end`, so LOD nodes
-/// draw only plants tall enough to outlast `mid`. `foliage.wesl` draws `gone_at` from the shader defs `specialize` sets.
+/// How ground flora shrinks into its roots with distance in blocks: all start at `start`, short ones are gone by `mid` and the tallest at `end`; `foliage.wesl` draws `gone_at` from the shader defs `specialize` sets.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FloraFade {
     pub start: f32,

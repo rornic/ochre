@@ -14,12 +14,10 @@ use std::sync::Arc;
 // The spawn queue is re-sorted this often, since nodes drift between covered and gap as terrain loads.
 pub(super) const LOD_RESORT_INTERVAL: f32 = 2.0;
 
-// Gaps with nothing drawn yet count as this fraction of their distance, so holes fill in
-// quickly without holding up more detail near the player.
+// Gaps with nothing drawn yet count as this fraction of their distance, so holes fill quickly.
 pub(super) const GAP_DISTANCE_WEIGHT: f32 = 0.5;
 
-// Nodes to spawn, popped from the end: chunk swaps first, then nearest first, with gaps
-// counted as nearer than they are.
+// Nodes to spawn, popped from the end: chunk swaps first, then nearest first, gaps counted as nearer than they are.
 pub(super) fn spawn_order(
     state: &LodState,
     unspawned: impl Iterator<Item = LodKey>,
@@ -82,8 +80,7 @@ pub(crate) fn update_lod_selection(
         .map(|_| (lods.selected.clone(), lods.stand_ins.clone()));
     lods.selecting = Some(AsyncComputeTaskPool::get().spawn(async move {
         let (selected, stand_ins) = select_lods_and_stand_ins(anchor, layout, band);
-        // whether a node or chunk shows depends on the anchor only through these two sets, so
-        // only where they changed needs rechecking
+        // whether a node or chunk shows depends on the anchor only through these two sets, so only changes need rechecking
         let changed = previous
             .map(|(old_selected, old_stand_ins)| {
                 selected
@@ -121,9 +118,7 @@ pub(super) fn apply_selection(
         .get(chunk));
     let nodes = &lods.nodes;
 
-    // The first selection, and one for a new layout, start from scratch and check everything.
-    // After that only the keys that changed can need spawning or retiring, so nothing walks
-    // every node, of which there can be hundreds of thousands.
+    // The first selection and a new layout check everything; after that only changed keys can need spawning or retiring, as nodes can number hundreds of thousands.
     let wanted =
         |key: &LodKey| selected.contains(key) || (stand_ins.contains(key) && !state.covered(*key));
     let (to_spawn, retiring) = if first {

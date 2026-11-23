@@ -21,8 +21,7 @@ use bevy::tasks::AsyncComputeTaskPool;
 use bevy::time::Time;
 use ochre_base::WATER_LEVEL;
 
-// LOD meshes take well under a millisecond, so enough are kept in flight that the
-// once-per-frame refill isn't what limits how fast they load.
+// LOD meshes take well under a millisecond, so enough stay in flight that the once-per-frame refill isn't the limit.
 pub(super) const LOD_TASKS_PER_THREAD: usize = 32;
 
 // Nodes known to have nothing to draw are added straight away without a task or an entity, up to this many a frame.
@@ -104,17 +103,12 @@ pub(crate) fn spawn_lods(
     }
 }
 
-// Whether `key` is known to have nothing to draw, going by regions or coarse columns
-// already sampled - never samples one, so it can run on the main thread. That's when the terrain its mesh
-// would sample is all below it with only air or only water above, or all above it so it's
-// buried in rock. Only knows about generated terrain, since LOD meshes are built from it
-// alone - if they ever show player edits or caves, those must stop counting as empty here.
+// Whether `key` has nothing to draw per regions or columns already sampled, never sampling so it runs on the main thread; breaks if LOD meshes ever show edits or caves.
 pub(super) fn known_empty(key: LodKey, regions: &RegionStore) -> bool {
     let min = key.min_block();
     let cell = key.cell_size();
     let width = key.width() * CHUNK_SIZE as i64;
-    // meshes sample a cell past the node's edges, a block either side for slopes, and trees
-    // standing just outside can reach in
+    // meshes sample a cell past the node's edges, a block either side for slopes, and trees just outside can reach in
     let margin = cell + 1 + TREE_REACH;
     let min_xz = I64Vec2::new(min.x, min.z) - margin;
     let max_xz = I64Vec2::new(min.x, min.z) + width - 1 + margin;
