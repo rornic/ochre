@@ -97,7 +97,6 @@ const ALPINE_PINES_ABOVE: i64 = 120;
 const MAX_GRADIENT: f64 = 1.5;
 // A broadleaf crown is a big ball with up to this many smaller lobes hanging off it on branches.
 const LOBES: usize = 5;
-// A broadleaf has at least this many lobes.
 const LOBES_LEAST: u64 = 3;
 // A broadleaf's crown stands off the trunk by up to this share of its spread.
 const CROWN_LEAN: f64 = 0.2;
@@ -154,7 +153,6 @@ pub struct Tree {
     exposure: f64,
 }
 
-// A ball of leaves, squashed by `squash` vertically.
 #[derive(Debug, Copy, Clone)]
 struct Blob {
     centre: DVec3,

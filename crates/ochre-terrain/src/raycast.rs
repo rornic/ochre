@@ -1,6 +1,5 @@
 use bevy::math::{I64Vec3, Vec3};
 
-/// A block a ray stopped at.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RayHit {
     pub block: I64Vec3,

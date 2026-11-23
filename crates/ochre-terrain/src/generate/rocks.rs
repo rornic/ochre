@@ -487,7 +487,6 @@ fn rock_in_cell(
 }
 
 impl Rock {
-    /// The block this rock is made of.
     pub fn block(&self) -> BlockType {
         match self.kind {
             RockKind::Erratic => self.stone,

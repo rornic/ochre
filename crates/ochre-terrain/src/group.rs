@@ -44,7 +44,6 @@ pub struct BuiltGroup;
 #[derive(Component)]
 pub struct MeshedChunk;
 
-/// A chunk drawn as part of its group.
 #[derive(Component)]
 pub struct GroupedChunk;
 

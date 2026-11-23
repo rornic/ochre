@@ -90,7 +90,6 @@ impl LodLayout {
         key.level > 0 && key.distance(anchor) < self.reach(key.level - 1)
     }
 
-    /// Whether a chunk is close enough to be drawn at full detail.
     pub fn full_detail(self, chunk: ChunkCoordinate, anchor: ChunkCoordinate) -> bool {
         self.splits(LodKey::containing(chunk, 1), anchor)
     }

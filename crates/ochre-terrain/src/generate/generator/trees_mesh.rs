@@ -272,7 +272,6 @@ pub(super) enum Crown {
     Broadleaf(Vec3),
 }
 
-/// How bright a card is with `above` leaves over it in its column.
 pub(super) fn depth_shade(above: usize) -> f32 {
     (1.0 - DEPTH_DARKEN * above as f32).max(DEPTH_MIN)
 }

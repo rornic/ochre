@@ -585,7 +585,6 @@ fn mesh_lod(lod: &LodBlocks) -> Mesh {
     super::mesh::mesh_blocks(lod, lod.cell, style(false, false), &tint, &light).opaque
 }
 
-// each face's normal and its vertices' positions
 fn faces(mesh: &Mesh) -> Vec<([f32; 3], Vec<[f32; 3]>)> {
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -848,7 +847,6 @@ fn lod_with(blocks: &[(IVec3, BlockType)]) -> LodBlocks {
     LodBlocks::new(size, cells, vec![0; padded * padded], WATER_LEVEL + 64, 4)
 }
 
-// a 2x2x2 cube of leaves from `min` up
 fn leaf_cube(min: i32) -> Vec<(IVec3, BlockType)> {
     let mut cube = Vec::new();
     for x in min..min + 2 {
@@ -1659,7 +1657,6 @@ fn test_lod_non_air_only_covers_interior() {
         .all(|(c, _)| c.min_element() >= 0 && c.max_element() < 16));
 }
 
-// The block at world (x, y, z) from a freshly generated chunk.
 fn block_at(regions: &Arc<RegionStore>, x: i64, y: i64, z: i64) -> BlockType {
     let coord = ChunkCoordinate(I64Vec3::new(x, y, z).div_euclid(I64Vec3::splat(16)));
     generate_chunk(regions.clone(), coord).get_block_at(U16Vec3::new(
@@ -3862,7 +3859,6 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
     assert!(holes.is_empty(), "{} open edges, first: {:?}", holes.len(), &holes[..holes.len().min(8)]);
 }
 
-// A dig under sculpted ground changes no chunk's mesh beyond those the game meshes again for it.
 #[test]
 fn test_a_dig_changes_only_the_sculpted_chunks_meshed_again() {
     let regions = test_regions();

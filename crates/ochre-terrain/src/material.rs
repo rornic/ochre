@@ -823,7 +823,6 @@ mod tests {
             .collect()
     }
 
-    // A foliage layer's RGBA texels.
     fn foliage(tile: Tile) -> image::RgbaImage {
         let name = MATERIAL_FILES[tile.foliage_layer().unwrap() as usize];
         image::open(asset(&format!("textures/materials/{name}.png")))

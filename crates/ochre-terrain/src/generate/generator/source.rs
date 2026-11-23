@@ -147,7 +147,6 @@ pub(super) struct TreeBox {
     pub(super) shape: BoxShape,
 }
 
-/// What a tree box is drawn as.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) enum BoxShape {
     Cuboid,
@@ -277,7 +276,6 @@ impl<'a> ChunkNeighbourhood<'a> {
         coord.cmpge(IVec3::splat(-size)).all() && coord.cmplt(IVec3::splat(2 * size)).all()
     }
 
-    // The fresh water in the column at `x`, `z`, if it has any.
     fn fresh_at(&self, x: i32, z: i32) -> Option<FreshColumn> {
         if let Some(&level) = self.flowing.get(&(x, z)) {
             return Some(FreshColumn {

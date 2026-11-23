@@ -17,7 +17,6 @@ use ochre_base::WATER_LEVEL;
 
 /// The farthest terrain is drawn, in chunks, however high up.
 pub(crate) const MAX_RENDER_DISTANCE: f32 = 2048.0;
-// How far above the sea the top of the world is.
 const ABOVE_SEA_AT_TOP: f32 = 2048.0;
 // Changes smaller than this share of render distance are ignored so bobbing doesn't keep reselecting LOD nodes.
 const RESELECT_CHANGE: f32 = 0.1;

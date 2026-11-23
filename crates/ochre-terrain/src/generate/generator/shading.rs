@@ -29,10 +29,8 @@ pub(super) const AO_GAMMA: f32 = 1.5;
 
 // Height of the water surface within a full-detail block, whose cube spans -0.5..0.5.
 pub(super) const WATER_TOP: f32 = 0.4;
-// How far under a block's top water's surface sits.
 pub(super) const WATER_DROP: f32 = 0.5 - WATER_TOP;
 
-// The axis a unit offset runs along.
 pub(super) fn axis_of(v: IVec3) -> usize {
     if v.x != 0 {
         0

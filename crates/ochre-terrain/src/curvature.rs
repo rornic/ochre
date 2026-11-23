@@ -28,7 +28,6 @@ const FADE_END: f32 = 450.0;
 /// The round world the land bends around: a fixed size, so a shorter render distance shows less of its curve.
 pub const WORLD_CURVE: Curve = Curve::seen_from_the_top_to(MAX_RENDER_DISTANCE);
 
-/// A round world to bend the land around.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Curve {
     /// In blocks.

@@ -158,7 +158,6 @@ impl ChunkData {
             + self.flow.len() * size_of::<(u16, u8)>()
     }
 
-    /// Every non-air block's coordinate and type.
     pub fn iter_non_air(&self) -> impl Iterator<Item = (U16Vec3, BlockType)> + '_ {
         let mut start = 0usize;
         self.runs.iter().flat_map(move |run| {
@@ -192,7 +191,6 @@ impl ChunkData {
         self.flow.get(&(linear_index(coord) as u16)).copied()
     }
 
-    /// Every flowing water block's coordinate and level.
     pub fn iter_flowing(&self) -> impl Iterator<Item = (U16Vec3, u8)> + '_ {
         self.flow
             .iter()
