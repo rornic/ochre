@@ -403,6 +403,26 @@ pub fn run(world: &crate::World, args: &[String]) -> Result<String, String> {
                 );
             }
         }
+        "canyons" => {
+            // the deepest canyon, gorge and wadi cells, one a kilometre, with their biome and a spawn line
+            let dim = map.dim();
+            let mut cells: Vec<usize> = (0..dim * dim).filter(|&i| map.canyon[i] != 0).collect();
+            cells.sort_by_key(|&i| std::cmp::Reverse(map.canyon[i] >> 4));
+            let mut picked: Vec<(f64, f64)> = Vec::new();
+            outln!(out, "{} canyon cells", cells.len());
+            for i in cells {
+                let (wx, wz) = map.cell_centre(i % dim, i / dim);
+                if picked.iter().any(|&(px, pz)| (px - wx).abs().max((pz - wz).abs()) < 1024.0) {
+                    continue;
+                }
+                picked.push((wx, wz));
+                let biome = terrain.biomes().name(terrain.sample(wx, wz).biome);
+                outln!(out, "slot {} deep, {biome:?}, ground {:.0}  OCHRE_SEED={seed} OCHRE_SPAWN={wx:.0},{wz:.0},40", (map.canyon[i] >> 4) as u32 * 10, terrain.height(wx, wz));
+                if picked.len() >= opt(args, 4, 12)? {
+                    break;
+                }
+            }
+        }
         "strays" => {
             // water blocks in columns the map holds no water in, round each fall in a box: on the ground's top a shore cap, over it a cut that flooded
             let half: i64 = arg(args, 4)?;
