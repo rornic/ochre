@@ -56,7 +56,6 @@ const MOON_LAG: f32 = 0.5;
 pub(crate) const SUN_COLOR: Color = Color::srgb(1.0, 0.9, 0.75);
 /// How bright sunlight is in the world shaders, where the camera's exposure cancels out.
 const SUN_BRIGHTNESS: f32 = 1.3;
-/// Fixed, so sun and sky keep the same brightness in the scene whatever the illuminance.
 /// How many times brighter the sun is made than the world's shading needs, to lift the sky; `lighting.wesl` divides it back out.
 const SKY_GAIN: f32 = 4.0;
 const CAMERA_EV100: f32 = Exposure::EV100_SUNLIGHT;
@@ -67,15 +66,13 @@ const SHADOW_NORMAL_BIAS: f32 = 1.8;
 // How much of the camera's height over the ground the first cascade starts at, and the start under which cascades stay as at the ground.
 const CASCADE_START_SHARE: f32 = 0.5;
 const CASCADE_START_FROM: f32 = 16.0;
-// How much of each cascade blends into the next.
 const CASCADE_OVERLAP: f32 = 0.4;
 const ENVIRONMENT_MAP_SIZE: u32 = 64;
 // About twice the real sun's size; matches `DISC_SIZE` in `sun_glare.wesl`, which draws it so clouds can hide it.
 const SUN_DISC_SIZE: f32 = 0.02;
 /// Colour of moonlight, cool against the sun's.
 const MOON_COLOR: Color = Color::srgb(0.65, 0.78, 1.0);
-/// How many times more light the shaders make of the moon's than its light gives, so the moon's
-/// scattering stays too faint to light the sky while its light on the land is visible; matches `MOON_BOOST` in `lighting.wesl`.
+/// How many times more light the shaders make of the moon's, so its scattering stays too faint to light the sky; matches `MOON_BOOST` in `lighting.wesl`.
 const MOON_BOOST: f32 = 400.0;
 /// How bright moonlight is in the world shaders at full moon, as `SUN_BRIGHTNESS` is for sunlight.
 const MOON_BRIGHTNESS: f32 = 0.1;
@@ -133,8 +130,7 @@ pub(crate) struct Sun;
 #[derive(Component)]
 struct SunShadows(Quat);
 
-// The shadow map turns every few seconds and holds between, so its texels stay put and shadow edges don't crawl. The sun
-// moves under 0.02 degrees a second, so a step is a pop of under a texel.
+// The shadow map turns in steps so its texels stay put and edges don't crawl; the sun moves under 0.02 degrees a second, so a step pops under a texel.
 const SHADOW_STEP_TICKS: u64 = 3 * TICKS_PER_SECOND;
 
 /// On the moon, see `move_sky`. Not volumetric, so the patched `bevy_pbr` sorts it after the sun, matching `SUN_LIGHT` and `MOON_LIGHT` in `sky.wesl`.
@@ -176,14 +172,12 @@ impl TimeOfDay {
     }
 }
 
-/// Where the sun is on its path at `days` through the day, in radians: 0 as it rises, a quarter
-/// turn at noon.
+/// Where the sun is on its path at `days` through the day, in radians: 0 as it rises, a quarter turn at noon.
 fn sun_angle(days: f32) -> f32 {
     TAU * (days.fract() - 0.25)
 }
 
-// The sun's path across the sky as a circle through `east` and `peak`, which are square to each other.
-// Matches `EAST` and `PEAK` in `stars.wesl`.
+// The sun's path as a circle through `east` and `peak`, square to each other; matches `EAST` and `PEAK` in `stars.wesl`.
 fn path_basis() -> (Vec3, Vec3) {
     let peak = SUN_DIRECTION.normalize();
     (Vec3::new(peak.z, 0.0, -peak.x).normalize(), peak)
@@ -204,8 +198,7 @@ pub(crate) fn moon_direction(time: f32) -> Vec3 {
     on_path(sun_angle(time) + PI + MOON_LAG)
 }
 
-/// How many game seconds pass each real second, 1 normally. A bigger one speeds the day up, to watch the weather
-/// come and go as a timelapse.
+/// Game seconds per real second, 1 normally; bigger speeds the day up to watch weather as a timelapse.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TimeScale(pub f32);
 
@@ -213,8 +206,7 @@ pub(crate) struct TimeScale(pub f32);
 #[derive(Resource)]
 pub struct ClockLocked;
 
-/// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it:
-/// the sky, fog and light all follow them.
+/// Runs the clock, at `TimeScale` and wound with `[` and `]`, and moves the sun and moon to it.
 #[allow(clippy::too_many_arguments)]
 fn move_sky(
     keys: Res<ButtonInput<KeyCode>>,
@@ -346,12 +338,7 @@ fn spawn_atmosphere(mut commands: Commands, mut media: ResMut<Assets<ScatteringM
     commands.spawn(Atmosphere::earth(medium));
 }
 
-/// Sinks the atmosphere's planet under the camera so the sky's horizon dips as far below
-/// level as the land's edge, see `WORLD_CURVE`. Bevy draws the sky round a planet the size of
-/// the Earth, whose horizon barely dips from a mountain top, so from high up its glow would
-/// hang level, far above the land's edge. Instead the sky's seen from as high above the
-/// planet as it takes for its horizon to dip that far, darkening as it would from a plane.
-/// Low down, where the land's edge dips no further than the Earth's would, nothing moves.
+/// Sinks the atmosphere's planet so the sky's horizon dips as far as the land's edge (`WORLD_CURVE`), which the Earth-sized planet's barely does from a peak.
 fn match_sky_horizon(
     camera: Query<(&GlobalTransform, &DistanceFog), With<Camera3d>>,
     mut planets: Query<(&Atmosphere, &mut GlobalTransform), Without<Camera3d>>,

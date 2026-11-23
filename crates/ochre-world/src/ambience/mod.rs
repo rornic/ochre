@@ -1,5 +1,4 @@
-//! What the world sounds like where the camera is: wind, and loops of forest, crickets, waves
-//! and so on, each as loud as the camera's surroundings call for, and the odd owl.
+//! What the world sounds like where the camera is: wind, and loops of forest, crickets and waves, each as loud as its surroundings call for, and the odd owl.
 mod haze;
 mod wind;
 
@@ -134,11 +133,9 @@ impl Default for Surroundings {
     }
 }
 
-// How often the terrain round the camera is sampled again, in seconds. The loops glide to
-// their new volumes over seconds anyway.
+// Seconds between samples of the terrain round the camera; the loops glide to new volumes anyway.
 const SENSE_SECONDS: f32 = 0.25;
-// The rings of columns sampled round the camera: their radius in blocks, and how much each
-// column on them counts. The camera's own column counts as much as the inner ring's.
+// Rings of columns sampled round the camera: radius in blocks and weight per column; the camera's own column weighs as much as the inner ring's.
 const RINGS: [(f32, f32); 2] = [(24.0, 2.0), (64.0, 1.0)];
 const RING_COLUMNS: usize = 8;
 const CENTRE_WEIGHT: f32 = 2.0;
@@ -266,8 +263,7 @@ impl Loop {
         }
     }
 
-    // Each file's measured loudness and the loudness it plays at in full, in LUFS: the birds
-    // up front, the sea behind them, crickets behind that, the ground wind quieter still.
+    // Each file's measured loudness and the loudness it plays at in full, in LUFS: birds up front, then sea, crickets, ground wind.
     fn loudness(self) -> (f32, f32) {
         match self {
             Loop::Forest => (-19.2, -28.0),
@@ -283,8 +279,7 @@ impl Loop {
         10f32.powf((wanted - measured) / 20.0) * AMBIENCE_TRIM
     }
 
-    /// Whether this loop comes and goes on its own, as birds and crickets do, rather than
-    /// playing on as long as its surroundings call for it.
+    /// Whether this loop comes and goes on its own, as birds and crickets do, instead of playing while its surroundings call for it.
     fn coming_and_going(self) -> Option<Bursts> {
         match self {
             // birds strike up now and then, and fall quiet more than they sing
@@ -332,8 +327,7 @@ impl Loop {
 struct Bursts {
     // how long the value takes to wander to each new target, in seconds, at the least and most
     seconds: (f32, f32),
-    // where the value goes from silence (under the first) to full (over the second): the
-    // higher they are, the more of the time it's silent
+    // the value goes from silence (under the first) to full (over the second); higher means silent more often
     quiet: (f32, f32),
 }
 
@@ -372,8 +366,7 @@ fn mix_loops(
             smoothstep(bursts.quiet.0, bursts.quiet.1, wander)
         });
         let current = sink.volume().to_linear();
-        // square-rooted, as loudness goes by power: a wood a third as thick as the deepest
-        // forest sounds about 5 dB quieter, not 10
+        // square-rooted, as loudness goes by power: a wood a third as thick as the deepest forest is about 5 dB quieter, not 10
         let sheltering = match kind {
             Loop::Forest | Loop::Crickets => 1.0 - rain,
             _ => 1.0,
@@ -408,8 +401,7 @@ fn listen_from_camera(
 const HOOT_SECONDS: (f32, f32) = (12.0, 40.0);
 // How far off an owl hoots, in blocks, at the nearest and farthest.
 const OWL_DISTANCE: (f32, f32) = (20.0, 45.0);
-// Shrinks blocks for the stereo falloff, which goes by the inverse of distance: a block is
-// this far, so owls a few dozen blocks off are faint but clear.
+// A block's distance for the stereo falloff (inverse of distance), so owls a few dozen blocks off are faint but clear.
 const OWL_SCALE: f32 = 0.06;
 // Brings a hoot a few dozen blocks off to about the crickets' loudness.
 const OWL_VOLUME: f32 = 0.2 * AMBIENCE_TRIM;

@@ -18,9 +18,7 @@ pub(super) fn next_random(state: &mut u64) -> f32 {
     (*state >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0
 }
 
-/// One clap of thunder from `distance` blocks off: close by, a rapid run of sharp cracks over a
-/// deep boom; farther off, only a softer rumble. Then a long roll that swells again as the far
-/// parts of the bolt are heard, echoes, and dies away.
+/// One clap of thunder from `distance` blocks off: close, sharp cracks over a boom; far, a softer rumble; then a long roll that swells, echoes and dies.
 #[derive(Asset, TypePath)]
 pub(crate) struct Thunder {
     pub(super) distance: f32,
@@ -34,8 +32,7 @@ const THUNDER_GAIN: f32 = 0.46;
 const THUNDER_HEARD: (f32, f32) = (120.0, 520.0);
 // The roll's gain from the farthest strikes and the nearest.
 const ROLL_GAIN: (f32, f32) = (0.30, 1.16);
-// How far back, in frames, the two echoes come from, ~120 ms and ~270 ms; the first heard in
-// the other ear.
+// Frames back the two echoes come from, ~120 ms and ~270 ms; the first is heard in the other ear.
 const ECHO_TAPS: (usize, usize) = (5_200, 11_800);
 const ECHO_FRAMES: usize = ECHO_TAPS.1 + 1;
 
@@ -51,8 +48,7 @@ impl Decodable for Thunder {
         let mut rng = (self.seed << 1) | 1;
         let mut uniform = || next_random(&mut rng) * 0.5 + 0.5;
 
-        // the roll swells again round 0.7, 1.5, 2.5 and 3.7 seconds in, each later one broader,
-        // quieter and wider apart in the ears
+        // the roll swells again round 0.7, 1.5, 2.5 and 3.7 seconds in, each broader, quieter and wider in the ears
         let swells: [Swell; 4] = [
             Swell {
                 at: 0.72 + uniform() * 0.20,
@@ -84,8 +80,7 @@ impl Decodable for Thunder {
             },
         ];
 
-        // the crack: five shocks in the first third of a second, each longer and lower than the
-        // last, leaning left and right in turn
+        // the crack: five shocks in the first third of a second, each longer and lower, leaning left and right in turn
         let shocks: [Shock; 5] = [
             Shock {
                 at: 0.0,
@@ -136,8 +131,7 @@ impl Decodable for Thunder {
     }
 }
 
-// One swell in the roll: when it peaks and how long it takes to, how fast it dies, all in
-// seconds, how loud, and which way it leans, -1 left to 1 right.
+// One swell in the roll: when it peaks, how long it takes to, how fast it dies (seconds), how loud, and its lean, -1 left to 1 right.
 #[derive(Clone, Copy)]
 struct Swell {
     at: f32,
@@ -147,8 +141,7 @@ struct Swell {
     pan: f32,
 }
 
-// One shock in the crack: a single cycle of a sine that dies away as it goes, sharp up then
-// down. When it comes and how long it lasts, in seconds, how loud, and which way it leans.
+// One shock in the crack: a single dying sine cycle, sharp up then down: when it comes, how long it lasts (seconds), how loud, its lean.
 #[derive(Clone, Copy)]
 struct Shock {
     at: f32,
@@ -165,11 +158,9 @@ pub(crate) struct ThunderDecoder {
     near: f32,
     swells: [Swell; 4],
     shocks: [Shock; 5],
-    // per ear: the roll's three low-pass stages, then one finding the rumble below ~25 Hz to
-    // take away
+    // per ear: the roll's three low-pass stages, then one finding the rumble below ~25 Hz to remove
     low: [[f32; 4]; 2],
-    // per ear: two slow wanderings that make the roll heave and tumble, each two low-passes,
-    // round 2 Hz and 7 Hz
+    // per ear: two slow wanderings, each two low-passes at round 2 Hz and 7 Hz, that make the roll heave and tumble
     heave: [[f32; 4]; 2],
     // what's been heard, for the echoes, and a low-pass dulling them
     echo: Box<[[f32; 2]; ECHO_FRAMES]>,
@@ -239,8 +230,7 @@ impl Iterator for ThunderDecoder {
         let tumble = (*g2 * 70.0).clamp(-0.50, 1.40);
         let ragged = (0.85 + 0.48 * heave + 0.38 * tumble.max(-0.20)).clamp(0.55, 2.20);
 
-        // the roll: spiky noise through three low-passes, round 150-500 Hz, brighter near, early
-        // on and as it heaves or swells, with the lowest rumble taken out
+        // the roll: spiky noise through three low-passes at 150-500 Hz, brighter near, early and as it heaves or swells, lowest rumble removed
         let crest = (0.35 * heave.max(0.0) + 0.25 * tumble.max(0.0) + 0.50 * cresting).min(1.4);
         let cut = (0.021 + (0.015 + 0.022 * near) * ops::exp(-t / 3.2) + 0.017 * crest)
             .clamp(0.019, 0.072);
@@ -262,8 +252,7 @@ impl Iterator for ThunderDecoder {
         let roll_gain = ROLL_GAIN.0 * ops::powf(ROLL_GAIN.1 / ROLL_GAIN.0, near);
         let mut sample = x * 17.0 * roll_envelope * roll_gain + crack;
 
-        // two echoes off the land and clouds, dulled, the nearer the louder, each feeding the
-        // next
+        // two dulled echoes off the land and clouds, the nearer louder, each feeding the next
         let tap = |delay: usize| (frame + ECHO_FRAMES - delay) % ECHO_FRAMES;
         let heard =
             self.echo[tap(ECHO_TAPS.0)][1 - c] * 0.58 + self.echo[tap(ECHO_TAPS.1)][c] * 0.42;
@@ -278,8 +267,7 @@ impl Iterator for ThunderDecoder {
         let tail = ((THUNDER_SECONDS - t) / 0.5).min(1.0);
         let sample = (sample * tail).tanh();
 
-        // the air dulls it: round 2.5 kHz from the nearest strikes at first, closing to round
-        // 270 Hz within half a second
+        // the air dulls it: round 2.5 kHz from the nearest strikes at first, closing to round 270 Hz within half a second
         let cut = (0.038 + (0.020 + 0.240 * near) * ops::exp(-t / 0.14)).clamp(0.036, 0.300);
         let [a1, a2] = &mut self.air[c];
         *a1 += (sample - *a1) * cut;

@@ -5,12 +5,10 @@ use bevy::{
     render::view::{ColorGrading, ColorGradingGlobal},
 };
 
-/// Rolls sunlit highlights off instead of clipping them, while keeping shade's colour:
-/// ACES turned dark greens neon, and AgX and Tony McMapface wash out bright ones.
+/// Rolls highlights off while keeping shade's colour: ACES turned dark greens neon, AgX and Tony McMapface wash out bright ones.
 pub const TONEMAPPING: Tonemapping = Tonemapping::SomewhatBoringDisplayTransform;
 
-/// Stops of exposure before tonemapping, so a mid grey stays about mid grey once the
-/// tonemapping curve has bent it. `water.wesl` reads it from the view's colour grading.
+/// Stops of exposure before tonemapping, so a mid grey stays mid grey; `water.wesl` reads it from the view's colour grading.
 pub(crate) const EXPOSURE: f32 = 0.5;
 
 /// The camera's colour grading out of water: a touch warmer and richer, for a cosy rather than punchy picture.
@@ -83,13 +81,11 @@ pub(crate) fn displayed(scene: LinearRgba) -> LinearRgba {
     LinearRgba::from_vec3(displayed_rgb(scene.to_vec3())).with_alpha(scene.alpha)
 }
 
-/// The scene colour to draw for `display` to show on screen after tonemapping: for
-/// the underwater murk, which is picked to look a certain way rather than be lit.
+/// The scene colour to draw for `display` to show on screen after tonemapping, for the underwater murk.
 pub fn scene_colour(display: Color) -> LinearRgba {
     let display = display.to_linear();
     let target = display.to_vec3();
-    // tonemapping is near enough the identity up close that nudging towards the target
-    // by however far off it still is converges
+    // tonemapping is near the identity up close, so nudging by the remaining error converges
     let mut scene = target;
     for _ in 0..INVERSE_STEPS {
         scene = (scene + target - displayed_rgb(scene)).max(Vec3::ZERO);

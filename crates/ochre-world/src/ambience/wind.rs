@@ -31,8 +31,7 @@ use super::{smoothstep, Surroundings};
 pub struct WindDials {
     // how hard the wind blows where the camera is, 0..1
     strength: Dial,
-    // how much of a breeze the sound is blowing right now, 0..1, whatever its strength: set
-    // on the audio thread, for the leaves to rustle in, see `Loop::Leaves`
+    // how much of a breeze is blowing now, 0..1, whatever its strength: set on the audio thread for the leaves to rustle in, see `Loop::Leaves`
     breeze: Dial,
     // how much of the ground round the camera is steppe, 0..1, gliding with it: the wind there never drops to still and the grass rustles
     steppe: Dial,
@@ -48,8 +47,7 @@ impl WindDials {
     }
 }
 
-/// An f32 shared between threads through its bits, so the sounds made as they play can read
-/// what they follow.
+/// An f32 shared between threads through its bits, for sounds made as they play to read what they follow.
 #[derive(Clone, Default)]
 pub(crate) struct Dial(Arc<AtomicU32>);
 
@@ -70,15 +68,13 @@ const FULL_WIND_ALTITUDE: f32 = 250.0;
 // How fast the air rushes past a camera flying flat out, in blocks a second, adding to the wind.
 const RUSH_SPEED: f32 = 80.0;
 const RUSH_GAIN: f32 = 0.15;
-// How strong the wind blows on the ground in the heaviest rain: strong enough to keep blowing
-// between spells, see `STEADY`.
+// Ground wind in the heaviest rain: strong enough to keep blowing between spells, see `STEADY`.
 const STORM_WIND: f32 = 0.6;
 // Underwater the wind is only a murmur through the surface.
 const UNDERWATER_WIND: f32 = 0.02;
 // How long the wind takes to follow a change in where the camera is, in seconds.
 const WIND_FOLLOW_SECONDS: f32 = 0.6;
-// The least strength wind blows on the most exposed steppe, well over where `STEADY` starts so it keeps blowing between
-// spells: it blows from the exposure's first value up to full at the second, and not at all in a hollow.
+// The least wind on the most exposed steppe, over where `STEADY` starts so it blows between spells: from the exposure's first value up to full at the second, none in a hollow.
 const STEPPE_BREEZE: f32 = 0.5;
 const STEPPE_EXPOSED: (f32, f32) = (0.3, 0.75);
 // How much of its sway the foliage loses in the most sheltered hollow, so grass there bends a little where the wind is quiet.
@@ -112,8 +108,7 @@ pub(crate) fn play_wind(mut commands: Commands, mut winds: ResMut<Assets<Wind>>,
     ));
 }
 
-/// The wind's strength from how high the camera is over the ground or sea, and how fast it's
-/// flying.
+/// The wind's strength from the camera's height over the ground or sea and its flying speed.
 pub fn wind_strength(altitude: f32, speed: f32) -> f32 {
     // slow to pick up off the ground, so even treetop height is calm
     let height = (altitude / FULL_WIND_ALTITUDE).clamp(0.0, 1.0).powf(1.5);
@@ -168,8 +163,7 @@ pub(crate) fn update_wind(
     dials.strength.set(current + (wanted - current) * follow);
 }
 
-/// Wind made from noise as it plays, so it never loops: a low roar that swells with the
-/// gusts, and a whistle that rises in pitch as they blow harder.
+/// Wind made from noise as it plays, so it never loops: a low roar that swells with gusts, and a whistle that rises in pitch as they harden.
 #[derive(Asset, TypePath)]
 pub struct Wind {
     dials: WindDials,
@@ -189,17 +183,13 @@ const CHANNELS: u16 = 2;
 const CONTROL_FRAMES: u32 = 64;
 // How long the decoder takes to follow the strength, in seconds, so steps in it don't click.
 const STRENGTH_GLIDE_SECONDS: f32 = 0.3;
-// Wind comes in spells: how long one takes to pick up or die away, in seconds, at the least
-// and most. Down low it drops to nothing between them, see `CALM`.
+// Wind comes in spells: seconds one takes to pick up or die away, least and most; down low it drops to nothing between, see `CALM`.
 const SPELL_SECONDS: (f32, f32) = (12.0, 40.0);
-// Where a spell's wandering value, 0..1, goes from still air (under the first) to a breeze
-// that's fully up (over the second): about a third of the time it's still.
+// A spell's wandering value, 0..1, goes from still air (under the first) to a full breeze (over the second); it's still about a third of the time.
 const CALM: (f32, f32) = (0.35, 0.8);
-// Wind this strong, from high up or flying fast, keeps blowing between spells: from none of
-// it at the first to all of it at the second.
+// Wind this strong, from high up or flying fast, keeps blowing between spells: none of it at the first, all at the second.
 const STEADY: (f32, f32) = (0.35, 0.8);
-// The roar's low-pass cutoff in calm air and in the strongest gusts, in Hz. Wind is mostly
-// rumble: anything much higher hisses like a detuned radio.
+// The roar's low-pass cutoff in calm air and the strongest gusts, in Hz; much higher hisses like a detuned radio.
 const ROAR_CUTOFF: (f32, f32) = (200.0, 600.0);
 // One-pole stages in the roar's low-pass, each cutting another 6 dB an octave past the cutoff.
 const ROAR_POLES: usize = 3;
@@ -217,8 +207,7 @@ const RUSTLE_GAIN: f32 = 0.18;
 const OUTPUT_GAIN: f32 = 0.5;
 // How much of its loudness a full gale loses, so a gale sits under the music and loops, not over them, and a breeze is as it was.
 const GALE_EASE: f32 = 0.85;
-// Puts a breeze on the ground at about -38 LUFS, the quietest thing there, and a gale high up
-// at about -35 once eased by `GALE_EASE`, see `Loop::loudness`.
+// Puts a ground breeze at about -38 LUFS and a high gale at about -35 once eased by `GALE_EASE`, see `Loop::loudness`.
 const ROAR_MAKEUP: f32 = 0.34;
 
 pub struct WindDecoder {
@@ -237,8 +226,7 @@ pub struct WindDecoder {
     // low-passes the grass's hiss is the white noise minus
     rustle: [OnePole; 2],
     rustle_gain: f32,
-    // how much of each the control step last asked for; the roar's also makes up for what
-    // its low-pass takes, so moving the cutoff changes how bright it is, not how loud
+    // how much of each the control step last asked for; the roar's also makes up for its low-pass, so moving the cutoff changes brightness, not loudness
     roar_gain: f32,
     whistle_gain: f32,
 }
@@ -367,8 +355,7 @@ fn lerp((from, to): (f32, f32), t: f32) -> f32 {
     from + (to - from) * t
 }
 
-/// A smoothly wandering value, 0..1: it eases from one random target to the next, each
-/// taking a random time within the given range.
+/// A smoothly wandering value, 0..1, easing from one random target to the next over a random time within the given range.
 #[derive(Default)]
 pub(super) struct Gust {
     from: f32,
