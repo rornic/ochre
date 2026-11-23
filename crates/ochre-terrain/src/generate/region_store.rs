@@ -82,12 +82,12 @@ impl RegionStore {
         &*self.noise
     }
 
-    /// The ground under a coarse LOD node's cells, see `columns::COARSE_CELL`; blocks while sampled, so only call from a task.
+    /// The ground under a coarse LOD node's cells (`columns::COARSE_CELL`); blocks while sampled: call from a task.
     pub fn column_grid(&self, key: LodKey) -> Arc<ColumnGrid> {
         self.columns.grid(&*self.noise, key)
     }
 
-    /// What full-detail chunks at chunk `x`, `z` take from their columns, shared by the chunks stacked there; blocks while sampled, so only call from a task.
+    /// What full-detail chunks at chunk `x`, `z` take from their columns; blocks while sampled, so call only from a task.
     pub fn chunk_columns(&self, heights: &mut HeightSampler, x: i64, z: i64) -> Arc<ChunkColumns> {
         self.columns.chunk_columns(&*self.noise, heights, x, z)
     }
@@ -111,7 +111,7 @@ impl RegionStore {
             .clone()
     }
 
-    /// The lowest and highest terrain in `min..=max` (x, z), rounded out to whole tiles, or None if a region it touches isn't computed yet; never blocks.
+    /// Lowest and highest terrain in `min..=max` (x, z), rounded out to whole tiles; None if a region isn't ready.
     pub fn loaded_height_range(&self, min: I64Vec2, max: I64Vec2) -> Option<(f32, f32)> {
         let lru = self.lru.read().unwrap();
         let (first, last) = (
@@ -156,7 +156,7 @@ pub struct HeightSampler<'a> {
     recent: Vec<(RegionCoord, Arc<Region>)>,
 }
 
-/// The block the water's surface lies in, with it and those under it filled: a sloping river is a slope across blocks, not steps.
+/// The block the water's surface lies in, with those under it filled: a sloping river slopes across blocks, not steps.
 pub fn water_block_top(surface: f32) -> i64 {
     (surface - 0.001).ceil() as i64
 }
@@ -186,7 +186,7 @@ impl HeightSampler<'_> {
             .biome_at(world_x - origin.x, world_z - origin.y)
     }
 
-    /// The height of the water's surface over the column in whole blocks, or the sea's where dry, which ground over it is measured from.
+    /// Whole-block height of the water's surface over the column, or the sea's where dry; ground is measured from it.
     pub fn water_top(&mut self, world_x: i64, world_z: i64) -> i64 {
         let coord = RegionCoord::from_world(world_x, world_z);
         let origin = coord.origin();
@@ -200,7 +200,7 @@ impl HeightSampler<'_> {
         }
     }
 
-    /// The top block of the ground in whole blocks, kept under the water over it, or a bed a hair under a shallow lake's surface would round level and read as dry sand.
+    /// Whole-block ground top, kept under the water so a shallow lake bed doesn't round level and read as dry sand.
     pub fn ground_top(&mut self, world_x: i64, world_z: i64) -> i64 {
         let coord = RegionCoord::from_world(world_x, world_z);
         let origin = coord.origin();
@@ -246,7 +246,7 @@ impl HeightSampler<'_> {
             .trees_at(world_x - origin.x, world_z - origin.y)
     }
 
-    // Central-difference gradient, as the height change across two blocks measured over SLOPE_SPAN blocks either side, so block-sized bumps don't flip the surface between snow, stone and grass.
+    // Central-difference gradient over SLOPE_SPAN blocks a side, so block-sized bumps don't flip snow, stone and grass.
     pub fn gradient(&mut self, world_x: i64, world_z: i64) -> (f64, f64) {
         TreeGround::gradient(self, world_x, world_z)
     }

@@ -45,7 +45,7 @@ pub(super) struct FaceCell {
 }
 
 impl FaceCell {
-    // Whether its shading is the same at both ends along `axis` of the face (0 first tangent, 1 second), with `corners` where each corner is along them.
+    // Whether shading is the same at both ends along `axis` (0 first tangent, 1 second); `corners` places each.
     pub(super) fn even_along(&self, corners: &[[bool; 2]; 4], axis: usize) -> bool {
         (0..4).all(|j| {
             (0..4).all(|k| {
@@ -55,7 +55,7 @@ impl FaceCell {
         })
     }
 
-    // Whether `other`, next to it along `axis`, merges into one quad: shaded the same and evenly along `axis`, so stretching it leaves the shading as it was.
+    // Whether `other`, next to it along `axis`, merges into one quad: shaded the same and evenly along it.
     pub(super) fn merges_along(
         &self,
         other: &FaceCell,
@@ -74,7 +74,7 @@ impl FaceCell {
     }
 }
 
-// Whether a face of `block` at `coord` shows, and how much of it up the mesh's y axis (`Some(None)` for the whole face), with LOD surface cells topped at the ground's real height, see `LodBlocks::surface_top`.
+// Whether a face of `block` at `coord` shows and how much up the y axis (`Some(None)` for all); LODs use `surface_top`.
 pub(super) fn face_span(
     source: &impl BlockSource,
     coord: IVec3,
@@ -117,7 +117,7 @@ thread_local! {
     pub(super) static NO_MERGING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-// Merges runs of identically shaded opaque faces into single quads a slice at a time, see `FaceCell::merges_along`; faces between leaves aren't drawn, as the leaf cards show through.
+// Merges runs of identically shaded opaque faces into quads a slice at a time; faces between leaves aren't drawn.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn mesh_opaque_greedy(
     source: &GridView<impl BlockSource>,
@@ -205,7 +205,7 @@ pub(super) fn mesh_opaque_greedy(
 
         // the face of `block` at `coord` as a cell to merge and draw, if it shows
         let cell_at = |coord: IVec3, block: BlockType| -> Option<FaceCell> {
-            // past the mesh's edge the terrain may be drawn at another detail with no leaves there, so leaves on the edge keep their faces
+            // past the mesh's edge terrain may be drawn at another detail without leaves, so edge leaves keep their faces
             let inside = source.contains(coord + normal);
             let between_leaves = inside
                 && block == BlockType::Leaves
@@ -215,11 +215,11 @@ pub(super) fn mesh_opaque_greedy(
                 return None;
             }
             let span = face_span(source, coord, normal, block)?;
-            // unshaded leaves merge into big quads to keep the faces between them cheap, so they and coarse LODs take one light level a face
+            // unshaded leaves merge into big quads to keep faces between them cheap, so they and coarse LODs share one light
             let smooth = ambient_occlusion && block != BlockType::Leaves;
-            // a step above lowered ground faces into that ground's dark cell, so it's lit by the air over it, and is too thin to shade smoothly
+            // a step above lowered ground faces into that ground's dark cell, so it's lit by the air over it; too thin to shade
             let step = normal.y == 0 && source.block(coord + normal).is_opaque();
-            // a skirt wall hangs over solid cells with no occlusion or light, so it is lit as its ground is, by the open air above
+            // a skirt wall hangs over solid cells with no occlusion or light, so it's lit by the open air above, as its ground is
             let skirt = !inside && normal.y == 0 && source.has_skirts();
             let smooth = smooth && !step && !skirt;
             let lit_from = if step {
@@ -402,7 +402,7 @@ pub(super) fn mesh_opaque_greedy(
                     };
 
                     let (mut w, mut h) = (1, 1);
-                    // a trimmed side's top and bottom sit off the cell grid, so it merges only along the ground's contour, where neighbours share those heights
+                    // a trimmed side's top and bottom are off the cell grid, so it merges only along the ground's contour
                     let trimmed_side = cell.span.is_some() && normal.y == 0;
                     let (grow_a, grow_b) =
                         (!trimmed_side || a_axis != 1, !trimmed_side || b_axis != 1);

@@ -78,7 +78,7 @@ pub(super) fn mesh_blocks(
     // columns' water depths, shared between the corners that sample them
     let mut depths = HashMap::new();
     let mut depth_of = |coord: IVec3| {
-        // a sloped column is measured from its own top block, so blocks either side of a step agree, and a chunk down at most, all any chunk drawing the top sees (the swell's full by then)
+        // a sloped column is measured from its own top block so both sides of a step agree; at most a chunk down
         let level = source.water_block_level(coord.x, coord.z);
         let key = if level.is_some() {
             coord.with_y(i32::MIN)
@@ -196,7 +196,7 @@ pub(super) fn mesh_blocks(
         } else {
             None
         };
-        // the block the real surface lies in, as `water_block_top` fills to: the surface may leave it, the blocks under it are cut to it
+        // the block the real surface lies in (`water_block_top`): the surface may leave it, blocks under are cut to it
         let top_block = source
             .water_block_level(block_coord.x, block_coord.z)
             .is_some_and(|level| water_block_top(level) as i32 - 1 == block_coord.y);
@@ -279,12 +279,12 @@ pub(super) fn mesh_blocks(
             if i < 4 && !top_block && face.iter().all(|v| v.position[1] <= -0.5) {
                 continue;
             }
-            // only the top face carries the shore, depth, top flag and shore distance (R, G, B, A), as foam and waves are surface-only; waves follow the flag alone, so neighbouring depths move their shared edge alike
+            // top face only carries shore, depth, flag, distance (RGBA); waves follow the flag so shared edges agree
             let colors = face.map(|v| {
                 if i != 4 {
                     return [0.0, 0.0, 0.0, 1.0];
                 }
-                // the swell at this corner, from the water in the columns round it, so the surface stands still where it meets a fall's sheet and shared corners move alike
+                // swell here from neighbouring columns' water: zero at a fall's sheet, equal on shared corners
                 let calm = if cell_size == 1 {
                     let (sx, sz) = corner_signs(v.position);
                     let (mut total, mut count) = (0.0, 0.0);
@@ -420,7 +420,7 @@ pub(super) fn mesh_blocks(
     }
 }
 
-// Fresh water throws up spray where a run steeper than this, as a drop of about 3 blocks spreads to, eases off, and where it falls.
+// Fresh water sprays where a run is steeper than this (a ~3 block drop spreads to it), eases off, and where it falls.
 const SPRAY_SLOPE: f32 = 0.3;
 // Rising plumes and scattering droplets thrown up at each.
 const SPRAY_PLUMES: u32 = 2;
@@ -452,7 +452,7 @@ fn push_bubbles(spray: &mut MeshBuffers, block_coord: IVec3, height: f32) {
     }
 }
 
-// Spray off a sloped top block's face, its surface `height` up it: at the foot of a steep run, and of a fall down a side.
+// Spray off a sloped top block's face, surface `height` up it: at the foot of a steep run and of a fall down a side.
 fn push_spray(
     spray: &mut MeshBuffers,
     block_coord: IVec3,
@@ -536,25 +536,25 @@ const OXBLOOD_STRENGTH: f32 = 0.7;
 
 // How far in from the block's corners flora's quads reach, so neighbouring plants don't touch.
 const FLORA_INSET: f32 = 0.05;
-// How far a plant may stand off its block's centre, and how much shorter than a block grass and other plants may be; grass varies far more, so a meadow isn't cut level.
+// Plant offset from its block's centre and shortfall under a block; grass varies more, so meadows aren't cut level.
 const FLORA_JITTER: f32 = 0.18;
 const GRASS_SHORTEN: f32 = 0.45;
 const FLORA_SHORTEN: f32 = 0.2;
 // How dark a plant is at its roots, to its tips, as the grass round it shades them.
 const FLORA_ROOT_SHADE: f32 = 0.65;
-// How much of its block's height and width a plant is, at the least and the most; grasses may stand a little over a block where nothing is above them.
+// Plant height and width as a share of its block, at least and at most; grasses may top a block where nothing is above.
 const SIZE_RANGE: (f32, f32) = (0.7, 1.25);
 const WIDTH_RANGE: (f32, f32) = (0.6, 1.3);
 // How much wider a LOD node draws a clump's one plant than full detail's first, for the others it leaves out.
 const FAR_CLUMP_WIDTH: f32 = 1.5;
 // How far a block's further plants stand off its centre, at the most.
 const FLORA_EXTRA_REACH: f32 = 0.3;
-// Shrubs and heath are one plant to a block, drawn as six planes in a star reaching well past it, so neighbours in a cluster (see `flora.rs`) overlap into a carpet: their quad's height and half width in blocks.
+// Shrubs/heath: six planes in a star reaching past the block so clusters carpet; quad height and half width in blocks.
 const SHRUB_HEIGHT: (f32, f32) = (1.8, 2.5);
 const SHRUB_HALF_WIDTH: (f32, f32) = (1.3, 1.8);
 const HEATH_HEIGHT: (f32, f32) = (1.6, 2.2);
 const HEATH_HALF_WIDTH: (f32, f32) = (1.2, 1.6);
-// The jungle's big fern, in the shrub's way of three crossed pairs, and the savanna's long grass, which keeps the grasses' way and grows over two blocks.
+// The jungle's big fern (three crossed pairs, as the shrub) and the savanna's long grass, which grows over two blocks.
 const BIG_FERN_HEIGHT: (f32, f32) = (1.9, 3.3);
 const BIG_FERN_HALF_WIDTH: (f32, f32) = (1.1, 1.8);
 const LONG_GRASS_HEIGHT: (f32, f32) = (1.7, 2.7);
@@ -586,7 +586,7 @@ pub(super) struct Tuft {
     pub(super) lean: Vec3,
 }
 
-// Flora as two crossed quads drawn from both sides (block meshes cull one), v = 0 at the top so `foliage.wesl` sways the tips, facing up to light like the grass; `scale` is blocks per mesh unit.
+// Flora as two crossed double-sided quads; v = 0 at the top so `foliage.wesl` sways tips; `scale` is blocks per unit.
 pub(super) fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atlas_cell: f32, tint: Vec3, lit: f32) {
     let alpha = atlas_cell + flora_height_code(tuft.height * scale);
     let (root, tip) = (
@@ -596,7 +596,7 @@ pub(super) fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atla
     let (sin, cos) = libm::sincosf(tuft.angle);
     for across in [Vec3::new(cos, 0.0, sin), Vec3::new(-sin, 0.0, cos)] {
         let ground = tuft.ground;
-        // a corner follows the ground up or down at most as far as it is across, so a cliff face doesn't stretch a quad into a spike
+        // a corner follows the ground at most as far as it is across, so cliffs don't stretch a quad into a spike
         let slope = |d: Vec3| (-(ground.x * d.x + ground.z * d.z) / ground.y.max(0.1)).clamp(-d.length(), d.length());
         let tilt = Vec3::new(ground.x, 0.0, ground.z) * (SLOPE_LEAN * tuft.height);
         let corner = |side: f32, up: bool| {
@@ -621,10 +621,10 @@ pub(super) fn push_tuft(buffers: &mut MeshBuffers, tuft: &Tuft, scale: f32, atla
     }
 }
 
-// A plant's height rides in its vertex alpha's fraction about the atlas cell, for `foliage.wesl`'s `flora_height` to shrink it into its root with distance: up to `FLORA_HEIGHT_SPAN` blocks, coded within `FLORA_HEIGHT_CODE`.
+// A plant's height rides in its vertex alpha's fraction for `flora_height` in `foliage.wesl`; see `FLORA_HEIGHT_CODE`.
 pub(crate) const FLORA_HEIGHT_SPAN: f32 = 4.0;
 pub(crate) const FLORA_HEIGHT_CODE: f32 = 0.4;
-// A half-float's step at the flora's cells, 32 to 39, is 1/32, so a coded height is good to half that many heights a unit.
+// A half-float's step at atlas cells 32 to 39 is 1/32, so a coded height is good to half that many heights a unit.
 pub(crate) const FLORA_HEIGHT_STEP: f32 = FLORA_HEIGHT_SPAN / (2.0 * FLORA_HEIGHT_CODE) / 64.0;
 
 fn flora_height_code(height: f32) -> f32 {
@@ -634,7 +634,7 @@ fn flora_height_code(height: f32) -> f32 {
 // How finely a shore's water surface is cut along the ground, in cuts a block.
 const SHORE_CUTS: usize = 4;
 
-// A water top `face` (corners -x +z, -x -z, +x +z, +x -z, as the cube's) cut where the sculpted ground rises through it, kept where the water lies over the ground or over none in reach.
+// A water top `face` (corners -x+z, -x-z, +x+z, +x-z) cut where sculpted ground rises through it.
 fn push_shore(water: &mut MeshBuffers, face: &[Vertex; 4], colors: &[[f32; 4]; 4], at: Vec3, cell: f32, floor: &Floor) {
     // the face's corners by where they lie across it, (s, t) = (0, 0), (1, 0), (0, 1), (1, 1)
     let [c00, c10, c01, c11] = [1, 3, 0, 2];
@@ -665,7 +665,7 @@ fn push_shore(water: &mut MeshBuffers, face: &[Vertex; 4], colors: &[[f32; 4]; 4
     let uv_scale = 1.0 / ochre_base::block::TILE_COUNT as f32;
     for j in 0..n {
         for i in 0..n {
-            // round the cell as the face winds, keeping its corners over ground and the points between where the ground rises through
+            // round the cell as the face winds, keeping corners over ground and points between where the ground rises through
             let ring = [at_grid(i, j), at_grid(i + 1, j), at_grid(i + 1, j + 1), at_grid(i, j + 1)];
             let mut kept: Vec<(Vertex, [f32; 4])> = Vec::new();
             for k in 0..4 {
@@ -698,12 +698,12 @@ fn push_shore(water: &mut MeshBuffers, face: &[Vertex; 4], colors: &[[f32; 4]; 4
 
 // How far a plant's root sinks into sculpted ground, so a slope doesn't show daylight under one side.
 const ROOT_SINK: f32 = 0.08;
-// How far down and up from its block's foot a plant looks for sculpted ground, which smoothing can carry a block or more away.
+// How far down and up from its block's foot a plant looks for sculpted ground (smoothing can move it a block or more).
 const ROOT_REACH: (f32, f32) = (2.0, 0.6);
 // How much of the slope it stands on a plant leans with.
 const SLOPE_LEAN: f32 = 0.5;
 
-// Flora's plants, each a block in the world and its kind, drawn in the mesh `grass_tint` places; a LOD node passes `far` and draws only plants that outlast its `mid`, as nearer ones are full detail's.
+// Plants (block and kind) drawn in the mesh `grass_tint` places; a LOD node passes `far` to skip those past `mid`.
 fn mesh_flora(
     plants: impl IntoIterator<Item = (IVec3, BlockType)>,
     buffers: &mut MeshBuffers,
@@ -731,7 +731,7 @@ fn mesh_flora(
             BlockType::TallGrass | BlockType::ShortGrass | BlockType::SeedGrass | BlockType::FeatherGrass | BlockType::LongGrass
         );
         let shorten = if grass { GRASS_SHORTEN } else { FLORA_SHORTEN };
-        // grasses may stand a little over a block where the cell above is open; a LOD node looks past the ground's own cell, which the plant's block can share
+        // grasses may top a block where the cell above is open; LOD nodes look past the ground's own cell
         let room = !source.block(cell(world + IVec3::Y * if far.is_some() { 2 } else { 1 })).is_opaque();
         let long = block == BlockType::LongGrass;
         let tallest = if long && room { LONG_GRASS_HEIGHT.1 } else if grass && room { SIZE_RANGE.1 } else { 1.0 };
@@ -753,7 +753,7 @@ fn mesh_flora(
         }
         let reach = (0.5 - FLORA_INSET) * std::f32::consts::SQRT_2;
         let tile = block.tile(Face::Side);
-        // a block's foot (its centre being on whole numbers) in local units with only offsets after, so full detail's sums are as small as its chunk's coordinates
+        // block foot in local units with only offsets after, so full detail's sums stay as small as chunk coordinates
         let foot = grass_tint.local_of(world.as_vec3()) - Vec3::Y * (0.5 / scale);
         // tinted just as the grass it grows from, see `mesh_opaque_greedy`
         let tint = if tile.tinted() {
@@ -796,7 +796,7 @@ fn mesh_flora(
             }
             continue;
         }
-        // the first plant is where it always was and the rest stand round it, so a block is a clump; a LOD node draws one a little wider, as a block is a few pixels across
+        // the first plant stays put and the rest stand round it, so a block is a clump; LOD nodes draw it a little wider
         let extras = if far.is_some() { 0 } else { match block {
             // a clump of long grass is thick, and each blade as tall
             BlockType::LongGrass => 2 + (jitter(10) < 0.6) as u32,

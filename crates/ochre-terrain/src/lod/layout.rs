@@ -11,18 +11,18 @@ const LEVEL_ONE_MIN_RING: f32 = 4.0;
 pub struct LodLayout {
     /// Chunks within this many chunks of the camera are drawn at full detail.
     pub full_detail_distance: f32,
-    // Level n reaches this many chunks times `level_scale` to the n; full detail can reach further, see `with_full_detail_distance`.
+    // Level n reaches this many chunks times `level_scale` to the n; full detail can reach further.
     lod_base: f32,
     /// Each LOD level up to the set render distance reaches this many times as far as the one before.
     pub level_scale: f32,
-    // Levels drawing out to the set render distance; any beyond, for a view from high up, each reach only twice as far, adding about as many nodes a level.
+    // Levels out to the render distance; levels beyond it (high-up views) each reach only twice as far.
     scaled_levels: u8,
     pub max_level: u8,
     render_distance: f32,
 }
 
 impl LodLayout {
-    /// The fewest LOD levels that draw out to `render_distance` chunks, with full detail to `full_detail_distance` and each level `level_scale` times as far as the last.
+    /// The fewest LOD levels that draw out to `render_distance` chunks, given the full detail range and `level_scale`.
     pub fn new(full_detail_distance: u32, render_distance: u32, level_scale: u32) -> Self {
         let full_detail_distance = full_detail_distance.max(1) as f32;
         let layout = Self {
@@ -41,7 +41,7 @@ impl LodLayout {
         }
     }
 
-    /// With full detail out to `distance` chunks and the LOD levels reaching as far as before: only level 1's ring moves, keeping `LEVEL_ONE_MIN_RING`.
+    /// Full detail out to `distance` chunks; only level 1's ring moves, keeping `LEVEL_ONE_MIN_RING`.
     pub fn with_full_detail_distance(self, distance: u32) -> Self {
         let full_detail_distance = (distance.max(1) as f32).min(self.reach(1) - LEVEL_ONE_MIN_RING);
         Self {
@@ -51,7 +51,7 @@ impl LodLayout {
         .with_render_distance(self.render_distance)
     }
 
-    /// Drawing out to `render_distance` chunks instead, adding or dropping levels beyond the set one; never less than full detail reaches.
+    /// Draws out to `render_distance` chunks, adding or dropping outer levels; never less than full detail reaches.
     pub fn with_render_distance(self, render_distance: f32) -> Self {
         let mut layout = Self {
             max_level: 0,
@@ -79,7 +79,7 @@ impl LodLayout {
         self.lod_base * self.level_scale.powi(scaled as i32) * 2f32.powi(doubled as i32)
     }
 
-    /// How far, in chunks, terrain is built from full-detail regions; coarser LOD nodes sample the noise themselves, see `columns::COARSE_CELL`.
+    /// Chunks out to which terrain is built from full-detail regions; coarser nodes sample noise.
     pub fn region_reach(self) -> f32 {
         let fine_levels = (0..=self.max_level).take_while(|&level| (1i64 << level) < COARSE_CELL);
         self.reach(fine_levels.last().unwrap_or(0))
@@ -123,7 +123,7 @@ impl LodLayout {
     }
 }
 
-/// How ground flora shrinks into its roots with distance in blocks: all start at `start`, short ones are gone by `mid` and the tallest at `end`; `foliage.wesl` draws `gone_at` from the shader defs `specialize` sets.
+/// How ground flora shrinks into its roots with distance in blocks: all start at `start`, short ones gone by `mid`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FloraFade {
     pub start: f32,
@@ -132,10 +132,10 @@ pub struct FloraFade {
 }
 
 impl FloraFade {
-    // where shrinking starts, as a share of `mid`, and where the tallest are gone, as a share of the way from `mid` to level 1's end
+    // shrink start as a share of `mid`; tallest gone at a share of the way from `mid` to level 1's end
     const START: f32 = 0.55;
     const END: f32 = 0.6;
-    // the heights in blocks plants are ranked between, the shortest gone first, and the rank of the shortest that lasts past `mid`
+    // plant heights in blocks ranked shortest first; rank of the shortest that lasts past `mid`
     pub const HEIGHTS: (f32, f32) = (0.4, 1.3);
     pub const KEEP: f32 = 0.3;
     // where the shortest are gone, as a share of the way from `start` to `mid`

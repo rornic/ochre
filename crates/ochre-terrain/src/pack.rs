@@ -1,4 +1,4 @@
-//! Packs a terrain mesh's vertices into about half the bytes for the GPU: 16-bit positions, uvs and indices, octahedral normals, half-float colours.
+//! Packs terrain mesh vertices into about half the bytes: 16-bit positions, uvs, indices; octahedral normals.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,7 +13,7 @@ pub fn set_packed(on: bool) {
     PACKED.store(on, Ordering::Relaxed);
 }
 
-// A flat mesh has zero bounds size to divide by, so add an unused vertex a block off along each flat axis; false if attributes aren't floats.
+// Flat meshes have zero bounds to divide by: add an unused vertex a block off each flat axis; false if not floats.
 fn give_bounds_size(mesh: &mut Mesh) -> bool {
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -60,7 +60,7 @@ fn give_bounds_size(mesh: &mut Mesh) -> bool {
     true
 }
 
-/// The packed mesh, or `mesh` unchanged if packing is off or fails. Call it as late as possible: packed meshes can't be read back as floats.
+/// The packed mesh, or `mesh` unchanged if packing is off or fails. Call late: packed meshes can't be read as floats.
 pub fn pack(mut mesh: Mesh) -> Mesh {
     // Splitting foliage from ground can leave an empty solid mesh, with no bounds to quantize.
     if mesh.count_vertices() == 0 || !PACKED.load(Ordering::Relaxed) {
@@ -261,7 +261,7 @@ mod tests {
         assert_eq!(4, pack(mesh).count_vertices());
     }
 
-    // Seed 1's peak, around where a hole was seen: the groups the game builds, merged, split and packed as it does, keep every triangle where it was.
+    // Seed 1 peak, where a hole was seen: groups built as the game does, merged, split and packed, keep every triangle.
     #[test]
     #[ignore = "builds seed 1's whole world, a few seconds"]
     fn diag_group_pipeline_keeps_every_triangle() {

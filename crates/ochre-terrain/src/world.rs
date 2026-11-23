@@ -65,7 +65,7 @@ impl World {
         }
     }
 
-    /// A world over the same terrain and region cache with no chunks loaded and no edits, for a second reader of the same map.
+    /// A world over the same terrain and region cache with no chunks or edits, for a second reader of the map.
     pub fn sharing(&self) -> Self {
         Self {
             seed: self.seed,

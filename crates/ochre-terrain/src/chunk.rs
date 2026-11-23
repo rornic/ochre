@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn test_set_block_mid_run_splits_without_disturbing_neighbours() {
         let mut chunk_data = ChunkData::default();
-        // a single Air run covers everything by default: set one cell and confirm its neighbours above and below are untouched
+        // one Air run covers everything by default: set one cell, check the cells above and below are untouched
         chunk_data.set_block_at(U16Vec3::new(0, 5, 0), BlockType::Rock);
 
         assert_eq!(

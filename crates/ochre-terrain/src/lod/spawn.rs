@@ -103,7 +103,7 @@ pub(crate) fn spawn_lods(
     }
 }
 
-// Whether `key` has nothing to draw per regions or columns already sampled, never sampling so it runs on the main thread; breaks if LOD meshes ever show edits or caves.
+// Whether `key` has nothing to draw, from already-sampled data so it runs on the main thread; wrong if LODs show edits.
 pub(super) fn known_empty(key: LodKey, regions: &RegionStore) -> bool {
     let min = key.min_block();
     let cell = key.cell_size();

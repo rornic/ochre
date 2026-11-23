@@ -1,4 +1,4 @@
-//! Pins a fixed set of chunks' blocks from a synthetic integer-noise map and from `worldmap::generate` (`libm` maths), so a machine that differs fails here, not as ghost blocks at chunk joins.
+//! Pins chunk blocks from an integer-noise map and `worldmap::generate`, so a machine that differs fails here.
 
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use ochre_world::worldmap::{WaterCell, WorldConfig, WorldMap, WorldTerrain};
 const SEED: u32 = 20_231;
 const DIM: usize = 256;
 
-// A world 8 km across with hills, a range, a lake, a river widening to the sea and a biome in each quarter, all from `noise` and sums and products.
+// An 8 km world: hills, a range, a lake, a river widening to the sea and a biome per quarter, from `noise` and sums.
 fn synthetic_map() -> WorldMap {
     let config = WorldConfig {
         size: DIM as i64 * 32,
@@ -100,7 +100,7 @@ fn hash_chunks(regions: &Arc<RegionStore>, chunks: &[(i64, i64, i64)]) -> u64 {
     h
 }
 
-// Chunks over each kind of ground (lake, river reaches, range, each biome, coast), each as the surface chunk and the one under it.
+// Chunks over each ground kind (lake, river, range, each biome, coast), as the surface chunk and the one under it.
 fn chunk_set(map: &WorldMap) -> Vec<(i64, i64, i64)> {
     chunks_over(
         map,
@@ -166,7 +166,7 @@ fn test_chunks_from_a_fixed_map_and_seed_hash_the_same_on_every_machine() {
     ] {
         assert!(seen.contains(&(block as u8)), "no {block:?} in the chunks");
     }
-    // a change here changes edits stored as deltas against generated terrain, so bump `worldmap::GENERATOR_VERSION` with it
+    // a change here shifts edits stored against generated terrain: bump `worldmap::GENERATOR_VERSION` with it
     assert_eq!(4_580_397_193_923_206_550, first, "chunk hash changed");
 }
 

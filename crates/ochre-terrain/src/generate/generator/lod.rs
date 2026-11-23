@@ -35,7 +35,7 @@ use std::cell::LazyCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-// A skirt hangs this many cells under its edge's ground, more as the ground is steep up to the maximum, since a coarser neighbour's ground can sit that much lower.
+// A skirt hangs this many cells under its edge, more on steep ground to the max: coarser neighbours sit lower.
 pub(crate) const SKIRT_CELLS: i32 = 3;
 pub(crate) const MAX_SKIRT_CELLS: i32 = 40;
 
@@ -96,7 +96,7 @@ impl GridGround<'_> {
     }
 }
 
-// Whether a tree grows is decided from the noise at its exact position, as full detail's regions are, or levels would grow different trees; only its base stands on this node's ground.
+// Whether a tree grows comes from noise at its exact position, as in full detail, so every level grows the same trees.
 impl TreeGround for GridGround<'_> {
     fn trees(&mut self, x: i64, z: i64) -> f64 {
         // stored as a byte
@@ -112,7 +112,7 @@ impl TreeGround for GridGround<'_> {
         self.sample(x, z).biome
     }
 
-    // From the climate alone, far cheaper than `trees`' whole terrain; the density is stored as a byte, which can round it up by half a step.
+    // From the climate alone, far cheaper than `trees`' terrain; the density byte can round it up by half a step.
     fn rules_out(&mut self, x: i64, z: i64, chance: f64) -> bool {
         chance >= self.noise.tree_bound(x as f64, z as f64) + 1.0 / 255.0
     }
@@ -143,7 +143,7 @@ impl TreeGround for GridGround<'_> {
 }
 
 impl LodBlocks {
-    // The padded column under a mesh position; a vertex on a cell's edge reads the column on its far side, close enough for a gradient.
+    // The padded column under a mesh position; an edge vertex reads the far side's, close enough for a gradient.
     pub(super) fn column_at(&self, position: Vec3) -> usize {
         let column = |c: f32| ((c + 0.5).floor() as i32).clamp(-1, self.size);
         Self::column(self.size, column(position.x), column(position.z))
@@ -154,7 +154,7 @@ impl LodBlocks {
         Self::sample_with(regions, key, false)
     }
 
-    // With the plants full detail grows over it, when `plants` and its cells are narrow enough to draw them, see `FLORA_MAX_CELL`.
+    // With the plants full detail grows over it, when `plants` and its cells are narrow enough (`FLORA_MAX_CELL`).
     pub(super) fn sample_with(regions: &RegionStore, key: LodKey, plants: bool) -> Self {
         if key.cell_size() >= COARSE_CELL {
             Self::sample_coarse(regions, key)
@@ -163,7 +163,7 @@ impl LodBlocks {
         }
     }
 
-    // From the noise at each cell's centre, with real trees where cells are narrow enough and forests as a ground tint where not.
+    // From noise at each cell's centre: real trees where cells are narrow enough, forests as a ground tint where not.
     pub(super) fn sample_coarse(regions: &RegionStore, key: LodKey) -> Self {
         let size = CHUNK_SIZE as i32;
         let padded = (size + 2) as usize;
@@ -495,7 +495,7 @@ impl LodBlocks {
         ((cx + 1) * padded + cz + 1) as usize
     }
 
-    // The cell holding the ground's surface is solid however little it fills, its top drawn at the ground's real height so slopes step a block at a time; only under open air, as water and leaves fill the cell above from its bottom.
+    // The ground's surface cell is solid however little it fills, topped at its real height; only under open air.
     pub(super) fn find_surface_top(&self, coord: IVec3) -> Option<f32> {
         let top = self.tops[Self::column(self.size, coord.x, coord.z)];
         let bottom = self.base_y + coord.y as i64 * self.cell;
@@ -617,7 +617,7 @@ impl BlockSource for LodBlocks {
         let block = self.raw(coord);
         let outside = |c: i32| c < 0 || c >= self.size;
         if outside(coord.x) || outside(coord.z) {
-            // the wall hangs from this node's own surface edge whatever the cell beyond holds, or a coarser neighbour with lower ground would leave a gap
+            // the wall hangs from this node's own surface edge, or a coarser neighbour with lower ground would leave a gap
             let inner = IVec3::new(
                 coord.x.clamp(0, self.size - 1),
                 coord.y,
@@ -634,7 +634,7 @@ impl BlockSource for LodBlocks {
                     }
                 }
             }
-            // the ground may run up into the node above, where there's no air to find, so cells within the skirt's depth of its top count too; a buried node grows no walls
+            // ground may run up into the node above, so cells within skirt depth of its top count; buried nodes grow no walls
             let ground = self.tops[Self::column(self.size, inner.x, inner.z)];
             let bottom = self.base_y + inner.y as i64 * self.cell;
             if is_solid(self.raw(inner)) && bottom + self.cell > ground - depth as i64 * self.cell {
@@ -688,7 +688,7 @@ pub fn generate_lod_mesh(regions: Arc<RegionStore>, key: LodKey, flora: Option<F
         )
     });
     let textured = cell_size <= TEXTURE_MAX_CELL_SIZE;
-    // untextured leaves are drawn solid and textured ones are all past `INNER_LEAVES_REACH`, so have their holes filled: both hide the leaves behind them
+    // untextured leaves draw solid, textured ones are past `INNER_LEAVES_REACH` with holes filled: both hide leaves
     let meshes = mesh_blocks(
         &blocks,
         cell_size,
@@ -713,7 +713,7 @@ fn far_plants(regions: &RegionStore, heights: &mut HeightSampler, key: LodKey, t
     let size = CHUNK_SIZE as i64;
     let (min, blocks) = (key.min_block(), size * key.cell_size());
     let noise = regions.terrain();
-    // shortcut: a trunk's footprint and a rock's blocks are bare, but a low bough over the ground isn't, as it is in full detail
+    // shortcut: trunk footprints and rocks count as bare, but a low bough over ground isn't bare in full detail
     let mut taken = HashSet::new();
     // a trunk's footprint takes its whole column, under a height no block has
     const TRUNK: i64 = i64::MIN;
@@ -767,7 +767,7 @@ fn plant_rock(cells: &mut [BlockType], base: I64Vec3, cell: i64, rock: &Rock) {
     });
 }
 
-// What a lone tree is drawn as in a node whose lowest block is `base` and cells `cell` blocks wide: a trunk prism (to 8-block cells) and a few big crown cards, fewer and bigger as the cells widen.
+// A lone tree in a node with lowest block `base` and `cell`-block cells: a trunk prism (to 8) and crown cards.
 pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
     let mesh_at = |block: Vec3| (block - base.as_vec3()) / cell as f32 - 0.5;
     let mut boxes = Vec::new();
@@ -806,7 +806,7 @@ pub(super) fn far_boxes(tree: &Tree, base: I64Vec3, cell: i64) -> Vec<TreeBox> {
     boxes
 }
 
-// Fills the cells up column (`cx`, `cz`) of the node at `base`, each sampled at its middle, with ground `height` high on its `gradient` at `temperature`; blocks follow `shore_top` (see `columns::shore_top`) and water and ice `water_top`.
+// Fills column (`cx`, `cz`) of the node at `base` given ground `height`, `gradient` and `temperature`.
 fn fill_column(
     cells: &mut [BlockType],
     biomes: &Biomes,
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_snow_on_the_ground_shows_in_a_wider_cell() {
-        // cold enough for snowy grass, over ground 104 high, so its top block (103) is in the cell 100..104 and its middle (102) is under it
+        // cold enough for snowy grass over ground 104 high: top block (103) is in cell 100..104, middle (102) under it
         let cells = column(0.2, "forest", 104, 0);
         let surface = cells.iter().find(|(bottom, _)| *bottom == 100).unwrap();
         assert_eq!(BlockType::Snow, surface.1, "{cells:?}");

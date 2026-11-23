@@ -118,7 +118,7 @@ pub(super) fn apply_selection(
         .get(chunk));
     let nodes = &lods.nodes;
 
-    // The first selection and a new layout check everything; after that only changed keys can need spawning or retiring, as nodes can number hundreds of thousands.
+    // First selection and new layouts check everything; after that only changed keys need work (nodes number 100,000s).
     let wanted =
         |key: &LodKey| selected.contains(key) || (stand_ins.contains(key) && !state.covered(*key));
     let (to_spawn, retiring) = if first {

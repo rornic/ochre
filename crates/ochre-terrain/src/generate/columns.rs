@@ -9,12 +9,12 @@ use ochre_base::biome::BiomeId;
 use ochre_base::terrain_source::{SpringPart, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 
-/// LOD nodes with cells at least this many blocks across sample the noise at their spacing instead of from full-detail regions: a kilometre-wide node needs a few hundred columns, not dozens of regions.
+/// LOD nodes with cells at least this many blocks across sample noise directly: cheaper than dozens of regions.
 pub const COARSE_CELL: i64 = 4;
 
 // Grids kept for the nodes stacked over a column to share; they spawn together, so a short memory is enough.
 const GRIDS_KEPT: usize = 4096;
-// Full-detail chunk columns kept, about 6KB each: chunks load outward in shells, so a column is wanted while the view fills; about 3,000 at full detail distance 24.
+// Full-detail chunk columns kept (~6KB each): chunks load in shells, so a column is wanted while the view fills.
 const CHUNK_COLUMNS_KEPT: usize = 8192;
 // Height ranges kept for skipping empty nodes: a few bytes each, so plenty.
 const RANGES_KEPT: usize = 500_000;
@@ -40,7 +40,7 @@ impl From<LodKey> for ColumnKey {
     }
 }
 
-/// The ground at the centre of each cell of a column of LOD nodes, from one noise sample apiece, leaving out what's too fine for the cells to show.
+/// The ground at each cell centre of a column of LOD nodes, one noise sample apiece, minus detail too fine to see.
 pub struct ColumnGrid {
     cell: i64,
     heights: Vec<f32>,
@@ -124,7 +124,7 @@ impl ColumnGrid {
             .map_or(0, |lowest| (here - lowest).max(0))
     }
 
-    /// The slope there, as `terrain_block` takes it: height change across two blocks each way, summed, between the cells either side.
+    /// The slope there as `terrain_block` takes it: height change across two blocks each way, summed.
     pub fn gradient(&self, cx: i32, cz: i32) -> f64 {
         let across = |a: f64, b: f64| (a - b).abs() / self.cell as f64;
         across(self.height(cx + 1, cz), self.height(cx - 1, cz))
@@ -151,7 +151,7 @@ impl ColumnGrid {
 // How far, in blocks, a dry column looks for the river or lake it's a bank of.
 pub(crate) const SHORE_REACH: i64 = 2;
 
-/// The water a column's ground is chosen by: its own if under water, else the highest river, lake or sea within `SHORE_REACH` whose surface is within a block of `height`, so its bank is a beach; `wet` gives the water top over a column at an offset where it stands over that column's ground.
+/// The water choosing a column's ground: its own, else the highest within `SHORE_REACH` and a block of `height`.
 pub(crate) fn shore_top(own: i64, height: i64, mut wet: impl FnMut(i64, i64) -> Option<i64>) -> i64 {
     if own > height {
         return own;
@@ -164,7 +164,7 @@ pub(crate) fn shore_top(own: i64, height: i64, mut wet: impl FnMut(i64, i64) -> 
         .unwrap_or(own)
 }
 
-/// What generating a full-detail chunk takes from each of its columns, shared by the chunks stacked over them, see `generator::generate_chunk`.
+/// What generating a full-detail chunk takes from each of its columns, shared by the chunks stacked over them.
 pub struct ChunkColumns {
     heights: Vec<i64>,
     gradients: Vec<f64>,
@@ -263,7 +263,7 @@ impl ChunkColumns {
         self.gradients[Self::index(cx, cz)]
     }
 
-    /// How many blocks of the column's side show over its lowest neighbour: 0 on level ground, the height of the face on a cliff's edge.
+    /// Blocks of the column's side showing over its lowest neighbour: 0 on level ground, the face's height at a cliff.
     pub fn exposed(&self, cx: i64, cz: i64) -> i64 {
         self.exposed[Self::index(cx, cz)]
     }
@@ -353,7 +353,7 @@ impl<K: Hash + Eq, V> Recent<K, V> {
     }
 }
 
-/// Coarse LOD grids and height ranges shared by each column's stacked nodes, and full-detail chunk columns shared by its stacked chunks.
+/// Per-column sharing: coarse LOD grids and height ranges across stacked nodes, chunk columns across stacked chunks.
 pub(crate) struct ColumnCache {
     grids: Recent<ColumnKey, ColumnGrid>,
     ranges: RwLock<HashMap<ColumnKey, (f32, f32)>>,
@@ -371,7 +371,7 @@ impl Default for ColumnCache {
 }
 
 impl ColumnCache {
-    /// The columns under full-detail chunks at chunk `x`, `z`, sampled if no chunk over them has yet; blocks while another thread samples, so only call from a task.
+    /// Columns under full-detail chunks at `x`, `z`, sampled if needed; blocks while sampled elsewhere: call from a task.
     pub fn chunk_columns(
         &self,
         noise: &dyn TerrainSource,
@@ -383,7 +383,7 @@ impl ColumnCache {
             .get((x, z), || ChunkColumns::sample(noise, heights, x, z))
     }
 
-    /// The grid under `key`, sampled if no node over the column has yet; blocks while another thread samples, so only call from a task.
+    /// The grid under `key`, sampled if needed; blocks while another thread samples: call from a task.
     pub fn grid(&self, noise: &dyn TerrainSource, key: LodKey) -> Arc<ColumnGrid> {
         let column = ColumnKey::from(key);
         self.grids.get(column, || {

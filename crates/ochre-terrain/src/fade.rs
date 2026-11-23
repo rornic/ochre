@@ -24,7 +24,7 @@ pub(crate) const FULLY_VISIBLE: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
 // A fading-out mesh is drawn this fraction farther than it is, so its replacement wins where their surfaces coincide.
 const FADE_DEPTH_PUSH: f32 = 0.0005;
 
-// A swap is staggered: the new mesh dithers in over the old for this share of the fade, then the old dithers out, so no pixel is given up by both.
+// A swap is staggered: the new mesh dithers in over the old for this share of the fade, then the old dithers out.
 const FADE_IN_SHARE: f32 = 0.5;
 
 // The window drawn at `step` of a fade in: one more level of the dither is drawn each step.
@@ -32,7 +32,7 @@ fn fade_in_window(step: usize) -> Vec4 {
     Vec4::new(0.0, (step + 1) as f32 / FADE_STEPS as f32, 0.0, 0.0)
 }
 
-// The window at `step` of a fade out, which hides `step` levels of the dither; step 0 is whole but pushed back so the replacement wins.
+// The window at `step` of a fade out, hiding `step` dither levels; step 0 is pushed back so the replacement wins.
 fn fade_out_window(step: usize) -> Vec4 {
     Vec4::new(step as f32 / FADE_STEPS as f32, 1.0, FADE_DEPTH_PUSH, 0.0)
 }
@@ -162,7 +162,7 @@ pub(crate) struct Fade {
     despawn: bool,
 }
 
-/// Fades `entity` in or out unless already shown or hidden as asked; staggered, see `FADE_IN_SHARE`, so a swap never leaves a pixel undrawn.
+/// Fades `entity` in or out unless already as asked; staggered (`FADE_IN_SHARE`) so a swap leaves no pixel undrawn.
 pub(crate) fn set_shown(
     commands: &mut Commands,
     entity: Entity,

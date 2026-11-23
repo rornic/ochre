@@ -1,4 +1,4 @@
-//! Water flowing from still water into the space edits open: it falls as far as it can and spreads a level less per block, drying up when cut off.
+//! Water flowing from still water into edited-open space: falls, spreads a level less per block, dries up when cut off.
 
 use bevy::{
     ecs::system::{Local, Res, ResMut},
@@ -80,7 +80,7 @@ fn fed(world: &World, block: I64Vec3) -> Option<u8> {
         .max()
 }
 
-/// Moves the water a block on wherever it was stirred, each block from the water round it before the step; returns how many blocks changed.
+/// Moves water a block on wherever stirred, each block from its surroundings before the step; returns blocks changed.
 pub(crate) fn step(world: &mut World) -> usize {
     let changes: Vec<(I64Vec3, Option<u8>)> = world
         .take_stirred()

@@ -10,7 +10,7 @@ pub struct RayHit {
     pub distance: f32,
 }
 
-/// The first block along the ray, within `reach`, that `hits` stops at, stepping block by block (Amanatides & Woo); block `c` spans `c - 0.5` to `c + 0.5`.
+/// The first block along the ray within `reach` that `hits` stops at (Amanatides & Woo); block `c` spans `c` +- 0.5.
 pub fn raycast(
     origin: Vec3,
     direction: Vec3,

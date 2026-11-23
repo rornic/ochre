@@ -7,7 +7,7 @@ use bevy::math::UVec2;
 use bevy::math::Vec3;
 use ochre_base::block::BlockType;
 
-// From cells this wide, trees are drawn together as one canopy of a few boxes a node: boxes for each would cost far more than the land under them.
+// From cells this wide, trees draw as one canopy of a few boxes a node: a box per tree would cost more than the land.
 pub(super) const CANOPY_CELL: i64 = 16;
 
 // How many points across each column, each way, its canopy's cover is judged from.
@@ -109,7 +109,7 @@ impl Canopy {
             >= CANOPY_COVER
     }
 
-    // Boxes from the ground up to the crowns' tops over this node's columns, merged where neighbours round to the same top and drawn in to the points under crowns.
+    // Boxes from the ground to the crowns' tops over this node's columns, merged where neighbours share a top.
     pub(super) fn boxes(
         &self,
         ground_heights: &[f32],
@@ -193,7 +193,7 @@ impl Canopy {
     }
 }
 
-// Coarse cells up to this wide hold real trees; wider ones tint the ground by the forest over it instead, so forests never cut off.
+// Coarse cells up to this wide hold real trees; wider ones tint the ground by the forest instead.
 pub(super) const TREE_MAX_CELL: i64 = 32;
 
 // Trunks are boxes only up to cells this wide: past them one is far under a pixel.
@@ -202,7 +202,7 @@ pub(super) const TRUNK_MAX_CELL: i64 = 8;
 // From cells this wide a crown is a box of its real size, as a cell would round it up to several times that.
 pub(super) const BOX_CROWN_CELL: i64 = 8;
 
-// Each tree a cell grows covers this much of its ground (see `Biome::tree_density`), and a cell all covered is drawn this fraction as bright.
+// Ground each tree in a cell covers (`Biome::tree_density`); a fully covered cell draws this fraction as bright.
 pub(super) const FOREST_COVER: f64 = 1.6;
 pub(super) const FOREST_DARKEN: f32 = 0.55;
 

@@ -52,7 +52,7 @@ pub struct GroupedChunk;
 #[derive(Component)]
 pub(crate) struct SolidTerrain;
 
-/// How far past its chunks a group's meshes can reach, in blocks: a shrub's planes (1.8 from their block's middle) and a tree's leaf cards (`trees_mesh::CARD_REACH`).
+/// How far past its chunks a group's meshes reach, in blocks: shrub planes (1.8 from block middle), tree leaf cards.
 pub(crate) const GROUP_OVERHANG: f32 = 2.0;
 
 pub(crate) fn group_aabb() -> Aabb {
@@ -160,7 +160,7 @@ pub(crate) fn pack_group(mut merged: ChunkMeshes) -> ChunkMeshes {
     merged
 }
 
-/// Draws `merged`, packed by `pack_group`, as the group at `entity`: its opaque faces on the entity, and its water and spray on children of it.
+/// Draws `merged`, packed by `pack_group`, as the group at `entity`: opaque faces on it, water and spray on children.
 pub(crate) fn draw_group(
     commands: &mut Commands,
     entity: Entity,
@@ -267,7 +267,7 @@ fn merge_meshes(parts: Vec<(Vec3, Mesh)>) -> Option<Mesh> {
     }
     let mut merged = Mesh::new(
         PrimitiveTopology::TriangleList,
-        // both worlds like the lod meshes: a packed mesh isn't drawn if its main copy, which keeps the pack bounds, is dropped on upload
+        // both worlds like the lod meshes: a packed mesh isn't drawn if its main copy (with the pack bounds) drops on upload
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)

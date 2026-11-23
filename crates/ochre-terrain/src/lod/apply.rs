@@ -31,7 +31,7 @@ use std::time::Instant;
 
 pub(super) const LOD_APPLY_TIME_BUDGET: Duration = Duration::from_millis(2);
 
-// From this level up, water draws with the opaque meshes: blended ones draw one at a time, not batched, and water this far out is nearly opaque.
+// From this level up, water draws with the opaque meshes: nearly opaque this far out, and blended draws aren't batched.
 pub(crate) const SOLID_WATER_LEVEL: u8 = 2;
 
 pub(crate) fn load_lods(
@@ -161,7 +161,7 @@ pub(crate) fn refresh_lod_visibility(
     all_groups: Query<(Entity, &ChunkGroup), With<BuiltGroup>>,
     new_groups: Query<(Entity, &ChunkGroup), Added<BuiltGroup>>,
     built_groups: Query<(), With<BuiltGroup>>,
-    // only nodes with something to draw: those meshed to nothing are despawned, and loading ones show when their mesh lands
+    // meshed-to-nothing nodes are despawned; loading ones show once their mesh lands
     all_nodes: Query<(Entity, &LodNode), Without<GenerateLodMesh>>,
     mut visibility: Query<(&mut Visibility, Option<&Fade>)>,
 ) {

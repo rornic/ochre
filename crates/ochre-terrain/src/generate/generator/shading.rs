@@ -24,7 +24,7 @@ pub(super) const FACE_TANGENTS: [(IVec3, IVec3); 6] = [
 
 // How dark a fully occluded corner gets, 0..1; two solid sides already count as fully occluded, see `vertex_ao`.
 pub(super) const AO_STRENGTH: f32 = 0.6;
-// AO is raised to this before it multiplies in, gentler than the 2.2 of a straight sRGB to linear so creases stay soft and coloured.
+// AO is raised to this before it multiplies in, gentler than sRGB's 2.2 so creases stay soft and coloured.
 pub(super) const AO_GAMMA: f32 = 1.5;
 
 // Height of the water surface within a full-detail block, whose cube spans -0.5..0.5.
@@ -67,7 +67,7 @@ pub(super) fn vertex_ao(
     1.0 - (sum / 2.0).clamp(0.0, 1.0) * AO_STRENGTH
 }
 
-// Sky light at a face's corner, 0..1: the average over the open cells around it on the face's open side, leaving out the diagonal when both sides are solid, as light can't reach round to it.
+// Sky light at a face corner, 0..1: average of open cells round it, minus a diagonal with both sides solid.
 pub(super) fn vertex_light(
     source: &impl BlockSource,
     light: &SkyLight,
@@ -126,7 +126,7 @@ pub(super) fn vertex_shore_factor(
 
 pub(super) const SHORE_DISTANCE_RADIUS: i32 = 3;
 
-// Distance from this top-face corner to the nearest land, 0..1 over `SHORE_DISTANCE_RADIUS`, 1 for none; measured from the corner so every block sharing it agrees and the foam's phase doesn't tear.
+// Distance from a top-face corner to land, 0..1 over `SHORE_DISTANCE_RADIUS`, 1 for none; per corner so foam holds.
 pub(super) fn vertex_shore_distance(
     source: &impl BlockSource,
     block_coord: IVec3,
@@ -172,7 +172,7 @@ pub(super) fn vertex_water_depth(
     total / 4.0
 }
 
-// Columns whose surfaces differ by more than this are a curtain between them, not one slope: less is a rapid, drawn as a ramp.
+// Columns differing by more than this are a curtain between them, not one slope; less is a rapid, drawn as a ramp.
 pub(super) const WATER_SLOPE_MAX_STEP: f32 = 2.0;
 
 // The x and z signs, -1 or 1, of the top-face corner a vertex at `vertex_local_pos` is over.
@@ -200,7 +200,7 @@ impl WaterCorner {
     }
 }
 
-// The corner `signs` of `column`, joined by the columns round it until sorted levels gap a block, so a group agrees on it.
+// The corner `signs` of `column`, joined with neighbours until sorted levels gap a block, so a group agrees on it.
 pub(super) fn water_corner(
     level_at: &mut impl FnMut(i32, i32) -> Option<f32>,
     column: (i32, i32),
@@ -267,8 +267,8 @@ pub(super) const WATER_BANK_MARGIN: f32 = 0.05;
 // How far over the bed under it a water corner is held, so the bed never shows through.
 pub(super) const WATER_BED_MARGIN: f32 = 0.02;
 
-// `raw` (NaN where dry) averaged over the water within reach, and within a curtain's step of it, of each column of the grid `WATER_SPREAD_REACH` inside it
-// shortcut: the spread is only drawn, the blocks under it aren't moved; fill them at generation if swimming in it matters
+// `raw` (NaN where dry) averaged over water within reach and a curtain's step, per column, `WATER_SPREAD_REACH` in
+// shortcut: the spread is only drawn, blocks under it aren't moved; fill them at generation if swimming matters
 pub(super) fn spread_water_levels(raw: &[f32], wide: i32) -> Vec<f32> {
     let reach = WATER_SPREAD_REACH;
     let inner = wide - 2 * reach;
@@ -283,7 +283,7 @@ pub(super) fn spread_water_levels(raw: &[f32], wide: i32) -> Vec<f32> {
             for dx in -reach..=reach {
                 for dz in -reach..=reach {
                     let level = raw[((x + dx) * wide + z + dz) as usize];
-                    // water more than a curtain keeps away, or over one, is not averaged in: it would pull a pool up toward the fall over it
+                    // water a curtain or more away isn't averaged in: it would pull a pool up toward the fall over it
                     if dx * dx + dz * dz <= reach * reach
                         && !level.is_nan()
                         && (level - own).abs() <= 2.0 * WATER_SPREAD_MAX_MOVE

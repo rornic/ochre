@@ -21,11 +21,11 @@ use ochre_base::WATER_LEVEL;
 
 // The tallest land can rise above the sea.
 const TALLEST: f32 = 576.0;
-/// The bend eases in between these heights above sea level: flat near the ground so distant mountains don't sink, curving away from high up.
+/// The bend eases in between these heights above sea level: flat near the ground so distant peaks don't sink.
 const FADE_START: f32 = 100.0;
 const FADE_END: f32 = 450.0;
 
-/// The round world the land is bent around: always the same size, so a shorter render distance shows less of its curve.
+/// The round world the land bends around: a fixed size, so a shorter render distance shows less of its curve.
 pub const WORLD_CURVE: Curve = Curve::seen_from_the_top_to(MAX_RENDER_DISTANCE);
 
 /// A round world to bend the land around.
@@ -36,7 +36,7 @@ pub struct Curve {
 }
 
 impl Curve {
-    /// The world whose horizon from the top of the world is `chunks` away; from sea level it is half as far, see `horizon_distance`.
+    /// The world whose horizon from the top of the world is `chunks` away; from sea level it is half as far.
     pub(crate) const fn seen_from_the_top_to(chunks: f32) -> Self {
         let blocks = chunks * CHUNK_SIZE as f32;
         // solves `horizon_distance` at the top of the world for the radius
@@ -45,13 +45,13 @@ impl Curve {
         }
     }
 
-    /// How far out land can be seen from `height` blocks up: the sea's horizon, and past it while the tallest peaks still rise above; fog hides the farther view while the bend eases in.
+    /// How far out land can be seen from `height` blocks up: the sea's horizon, or past it while tall peaks still show.
     pub fn horizon_distance(self, height: f32) -> f32 {
         let above_sea = (height - WATER_LEVEL as f32).max(0.0);
         (2.0 * self.radius).sqrt() * (above_sea.sqrt() + TALLEST.sqrt())
     }
 
-    /// The slope at which the land's edge is seen below level from `height` up: the sea's horizon, or nearer if only `drawn` blocks are drawn; matches `horizon_dip` in `horizon.wesl`.
+    /// The slope at which the land's edge is seen below level from `height` up; matches `horizon_dip` in `horizon.wesl`.
     pub fn edge_dip(self, height: f32, drawn: f32) -> f32 {
         let above_sea = (height - WATER_LEVEL as f32).max(0.0);
         let bend = self.bend_at(height);
@@ -62,7 +62,7 @@ impl Curve {
         above_sea / edge + bend * edge
     }
 
-    /// How far below the camera's flat horizon land `distance` blocks away is drawn from `height` up: a sphere's drop, while eased in.
+    /// How far below the camera's flat horizon land `distance` blocks away is drawn from `height` up: a sphere's drop.
     pub fn drop_at(self, distance: f32, height: f32) -> f32 {
         distance * distance * self.bend_at(height)
     }
@@ -75,16 +75,16 @@ impl Curve {
     }
 }
 
-/// What the shaders bend the land around (`curvature.wesl`): the camera's position and `Curve::bend_at` its height, this frame's then last frame's; one buffer at binding 8 on every land material.
+/// What the shaders bend the land around (`curvature.wesl`): camera position and `Curve::bend_at` height, now and last.
 #[derive(Resource)]
 pub struct Curvature {
     pub buffer: Handle<ShaderBuffer>,
     last: [f32; 4],
     /// What the shaders are told about the cold, see `ochre_base::cold::shader_values`: written after the two bends.
     pub(crate) cold: [f32; 8],
-    /// What painterly lighting pushes the sky's light toward in shadow, a colour and how far, see `ochre_world::atmosphere`.
+    /// What painterly lighting pushes the sky's light toward in shadow: a colour and how far.
     pub shadow: [f32; 4],
-    /// The haze toward each of 16 compass points: for each the camera's, then 3 rings out, a tint and a density as 4 floats, see `ochre_world::ambience::haze`.
+    /// The haze toward 16 compass points: per point the camera's, then 3 rings out, a tint and density as 4 floats.
     pub haze: [f32; 256],
     /// How much of its sway the foliage keeps, 1 for all of it, in `x`: the rest is padding, see `foliage.wesl`.
     pub sway: [f32; 4],
@@ -129,7 +129,7 @@ fn update_curvature(
     curvature.last = now;
 }
 
-/// Loosens each downward-facing side of the camera's frustum by the most anything drawn can drop, so land the curve brings into view isn't culled where it lies flat; rebuilt every frame as Bevy only does so when the camera moves.
+/// Loosens each downward frustum side by the most drawn land can drop so curved-in land isn't culled; runs every frame.
 fn loosen_frustum(
     mut cameras: Query<(&GlobalTransform, &Projection, &mut Frustum), With<Camera3d>>,
 ) {

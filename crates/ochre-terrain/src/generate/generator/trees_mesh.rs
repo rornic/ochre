@@ -10,7 +10,7 @@ use ochre_base::block::{BlockType, Face, Tile};
 use std::f32::consts::TAU;
 use std::ops::Deref;
 
-// Bark's texture coordinates go negative for half the world, and a vertex with `uv.x` under -512 is drawn as sculpted ground (bands of dirt up the trunk), so they are taken mod this, which every power-of-two period up to 64 divides.
+// Bark uvs go negative for half the world and `uv.x` under -512 draws as sculpted ground, so they wrap mod this.
 const PERIOD_WRAP: f32 = 64.0;
 
 // How much wider than the trunk the lowest log is, where it meets the ground, at most this wide.
@@ -24,30 +24,30 @@ const SIDES: usize = 8;
 // A card's width across, in blocks, on a broadleaf and on a pine, whose tiers are narrow.
 const CARD_SIZE: (f32, f32) = (2.0, 2.8);
 const PINE_CARD_SIZE: (f32, f32) = (2.0, 3.0);
-// How far a card stands out from its voxel's middle toward the open air, how much it tips up, how far its facing strays, and the share of surface leaves that get one.
+// Card standoff toward open air, tip up, facing stray, and the share of surface leaves that get a card.
 const CARD_OUT: f32 = 0.25;
 const CARD_UP: f32 = 0.35;
 const CARD_STRAY: f32 = 0.4;
 const CARD_DENSITY: f32 = 1.0;
-// A card's outline is this many corners at an irregular distance, in half widths, from its middle, so it has no square corners to stick out.
+// A card's outline: this many corners at irregular distances, in half widths, from its middle, so none are square.
 const RIM: usize = 6;
 const RIM_REACH: (f32, f32) = (0.95, 1.3);
-// A pine's cards face along the cone of its crown, out from the trunk and this much up, and not away from whichever side of their leaf is open.
+// A pine's cards face along its crown's cone, out from the trunk and this much up, not away from the open side.
 const PINE_UP: f32 = 0.6;
-// At a pine's tip, where there is no cone to face along, a card stands up facing a hashed way round, this much up, so it does not cap the tip flat.
+// At a pine's tip there's no cone: a card faces a hashed way round, this much up, so the tip isn't capped flat.
 const PINE_TIP_UP: f32 = 0.4;
-// A broadleaf's cards take this share of their facing from the crown's ball, and the rest from their open sides, with this much up.
+// A broadleaf's cards take this share of their facing from the crown's ball and the rest from open sides, plus this up.
 const CROWN_FACING: f32 = 0.7;
 const CROWN_UP: f32 = 0.15;
-// A card is darker the more leaves are over it in its column, by this much a leaf, as far as this many above, and at least this bright.
+// A card is darker the more leaves are over it in its column: this much a leaf, up to this many, never below this.
 const DEPTH_REACH: i32 = 6;
 const DEPTH_DARKEN: f32 = 0.07;
 const DEPTH_MIN: f32 = 0.6;
-/// The farthest a card's corner can be from its voxel's middle, in blocks: its widest card's longest reach and how far out it stands.
+/// The farthest a card's corner can be from its voxel's middle, in blocks: widest card's longest reach plus standoff.
 #[cfg(test)]
 pub(super) const CARD_REACH: f32 = PINE_CARD_SIZE.1 * 1.1 * 0.5 * RIM_REACH.1 + CARD_OUT;
 
-/// How far the trunk's centre line is from its voxel column at height `y`, in blocks: none at the foot, the lean at the top.
+/// The trunk centre line's offset from its voxel column at height `y`, in blocks: none at the foot, the lean at top.
 pub(super) fn trunk_offset(look: &TreeLook, y: f32) -> Vec2 {
     let up = ((y - (look.base.y - 0.5)) / look.height).clamp(0.0, 1.0);
     look.lean * up * up
@@ -238,7 +238,7 @@ impl<L: Deref<Target = SkyLight>> Drawing<'_, L> {
     }
 }
 
-/// A painted card on a surface leaf: its middle, the directions across it, its outline, and its shading direction, outward from the crown and not from the card itself.
+/// A painted card on a surface leaf: its middle, directions across it, outline, and shading direction (out from crown).
 pub(super) struct Card {
     pub(super) centre: Vec3,
     pub(super) right: Vec3,
@@ -265,7 +265,7 @@ fn card_outline(world: IVec3, centre: Vec3, right: Vec3, up: Vec3, half: f32) ->
     })
 }
 
-/// What a leaf's card faces by: along a pine's cone, from its offset from the trunk, or a broadleaf's crown, by the way the crown faces there.
+/// What a leaf's card faces by: a pine's cone from its offset from the trunk, or the way a broadleaf's crown faces.
 #[derive(Clone, Copy)]
 pub(super) enum Crown {
     Pine(Vec3),
@@ -277,7 +277,7 @@ pub(super) fn depth_shade(above: usize) -> f32 {
     (1.0 - DEPTH_DARKEN * above as f32).max(DEPTH_MIN)
 }
 
-/// The card for the leaf whose middle is `middle`, at `world`, open to the air along `open` (the sum of its open sides), or none if it gets no card.
+/// The card for the leaf at `middle`, `world`, open to the air along `open` (sum of open sides); none if no card.
 pub(super) fn card(world: IVec3, middle: Vec3, open: Vec3, crown: Crown, scale: f32) -> Option<Card> {
     if hash01(world, 90) >= CARD_DENSITY {
         return None;
@@ -332,7 +332,7 @@ struct FarRing {
     radius: Vec2,
 }
 
-/// Draws `tree_box`, which is not a cuboid, as the shape it stands for: a trunk as a bowed prism or a crown card. `cell` is the mesh's blocks to a cell.
+/// Draws `tree_box`, not a cuboid, as what it stands for: a bowed trunk prism or crown card; `cell` blocks a cell.
 pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec3, cell: f32, light: f32) {
     let (min, max) = (tree_box.min, tree_box.max);
     let (centre, half) = ((min + max) / 2.0, (max - min) / 2.0);
@@ -406,7 +406,7 @@ pub(super) fn far_shape(buffers: &mut MeshBuffers, tree_box: &TreeBox, tint: Vec
     buffers.push_double_sided_mesh(&vertices, light, &triangles);
 }
 
-/// Draws the logs of `faces` as eight-sided prisms: a tree's trunk bowed along its lean, any other log straight along the logs beside it.
+/// Draws the logs of `faces` as eight-sided prisms: a tree's trunk bowed along its lean, other logs straight.
 pub(super) fn mesh_trees<S: BlockSource>(
     faces: &TreeFaces<S>,
     buffers: &mut MeshBuffers,
@@ -474,7 +474,7 @@ pub(super) fn mesh_trees<S: BlockSource>(
         if faces.tree_look(coord).is_some_and(|look| look.pine) {
             continue;
         }
-        // any other log reaches toward each log round it, diagonals too, so a branch that steps across the grid still joins up
+        // any other log reaches toward each log round it, diagonals too, so a branch that steps across the grid joins up
         let radius = faces
             .tree_look(coord)
             .map_or(LONE_BRANCH_RADIUS, |look| (look.radius * BRANCH).max(BRANCH_MIN));
@@ -499,7 +499,7 @@ pub(super) fn mesh_trees<S: BlockSource>(
         }
         for &offset in &joined {
             let neighbour = coord + offset;
-            // into a trunk it reaches the trunk's centre line, to be out of sight in it, and otherwise halfway, where the next log's own reach meets it
+            // into a trunk it reaches the trunk's centre line, out of sight; otherwise halfway, where the next log's reach meets
             let end = match faces.tree_look(neighbour).filter(|look| look.in_trunk(neighbour)) {
                 Some(look) => {
                     let off = trunk_offset(&look, neighbour.y as f32);
@@ -536,7 +536,7 @@ pub(super) fn mesh_trees<S: BlockSource>(
         if open == Vec3::ZERO {
             continue;
         }
-        // a pine's card faces along its crown's cone, from its offset from the trunk, and a broadleaf's as its crown's ball does there
+        // a pine's card faces along its crown's cone, from its offset from the trunk; a broadleaf's as its crown's ball does
         let at = coord.as_vec3();
         let crown = match faces.tree_look(coord) {
             Some(look) if look.pine => Crown::Pine(at - look.base),
@@ -629,7 +629,7 @@ mod tests {
             }
         }
         assert!(farthest <= CARD_REACH + 1e-4, "{farthest}");
-        // a corner is at most this far past the face of the voxel it hangs on, and the group's edge is half a block further in
+        // a corner is at most this far past the voxel face it hangs on, and the group's edge is half a block further in
         const { assert!(CARD_REACH - 0.5 <= crate::group::GROUP_OVERHANG) };
     }
 

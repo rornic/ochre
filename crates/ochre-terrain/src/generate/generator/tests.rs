@@ -226,7 +226,7 @@ fn test_desert_ground_is_sand_and_other_lowland_grass() {
 
 #[test]
 fn test_a_chunk_knows_its_neighbours_steppe_columns() {
-    // the sculpted mesh's margin draws grass from the neighbours' columns, so the steppe's must be known there or a strip of plain grass runs along the border
+    // the sculpted mesh's margin draws grass from neighbours' columns: steppe must be known there or a plain strip shows
     let regions = RegionStore::new(ochre_world::worldmap::test_terrain(13));
     let terrain = regions.terrain();
     let size = CHUNK_SIZE as i32;
@@ -549,7 +549,7 @@ fn flat_lod(surface_y: i32) -> LodBlocks {
     LodBlocks::new(size, cells, tops, 0, 1)
 }
 
-// Grass two cells of 4 blocks deep, its ground 6 blocks up the node for x < 8 and 7 beyond, both inside the second cell, so its top is lowered; above the sea, under open sky.
+// Grass two 4-block cells deep, ground 6 up the node for x < 8 and 7 beyond, both in the second cell: its top lowers.
 fn sloped_lod() -> LodBlocks {
     let base_y = WATER_LEVEL + 64;
     let size = 16;
@@ -709,7 +709,7 @@ fn test_grass_tint_matches_along_shared_edges() {
         .abs_diff_eq(chunk_tint(7, 7).at(Vec3::splat(15.5)), 1e-5));
 }
 
-// The most any channel of the grass's tint differs between full-detail chunks and the coarse node over them, in world blocks.
+// The most any channel of the grass's tint differs between full-detail chunks and the coarse node over them.
 fn handover_tint_gap(seed: u32, node_corner: Vec3, scale: f32) -> f32 {
     let noise = ochre_world::worldmap::test_terrain(seed);
     // the node's local origin is half a cell back from its first block, as `GrassTint::new` takes it
@@ -733,7 +733,7 @@ fn handover_tint_gap(seed: u32, node_corner: Vec3, scale: f32) -> f32 {
 
 #[test]
 fn test_grass_tint_barely_changes_where_a_chunk_hands_over_to_a_node() {
-    // nodes of levels 3 and 4 over a few places on two worlds: measured gaps are about 0.01, so no colour pops at the hand-over; away from water, as a node's tint misses a river bank's wetting, see `docs/issues.md`
+    // levels 3 and 4 over places on two worlds, away from water (node tint misses bank wetting): gaps ~0.01
     for (seed, corner) in [(3, Vec3::new(2048.0, 0.0, 2048.0)), (3, Vec3::new(-4096.0, 0.0, 1024.0)), (5, Vec3::new(-2048.0, 0.0, -3072.0))] {
         for scale in [8.0, 16.0] {
             let gap = handover_tint_gap(seed, corner, scale);
@@ -803,7 +803,7 @@ fn test_tree_boxes_stay_textured_up_to_eight_wide_cells_with_a_tile_a_block() {
         forest_at(5) - bevy::math::I64Vec2::splat(300),
         forest_at(5) + bevy::math::I64Vec2::splat(300),
     );
-    // a LOD node's coarse ground can put a tree on a terrace a few blocks off its true foot, in another node, so take the first tree whose crown node has a mesh
+    // a coarse LOD node can put a tree on a terrace off its true foot, in another node: take the first with a mesh
     let (_, mesh) = trees
         .iter()
         .find_map(|tree| {
@@ -1304,7 +1304,7 @@ fn test_a_lone_trees_trunk_is_a_thin_box_in_cells_four_to_eight_wide() {
         let mesh =
             super::mesh::mesh_blocks(&lone, key.cell_size(), style(false, false), &tint, &light)
                 .opaque;
-        // its foot is in the ground, so it is a prism of three rings of nine corners (the first repeated for the texture's seam) and a cap's hub
+        // its foot is in the ground: a prism of three rings of nine corners (first repeated for the seam) and a cap hub
         assert_eq!(3 * 9 + 1, mesh.count_vertices());
     }
 }
@@ -1386,7 +1386,7 @@ fn test_far_forests_are_a_few_canopy_boxes_not_a_box_a_tree() {
             .filter(|b| b.block == BlockType::Leaves)
             .collect();
         assert!(!leaf_boxes.is_empty(), "no canopy at level {level}");
-        // a forest of 35% density merges fewer crowns than 55% did, so the boxes only have to be two thirds of the trees; at the widest cells a thin forest's crowns stop merging, so there only that no tree costs more than two boxes is asked
+        // a 35% forest merges fewer crowns than 55%: boxes need only be two thirds of trees; widest cells ask <= 2 per tree
         let allowed = if level == 4 {
             inside * 2 / 3
         } else {
@@ -1451,7 +1451,7 @@ fn test_canopy_is_no_bigger_than_the_crowns_under_it() {
                 }
             }
         }
-        // its edges are drawn in to the crowns, so what's extra is the gaps between them inside it, more the wider the columns
+        // its edges are drawn in to the crowns, so extra is the gaps between crowns inside it, more the wider the columns
         assert!(
             drawn <= under * 1.4,
             "canopy {drawn} over {under} under crowns at level {level}"
@@ -1887,7 +1887,7 @@ fn test_compacted_stone_follows_the_local_surface_not_a_fixed_height() {
     assert!(seen >= 2, "only {seen} dry columns found");
 }
 
-// Blocks in the chunk at (`cx`, `cy`, `cz`) with air under a solid block in the same column, and how many columns are steep enough for cliffs.
+// Blocks in the chunk at (`cx`, `cy`, `cz`) with air under solid in a column, and how many columns are cliff-steep.
 fn overhangs(regions: &Arc<RegionStore>, (cx, cy, cz): (i64, i64, i64)) -> (usize, usize) {
     use ochre_base::relief::cliff_reach;
     let chunk = super::chunk::generate_chunk_with(
@@ -2263,7 +2263,7 @@ fn test_no_pines_stand_in_savanna_jungle_or_desert() {
     let mut heights = regions.sampler();
     let (mut hot_trees, mut high_hot_trees, mut places) = (0, 0, 0);
     for kind in [BiomeKind::Savanna, BiomeKind::Jungle] {
-        // stretches of this biome well over the sea, where the air is cooler, with windows round them that take in the edges where other biomes meet it
+        // stretches of this biome well over the sea (cooler air), with windows round them taking in edges where biomes meet
         let spots = (30..dim - 30)
             .step_by(7)
             .flat_map(|z| (30..dim - 30).step_by(7).map(move |x| (x, z)))
@@ -2414,7 +2414,7 @@ fn test_lakes_and_the_sea_have_no_open_block_beside_or_under_their_water() {
                     }
                 }
             }
-            // a regional seed may hold no lake, so the explicit basin guarantees one while generated seeds exercise real coastlines
+            // a regional seed may hold no lake: the explicit basin guarantees one, generated seeds exercise real coastlines
             if sites.is_empty() {
                 continue;
             }
@@ -2578,7 +2578,7 @@ fn test_water_falling_down_a_drop_draws_no_side_over_another() {
     let Some(Indices::U32(indices)) = water.indices() else {
         panic!("water indices");
     };
-    // each polygon's vertices are pushed together, so a run of triangles reaching no further than the last one's highest vertex is one; a shore's cut surface has polygons of other sizes than a face's four
+    // polygon vertices are pushed together, so a run of triangles under the last's highest vertex is one polygon
     let mut polygons = Vec::new();
     let mut at = 0;
     while at < indices.len() {
@@ -2664,7 +2664,7 @@ fn test_stone_is_the_rock_the_geology_has_and_packs_as_that_rock() {
     assert!(rocks.len() >= 3, "only {rocks:?}");
 }
 
-// Every edge of a closed surface is shared by two triangles; a hole or missing cap leaves one with a single. Vertices match by position to a thousandth of a block, and an edge with another vertex along it (a T-junction) counts as the pieces between them.
+// Closed surface: every edge is shared by two triangles. Vertices match to 0.001 blocks; a T-junction counts as pieces.
 fn open_edges(mesh: &Mesh) -> Vec<String> {
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -2719,7 +2719,7 @@ fn open_edges(mesh: &Mesh) -> Vec<String> {
             }
         }
     }
-    // an edge that lies on another triangle's face, as the grass lip's ledge met the wall under it, is joined; its own triangle doesn't count, as every edge lies on that
+    // an edge on another triangle's face (as the grass lip's ledge met the wall) is joined; its own triangle doesn't
     let triangles: Vec<[Vec3; 3]> = indices
         .chunks(3)
         .map(|t| {
@@ -2886,7 +2886,7 @@ fn test_surfaces_stay_closed() {
     }
 }
 
-// Columns for the corner xyz / xxy / xxx, rows along z and columns along x, on a floor of stone: x is two high, y one, and z `z_height`.
+// Columns for corner xyz / xxy / xxx, rows along z, columns along x, on a stone floor: x two high, y one, z `z_height`.
 fn staircase_corner(z_height: u16) -> Vec<(u16, u16, u16)> {
     let height = |row: usize, col: usize| match (row, col) {
         (0, 0) | (1, 0) | (1, 1) | (2, 0) | (2, 1) | (2, 2) => 2,
@@ -2905,7 +2905,7 @@ fn staircase_corner(z_height: u16) -> Vec<(u16, u16, u16)> {
     blocks
 }
 
-// The heights of a 3x3 of columns, read row by row, the same under turns and flips of the square, so only the smallest of each set is meshed.
+// 3x3 column heights, row by row, same under turns and flips of the square, so only the smallest of each set is meshed.
 fn canonical_grid(heights: [u8; 9]) -> [u8; 9] {
     let mut best = heights;
     for flip in [false, true] {
@@ -2926,7 +2926,7 @@ fn canonical_grid(heights: [u8; 9]) -> [u8; 9] {
     best
 }
 
-// The blocks of a 3x3 of columns `heights` high (0 to 2) on a floor, each of the block `kind` picks from its place, as (column, height, row).
+// The blocks of a 3x3 of columns `heights` high (0 to 2) on a floor, each block's kind picked from its place.
 fn grid_chunk(heights: [u8; 9], kind: impl Fn(usize, usize, u16) -> BlockType) -> ChunkData {
     let mut chunk = ChunkData::default();
     for row in 0..3 {
@@ -2940,7 +2940,7 @@ fn grid_chunk(heights: [u8; 9], kind: impl Fn(usize, usize, u16) -> BlockType) -
     chunk
 }
 
-// Calls `check` with each mesh of every arrangement of heights in a 3x3 of columns, up to symmetry: in stone, in grass, and in a mix for one in six, as the kind, the heights and the mesh.
+// Calls `check` with the kind, heights and mesh of every 3x3 height arrangement up to symmetry: stone, grass, mixed.
 fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     let regions = test_regions();
     let coord = ChunkCoordinate(I64Vec3::new(0, 40, 0));
@@ -2991,7 +2991,7 @@ fn for_each_column_mesh(mut check: impl FnMut(&str, [u8; 9], &Mesh)) {
     }
 }
 
-// Every arrangement of heights in a 3x3 of columns, up to symmetry, in stone, in grass and in a mix, has a closed surface: no hole the sky shows through.
+// Every 3x3 height arrangement up to symmetry, in stone, grass and a mix, meshes a closed surface: no sky-visible hole.
 #[test]
 fn test_no_arrangement_of_columns_leaves_a_hole() {
     let mut failures: Vec<(u32, String, &str)> = Vec::new();
@@ -3124,7 +3124,7 @@ fn test_layered_ground_with_mixed_surfaces_leaves_no_hole() {
     assert!(holes.is_empty(), "{}", holes.join("\n"));
 }
 
-// Rolling ground over the meeting of eight chunks, each meshed on its own with the others as neighbours, joined: no hole along the seams.
+// Rolling ground where eight chunks meet, each meshed alone with the rest as neighbours, joined: no hole along seams.
 #[test]
 fn test_chunk_seams_leave_no_hole() {
     let regions = test_regions();
@@ -3308,7 +3308,7 @@ fn test_columns_across_a_chunk_seam_leave_no_hole() {
     );
 }
 
-// Ground that climbs a block a step, along an axis or a diagonal, in one block, in layers and in a surface of its own in each column: no hole in it.
+// Ground that climbs a block a step, along an axis or diagonal, in one block, in layers and per column: no hole.
 #[test]
 fn test_steep_ground_a_block_a_step_leaves_no_hole() {
     let surfaces = [
@@ -3788,7 +3788,7 @@ fn test_sculpted_ground_leaves_no_hole() {
     assert!(holes.is_empty(), "{} open edges, first: {:?}", holes.len(), &holes[..holes.len().min(8)]);
 }
 
-// Sculpted LOD nodes over real terrain close up, skirts included, but where the node's sides, top and bottom cut the ground.
+// Sculpted LOD nodes over real terrain close up, skirts included, where the node's sides, top and bottom cut ground.
 #[test]
 fn test_sculpted_lod_nodes_leave_no_hole() {
     let regions = test_regions();
@@ -3838,7 +3838,7 @@ fn test_sculpted_lod_nodes_leave_no_hole() {
                     .collect();
                 let (a, b) = ([n[0], n[1], n[2]], [n[3], n[4], n[5]]);
                 let owner: Vec<[f32; 3]> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| positions[i as usize]).collect();
-                // open along a side only where a skirt ends: a surface triangle open there has no skirt under it; a skirt leans into the node from its side, so its triangles touch that side and their other corners copy a vertex on it, within its lean
+                // a side is open only where a skirt ends: no surface triangle open there has a skirt under it; skirts lean in
                 let lean = super::lod::MAX_SKIRT_CELLS as f32 * super::nets::SKIRT_LEAN + 0.01;
                 let corners: Vec<usize> = sculpted[3 * n[6] as usize..][..3].iter().map(|&i| i as usize).collect();
                 let skirt = [0, 2].iter().any(|&axis| {
@@ -3934,7 +3934,7 @@ fn test_a_dig_changes_only_the_sculpted_chunks_meshed_again() {
     }
 }
 
-// Ground scrambled into thin walls, lone blocks and diagonal touches, still has a diagonal to split every quad along whose triangles face from solid to air.
+// Ground scrambled into thin walls, lone blocks and diagonal touches: every quad has a diagonal facing solid to air.
 #[test]
 fn test_sculpted_ground_never_folds_a_triangle() {
     let regions = test_regions();
@@ -3985,7 +3985,7 @@ fn test_sculpted_ground_never_folds_a_triangle() {
     assert_eq!(unsound, 0, "{unsound} quads have no diagonal whose triangles face from solid to air");
 }
 
-// A chunk draws the faces over its own solid blocks, so an all-air chunk, which the loader never meshes, draws nothing, and the rock against it draws the wall.
+// A chunk draws faces over its own solid blocks: an all-air chunk (never meshed) draws none, rock beside it the wall.
 #[test]
 fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
     let regions = test_regions();
@@ -4079,7 +4079,7 @@ fn test_lod_level_zero_lays_a_banks_bed_where_full_detail_does() {
 
 #[test]
 fn test_grass_tint_barely_changes_at_the_handover_near_rivers_either() {
-    // levels 3 and 4 over twelve nodes of seed 5, rivers among them: sampled every 32 blocks the gap averaged 0.045 and reached 0.15, a bank's wetting falling between samples
+    // levels 3 and 4 over twelve nodes of seed 5, rivers among them: gaps over 32-block samples averaged 0.045, max 0.15
     let mut gaps = Vec::new();
     for scale in [8.0f32, 16.0] {
         for x in [-2048.0f32, -1024.0, 0.0, 384.0, 512.0, 1024.0] {
@@ -4166,7 +4166,7 @@ fn test_trunks_far_into_the_negative_world_are_not_read_by_the_shader_as_sculpte
     use bevy::render::mesh::VertexAttributeValues;
     let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(5)));
     let mut heights = regions.sampler();
-    // the shader takes a vertex whose `uv.x` is under -512 as sculpted ground, which a bark phase worked from a negative world position once gave it
+    // the shader takes `uv.x` under -512 as sculpted ground, which a bark phase from a negative position gave it
     let trees = trees_near(regions.terrain(), &mut heights, I64Vec2::new(-7000, -3000), I64Vec2::new(-1600, 3000));
     let tree = trees.iter().find(|t| t.trunk >= 6 && t.base.x < -1600).expect("no tree far into the negative world");
     let mid = tree.base + I64Vec3::new(0, tree.trunk / 2, 0);
@@ -4234,7 +4234,7 @@ fn level_one_draws_the_tall_plants_full_detail_grows() {
     assert!(shrubs > 0 && short_shrubs * 50 <= shrubs, "{short_shrubs} of {shrubs} shrub vertices are under a roof");
 }
 
-// A plant rooted on near-vertical ground stays about as wide and tall as it is, not stretched into a spike by the slope.
+// A plant rooted on near-vertical ground stays about as wide as tall, not stretched into a spike by the slope.
 #[test]
 fn tuft_on_a_cliff_keeps_its_size() {
     for ground in [Vec3::new(0.99, 0.12, 0.0), Vec3::new(0.7, 0.11, 0.7).normalize(), Vec3::new(1.0, 0.0, 0.0)] {

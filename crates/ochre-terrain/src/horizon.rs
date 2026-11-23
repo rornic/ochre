@@ -19,12 +19,12 @@ use ochre_base::WATER_LEVEL;
 pub(crate) const MAX_RENDER_DISTANCE: f32 = 2048.0;
 // How far above the sea the top of the world is.
 const ABOVE_SEA_AT_TOP: f32 = 2048.0;
-// Smaller changes than this, as a share of the render distance, are ignored so bobbing doesn't keep reselecting LOD nodes.
+// Changes smaller than this share of render distance are ignored so bobbing doesn't keep reselecting LOD nodes.
 const RESELECT_CHANGE: f32 = 0.1;
 // Roughly how long fog takes to follow a new render distance, so it eases out as terrain loads in.
 const FOG_FOLLOW_SECONDS: f32 = 2.0;
 
-/// How far terrain is drawn, in chunks, at `height`: `set_distance` from the ground, growing to twice it at the top of the world, capped at the horizon (`WORLD_CURVE`).
+/// How far terrain is drawn, in chunks, at `height`: `set_distance` on the ground, twice it at world top, horizon cap.
 pub fn render_distance_at(set_distance: f32, height: f32) -> f32 {
     let above_sea = (height - WATER_LEVEL as f32).max(0.0);
     let climbed = set_distance * (1.0 + (above_sea / ABOVE_SEA_AT_TOP).sqrt());

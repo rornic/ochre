@@ -29,17 +29,17 @@ pub(super) trait BlockSource {
         self.block(coord)
     }
 
-    /// Where the ground really tops out in a LOD surface cell, in mesh units, when that's below the cell's top, see `LodBlocks::surface_top`.
+    /// Where the ground tops out in a LOD surface cell below the cell's top, in mesh units (`LodBlocks::surface_top`).
     fn surface_top(&self, _coord: IVec3) -> Option<f32> {
         None
     }
 
-    /// Where the water's surface really is in a LOD cell it only part fills, in mesh units from the cell's centre, so shallow water isn't drawn up to its top.
+    /// Real water surface in a part-filled LOD cell, in mesh units from its centre, so shallow water isn't drawn full.
     fn water_surface_top(&self, _coord: IVec3) -> Option<f32> {
         None
     }
 
-    /// The surface of the fresh water in the column at `x`, `z`, in blocks from the chunk's lowest, where it isn't a whole block: a river's runs down its course.
+    /// Fresh-water surface at `x`, `z`, in blocks from the chunk base, where not whole: a river slopes along its course.
     fn water_level(&self, _x: i32, _z: i32) -> Option<f32> {
         None
     }
@@ -54,7 +54,7 @@ pub(super) trait BlockSource {
         false
     }
 
-    /// How much of the swell the column's surface keeps, 0 beside a fall, where it must meet the sheet, to 1 away from it.
+    /// How much of the swell the column's surface keeps: 0 beside a fall (where it meets the sheet) to 1 away from it.
     fn water_calm(&self, _x: i32, _z: i32) -> f32 {
         1.0
     }
@@ -94,7 +94,7 @@ pub(super) trait BlockSource {
         false
     }
 
-    /// The blocks from a chunk below and behind to a chunk above and ahead, x then z then y, raw (trees not hidden), for a reader that wants them all at once, see `nets`.
+    /// Blocks from the chunk below-behind to above-ahead, x then z then y, raw (trees not hidden).
     fn neighbourhood(&self) -> Option<&[BlockType]> {
         None
     }
@@ -168,7 +168,7 @@ pub(super) enum BoxFaces {
 // Blocks across a chunk's 3x3x3 neighbourhood, each way.
 const SPAN: i32 = 3 * CHUNK_SIZE as i32;
 
-// A column's fresh water, in blocks from the chunk's lowest: its real surface the blocks fill to, its spread one, and a spring's pool.
+// A column's fresh water, in blocks from the chunk's lowest: its real surface, its spread one, and a spring's pool.
 #[derive(Clone, Copy)]
 struct FreshColumn {
     block_level: f32,
@@ -182,7 +182,7 @@ struct FreshColumn {
     hush: bool,
 }
 
-/// A chunk with its 26 neighbours decoded into one dense grid, so meshing reads any block near it without scanning runs; missing neighbours are air.
+/// A chunk with its 26 neighbours decoded into one dense grid, so meshing reads blocks without scanning runs.
 pub(super) struct ChunkNeighbourhood<'a> {
     pub(super) chunk: &'a ChunkData,
     blocks: Vec<BlockType>,
@@ -231,7 +231,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                 }
             }
         }
-        // a column's flowing surface is only where it's open above: flowing water under still water, as in a hole dug under a river, is the still water's
+        // a column's flowing surface is only where it's open above: flowing water under still water is the still water's
         let mut flowing = HashMap::new();
         for (at, level) in flowing_cells {
             let above = at + IVec3::Y;
@@ -320,7 +320,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                 })
                 .collect();
             let any_fall = falls.contains(&true);
-            // the distance in columns to the nearest fall, up to `WATER_CALM_REACH`, and whether a fall column within it is at this column's level, making this its high side
+            // columns to the nearest fall up to `WATER_CALM_REACH`, and whether a fall within it is at this level (its high side)
             let near_falls = |at: i32| {
                 let (x, z) = (at / wide, at % wide);
                 let mut nearest = WATER_CALM_REACH + 1;
@@ -355,7 +355,7 @@ impl<'a> ChunkNeighbourhood<'a> {
                         let t =
                             ((distance - 2) as f32 / (WATER_CALM_REACH - 2) as f32).clamp(0.0, 1.0);
                         let calm = t * t * (3.0 - 2.0 * t);
-                        // beside a fall the surface is the real level, not the spread one, which the far lower water over the fall pulls down, or up where it lies under it
+                        // beside a fall use the real level, not the spread one, which the lower water over the fall pulls down or up
                         let block_top = raw[at];
                         FreshColumn {
                             block_level: raw[at],
@@ -449,7 +449,7 @@ impl BlockSource for ChunkNeighbourhood<'_> {
     }
 }
 
-// Counts contiguous Water blocks straight down from `block_coord`, within this chunk only so the async mesh task needs no `World`; scales wave amplitude, so a shallow puddle at a chunk's edge stays calm.
+// Contiguous Water blocks straight down from `block_coord`, in this chunk only (no `World`); scales wave amplitude.
 pub(super) fn water_depth(source: &impl BlockSource, block_coord: IVec3) -> u32 {
     let mut depth = 0u32;
     let mut y = block_coord.y;
@@ -542,7 +542,7 @@ impl<S: BlockSource> BlockSource for GridView<'_, S> {
     }
 }
 
-/// `source` with tree logs and leaves read as air, so the mesher neither draws them as cubes nor lets them hide the ground round them, while `logs` and `leaves` keep where they are for `trees_mesh`.
+/// `source` with tree logs and leaves read as air so the mesher draws no cubes; `logs` and `leaves` keep them.
 pub(super) struct TreeFaces<'a, S: BlockSource> {
     source: &'a S,
     hide: bool,

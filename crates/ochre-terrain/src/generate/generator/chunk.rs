@@ -152,7 +152,7 @@ pub fn generate_chunk_with(
             let spring =
                 (columns.spring(x, z) != SpringPart::None).then(|| biomes.spring_block(biome));
             let ice_cliffs = biomes.block(biome, BlockType::Rock, 20, 0.0) == BlockType::Ice;
-            // whether the cliff builds rock just over the column's top, so its top blocks are rock too, not grass buried under it; lazy as the cliff noise is dear
+            // cliff rock over the column's top makes its top blocks rock, not buried grass; lazy, cliff noise is dear
             let built_over = std::cell::LazyCell::new(|| {
                 cliff != 0.0 && !bank && {
                     let over = column_block(biomes, biome, column_height, column_height, slope, temperature, shore_top);
@@ -290,7 +290,7 @@ pub fn generate_chunk_with(
     chunk_data
 }
 
-// The plant on the grass atop column (x, z) of `columns` (first column at `origin`), if any, in the air the caller made sure is empty; `trees` may shade it.
+// The plant on the grass atop column (x, z) of `columns` (first at `origin`), if any; `trees` may shade it.
 pub(super) fn plant_at(
     columns: &ChunkColumns,
     biomes: &Biomes,
@@ -356,7 +356,7 @@ pub(crate) fn generate_chunk_mesh(
     generate_chunk_mesh_with(chunk, adjacent_chunks, coord, regions, true)
 }
 
-/// As `generate_chunk_mesh`, with `tree_shapes` off to draw trees as cubes, which tests and the `bench` example compare against.
+/// As `generate_chunk_mesh`, with `tree_shapes` off to draw trees as cubes, which tests and `bench` compare against.
 pub fn generate_chunk_mesh_with(
     chunk: Arc<ChunkData>,
     adjacent_chunks: Vec<Option<Arc<ChunkData>>>,
@@ -408,7 +408,7 @@ fn log_cells_around(source: &impl BlockSource) -> Vec<IVec3> {
     logs
 }
 
-// Light falling into the top of a box whose highest block is at `top`, in boxes of `cell` blocks: full sky less any sea above.
+// Light into the top of a box whose highest block is at `top`, in `cell`-block boxes: full sky less any sea above.
 pub(super) fn sky_above(top: i64, cell: i64) -> u8 {
     let water_above = ((WATER_LEVEL - 1 - top) / cell).clamp(0, MAX_LIGHT as i64) as u8;
     MAX_LIGHT.saturating_sub(water_above.saturating_mul(BlockType::Water.light_opacity()))
@@ -417,7 +417,7 @@ pub(super) fn sky_above(top: i64, cell: i64) -> u8 {
 // How far to each side of a chunk its light counts blocks: light from further out would have faded to deep shade.
 pub(crate) const LIGHT_MARGIN: i32 = 8;
 
-// Sky light for the chunk and a block around it, from its 26 neighbours up to the top of the chunk above, open sky beyond; `remesh::chunks_reading` keeps to the same box.
+// Sky light for the chunk and a block round it, open sky beyond; `remesh::chunks_reading` uses the same box.
 fn neighbourhood_light(source: &ChunkNeighbourhood, coord: ChunkCoordinate) -> SkyLight {
     let size = CHUNK_SIZE as i32;
     let min = IVec3::new(-LIGHT_MARGIN, -1, -LIGHT_MARGIN);

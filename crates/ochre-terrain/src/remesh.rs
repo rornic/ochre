@@ -1,4 +1,4 @@
-//! Meshes chunks again once their blocks change (`World::set_block_at`): the whole group round a changed block, swapped in place without the load fade.
+//! Meshes chunks again after block edits (`World::set_block_at`): the whole group round the block, swapped in, no fade.
 
 use std::sync::Arc;
 
@@ -46,7 +46,7 @@ pub(crate) struct RemeshedGroup {
 /// What meshing a chunk reads: the chunk and its 26 neighbours, None where it is empty or buried.
 type ChunkInputs = Option<(Arc<ChunkData>, Vec<Option<Arc<ChunkData>>>)>;
 
-/// The chunks whose meshes read the block at `block`, as faces, corner shade or light (`neighbourhood_light` reads `LIGHT_MARGIN` out across, a block down and up to the chunk above's top).
+/// The chunks whose meshes read `block`, as faces, corner shade or light (see `LIGHT_MARGIN` in `neighbourhood_light`).
 pub(crate) fn chunks_reading(block: I64Vec3) -> impl Iterator<Item = ChunkCoordinate> {
     let size = CHUNK_SIZE as i64;
     let margin = LIGHT_MARGIN as i64;
@@ -368,7 +368,7 @@ mod tests {
         );
     }
 
-    // The chunks around one, meshed before and after a block in it is broken, change only where `chunks_reading` says they read it.
+    // Chunks round one, meshed before and after a break, differ only where `chunks_reading` says they read it.
     #[test]
     fn test_breaking_a_block_changes_only_the_meshes_reading_it() {
         let mut world = world();
@@ -454,7 +454,7 @@ mod tests {
                 .opaque
                 .count_vertices()
         };
-        // how many faces a vertical line through the dug column crosses: the floor's top and underside, then none once the hole is through
+        // faces a vertical line through the dug column crosses: floor top and underside, then none once the hole is through
         let crossings = |world: &World| {
             let mesh = mesh_group(key, inputs(world), &regions).meshes.opaque;
             let positions: Vec<Vec3> = mesh.attribute(Mesh::ATTRIBUTE_POSITION).and_then(VertexAttributeValues::as_float3).unwrap().iter().map(|&p| Vec3::from(p)).collect();

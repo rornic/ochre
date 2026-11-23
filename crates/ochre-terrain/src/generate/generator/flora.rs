@@ -13,11 +13,11 @@ const STEPPE_PATCH_SALT: u32 = 0x57E9_9E01;
 const STEPPE_FINE_SALT: u32 = 0x57E9_9E02;
 const STEPPE_BARE_SALT: u32 = 0x57E9_9E03;
 
-// Steppe's share of ground carrying a tuft at the thinnest and thickest, and the blocks across its broad patches and the finer variation.
+// Steppe tuft share at the thinnest and thickest, the blocks across its broad patches, and the finer variation.
 const STEPPE_GRASS: (f64, f64) = (0.05, 0.42);
 const STEPPE_PATCH: f64 = 180.0;
 const STEPPE_FINE: f64 = 40.0;
-// Bare earth shows on steppe's crests in patches `STEPPE_BARE` blocks across where noise passes `STEPPE_BARE_FROM`, about an eighth of the ground at the most exposed.
+// Bare earth on steppe crests in `STEPPE_BARE`-block patches where noise passes `STEPPE_BARE_FROM`: an eighth at most.
 const STEPPE_BARE: f64 = 60.0;
 const STEPPE_BARE_FROM: f64 = 0.71;
 // The share of drifts that hold the steppe's flower, and how thick they grow, against other open ground's flowers.
@@ -37,7 +37,7 @@ const FERN_DENSITY: f64 = 0.25;
 const SHORT_SHARE: f64 = 0.45;
 const SHADED_SHORT_SHARE: f64 = 0.65;
 const SEED_SHARE: f64 = 0.15;
-// The share of a jungle's ferns that are big ones, and how much thicker than other open grass the savanna's grows and the shares of it that are long and short.
+// Share of a jungle's ferns that are big; savanna grass's extra thickness over open grass and its long/short shares.
 const JUNGLE_BIG_FERNS: f64 = 0.22;
 const SAVANNA_GRASS: f64 = 1.5;
 const SAVANNA_LONG: f64 = 0.55;
@@ -48,13 +48,13 @@ const TAIGA_UNDERSTORY: f64 = 0.5;
 // The temperatures (see `NoiseGenerator::temperature`) the flora thins out between, to none at the first.
 const COLD: (f32, f32) = (0.10, 0.35);
 
-// Shrubs grow in carpets with bare grass between: each `CLUSTER`-block cell holds at most one, centred so its reach stays inside, of a radius within `CLUSTER_RADIUS` and planted at `CLUSTER_DENSITY` (five or six plants).
+// Shrub carpets: each `CLUSTER`-block cell holds at most one cluster, centred so its reach stays inside.
 const CLUSTER: i64 = 16;
 const CLUSTER_MARGIN: i64 = 4;
 const CLUSTER_RADIUS: (f64, f64) = (2.2, 3.2);
 const CLUSTER_DENSITY: f64 = 0.5;
 
-/// The big plant a biome has in its open ground, by name, and the share of its `CLUSTER` cells that hold a cluster: shrubs in warm grassland and the jungle's shade, heath in the cold; forests and deserts have none.
+/// A biome's big open-ground plant and the share of its `CLUSTER` cells holding one: shrubs warm, heath cold.
 fn shrubs(biome: Option<&str>) -> Option<(BlockType, f64)> {
     match biome {
         Some("grassland") => Some((BlockType::Shrub, 0.35)),
@@ -133,7 +133,7 @@ fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
-// How thick steppe's grass grows at (x, z), 0..1: hollows and broad patches thick, crests thin, with variation inside a patch.
+// How thick steppe's grass grows at (x, z), 0..1: thick in hollows and broad patches, thin on crests.
 fn steppe_thickness(seed: u32, x: i64, z: i64, exposure: f32) -> f64 {
     let patch = perlin(seed ^ STEPPE_PATCH_SALT, x as f64 / STEPPE_PATCH, z as f64 / STEPPE_PATCH) * 0.5 + 0.5;
     let fine = perlin(seed ^ STEPPE_FINE_SALT, x as f64 / STEPPE_FINE, z as f64 / STEPPE_FINE) * 0.5 + 0.5;
@@ -141,13 +141,13 @@ fn steppe_thickness(seed: u32, x: i64, z: i64, exposure: f32) -> f64 {
     (base * (0.75 + 0.5 * fine)).clamp(0.0, 1.0)
 }
 
-/// Whether steppe ground at (x, z) is bare earth: patches on the most exposed crests, none on level ground or in hollows.
+/// Whether steppe ground at (x, z) is bare: patches on the most exposed crests, none on level ground or hollows.
 pub(super) fn steppe_bare(seed: u32, x: i64, z: i64, exposure: f32) -> bool {
     let n = perlin(seed ^ STEPPE_BARE_SALT, x as f64 / STEPPE_BARE, z as f64 / STEPPE_BARE) * 0.5 + 0.5;
     n > STEPPE_BARE_FROM + 0.6 * (1.0 - exposure as f64)
 }
 
-/// The plant on the grass at (x, z), if any: shrubs or heath in patches, grasses in the open, ferns in the shade, flowers in drifts of one kind, all thinning out in the cold.
+/// The plant on the grass at (x, z), if any: shrubs, heath, grasses, ferns (shade), flower drifts; thin in the cold.
 pub(super) fn flora_at(
     seed: u32,
     x: i64,
@@ -373,7 +373,7 @@ mod tests {
         let tundra = big(Some("tundra"), false);
         assert!(share(&tundra) > share(&grassland) && tundra.iter().all(|p| p.2 == BlockType::Heath));
         assert!(!big(Some("taiga"), false).is_empty());
-        // none in the shade, a desert or a forest, or where the biome is unknown, but a jungle has them both in the open and in its shade
+        // none in shade, desert or forest, or where the biome is unknown; a jungle has them in the open and in its shade
         for none in [Some("desert"), Some("forest"), None] {
             assert!(big(none, false).is_empty(), "{none:?}");
         }

@@ -53,7 +53,7 @@ use material::{
 use world::World;
 use remesh::{apply_remeshes, remesh_edits};
 
-/// Loads, meshes and unloads chunks and LODs around the camera; headless runs need the material assets registered with `init_asset`.
+/// Loads, meshes and unloads chunks and LODs around the camera; headless runs must register material assets.
 pub struct TerrainPlugin {
     pub renderer: RendererSettings,
     pub debug: DebugSettings,
@@ -196,7 +196,7 @@ struct ShaderSources<'w> {
     curvature: Option<Res<'w, Curvature>>,
 }
 
-/// Builds the materials and loaders `TerrainPlugin` runs on; shaders get blanks for any clouds or curvature plugin left out.
+/// Builds the materials and loaders `TerrainPlugin` runs on; shaders get blanks for left-out clouds or curvature.
 fn setup_terrain(
     mut commands: Commands,
     world: Res<World>,
