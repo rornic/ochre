@@ -6,9 +6,9 @@
 
 Ochre is a procedural wilderness engine built with Rust and Bevy, designed to bring vast, beautiful and untamed natural worlds to life.
 
-![Flying over red rock country, rivers, lakes and plains](images/flyover.webp)
+[![Flying over red rock country, rivers, lakes and plains](images/flyover.webp)](https://www.youtube.com/watch?v=XzNtVPHNxGw)
 
-[![Ochre: Trailer](https://img.youtube.com/vi/XzNtVPHNxGw/maxresdefault.jpg)](https://www.youtube.com/watch?v=XzNtVPHNxGw)
+▶ **[Watch the 3-minute trailer, with music](https://www.youtube.com/watch?v=XzNtVPHNxGw)**
 
 ## Run it
 
