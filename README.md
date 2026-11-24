@@ -8,7 +8,7 @@ A 64 km voxel world with erosion-carved rivers, lakes and seas, streamed with oc
 
 ![Flying over red rock country, rivers, lakes and plains](images/flyover.webp)
 
-https://github.com/user-attachments/assets/2ed1a420-5e0e-4f3f-ac09-f39bcf45d7f6
+[![Ochre: Trailer](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=XzNtVPHNxGw])
 
 ## Features
 
