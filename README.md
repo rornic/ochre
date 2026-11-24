@@ -8,7 +8,7 @@ Ochre is a procedural wilderness engine built with Rust and Bevy, designed to br
 
 ![Flying over red rock country, rivers, lakes and plains](images/flyover.webp)
 
-[![Ochre: Trailer](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=XzNtVPHNxGw])
+[![Ochre: Trailer](https://img.youtube.com/vi/XzNtVPHNxGw/maxresdefault.jpg)](https://www.youtube.com/watch?v=XzNtVPHNxGw)
 
 ## Run it
 
@@ -17,6 +17,19 @@ A simple sandbox example is included to showcase atmospheric audio, foliage, wat
 ```
 cargo run --release --example sandbox
 ```
+
+You need Rust 1.97.1 or later, and on Linux `libudev-dev` and `pkg-config` (X11 only, Wayland is off). The first build takes a few minutes, and the world takes a few seconds to generate before the window opens.
+
+| Key | Action |
+| --- | --- |
+| Click | Capture the mouse (Esc releases it) |
+| WASD, mouse | Move and look |
+| Space | Jump, or rise when flying |
+| Left Ctrl | Descend when flying |
+| Left Shift | Sprint |
+| F | Toggle flying |
+| `[` / `]` | Wind the time of day back / forward |
+| F1 | Debug overlay |
 
 ## History
 
