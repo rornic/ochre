@@ -8,6 +8,7 @@ mod greedy;
 mod lod;
 mod mesh;
 mod nets;
+mod plant;
 pub(crate) use nets::EDIT_REACH;
 mod shading;
 mod source;
@@ -21,6 +22,7 @@ pub(crate) use chunk::LIGHT_MARGIN;
 pub use chunk::{generate_chunk, generate_chunk_mesh_with, generate_chunk_with, ChunkPasses};
 pub(crate) use chunk::generate_chunk_mesh;
 pub use lod::generate_lod_mesh;
+pub use plant::{plant_mesh, plant_tint};
 #[cfg(test)]
 pub(crate) use mesh::{FLORA_HEIGHT_CODE, FLORA_HEIGHT_SPAN, FLORA_HEIGHT_STEP};
 pub(crate) use lod::MAX_SKIRT_CELLS;
