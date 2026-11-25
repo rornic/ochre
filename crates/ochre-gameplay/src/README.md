@@ -13,7 +13,7 @@ What moves through the world (`lib.rs`: module doc): the player and its collisio
   - `move_and_collide(position, delta, aabb, solid) -> (Vec3, BVec3)`: sweeps y, then x, then z.
   - `move_and_step(position, delta, aabb, step, solid)`: the same, plus ledge climbing up to `step`.
   - Both are pure functions over a `Fn(I64Vec3) -> bool` solidity callback.
-- `debug.rs`: `DebugOverlayPlugin`; F1 (`TOGGLE_KEY`) toggles a text readout. `LookedAt(pub Option<(RayHit, BlockType)>)` is the block a game says the player looks at, shown when set.
+- `debug.rs`: `DebugOverlayPlugin`; F1 (`TOGGLE_KEY`) toggles a text readout. `LookedAt(pub Option<(RayHit, BlockType)>)` is the block a game says the player looks at, shown when set. `DebugText(pub String)` is lines a game adds to the end of the readout.
 - `flythrough.rs`: `FlythroughPlugin { flight }`; active only when a `FlightConfig` is given (`OCHRE_FLIGHT` through `DevEnv`).
 - `remote.rs`: `RemoteControlPlugin { port }`; active only with a port (`OCHRE_REMOTE` through `DevEnv`, off unless set). Adds Bevy's `RemotePlugin` and `RemoteHttpPlugin` on 127.0.0.1 with `ochre.teleport`, `ochre.time`, `ochre.state`, `ochre.screenshot` (see the `game-remote` skill). Reuses `flythrough.rs:facing` and `ground_height`.
 
