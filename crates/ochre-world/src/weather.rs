@@ -27,7 +27,7 @@ use crate::{
     atmosphere::{Atmosphere, EasedFeel},
     clouds::CloudMaterial,
     sky::{
-        camera_exposure, moon_illuminance, sun_direction, sun_illuminance, Moon, Sun, TimeOfDay,
+        camera_exposure, moon_illuminance, sun_direction, sun_illuminance, DaylightShare, Moon, Sun, TimeOfDay,
         TICKS_PER_SECOND,
     },
     storms::{seconds, Forecast},
@@ -51,6 +51,7 @@ impl Plugin for WeatherPlugin {
         ))
         .add_audio_source::<Thunder>()
         .init_resource::<TimeOfDay>()
+        .init_resource::<DaylightShare>()
         .insert_resource(Weather {
             calm: self.clear_sky,
             ..default()
@@ -72,6 +73,7 @@ impl Plugin for WeatherPlugin {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct SkyNow<'w> {
     pub clock: Res<'w, TimeOfDay>,
+    pub share: Res<'w, DaylightShare>,
     pub weather: Option<Res<'w, Weather>>,
 }
 
@@ -581,8 +583,8 @@ fn rainbow_mesh() -> Mesh {
 }
 
 /// How bright the daylight is, 0..1, for things that aren't lit by the world's shaders.
-fn unlit_light(clock: &TimeOfDay) -> f32 {
-    ((sun_direction(clock.days()).y + 0.1) / 0.4).clamp(0.05, 1.0)
+fn unlit_light(clock: &TimeOfDay, share: &DaylightShare) -> f32 {
+    ((sun_direction(share.sun_days(clock.days())).y + 0.1) / 0.4).clamp(0.05, 1.0)
 }
 
 /// How fast and which way falling rain or snow (`amount` 0..1) is blown, in blocks a second, `light` to `heavy`.
@@ -595,6 +597,7 @@ fn blown(wind: Vec2, amount: f32, (light, heavy): (f32, f32)) -> Vec2 {
 fn fall_rain(
     weather: Res<Weather>,
     clock: Res<TimeOfDay>,
+    share: Res<DaylightShare>,
     world: Res<World>,
     handles: Option<Res<WeatherHandles>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
@@ -620,7 +623,7 @@ fn fall_rain(
     for (mut visibility, is_snow) in &mut curtains {
         show_if(&mut visibility, if is_snow { snow } else { rain } > 0.0);
     }
-    let daylight = unlit_light(&clock);
+    let daylight = unlit_light(&clock, &share);
     let slant = blown(weather.wind, rain, RAIN_SLANT);
     let light = daylight * (1.0 - RAIN_GLOOM * weather.rain);
     set_params(
@@ -933,6 +936,7 @@ const RAINBOW_ANGLE: f32 = 42.0 * PI / 180.0;
 fn show_rainbow(
     weather: Res<Weather>,
     clock: Res<TimeOfDay>,
+    share: Res<DaylightShare>,
     handles: Option<Res<WeatherHandles>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut bows: Query<(&mut Transform, &mut Visibility), With<Rainbow>>,
@@ -942,7 +946,7 @@ fn show_rainbow(
         return;
     };
     let eye = camera.translation();
-    let away = -sun_direction(clock.days());
+    let away = -sun_direction(share.sun_days(clock.days()));
     // only by day, with the sun low enough that some of the bow clears the horizon: any higher, all of it is below
     let sun_height = -away.y;
     let strength = weather.rainbow
@@ -956,7 +960,7 @@ fn show_rainbow(
                 .with_scale(Vec3::splat(RAINBOW_DISTANCE * ops::tan(RAINBOW_ANGLE)));
         }
     }
-    let params = Vec4::new(strength, unlit_light(&clock), 0.0, 0.0);
+    let params = Vec4::new(strength, unlit_light(&clock, &share), 0.0, 0.0);
     if materials
         .get(&handles.rainbow)
         .is_some_and(|material| material.params != params)

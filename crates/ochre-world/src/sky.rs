@@ -86,8 +86,8 @@ pub(crate) fn moon_illuminance() -> f32 {
 }
 
 /// How much it's day, 0 at night to 1 once the sun's well up, for what's about by day.
-pub fn daylight(clock: &TimeOfDay) -> f32 {
-    ((sun_direction(clock.days()).y + 0.05) / 0.25).clamp(0.0, 1.0)
+pub fn daylight(clock: &TimeOfDay, share: &DaylightShare) -> f32 {
+    ((sun_direction(share.sun_days(clock.days())).y + 0.05) / 0.25).clamp(0.0, 1.0)
 }
 
 /// The sun, with shadows out to `shadow_distance` blocks in `cascades` slices.
@@ -170,6 +170,33 @@ impl TimeOfDay {
     }
 }
 
+/// The share of each day the sun is up: 0.5 by default, more for long days and short nights.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct DaylightShare(pub f32);
+
+impl Default for DaylightShare {
+    fn default() -> Self {
+        Self(0.5)
+    }
+}
+
+impl DaylightShare {
+    /// Where the sun stands on its turn `days` through the clock's day, rising at a quarter and setting at three quarters as at 0.5.
+    pub fn sun_days(&self, days: f32) -> f32 {
+        if self.0 == 0.5 {
+            return days;
+        }
+        let share = self.0.clamp(0.05, 0.95);
+        let rise = 0.5 - share / 2.0;
+        let day = days.fract();
+        if (rise..=1.0 - rise).contains(&day) {
+            0.25 + (day - rise) / share * 0.5
+        } else {
+            0.75 + (day - (1.0 - rise)).rem_euclid(1.0) / (1.0 - share) * 0.5
+        }
+    }
+}
+
 /// Where the sun is on its path at `days` through the day, in radians: 0 as it rises, a quarter turn at noon.
 fn sun_angle(days: f32) -> f32 {
     TAU * (days.fract() - 0.25)
@@ -211,6 +238,7 @@ fn move_sky(
     time: Res<Time>,
     scale: Res<TimeScale>,
     locked: Option<Res<ClockLocked>>,
+    share: Res<DaylightShare>,
     mut clock: ResMut<TimeOfDay>,
     mut sun: Query<(&mut Transform, &mut SunShadows), Without<Moon>>,
     mut moon: Query<&mut Transform, (With<Moon>, Without<Sun>)>,
@@ -224,10 +252,10 @@ fn move_sky(
     *carry -= whole;
     clock.0 = clock.0.saturating_add_signed(whole as i64);
     // on between ticks too: stepped 20 times a second, the sun's shadow-map texels jump and shadows crawl
-    let days = clock.days() + *carry / DAY_TICKS as f32;
+    let days = share.sun_days(clock.days() + *carry / DAY_TICKS as f32);
     if let Ok((mut transform, mut shadows)) = sun.single_mut() {
         *transform = shining_from(sun_direction(days));
-        shadows.0 = shining_from(sun_direction(shadow_days(clock.0))).rotation;
+        shadows.0 = shining_from(sun_direction(share.sun_days(shadow_days(clock.0)))).rotation;
     }
     if let Ok(mut transform) = moon.single_mut() {
         *transform = shining_from(moon_direction(days));
@@ -393,6 +421,8 @@ pub struct SkyPlugin {
     pub start: f32,
     /// How many game seconds pass each real second, see `TimeScale`.
     pub time_scale: f32,
+    /// The share of each day the sun is up, see `DaylightShare`.
+    pub daylight_share: f32,
 }
 
 impl SkyPlugin {
@@ -401,6 +431,7 @@ impl SkyPlugin {
             settings,
             start: START_TIME,
             time_scale: 1.0,
+            daylight_share: DaylightShare::default().0,
         }
     }
 }
@@ -424,6 +455,7 @@ impl Plugin for SkyPlugin {
             .insert_resource(DirectionalLightShadowMap { size: self.settings.shadow_resolution })
             .insert_resource(TimeOfDay::from_days(self.start))
             .insert_resource(TimeScale(self.time_scale))
+            .insert_resource(DaylightShare(self.daylight_share))
             .add_systems(Startup, (spawn_atmosphere, spawn_sun_and_moon))
             .add_systems(Update, (move_sky, fit_cascades_to_ground))
         // once the camera's moved, see `TransformSystems::Propagate`
@@ -469,6 +501,7 @@ mod tests {
             world.insert_resource(time);
             world.insert_resource(TimeScale(0.0));
             world.insert_resource(TimeOfDay(1000));
+            world.insert_resource(DaylightShare::default());
             if locked {
                 world.insert_resource(ClockLocked);
             }
@@ -500,6 +533,19 @@ mod tests {
         for time in [0.0, 0.1, 0.3, 0.6, 0.9] {
             assert!((sun_direction(time).length() - 1.0).abs() < 1e-5);
             assert!((moon_direction(time).length() - 1.0).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_daylight_share_sets_how_long_the_sun_is_up() {
+        let up = |share: f32| (0..1000).filter(|i| sun_direction(DaylightShare(share).sun_days(*i as f32 / 1000.0)).y > 0.0).count();
+        assert_eq!(up(0.5), 499);
+        assert!((up(2.0 / 3.0) as i32 - 667).abs() <= 2);
+        let long = DaylightShare(2.0 / 3.0);
+        assert!((long.sun_days(0.5) - 0.5).abs() < 1e-6);
+        for days in [0.0, 0.1, 0.3, 0.6, 0.9, 0.999] {
+            assert_eq!(DaylightShare::default().sun_days(days), days);
+            assert!((0.0..1.25).contains(&long.sun_days(days)));
         }
     }
 
