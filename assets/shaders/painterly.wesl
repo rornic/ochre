@@ -14,6 +14,8 @@ const SHADOW_TRUST_TO: f32 = 0.1;
 // (0.55, 0.63, 1.0) and 0.3 with no feel.
 // The least shadow is lit to, as a share of a fully lit face's brightness, and leaves', which light passes through.
 const SHADOW_FLOOR: f32 = 0.35;
+// How far shade's light leans from the full light's colour to the cool fill's, in ratio: all the way swung yellow grass teal.
+const FILL_CAST: f32 = 0.3;
 const LEAF_SHADOW_FLOOR: f32 = 0.55;
 // The floor rises by this share while the sun is near the horizon, when its light is dim, up to `MAX_SHADOW_FLOOR`.
 const LOW_SUN_FLOOR: f32 = 0.6;
@@ -25,7 +27,7 @@ const FAR_VISIBILITY: f32 = 0.8;
 const SAT_LIT: f32 = 1.1;
 const SAT_SHADOW: f32 = 1.2;
 // Radians shade's hue turns toward the shadow tint, per unit of its amount: bounded, so yellow goes green, not grey.
-const SHADE_HUE_TURN: f32 = 1.2;
+const SHADE_HUE_TURN: f32 = 0.3;
 
 fn luma(colour: vec3<f32>) -> f32 {
     return dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -49,7 +51,9 @@ fn painterly_light(normal: vec3<f32>, to_sun: vec3<f32>, sun: vec3<f32>, visibil
     let tinted = mix(ambient, country.rgb * luma(ambient) / luma(country.rgb), country.w);
     let low_sun = smoothstep(-0.1, 0.0, to_sun.y) * (1.0 - smoothstep(0.0, 0.5, to_sun.y));
     let floor = min(select(SHADOW_FLOOR, LEAF_SHADOW_FLOOR, leaf) * (1.0 + LOW_SUN_FLOOR * low_sun), MAX_SHADOW_FLOOR);
-    let fill = tinted * max(1.0, floor * luma(full) / max(luma(tinted), 1e-4));
+    let warm = full / max(luma(full), 1e-4);
+    let leaned = warm * pow(tinted / max(luma(tinted), 1e-4) / max(warm, vec3<f32>(1e-4)), vec3<f32>(FILL_CAST));
+    let fill = leaned / max(luma(leaned), 1e-4) * max(luma(tinted), floor * luma(full));
     return Painterly(mix(fill, full, lit) + moon, lit);
 }
 
