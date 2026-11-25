@@ -326,7 +326,7 @@ fn specialize_shadow(descriptor: &mut RenderPipelineDescriptor, non_cutout: bool
 
 /// The materials terrain draws with, before any fading.
 #[derive(Clone, Default, Resource)]
-pub(crate) struct TerrainMaterials {
+pub struct TerrainMaterials {
     pub chunk: Handle<ChunkMaterial>,
     pub solid_chunk: Handle<ChunkMaterial>,
     pub water: Handle<WaterMaterial>,
@@ -335,7 +335,7 @@ pub(crate) struct TerrainMaterials {
 }
 
 impl TerrainMaterials {
-    pub fn new(
+    pub(crate) fn new(
         debug: DebugSettings,
         period: u32,
         flora_fade: crate::lod::FloraFade,
