@@ -1,4 +1,4 @@
-//! What the world sounds like at the camera: wind, forest, cricket and wave loops, and the odd owl.
+//! What the world sounds like at the camera: wind, and wave, underwater and leaf loops. Wildlife is a game's to add.
 mod haze;
 mod wind;
 
@@ -6,10 +6,10 @@ use std::f32::consts::TAU;
 
 use bevy::{
     app::{App, Plugin, Startup, Update},
-    asset::{AssetServer, Handle},
+    asset::AssetServer,
     audio::{
         AddAudioSource, AudioPlayer, AudioSink, AudioSinkPlayback, AudioSource, PlaybackSettings,
-        SpatialListener, SpatialScale, Volume,
+        SpatialListener, Volume,
     },
     camera::Camera3d,
     ecs::{
@@ -22,7 +22,7 @@ use bevy::{
     },
     math::{ops, Vec3},
     time::Time,
-    transform::components::{GlobalTransform, Transform},
+    transform::components::GlobalTransform,
 };
 
 use crate::atmosphere::{EasedFeel, Feel};
@@ -30,11 +30,10 @@ use crate::sky::{sun_direction, TimeOfDay};
 pub(crate) use ochre_base::math::smoothstep;
 use ochre_base::{block::BlockType, WATER_LEVEL};
 use ochre_terrain::world::World;
-use wind::Gust;
 pub(crate) use wind::SAMPLE_RATE;
 pub use wind::{wind_strength, Wind, WindDials};
 
-/// Wind, loops and the odd owl, each as loud as the camera's `Surroundings` call for.
+/// Wind and loops, each as loud as the camera's `Surroundings` call for.
 pub struct AmbiencePlugin;
 
 impl Plugin for AmbiencePlugin {
@@ -48,7 +47,7 @@ impl Plugin for AmbiencePlugin {
                 Update,
                 (
                     listen_from_camera,
-                    (wind::update_wind, mix_loops, hoot).after(SenseSurroundings),
+                    (wind::update_wind, mix_loops).after(SenseSurroundings),
                 ),
             );
     }
@@ -237,26 +236,16 @@ fn sense_surroundings(
 /// A recorded loop, and how loud it plays at most, as the files are all levelled alike.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Loop {
-    Forest,
-    Crickets,
     Waves,
     Underwater,
     Leaves,
 }
 
 impl Loop {
-    const ALL: [Loop; 5] = [
-        Loop::Forest,
-        Loop::Crickets,
-        Loop::Waves,
-        Loop::Underwater,
-        Loop::Leaves,
-    ];
+    const ALL: [Loop; 3] = [Loop::Waves, Loop::Underwater, Loop::Leaves];
 
     fn file(self) -> &'static str {
         match self {
-            Loop::Forest => "sounds/forest.ogg",
-            Loop::Crickets => "sounds/crickets.ogg",
             Loop::Waves => "sounds/waves.ogg",
             Loop::Underwater => "sounds/underwater.ogg",
             Loop::Leaves => "sounds/leaves.ogg",
@@ -266,8 +255,6 @@ impl Loop {
     // Each file's measured loudness and the loudness it plays at in full, in LUFS.
     fn loudness(self) -> (f32, f32) {
         match self {
-            Loop::Forest => (-19.2, -28.0),
-            Loop::Crickets => (-14.0, -29.0),
             Loop::Waves => (-19.7, -30.0),
             Loop::Underwater => (-18.4, -22.0),
             Loop::Leaves => (-20.2, -35.0),
@@ -279,24 +266,6 @@ impl Loop {
         10f32.powf((wanted - measured) / 20.0) * AMBIENCE_TRIM
     }
 
-    /// Whether this loop comes and goes on its own, as birds and crickets do, instead of following its surroundings.
-    fn coming_and_going(self) -> Option<Bursts> {
-        match self {
-            // birds strike up now and then, and fall quiet more than they sing
-            Loop::Forest => Some(Bursts {
-                seconds: (3.0, 12.0),
-                quiet: (0.5, 0.85),
-            }),
-            // a cricket or two starts up, chirps a while and stops
-            Loop::Crickets => Some(Bursts {
-                seconds: (2.0, 8.0),
-                quiet: (0.6, 0.9),
-            }),
-            // the leaves come and go with the wind's breezes instead, see `Loop::level`
-            Loop::Waves | Loop::Underwater | Loop::Leaves => None,
-        }
-    }
-
     /// How loud this loop should be in these surroundings, 0..1, before its gain.
     pub fn level(self, around: &Surroundings) -> f32 {
         if around.underwater {
@@ -304,16 +273,7 @@ impl Loop {
         }
         // what's on the ground fades as the camera climbs away from it
         let near = |from, to| 1.0 - smoothstep(from, to, around.altitude);
-        let night = 1.0 - around.day;
         match self {
-            Loop::Forest => around.trees * around.day * around.warmth * near(15.0, 90.0),
-            Loop::Crickets => {
-                (1.0 - around.water)
-                    * (1.0 - around.desert)
-                    * night
-                    * around.warmth
-                    * near(15.0, 90.0)
-            }
             // frozen sea doesn't break on the shore
             Loop::Waves => around.water * around.warmth * near(10.0, 120.0),
             Loop::Underwater => 0.0,
@@ -323,27 +283,13 @@ impl Loop {
     }
 }
 
-/// How a loop comes and goes: it follows a value wandering 0..1, see `Gust`.
-struct Bursts {
-    // how long the value takes to wander to each new target, in seconds, at the least and most
-    seconds: (f32, f32),
-    // the value goes from silence (under the first) to full (over the second); higher means silent more often
-    quiet: (f32, f32),
-}
-
-/// Where a loop that comes and goes is in its comings and goings, see `Loop::coming_and_going`.
-#[derive(Component, Default)]
-struct Activity(Gust);
-
 // How long the loops take to follow the surroundings, in seconds.
 const LOOP_FOLLOW_SECONDS: f32 = 1.5;
 
 fn play_loops(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.insert_resource(Owl(assets.load("sounds/owl.ogg")));
     for kind in Loop::ALL {
         commands.spawn((
             kind,
-            Activity::default(),
             AudioPlayer::<AudioSource>(assets.load(kind.file())),
             PlaybackSettings::LOOP.with_volume(Volume::SILENT),
         ));
@@ -353,25 +299,13 @@ fn play_loops(mut commands: Commands, assets: Res<AssetServer>) {
 fn mix_loops(
     time: Res<Time>,
     around: Res<Surroundings>,
-    weather: Option<Res<crate::weather::Weather>>,
-    mut loops: Query<(&Loop, &mut Activity, &mut AudioSink)>,
+    mut loops: Query<(&Loop, &mut AudioSink)>,
 ) {
-    // birds and crickets fall silent in the rain, and before a storm's rain, or without it
-    let rain = weather.map_or(0.0, |weather| weather.gloom());
     let follow = 1.0 - (-time.delta_secs() / LOOP_FOLLOW_SECONDS).exp();
-    for (kind, mut activity, mut sink) in &mut loops {
-        let active = kind.coming_and_going().map_or(1.0, |bursts| {
-            let (a, b) = (rand::random(), rand::random());
-            let wander = activity.0.advance(time.delta_secs(), bursts.seconds, a, b);
-            smoothstep(bursts.quiet.0, bursts.quiet.1, wander)
-        });
+    for (kind, mut sink) in &mut loops {
         let current = sink.volume().to_linear();
         // square-rooted, as loudness goes by power: a third the thickness is about 5 dB quieter, not 10
-        let sheltering = match kind {
-            Loop::Forest | Loop::Crickets => 1.0 - rain,
-            _ => 1.0,
-        };
-        let wanted = kind.level(&around).sqrt() * kind.gain() * active * sheltering;
+        let wanted = kind.level(&around).sqrt() * kind.gain();
         let volume = current + (wanted - current) * follow;
         sink.set_volume(Volume::Linear(volume));
         // a loop no one can hear is paused, so it isn't decoded for nothing
@@ -387,7 +321,7 @@ fn mix_loops(
 // How quiet a loop is, as a linear volume, before it's paused, see `mix_loops`.
 const SILENT: f32 = 1e-3;
 
-/// Hears from the camera, for sounds placed in the world, see `hoot`.
+/// Hears from the camera, for sounds a game places in the world.
 fn listen_from_camera(
     mut commands: Commands,
     cameras: Query<Entity, (With<Camera3d>, Without<SpatialListener>)>,
@@ -395,57 +329,6 @@ fn listen_from_camera(
     for camera in &cameras {
         commands.entity(camera).insert(SpatialListener::default());
     }
-}
-
-// How long between owls' hoots in a forest at night, in seconds, at the least and most.
-const HOOT_SECONDS: (f32, f32) = (12.0, 40.0);
-// How far off an owl hoots, in blocks, at the nearest and farthest.
-const OWL_DISTANCE: (f32, f32) = (20.0, 45.0);
-// A block's distance for the stereo falloff (inverse of distance), so owls a few dozen blocks off are faint but clear
-const OWL_SCALE: f32 = 0.06;
-// Brings a hoot a few dozen blocks off to about the crickets' loudness.
-const OWL_VOLUME: f32 = 0.2 * AMBIENCE_TRIM;
-
-#[derive(Resource)]
-struct Owl(Handle<AudioSource>);
-
-fn hoot(
-    mut commands: Commands,
-    time: Res<Time>,
-    around: Res<Surroundings>,
-    camera: Query<&GlobalTransform, With<Camera3d>>,
-    owl: Res<Owl>,
-    mut wait: Local<Option<f32>>,
-) {
-    let chance = Loop::Forest.level(&Surroundings {
-        day: 1.0 - around.day,
-        ..*around
-    });
-    let left = wait.get_or_insert_with(|| rand::random_range(HOOT_SECONDS.0..HOOT_SECONDS.1));
-    // owls only call where the forest's loud enough at night, and wait longer in thin woods
-    *left -= time.delta_secs() * chance;
-    if *left > 0.0 || chance < 0.25 {
-        return;
-    }
-    *wait = None;
-    let Ok(camera) = camera.single() else {
-        return;
-    };
-    let angle = rand::random_range(0.0..TAU);
-    let distance = rand::random_range(OWL_DISTANCE.0..OWL_DISTANCE.1);
-    let offset = Vec3::new(ops::cos(angle), 0.0, ops::sin(angle)) * distance
-        + Vec3::Y * rand::random_range(4.0..12.0);
-    commands.spawn((
-        AudioPlayer(owl.0.clone()),
-        PlaybackSettings {
-            spatial: true,
-            spatial_scale: Some(SpatialScale::new(OWL_SCALE)),
-            volume: Volume::Linear(OWL_VOLUME),
-            speed: rand::random_range(0.95..1.05),
-            ..PlaybackSettings::DESPAWN
-        },
-        Transform::from_translation(camera.translation() + offset),
-    ));
 }
 
 #[cfg(test)]
@@ -458,23 +341,6 @@ mod tests {
             .map(|kind| (kind, kind.level(&around)))
             .filter(|(_, level)| *level > 0.01)
             .collect()
-    }
-
-    #[test]
-    fn test_forest_by_day_and_crickets_by_night() {
-        let forest = Surroundings {
-            trees: 0.9,
-            ..Default::default()
-        };
-        assert_eq!(
-            vec![Loop::Forest],
-            levels(forest).into_iter().map(|l| l.0).collect::<Vec<_>>()
-        );
-        let night = Surroundings { day: 0.0, ..forest };
-        assert_eq!(
-            vec![Loop::Crickets],
-            levels(night).into_iter().map(|l| l.0).collect::<Vec<_>>()
-        );
     }
 
     #[test]
