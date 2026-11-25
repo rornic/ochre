@@ -69,11 +69,12 @@ pub(crate) fn spawn_camera(
     assets: &mut ViewAssets,
     renderer: &RendererSettings,
     player: Entity,
+    pitch: f32,
 ) {
     let fog_distance = renderer.fog_distance();
     let camera = commands
         .spawn((
-            Transform::from_xyz(0.0, EYE_HEIGHT, 0.0),
+            Transform::from_xyz(0.0, EYE_HEIGHT, 0.0).with_rotation(bevy::math::Quat::from_rotation_x(pitch)),
             Camera3d::default(),
             atmosphere_camera(),
             Projection::Perspective(PerspectiveProjection {

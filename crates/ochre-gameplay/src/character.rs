@@ -40,7 +40,7 @@ impl CharacterState {
 }
 
 /// What the player wants this step. The only thing a step reads besides the state and the world.
-#[derive(Component, Debug, Default, Clone, PartialEq)]
+#[derive(Component, Debug, Clone, PartialEq)]
 pub struct MovementInput {
     /// Right and back, each -1, 0 or 1.
     pub across: Vec2,
@@ -54,6 +54,14 @@ pub struct MovementInput {
     /// Radians. The body faces `yaw`, and flying goes the way `yaw` and `pitch` face.
     pub yaw: f32,
     pub pitch: f32,
+    /// How fast the body walks and swims against its usual speed, 1 normally; a game sets it for a load, the ground or tiredness.
+    pub pace: f32,
+}
+
+impl Default for MovementInput {
+    fn default() -> Self {
+        Self { across: Vec2::ZERO, lift: 0.0, sprint: false, jump: false, toggle_fly: false, yaw: 0.0, pitch: 0.0, pace: 1.0 }
+    }
 }
 
 // Turns about an axis through libm: platform sin and cos differ in the last bit, and server and client must agree.
@@ -234,7 +242,7 @@ fn walk(
     let wading = env.block(feet.round().as_i64vec3()) == BlockType::Water;
     let jumping = input.jump;
 
-    let mut speed = WALK_SPEED;
+    let mut speed = WALK_SPEED * input.pace;
     if input.sprint {
         speed *= WALK_SPRINT_MULTIPLIER;
     }
@@ -408,6 +416,18 @@ mod tests {
         let jump = MovementInput { jump: true, ..default() };
         let events = step(&world, &mut state, &mut at, &jump);
         assert!(events.jumped.is_some() && state.velocity.y > 0.0);
+    }
+
+    #[test]
+    fn a_slower_pace_walks_slower() {
+        let world = flat_world();
+        let (mut state, mut at) = (CharacterState::new(Movement::Walk), Vec3::new(8.0, 8.0, 12.0));
+        settle(&world, &mut state, &mut at);
+        let laden = MovementInput { across: Vec2::new(0.0, -1.0), pace: 2.0 / 3.0, ..default() };
+        for _ in 0..30 {
+            step(&world, &mut state, &mut at, &laden);
+        }
+        assert!((state.velocity.z + WALK_SPEED * 2.0 / 3.0).abs() < 1e-4);
     }
 
     #[test]
