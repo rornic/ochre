@@ -66,6 +66,10 @@ pub struct Player {
     moved: Vec3,
     /// Degrees a game narrows the view by, which it eases to like the rest of the field of view.
     pub zoom: f32,
+    /// Where a game puts the eyes, from the feet in the body's frame, in place of `EYE_HEIGHT` and the head's bob, as from an animated head.
+    pub eye: Option<Vec3>,
+    /// Leaves a walking stride's footsteps to the game, as from an animated body's foot strikes; jumps and landings still sound.
+    pub quiet_strides: bool,
 }
 
 impl Player {
@@ -153,6 +157,7 @@ fn capture_input(
         toggle_fly: input.toggle_fly || keys.just_pressed(FLY_TOGGLE_KEY),
         yaw: body.rotation.to_euler(EulerRot::YXZ).0,
         pitch: pitch - player.nudge,
+        ..MovementInput::default()
     };
 }
 
@@ -209,7 +214,7 @@ fn player_present(
     };
     let before = player.bob_phase;
     player.bob_phase = (player.bob_phase + across_speed * dt * TAU / stride) % TAU;
-    if striding && footfall(before, player.bob_phase) {
+    if striding && !player.quiet_strides && footfall(before, player.bob_phase) {
         if let Some(surface) = Surface::under(&world, transform.translation) {
             let loudness = if sprinting { SPRINT_LOUDER } else { 1.0 };
             steps.write(Footstep { surface, loudness, at: None });
@@ -255,12 +260,10 @@ fn player_present(
     player.eye_lag -= player.eye_lag * (STEP_EASE * dt).min(1.0);
     // the body moves in steps, so the eyes sit where it was and catch up by the time the next step lands
     let trail = transform.rotation.inverse() * (-player.moved * (1.0 - fixed.overstep_fraction()));
-    camera.translation = trail
-        + Vec3::new(
-            player.bob * 0.5 * player.bob_phase.sin(),
-            EYE_HEIGHT - player.eye_lag - player.bob * (1.0 - (2.0 * player.bob_phase).cos()) / 2.0,
-            0.0,
-        );
+    let eye = player.eye.unwrap_or_else(|| {
+        Vec3::new(player.bob * 0.5 * player.bob_phase.sin(), EYE_HEIGHT - player.bob * (1.0 - (2.0 * player.bob_phase).cos()) / 2.0, 0.0)
+    });
+    camera.translation = trail + eye - Vec3::Y * player.eye_lag;
 }
 
 // Whether the bob's phase passed where the head is lowest, a quarter and three quarters of the way round.
@@ -399,10 +402,12 @@ fn spawn_player(
             Player::default(),
             CharacterState::new(if spawn.fly { Movement::Fly } else { Movement::Walk }),
             MovementInput::default(),
-            Transform::from_translation(position).looking_to(look, Vec3::Y),
+            // the body turns only about the vertical, as a step does, and the camera takes the look's tilt
+            Transform::from_translation(position).looking_to(look.with_y(0.0).try_normalize().unwrap_or(Vec3::NEG_Z), Vec3::Y),
         ))
         .id();
-    spawn_camera(&mut commands, &mut assets, &renderer, player);
+    let pitch = look.normalize_or(Vec3::NEG_Z).y.clamp(-1.0, 1.0).asin();
+    spawn_camera(&mut commands, &mut assets, &renderer, player, pitch);
 }
 
 #[cfg(test)]
