@@ -9,7 +9,7 @@ use bevy::{
     asset::{AssetServer, Handle},
     audio::{
         AddAudioSource, AudioPlayer, AudioSink, AudioSinkPlayback, AudioSource, PlaybackSettings,
-        SpatialListener, SpatialScale, Volume,
+        SpatialAudioSink, SpatialListener, SpatialScale, Volume,
     },
     camera::Camera3d,
     ecs::{
@@ -48,7 +48,13 @@ impl Plugin for AmbiencePlugin {
                 Update,
                 (
                     listen_from_camera,
-                    (wind::update_wind, mix_loops, hoot).after(SenseSurroundings),
+                    (
+                        wind::update_wind,
+                        perch_loops.before(mix_loops),
+                        mix_loops,
+                        hoot,
+                    )
+                        .after(SenseSurroundings),
                 ),
             );
     }
@@ -266,8 +272,8 @@ impl Loop {
     // Each file's measured loudness and the loudness it plays at in full, in LUFS.
     fn loudness(self) -> (f32, f32) {
         match self {
-            Loop::Forest => (-19.2, -28.0),
-            Loop::Crickets => (-14.0, -29.0),
+            Loop::Forest => (-19.2, -30.0),
+            Loop::Crickets => (-14.0, -31.0),
             Loop::Waves => (-19.7, -30.0),
             Loop::Underwater => (-18.4, -22.0),
             Loop::Leaves => (-20.2, -35.0),
@@ -279,18 +285,23 @@ impl Loop {
         10f32.powf((wanted - measured) / 20.0) * AMBIENCE_TRIM
     }
 
+    /// Whether this loop calls from a perch in the world instead of all round the camera.
+    fn perched(self) -> bool {
+        matches!(self, Loop::Forest | Loop::Crickets)
+    }
+
     /// Whether this loop comes and goes on its own, as birds and crickets do, instead of following its surroundings.
     fn coming_and_going(self) -> Option<Bursts> {
         match self {
             // birds strike up now and then, and fall quiet more than they sing
             Loop::Forest => Some(Bursts {
-                seconds: (3.0, 12.0),
-                quiet: (0.5, 0.85),
+                seconds: (4.0, 14.0),
+                quiet: (0.65, 0.92),
             }),
             // a cricket or two starts up, chirps a while and stops
             Loop::Crickets => Some(Bursts {
-                seconds: (2.0, 8.0),
-                quiet: (0.6, 0.9),
+                seconds: (3.0, 10.0),
+                quiet: (0.72, 0.95),
             }),
             // the leaves come and go with the wind's breezes instead, see `Loop::level`
             Loop::Waves | Loop::Underwater | Loop::Leaves => None,
@@ -305,15 +316,10 @@ impl Loop {
         // what's on the ground fades as the camera climbs away from it
         let near = |from, to| 1.0 - smoothstep(from, to, around.altitude);
         let night = 1.0 - around.day;
+        // birds and crickets are heard only from a perch, which says where, see `perch_loops`
         match self {
-            Loop::Forest => around.trees * around.day * around.warmth * near(15.0, 90.0),
-            Loop::Crickets => {
-                (1.0 - around.water)
-                    * (1.0 - around.desert)
-                    * night
-                    * around.warmth
-                    * near(15.0, 90.0)
-            }
+            Loop::Forest => around.day * around.warmth * near(15.0, 90.0),
+            Loop::Crickets => (1.0 - around.desert) * night * around.warmth * near(15.0, 90.0),
             // frozen sea doesn't break on the shore
             Loop::Waves => around.water * around.warmth * near(10.0, 120.0),
             Loop::Underwater => 0.0,
@@ -341,47 +347,158 @@ const LOOP_FOLLOW_SECONDS: f32 = 1.5;
 fn play_loops(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(Owl(assets.load("sounds/owl.ogg")));
     for kind in Loop::ALL {
-        commands.spawn((
+        let mut entity = commands.spawn((
             kind,
             Activity::default(),
             AudioPlayer::<AudioSource>(assets.load(kind.file())),
-            PlaybackSettings::LOOP.with_volume(Volume::SILENT),
+            PlaybackSettings {
+                spatial: kind.perched(),
+                // explicit, so a game's own `DefaultSpatialScale` doesn't change how far they carry
+                spatial_scale: kind.perched().then(|| SpatialScale::new(PERCH_SCALE)),
+                ..PlaybackSettings::LOOP.with_volume(Volume::SILENT)
+            },
         ));
+        if kind.perched() {
+            entity.insert((Transform::default(), Perched::default()));
+        }
     }
 }
 
+/// An entity a bird or cricket may call from, for a game to put on its bushes and the like.
+#[derive(Component, Default, Debug, Clone, Copy)]
+pub struct Perch;
+
+/// Where a perched loop calls from, see `perch_loops`.
+#[derive(Component, Default)]
+struct Perched {
+    at: Option<Vec3>,
+    // whether it's been heard since it settled there
+    heard: bool,
+    // seconds until it may look for a perch again
+    retry: f32,
+}
+
+impl Perched {
+    /// Whether a silent loop should fly to a new perch: once it's been heard, so the next call comes from elsewhere, or once it's left behind.
+    fn wants_moving(&self, eye: Vec3) -> bool {
+        self.heard || self.at.is_none_or(|at| at.distance(eye) > PERCH_REACH)
+    }
+}
+
+// How far off a loop's perch may be, in blocks.
+const PERCH_REACH: f32 = 40.0;
+// How far out the treetops looked for each time are, in blocks, and how many columns.
+const CANOPY_DISTANCE: (f32, f32) = (6.0, 36.0);
+const CANOPY_COLUMNS: usize = 12;
+// How far over the ground a column is looked up for leaves, in blocks.
+const CANOPY_HEIGHT: (i64, i64) = (2, 24);
+// Seconds between looks for a perch, as finding one takes a few hundred block lookups.
+const PERCH_RETRY: f32 = 2.0;
+// The stereo falloff's block (inverse square past 1/scale blocks), as the owl's: full within about 17 blocks.
+const PERCH_SCALE: f32 = OWL_SCALE;
+
+/// Moves each silent perched loop to a `Perch` or a treetop near the camera, so it's heard from there next.
+fn perch_loops(
+    time: Res<Time>,
+    world: Res<World>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
+    perches: Query<&GlobalTransform, With<Perch>>,
+    mut loops: Query<(&mut Perched, &mut Transform, &SpatialAudioSink)>,
+) {
+    let Ok(camera) = camera.single() else {
+        return;
+    };
+    let eye = camera.translation();
+    for (mut perched, mut transform, sink) in &mut loops {
+        perched.retry -= time.delta_secs();
+        if sink.volume().to_linear() >= SILENT || perched.retry > 0.0 || !perched.wants_moving(eye)
+        {
+            continue;
+        }
+        perched.retry = PERCH_RETRY;
+        let mut candidates: Vec<Vec3> = perches
+            .iter()
+            .map(GlobalTransform::translation)
+            .filter(|at| at.distance(eye) <= PERCH_REACH)
+            .collect();
+        candidates.extend((0..CANOPY_COLUMNS).filter_map(|_| treetop(&world, eye)));
+        let at =
+            (!candidates.is_empty()).then(|| candidates[rand::random_range(0..candidates.len())]);
+        if let Some(at) = at {
+            transform.translation = at;
+        }
+        *perched = Perched {
+            at,
+            heard: false,
+            ..*perched
+        };
+    }
+}
+
+/// The leaves of a tree in a random column some way from `eye`, if there's one standing there.
+fn treetop(world: &World, eye: Vec3) -> Option<Vec3> {
+    let angle = rand::random_range(0.0..TAU);
+    let distance = rand::random_range(CANOPY_DISTANCE.0..CANOPY_DISTANCE.1);
+    let x = (eye.x + ops::cos(angle) * distance).floor() as i64;
+    let z = (eye.z + ops::sin(angle) * distance).floor() as i64;
+    let ground = world.region_store.get_height(x, z).floor() as i64;
+    (ground + CANOPY_HEIGHT.0..=ground + CANOPY_HEIGHT.1)
+        .map(|y| bevy::math::I64Vec3::new(x, y, z))
+        .find(|&block| world.get_block_at(block) == BlockType::Leaves)
+        .map(|block| block.as_vec3() + 0.5)
+}
+
+#[allow(clippy::type_complexity)]
 fn mix_loops(
     time: Res<Time>,
     around: Res<Surroundings>,
     weather: Option<Res<crate::weather::Weather>>,
     mut loops: Query<(&Loop, &mut Activity, &mut AudioSink)>,
+    // a spatial sound has a `SpatialAudioSink`, never an `AudioSink`
+    mut perched: Query<
+        (&Loop, &mut Activity, &mut SpatialAudioSink, &mut Perched),
+        Without<AudioSink>,
+    >,
 ) {
     // birds and crickets fall silent in the rain, and before a storm's rain, or without it
     let rain = weather.map_or(0.0, |weather| weather.gloom());
     let follow = 1.0 - (-time.delta_secs() / LOOP_FOLLOW_SECONDS).exp();
-    for (kind, mut activity, mut sink) in &mut loops {
+    let wanted = |kind: Loop, activity: &mut Activity| {
         let active = kind.coming_and_going().map_or(1.0, |bursts| {
             let (a, b) = (rand::random(), rand::random());
             let wander = activity.0.advance(time.delta_secs(), bursts.seconds, a, b);
             smoothstep(bursts.quiet.0, bursts.quiet.1, wander)
         });
-        let current = sink.volume().to_linear();
-        // square-rooted, as loudness goes by power: a third the thickness is about 5 dB quieter, not 10
         let sheltering = match kind {
             Loop::Forest | Loop::Crickets => 1.0 - rain,
             _ => 1.0,
         };
-        let wanted = kind.level(&around).sqrt() * kind.gain() * active * sheltering;
-        let volume = current + (wanted - current) * follow;
-        sink.set_volume(Volume::Linear(volume));
-        // a loop no one can hear is paused, so it isn't decoded for nothing
-        let silent = volume < SILENT && wanted < SILENT;
-        if silent && !sink.is_paused() {
-            sink.pause();
-        } else if !silent && sink.is_paused() {
-            sink.play();
-        }
+        // square-rooted, as loudness goes by power: a third the thickness is about 5 dB quieter, not 10
+        kind.level(&around).sqrt() * kind.gain() * active * sheltering
+    };
+    for (kind, mut activity, mut sink) in &mut loops {
+        glide(&mut *sink, wanted(*kind, &mut activity), follow);
     }
+    for (kind, mut activity, mut sink, mut perched) in &mut perched {
+        // without a perch there's nowhere to hear it from
+        let to = wanted(*kind, &mut activity) * perched.at.is_some() as u8 as f32;
+        perched.heard |= glide(&mut *sink, to, follow);
+    }
+}
+
+/// Moves a loop's volume a `follow` share of the way to `wanted`, and returns whether it can be heard.
+fn glide(sink: &mut impl AudioSinkPlayback, wanted: f32, follow: f32) -> bool {
+    let current = sink.volume().to_linear();
+    let volume = current + (wanted - current) * follow;
+    sink.set_volume(Volume::Linear(volume));
+    // a loop no one can hear is paused, so it isn't decoded for nothing
+    let silent = volume < SILENT && wanted < SILENT;
+    if silent && !sink.is_paused() {
+        sink.pause();
+    } else if !silent && sink.is_paused() {
+        sink.play();
+    }
+    volume >= SILENT
 }
 
 // How quiet a loop is, as a linear volume, before it's paused, see `mix_loops`.
@@ -406,6 +523,15 @@ const OWL_SCALE: f32 = 0.06;
 // Brings a hoot a few dozen blocks off to about the crickets' loudness.
 const OWL_VOLUME: f32 = 0.2 * AMBIENCE_TRIM;
 
+/// How likely an owl is to hoot here, 0..1: as loud as the forest would be at night, and only in the forest.
+fn hoot_chance(around: &Surroundings) -> f32 {
+    let night = Surroundings {
+        day: 1.0 - around.day,
+        ..*around
+    };
+    around.trees * Loop::Forest.level(&night)
+}
+
 #[derive(Resource)]
 struct Owl(Handle<AudioSource>);
 
@@ -417,10 +543,7 @@ fn hoot(
     owl: Res<Owl>,
     mut wait: Local<Option<f32>>,
 ) {
-    let chance = Loop::Forest.level(&Surroundings {
-        day: 1.0 - around.day,
-        ..*around
-    });
+    let chance = hoot_chance(&around);
     let left = wait.get_or_insert_with(|| rand::random_range(HOOT_SECONDS.0..HOOT_SECONDS.1));
     // owls only call where the forest's loud enough at night, and wait longer in thin woods
     *left -= time.delta_secs() * chance;
@@ -496,6 +619,41 @@ mod tests {
             ..breeze
         };
         assert_eq!(0.0, Loop::Leaves.level(&peak));
+    }
+
+    #[test]
+    fn test_birds_sing_from_perches_but_owls_stay_in_forests() {
+        // the Forest loop's perches decide where it's heard, so open country can have birds
+        let open = Surroundings::default();
+        assert!(Loop::Forest.level(&open) > 0.9);
+        let night = |trees| Surroundings {
+            trees,
+            day: 0.0,
+            ..open
+        };
+        assert_eq!(0.0, hoot_chance(&night(0.0)));
+        assert!(hoot_chance(&night(0.9)) > 0.8);
+    }
+
+    #[test]
+    fn test_a_perched_loop_moves_once_heard_or_left_behind() {
+        let eye = Vec3::ZERO;
+        let near = Perched {
+            at: Some(Vec3::new(10.0, 5.0, 0.0)),
+            ..Default::default()
+        };
+        assert!(!near.wants_moving(eye));
+        assert!(Perched {
+            heard: true,
+            ..near
+        }
+        .wants_moving(eye));
+        assert!(Perched::default().wants_moving(eye));
+        let far = Perched {
+            at: Some(Vec3::new(PERCH_REACH + 1.0, 0.0, 0.0)),
+            ..Default::default()
+        };
+        assert!(far.wants_moving(eye));
     }
 
     #[test]

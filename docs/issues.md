@@ -18,7 +18,7 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 
 ## Only forests have birdsong
 
-- **Seen:** 2026-11-16. The ambient birds are one recorded loop (`Loop::Forest`, `forest.ogg`), played in proportion to the trees round the camera, so steppe, tundra, desert and the other treeless biomes have none. Their starling flocks and goose skeins are sized by biome (`docs/climate.md`, Birds by biome), but they make no sound.
+- **Seen:** 2026-11-16. The ambient birds are one recorded loop (`Loop::Forest`, `forest.ogg`), heard from treetops and a game's `Perch` entities near the camera (`ambience::perch_loops`), so steppe, tundra, desert and the other treeless biomes have none of their own: at most the forest's birds, from whatever a game perches there. Their starling flocks and goose skeins are sized by biome (`docs/climate.md`, Birds by biome), but they make no sound.
 - **To fix:** a loop per biome, for example a lark or pipit over the steppe: a new `Loop` variant for each and a recording, CC0 if the licence rule stays (`assets/sounds/CREDITS.md`).
 
 ## Steppe's own ground texture is a derived first try, with a hard edge
