@@ -5,7 +5,7 @@ use bevy::math::DVec2;
 use image::{Rgb, RgbImage};
 use ochre_base::{cold::SNOWY_GRASS_TEMPERATURE, terrain_source::TerrainSource};
 use ochre_world::{
-    sky::{daylight, TimeOfDay, DAY_TICKS},
+    sky::{daylight, DaylightShare, TimeOfDay, DAY_TICKS},
     storms::Forecast,
     worldmap::{character, climate::BiomeKind, io::load_or_generate, WorldConfig, WorldTerrain},
 };
@@ -47,7 +47,7 @@ fn find_snow(
     let cell = 2.0 * half / GRID as f64;
     let snowing = |x: f64, z: f64, tick: u64| {
         let sky = forecast.sky(x, z, tick);
-        sky.precipitation > 0.5 && sky.snow > 0.9 && daylight(&TimeOfDay(tick)) > 0.9
+        sky.precipitation > 0.5 && sky.snow > 0.9 && daylight(&TimeOfDay(tick), &DaylightShare::default()) > 0.9
     };
     // the longest run of snowing samples: its length, where, in which biome, and its first tick
     let mut best: Option<(u64, f64, f64, BiomeKind, u64)> = None;
@@ -105,7 +105,7 @@ fn find_storm(forecast: &Forecast, (x, z): (f64, f64), seed: u32, days: u64) {
     // a sample every 0.005 of a day, about 108 seconds
     const STEP: u64 = DAY_TICKS / 200;
     // thunder this hard, in daylight
-    let stormy = |tick: u64| forecast.sky(x, z, tick).thunder > 0.6 && daylight(&TimeOfDay(tick)) > 0.5;
+    let stormy = |tick: u64| forecast.sky(x, z, tick).thunder > 0.6 && daylight(&TimeOfDay(tick), &DaylightShare::default()) > 0.5;
     let (mut best, mut run_start, mut run) = ((0u64, 0u64), 0u64, 0u64);
     for k in 0..days * 200 {
         if stormy(k * STEP) {

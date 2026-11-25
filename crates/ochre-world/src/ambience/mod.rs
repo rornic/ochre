@@ -26,7 +26,7 @@ use bevy::{
 };
 
 use crate::atmosphere::{EasedFeel, Feel};
-use crate::sky::{sun_direction, TimeOfDay};
+use crate::sky::{sun_direction, DaylightShare, TimeOfDay};
 pub(crate) use ochre_base::math::smoothstep;
 use ochre_base::{block::BlockType, WATER_LEVEL};
 use ochre_terrain::world::World;
@@ -60,6 +60,7 @@ pub struct SurroundingsPlugin;
 impl Plugin for SurroundingsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TimeOfDay>()
+            .init_resource::<DaylightShare>()
             .init_resource::<WindDials>()
             .init_resource::<Surroundings>()
             .init_resource::<EasedFeel>()
@@ -153,10 +154,12 @@ struct Sensed {
     last: Option<Vec3>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sense_surroundings(
     time: Res<Time>,
     world: Res<World>,
     clock: Res<TimeOfDay>,
+    share: Res<DaylightShare>,
     dials: Res<WindDials>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut around: ResMut<Surroundings>,
@@ -229,7 +232,7 @@ fn sense_surroundings(
         steppe: steppe / total,
         exposure: noise.exposure(eye.x as f64, eye.z as f64),
         biome,
-        day: smoothstep(-0.05, 0.2, sun_direction(clock.days()).y),
+        day: smoothstep(-0.05, 0.2, sun_direction(share.sun_days(clock.days())).y),
         breeze: dials.breeze(),
     };
 }
