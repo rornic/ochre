@@ -34,6 +34,10 @@ const CPU_PASSES_SHOWN: usize = 5;
 // what a stretch of the frame's main schedules is called, between marks laid in `Main`'s order
 const MAIN_STAGES: [&str; 5] = ["first", "pre", "update", "post", "last"];
 
+/// Lines a game adds to the end of the F1 readout, for its own state.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct DebugText(pub String);
+
 /// F1 toggles a text readout of climate, block, frame cost and terrain; `stats` starts it shown and prints `STATS`.
 #[derive(Default)]
 pub struct DebugOverlayPlugin {
@@ -243,6 +247,7 @@ fn update_overlay(
     main_times: Res<MainTimes>,
     looked_at: Option<Res<LookedAt>>,
     stats: Res<Stats>,
+    game: Option<Res<DebugText>>,
     mut overlay: Query<(&mut Text, &Visibility), With<DebugOverlay>>,
 ) {
     let Ok((mut text, visibility)) = overlay.single_mut() else {
@@ -363,6 +368,10 @@ fn update_overlay(
     let _ = write!(out, "\n  gpu: {total:.2} ms");
     for (pass, ms) in passes.iter().take(GPU_PASSES_SHOWN) {
         let _ = write!(out, "\n    {pass}: {ms:.2}");
+    }
+
+    if let Some(game) = game.filter(|g| !g.0.is_empty()) {
+        let _ = write!(out, "\n{}", game.0);
     }
 
     if stats.0 {
