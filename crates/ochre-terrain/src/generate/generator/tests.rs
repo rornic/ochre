@@ -4003,6 +4003,57 @@ fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
     assert!(from_rock > 100, "the rock drew only {from_rock} triangles of its wall");
 }
 
+// Two blocks touching along an edge are bridged by a filled block, which can lie in a chunk of nothing else: that chunk is never meshed, so a neighbour that has ground must draw the bridge.
+#[test]
+fn test_a_bridge_between_edge_touching_blocks_in_an_empty_chunk_is_drawn() {
+    let regions = test_regions();
+    let size = CHUNK_SIZE as i64;
+    let base = I64Vec3::new(0, 40, 0);
+    let mut chunks: HashMap<I64Vec3, ChunkData> = HashMap::new();
+    for (block, at) in [(BlockType::Rock, I64Vec3::new(0, -1, 5)), (BlockType::Rock, I64Vec3::new(-1, 0, 5))] {
+        let world = base * size + at;
+        chunks
+            .entry(world.div_euclid(I64Vec3::splat(size)))
+            .or_default()
+            .set_block_at(world.rem_euclid(I64Vec3::splat(size)).as_u16vec3(), block);
+    }
+    let chunk_at = |c: I64Vec3| Arc::new(chunks.get(&c).cloned().unwrap_or_default());
+    let (mut positions, mut indices) = (Vec::<[f32; 3]>::new(), Vec::<u32>::new());
+    for d in cube_of(-2..=2) {
+        let c = base + d;
+        let data = chunk_at(c);
+        if data.empty() {
+            continue;
+        }
+        let adjacent = ChunkCoordinate(c).neighbors_26().iter().map(|n| Some(chunk_at(n.0))).collect();
+        let meshes = generate_chunk_mesh_with(data, adjacent, ChunkCoordinate(c), &regions, false);
+        let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) = (meshes.opaque.attribute(Mesh::ATTRIBUTE_POSITION), meshes.opaque.indices()) else {
+            continue;
+        };
+        let offset = Vec3::new(d.x as f32, d.y as f32, d.z as f32) * size as f32;
+        let first = positions.len() as u32;
+        positions.extend(p.iter().map(|&p| (Vec3::from(p) + offset).to_array()));
+        indices.extend(i.iter().map(|&i| i + first));
+    }
+    let mut joined = Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::all());
+    joined.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions));
+    joined.insert_indices(Indices::U32(indices));
+    let open = open_edges(&joined);
+    assert!(open.is_empty(), "{} open edges round two blocks and their bridge, first: {:?}", open.len(), &open[..open.len().min(4)]);
+}
+
+fn cube_of(range: std::ops::RangeInclusive<i64>) -> Vec<I64Vec3> {
+    let mut cube = Vec::new();
+    for x in range.clone() {
+        for y in range.clone() {
+            for z in range.clone() {
+                cube.push(I64Vec3::new(x, y, z));
+            }
+        }
+    }
+    cube
+}
+
 #[test]
 fn test_no_tree_roots_on_a_banks_sand() {
     use crate::generate::trees::trees_near;

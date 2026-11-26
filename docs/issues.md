@@ -79,12 +79,6 @@ An entry says where it was seen, what is wrong, and what is known and what is on
 - **Tried, 2026-11-23:** reading 13 rows of real ground past a node's top and bottom makes the shared row agree (332 of 332 vertices) and cuts the counts from 13 to 88 pixels to 1 to 8, but LOD meshing in `bench` went from 175 to 259 ms and the level 1 ring from 1.8 to 2.3 s, measured with other builds running. Held: too dear for a fight not noticed in play. A cheaper way would share only the vertices of the row itself.
 - **Measured quiet, 2026-11-23:** `bench` on that commit (5005be3) against its parent (abcdadd), four alternating pairs on 16 cores with nothing else running: LOD meshing 170.6 to 172.0 ms against 242.4 to 243.3 ms (1.42 times, each level 29 to 52% dearer), the level 1 ring 1.7 s against 2.1 s (one run 3.2 s). Chunk meshing and vertices are unchanged, LOD vertices 119,595 to 119,558. The loaded figures above hold.
 
-## A hole in a rock face shows the grass behind it
-
-- **Seen:** 2026-11-26, seed 1, in the game on a real display. Eye at (8033.5, 257.6, -397.7), ground 244.2, steppe, yaw 359.3, pitch -27.2. A gap of about one to two blocks in a steep dark rock face a few blocks ahead, through which the grass and ground beyond are drawn.
-- **Known:** it is close, so it is a chunk's sculpted mesh, not an LOD node.
-- **Not known:** the cause, whether it sits on a chunk edge, and whether a game's stamped blocks next to it are involved.
-
 ## Rock's facets turn at every vertex in 8-block cells
 
 - **Seen:** 2026-11-17, by design. The chisel turns its directions slowly over about 9 blocks, so a cell 8 blocks wide changes direction at each vertex and far rock reads as noise.
