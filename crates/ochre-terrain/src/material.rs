@@ -22,7 +22,7 @@ use bevy::{
 use crate::fade::FULLY_VISIBLE;
 use crate::generate::generator::{INNER_LEAVES_BAND, INNER_LEAVES_REACH};
 use crate::settings::DebugSettings;
-use ochre_base::block::{game_materials, Tile, MATERIAL_FILES, MATERIAL_LAYERS};
+use ochre_base::block::{game_glossy_slots, game_materials, Tile, MATERIAL_FILES, MATERIAL_LAYERS};
 use ochre_base::WATER_LEVEL;
 
 // Sea level, where `fog.wesl` turns from fog across the land to murk all round.
@@ -265,6 +265,8 @@ impl Material for ChunkMaterial {
         // a game's blocks come after the flora and draw their own layers past the engine's, see `Tile::material_layer`
         let first_game_cell = ShaderDefVal::UInt("FIRST_GAME_CELL".into(), Tile::FIRST_GAME.atlas_cell() as u32);
         let first_game_layer = ShaderDefVal::UInt("FIRST_GAME_LAYER".into(), MATERIAL_LAYERS as u32);
+        // the game blocks that glint and mirror the sky as ice does, see `ice.wesl`
+        let glossy_game_slots = ShaderDefVal::UInt("GLOSSY_GAME_SLOTS".into(), game_glossy_slots());
         // leaves' holes fill in with the shade of the leaves behind them past this reach
         let inner_leaves_reach =
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
@@ -292,6 +294,7 @@ impl Material for ChunkMaterial {
             first_big_flora_cell,
             first_game_cell,
             first_game_layer,
+            glossy_game_slots,
             water_level(),
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
             ShaderDefVal::UInt("FLORA_FADE_START".into(), key.bind_group_data.flora_fade[0]),

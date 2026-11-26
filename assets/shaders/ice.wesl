@@ -59,13 +59,32 @@ fn ice_albedo(albedo: vec3<f32>, sky: f32, up: f32) -> vec3<f32> {
     return mix(albedo, albedo * ABSORB, mix(0.25, 1.0, ice_depth(sky, up)));
 }
 
+// Whether it's a game block its game made glossy, by its slot's bit in `GLOSSY_GAME_SLOTS`.
+fn is_glossy(vertex_alpha: f32) -> bool {
+    let slot = i32(floor(vertex_alpha + 0.5)) - i32(constants::FIRST_GAME_CELL);
+    return slot >= 0 && slot < 32 && ((u32(constants::GLOSSY_GAME_SLOTS) >> u32(slot)) & 1u) == 1u;
+}
+
+// How much of ice's glint and mirrored sky a glossy game block has, being stone and not a sheet of ice.
+const GLOSSY_GAIN: f32 = 0.4;
+
+// What a glossy game block adds to its lit colour: ice's glint and mirrored sky, without its inner glow.
+fn glossy_shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec3<f32>, lit: f32, block_rate: f32, across: vec3<f32>, down: vec3<f32>, rise: vec2<f32>) -> vec3<f32> {
+    return shine(world_position, normal, sky, to_sun, lit, block_rate, across, down, rise) * GLOSSY_GAIN;
+}
+
 // What ice adds to its lit colour: glow, the sun's glint and gloss, and mirrored sky. `world_position` is
 // as drawn (curved), `normal` the face's, `lit` how much the sun reaches it, `block_rate` blocks to a pixel.
 fn ice_shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec3<f32>, lit: f32, block_rate: f32, across: vec3<f32>, down: vec3<f32>, rise: vec2<f32>) -> vec3<f32> {
-    let real = uncurved(world_position);
-    let seen = normalize(eye() - real);
     let depth = ice_depth(sky, normal.y);
     let glow = GLOW * open_sky(vec3<f32>(0.0, 1.0, 0.0)) * (depth * GLOW_GAIN);
+    return glow + shine(world_position, normal, sky, to_sun, lit, block_rate, across, down, rise);
+}
+
+// The sun's glint and gloss on a glassy surface and the sky it mirrors, its tilt rippled and bumped by the painting.
+fn shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec3<f32>, lit: f32, block_rate: f32, across: vec3<f32>, down: vec3<f32>, rise: vec2<f32>) -> vec3<f32> {
+    let real = uncurved(world_position);
+    let seen = normalize(eye() - real);
 
     // the painting's relief tilts the face; a faint ripple breaks up smooth flats, fading near a pixel a block
     let fine = 1.0 - smoothstep(0.2, 1.0, block_rate);
@@ -85,5 +104,5 @@ fn ice_shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec
     bounced.y = max(bounced.y, 0.02);
     let mirrored = sky_colour(normalize(bounced)) * (mirror * REFLECT_GAIN * smoothstep(0.3, 0.9, sky));
 
-    return glow + glint + mirrored;
+    return glint + mirrored;
 }
