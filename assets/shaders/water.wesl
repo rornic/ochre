@@ -617,7 +617,16 @@ fn water(world_position: vec3<f32>, normal: vec3<f32>, to_eye: vec3<f32>, frag_c
     }
 }
     // the light's path through the water there and back, longer seen at a slant
-    let path = max(depth, 1.5) / max(to_eye.y, 0.25);
+    let shallowest = 1.5 / max(to_eye.y, 0.25);
+    var path = max(depth, 1.5) / max(to_eye.y, 0.25);
+@if(DEPTH_PREPASS) {
+    // something under the surface nearer than the bed, a fish or a wader's legs, is tinted only by the water in front of it
+    if dist < BED_REACH {
+        let water_z = position_world_to_view(world_position).z;
+        let seen_z = depth_ndc_to_view_z(prepass_utils::prepass_depth(frag_coord, 0u));
+        path = min(path, max((water_z - seen_z) * dist / max(-water_z, 1e-3), shallowest));
+    }
+}
     let transmitted = exp(-FRESH_ABSORB * path);
     let scatter = scene_colour(FRESH_SCATTER) * daylight(uncurved(world_position));
     // however shallow, a lake's water is plainly blue, not just the bed's colour
