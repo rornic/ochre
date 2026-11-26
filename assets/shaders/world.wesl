@@ -352,7 +352,8 @@ fn fragment(
         if view_bindings::lights.n_directional_lights > 0u {
             to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         }
-        color = vec4<f32>(color.rgb + glossy_shine(world_position, smooth_normal, sky, to_sun, lighting.lit, block_rate, across, down, rise), color.a);
+        let paint = dot(tinted, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = vec4<f32>(color.rgb + glossy_shine(world_position, smooth_normal, sky, to_sun, lighting.lit, block_rate, across, down, rise, paint), color.a);
     }
 
     // so distant chunks fade into the sky instead of popping in and out

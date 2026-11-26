@@ -68,16 +68,16 @@ fn is_glossy(vertex_alpha: f32) -> bool {
 // How much of ice's glint a glossy game block has, and how much of that again of its mirrored sky, being stone and not a sheet of ice.
 const GLOSSY_GAIN: f32 = 0.6;
 const GLOSSY_MIRROR: f32 = 0.2;
-// Specks a block a glossy face sparkles in, and the most it adds to any channel.
-const SPECKS: f32 = 7.0;
+// The painting's linear brightness over which a glossy face catches the light, its edges standing proud of the darker body, and over which it is matte again, a pale rind, and the most the shine adds to any channel.
+const CATCH_FROM: vec2<f32> = vec2<f32>(0.075, 0.12);
+const MATTE_FROM: vec2<f32> = vec2<f32>(0.2, 0.3);
 const GLOSSY_MOST: f32 = 0.4;
 
-// What a glossy game block adds to its lit colour: ice's glint and mirrored sky, without its inner glow.
-fn glossy_shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec3<f32>, lit: f32, block_rate: f32, across: vec3<f32>, down: vec3<f32>, rise: vec2<f32>) -> vec3<f32> {
-    // a sculpted facet is flat, so a glint over it whole lights it white: it sparkles in specks instead, and no brighter than a sheen
-    let real = uncurved(world_position);
-    let specks = smoothstep(0.65, 0.9, value_noise(real.xz * SPECKS + vec2<f32>(real.y * SPECKS, 5.0)));
-    return min(shine(world_position, normal, sky, to_sun, lit, block_rate, across, down, rise, GLOSSY_MIRROR) * (GLOSSY_GAIN * specks), vec3<f32>(GLOSSY_MOST));
+// What a glossy game block adds to its lit colour: ice's glint and mirrored sky, without its inner glow. `paint` is its painting's linear brightness there.
+fn glossy_shine(world_position: vec3<f32>, normal: vec3<f32>, sky: f32, to_sun: vec3<f32>, lit: f32, block_rate: f32, across: vec3<f32>, down: vec3<f32>, rise: vec2<f32>, paint: f32) -> vec3<f32> {
+    // a sculpted facet is flat, so a glint over it whole lights it white: it catches along the painting's paler edges instead, and no brighter than a sheen
+    let catches = smoothstep(CATCH_FROM.x, CATCH_FROM.y, paint) * (1.0 - smoothstep(MATTE_FROM.x, MATTE_FROM.y, paint));
+    return min(shine(world_position, normal, sky, to_sun, lit, block_rate, across, down, rise, GLOSSY_MIRROR) * (GLOSSY_GAIN * catches), vec3<f32>(GLOSSY_MOST));
 }
 
 // What ice adds to its lit colour: glow, the sun's glint and gloss, and mirrored sky. `world_position` is
