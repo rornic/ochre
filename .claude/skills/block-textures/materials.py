@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Install out/512/<Tile>.png as assets/textures/materials/<tile>.png (snake case, `GrassTop` as `grass_top.png`), rewrite those tiles' block_mean rows in block_texture.wesl
-from their mean linear colour, and write out/materials_contact.png (each layer 3x3 at 128px)."""
+from their mean linear colour, and write out/materials_contact.png (each layer 3x3 at 128px).
+Name tiles (`python materials.py Shale`) to install only those, and the compacted rocks made from them, leaving the rest as committed."""
 import re
+import sys
 
 import numpy as np
 from PIL import Image, ImageEnhance
@@ -26,19 +28,17 @@ def linear(v):
 # Layers painted with features too big for what they are: tiled this many times over and brought back to 512, which keeps them
 # seamless. Gravel's cobbles were a block across.
 SCALE = {"Gravel": 3}
-# Layers that install another's painting: shale is the grey cracked flagstone that was the stone layer's, which is a placeholder
-# (`BlockType::Rock`) that a real world never shows, see docs/materials.md. Its compacted form follows it.
-ALIAS = {"Shale": "Stone"}
-
-
 def painting(name):
-    return Image.open(PAINTED_OUT / f"{ALIAS.get(name, name)}.png")
+    return Image.open(PAINTED_OUT / f"{name}.png")
 
 
 # Tiles with no layer of their own, which draw another's (`Tile::material_layer`): the placeholder rock, and its compacted form. Their block
 # means are those layers'.
 NO_LAYER = {"Stone": "Shale", "CompactedStone": "CompactedShale"}
 LAYERS = [n for n in PAINTED if n not in NO_LAYER]
+ONLY = set(sys.argv[1:])
+assert ONLY <= set(LAYERS), f"no such layers: {ONLY - set(LAYERS)}"
+ONLY |= {t["name"] for t in TILES if t.get("derive") == "shade" and t["body"] in ONLY}
 # the layers installed are `MATERIAL_FILES`, in order, up to its foliage, which foliage.py makes
 files = re.search(r"MATERIAL_FILES: \[&str; \d+\] = \[(.*?)// RGBA", (HERE / "../../../crates/ochre-base/src/block.rs").read_text(), re.S).group(1)
 assert [file_name(n) for n in LAYERS] == re.findall(r'"(\w+)"', files), "PAINTED has drifted from MATERIAL_FILES in block.rs"
@@ -53,12 +53,12 @@ def tile_down(img, n):
 DEST.mkdir(exist_ok=True)
 # a compacted rock is its rock's layer packed darker, as `derive()` in generate.py does the atlas tile
 for t in TILES:
-    if t["name"] in PAINTED and t.get("derive") == "shade":
+    if t["name"] in PAINTED and t.get("derive") == "shade" and (not ONLY or t["name"] in ONLY):
         body = painting(t["body"])
         body = np.asarray(tile_down(body, SCALE[t["body"]]) if t["body"] in SCALE else body.convert("RGB"), float)
         Image.fromarray(np.clip((body * t["factor"] * np.array(t["tint"])).round(), 0, 255).astype("uint8")).save(PAINTED_OUT / f"{t['name']}.png")
 means = {}
-for name in LAYERS:
+for name in [n for n in LAYERS if not ONLY or n in ONLY]:
     img = painting(name).convert("RGB")
     assert img.size == (512, 512), f"{name} is {img.size}, layers are 512x512"
     if name in SCALE:
@@ -72,7 +72,8 @@ for name in LAYERS:
     img.save(DEST / f"{file_name(name)}.png")
 
 for name, layer in NO_LAYER.items():
-    means[name] = means[layer]
+    if layer in means:
+        means[name] = means[layer]
 
 cell = {t["name"]: i for i, t in enumerate(TILES)}
 row = -1

@@ -260,7 +260,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         return material_color * vec4<f32>(textureSampleLevel(materials, materials_sampler, vec2<f32>(0.5), material_layer(vertex_alpha), 9.0).rgb, 1.0);
     }
     var means = array<vec3<f32>, 40>(
-        vec3<f32>(0.1612, 0.1542, 0.1649), // stone
+        vec3<f32>(0.0794, 0.0919, 0.1288), // stone
         vec3<f32>(0.4989, 0.4989, 0.4989), // grass top
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
@@ -275,7 +275,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
         vec3<f32>(0.4256, 0.3341, 0.2906), // snow side
-        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted stone
+        vec3<f32>(0.0572, 0.0660, 0.0918), // compacted stone
         vec3<f32>(0.5822, 0.4646, 0.3619), // limestone
         vec3<f32>(0.4313, 0.1646, 0.0943), // clay
         vec3<f32>(0.0618, 0.0582, 0.0596), // basalt
@@ -286,9 +286,9 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
         vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
-        vec3<f32>(0.1612, 0.1542, 0.1649), // shale
+        vec3<f32>(0.0794, 0.0919, 0.1288), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
-        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted shale
+        vec3<f32>(0.0572, 0.0660, 0.0918), // compacted shale
         vec3<f32>(0.4925, 0.4896, 0.5003), // steppe top
         vec3<f32>(0.4945, 0.4945, 0.4945), // tall grass
         vec3<f32>(0.3000, 0.3000, 0.3000), // fern
