@@ -4314,3 +4314,38 @@ fn test_a_rapid_is_a_sloped_surface_with_no_walls_of_water_in_it() {
         .count();
     assert_eq!(0, walls, "{walls} triangles of water walls in a rapid");
 }
+
+// A game's stamp: a marble pillar 4 high on the ground at one column.
+struct Pillar(I64Vec3);
+
+impl crate::generate::region_store::Stamp for Pillar {
+    fn stamp(&self, _: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), set: &mut dyn FnMut(IVec3, BlockType)) {
+        for y in cells.0.y..=cells.1.y {
+            for z in cells.0.z..=cells.1.z {
+                for x in cells.0.x..=cells.1.x {
+                    let low = origin + I64Vec3::new(x as i64, y as i64, z as i64) * scale;
+                    let holds = |a: i64, p: i64| (a..a + scale).contains(&p);
+                    let tall = (low.y..low.y + scale).any(|b| (self.0.y..self.0.y + 4).contains(&b));
+                    if holds(low.x, self.0.x) && holds(low.z, self.0.z) && tall {
+                        set(IVec3::new(x, y, z), BlockType::Marble);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_a_games_stamp_stands_in_chunks_and_lods() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(3)));
+    let (x, z, _) = regions.terrain().find_spawn();
+    let ground = regions.terrain().sample(x as f64, z as f64).height.floor() as i64 + 1;
+    let at = I64Vec3::new(x, ground, z);
+    regions.set_stamp(Arc::new(Pillar(at)));
+    let chunk = ChunkCoordinate::containing(at + I64Vec3::Y * 2);
+    let data = generate_chunk(regions.clone(), chunk);
+    let local = (at + I64Vec3::Y * 2).rem_euclid(I64Vec3::splat(CHUNK_SIZE as i64)).as_u16vec3();
+    assert_eq!(data.get_block_at(local), BlockType::Marble);
+    let lod = LodBlocks::sample(&regions, LodKey::containing(chunk, 1));
+    assert!(lod.cells.contains(&BlockType::Marble), "the pillar isn't in the LOD node");
+}

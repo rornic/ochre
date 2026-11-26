@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use bevy::math::I64Vec2;
+use bevy::math::{I64Vec2, I64Vec3, IVec3};
+use ochre_base::block::BlockType;
 
 use super::columns::{ChunkColumns, ColumnCache, ColumnGrid};
 use super::region::{compute_region, Region, RegionCoord, REGION_SIZE};
@@ -62,8 +63,20 @@ impl RegionLru {
     }
 }
 
+/// Whether a stamped block goes where `existing` is: into air or the ground, as a boulder sinks, but not water, ice or a tree.
+pub(crate) fn stamp_fits(existing: BlockType) -> bool {
+    !matches!(existing, BlockType::Water | BlockType::Ice | BlockType::Log | BlockType::Leaves)
+}
+
+/// Blocks a game sets into the terrain as it is generated, the same on every reader of the map.
+pub trait Stamp: Send + Sync {
+    /// Calls `set` with each of the game's cells in `cells` (local, inclusive) of a chunk or LOD node whose lowest corner is `origin`, each `scale` blocks across.
+    fn stamp(&self, regions: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), set: &mut dyn FnMut(IVec3, BlockType));
+}
+
 pub struct RegionStore {
     noise: Arc<dyn TerrainSource>,
+    stamp: OnceLock<Arc<dyn Stamp>>,
     // which slots exist, held only briefly: never while a region is computed
     lru: RwLock<RegionLru>,
     columns: ColumnCache,
@@ -73,6 +86,7 @@ impl RegionStore {
     pub fn new(noise: Arc<dyn TerrainSource>) -> Self {
         Self {
             noise,
+            stamp: OnceLock::new(),
             lru: RwLock::new(RegionLru::new(RESIDENT_REGION_CAP)),
             columns: ColumnCache::default(),
         }
@@ -80,6 +94,18 @@ impl RegionStore {
 
     pub fn terrain(&self) -> &dyn TerrainSource {
         &*self.noise
+    }
+
+    /// Sets what a game stamps into every chunk and LOD node generated from now on; set it before any are, as only the first is kept.
+    pub fn set_stamp(&self, stamp: Arc<dyn Stamp>) {
+        let _ = self.stamp.set(stamp);
+    }
+
+    /// Runs the game's stamp, if any, over a chunk or LOD node; `set` keeps a block only where `stamp_fits`.
+    pub(crate) fn run_stamp(&self, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), set: &mut dyn FnMut(IVec3, BlockType)) {
+        if let Some(stamp) = self.stamp.get() {
+            stamp.stamp(self, origin, scale, cells, set);
+        }
     }
 
     /// The ground under a coarse LOD node's cells (`columns::COARSE_CELL`); blocks while sampled: call from a task.

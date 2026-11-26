@@ -13,6 +13,7 @@ use crate::generate::light::SkyLight;
 use crate::generate::light::MAX_LIGHT;
 use crate::generate::region_store::{HeightSampler, RegionStore};
 use crate::generate::rocks::rocks_near;
+use crate::generate::region_store::stamp_fits;
 use crate::generate::trees::grows_into;
 use crate::generate::trees::trees_near;
 use crate::generate::trees::TreeTints;
@@ -279,6 +280,13 @@ pub fn generate_chunk_with(
                 },
             );
         }
+        // a game's own blocks last, so they stand over the boulders
+        regions.run_stamp(origin, 1, (IVec3::ZERO, IVec3::splat(size as i32 - 1)), &mut |coord, block| {
+            let coord = coord.as_u16vec3();
+            if stamp_fits(chunk_data.get_block_at(coord)) {
+                chunk_data.set_block_at(coord, block);
+            }
+        });
     }
 
     // plants on the grass, in the air just over it, after the trees, so trunks keep their place
