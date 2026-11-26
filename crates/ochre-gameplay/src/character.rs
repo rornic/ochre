@@ -31,6 +31,8 @@ pub struct CharacterState {
     against_wall: bool,
     // seconds before the next step up is allowed, so a flight of steps isn't taken at a sprint
     step_cooldown: f32,
+    // how much slower the ground stood on last step makes the walk: 0 where it is as gentle as `GROUND_FACING`, rising as it leans further
+    steepness: f32,
 }
 
 impl CharacterState {
@@ -95,6 +97,10 @@ pub trait MovementEnvironment {
     fn triangles(&self, min: Vec3, max: Vec3) -> Vec<[Vec3; 3]>;
     /// The highest sculpted surface from `below` to `above` a point, facing up at least `up`.
     fn ground(&self, at: Vec3, below: f32, above: f32, up: f32) -> Option<f32>;
+    /// The least a sculpted face at `at` must face up to be stood on; a game lowers it where the ground can be climbed steeper, and the body walks slower the steeper it stands.
+    fn walkable(&self, _at: Vec3) -> f32 {
+        GROUND_FACING
+    }
 }
 
 /// The world's blocks and the sculpted ground of the chunk groups round the body.
@@ -187,7 +193,7 @@ const SPHERES: Body = Body { radius: 0.3, heights: [0.3, 1.0, 1.7] };
 // The tallest rise the body steps up onto sculpted ground without jumping, in blocks; a jump clears a block.
 const SCULPT_STEP: f32 = 0.5;
 // How far up a face must face to stand on, ~45 degrees from level; steeper slides. Grass is half dirt here.
-const GROUND_FACING: f32 = 0.7;
+pub const GROUND_FACING: f32 = 0.7;
 // A rise onto sculpted ground taller than this in a step counts as a step up.
 const SCULPT_RISE_EASE: f32 = 0.25;
 // Seconds between steps up.
@@ -249,6 +255,7 @@ fn walk(
     if swimming || wading {
         speed *= SWIM_MULTIPLIER;
     }
+    speed *= 1.0 - state.steepness;
     // where the body faces, not the camera, so looking down doesn't slow it
     let wanted = about_y(input.yaw) * across.normalize_or_zero() * speed;
     // in the air the player keeps its way and only steers toward where it's heading, as the air holds it back
@@ -295,6 +302,7 @@ fn walk(
     let ground_near = env.triangles(start - reach + delta.min(Vec3::ZERO), start + reach + Vec3::Y * 2.0 + delta.max(Vec3::ZERO));
     let generated = |block: I64Vec3| env.generated(block);
     let mut walled = false;
+    let mut steepness = 0.0;
     let (moved_to, hit) = if ground_near.is_empty() {
         // Chunks not generated yet are solid, so the player waits for the ground to load rather than falling through.
         let solid = |block: I64Vec3| !generated(block) || env.block(block).is_solid();
@@ -303,12 +311,13 @@ fn walk(
         // sculpted ground collides as its surface, walls and ground apart, see `Walker`; trees and unloaded chunks as blocks
         let solid = |block: I64Vec3| !generated(block) || matches!(env.block(block), BlockType::Leaves | BlockType::Log);
         let across_blocks = |feet: Vec3, delta: Vec3| move_and_collide(feet + BLOCK_CORNER, delta, BODY, solid).0 - BLOCK_CORNER;
-        let ground = |p: Vec3, below: f32, above: f32| env.ground(p, below, above, GROUND_FACING);
+        let walkable = |p: Vec3| env.walkable(p);
+        let ground = |p: Vec3, below: f32, above: f32| env.ground(p, below, above, walkable(p));
         let support = |p: Vec3, below: f32, above: f32| env.ground(p, below, above, 1e-3);
         let walker = Walker {
             body: &SPHERES,
             triangles: &ground_near,
-            walkable: GROUND_FACING,
+            walkable: &walkable,
             step: SCULPT_STEP,
             snap: SETTLE_SNAP,
             ground: &ground,
@@ -327,6 +336,9 @@ fn walk(
             state.velocity -= wall * into_wall;
         }
         walled = wall != Vec3::ZERO;
+        if moved.grounded {
+            steepness = (1.0 - moved.facing / GROUND_FACING).max(0.0);
+        }
         // on a face too steep to stand on nothing into it is kept, so gravity carries the body down it
         let into_slope = state.velocity.dot(moved.slope);
         if into_slope < 0.0 {
@@ -343,6 +355,7 @@ fn walk(
         state.step_cooldown = STEP_COOLDOWN;
     }
     *position = moved_to - BLOCK_CORNER;
+    state.steepness = steepness;
     let fall = -state.velocity.y;
     let was_grounded = state.grounded;
     state.grounded = hit.y && state.velocity.y < 0.0;
@@ -503,6 +516,62 @@ mod tests {
         let climb = MovementInput { across: Vec2::new(1.0, 0.0), sprint: true, jump: true, ..default() };
         let (_, at, highest) = run_on(&ramp(1.4), Vec3::new(2.0, 2.0, 8.0), &climb, 4.0);
         assert!(highest < 2.0 + 1.6, "climbed to {highest}, at {at}");
+    }
+
+    // The test world with every face walkable down to `.1`.
+    struct Climbable<'a>(WorldEnvironment<'a>, f32);
+
+    impl MovementEnvironment for Climbable<'_> {
+        fn block(&self, at: I64Vec3) -> BlockType {
+            self.0.block(at)
+        }
+        fn generated(&self, at: I64Vec3) -> bool {
+            self.0.generated(at)
+        }
+        fn triangles(&self, min: Vec3, max: Vec3) -> Vec<[Vec3; 3]> {
+            self.0.triangles(min, max)
+        }
+        fn ground(&self, at: Vec3, below: f32, above: f32, up: f32) -> Option<f32> {
+            self.0.ground(at, below, above, up)
+        }
+        fn walkable(&self, _: Vec3) -> f32 {
+            self.1
+        }
+    }
+
+    #[test]
+    fn a_face_the_environment_makes_walkable_is_climbed_slower_the_steeper_it_is() {
+        let world = flat_world();
+        let right = MovementInput { across: Vec2::new(1.0, 0.0), ..default() };
+        // across the level part, then up a ramp rising 1.9 a block, which faces up 0.466
+        let (flat, steep) = (ramp(0.0), ramp(1.9));
+        let speed_over = |floor: &Floor, from: f32, to: f32| {
+            let env = Climbable(WorldEnvironment::new(&world, [(LodKey { level: 1, coord: I64Vec3::ZERO }, Vec3::ZERO, floor)]), 0.3);
+            let (mut state, mut at) = (CharacterState::new(Movement::Walk), Vec3::new(0.5, 2.0, 8.0));
+            let mut ticks = 0;
+            for _ in 0..600 {
+                step_character(&mut state, &mut at, &right, &env, DT);
+                ticks += (at.x > from && at.x < to) as usize;
+            }
+            assert!(at.x > 11.0 && state.grounded, "stopped at {at}");
+            (to - from) / (ticks as f32 * DT)
+        };
+        let (level, climbing) = (speed_over(&flat, 5.0, 8.0), speed_over(&steep, 5.0, 8.0));
+        assert!((level - WALK_SPEED).abs() < 0.1, "{level}");
+        assert!(climbing < level * 0.8 && climbing > level * 0.5, "{climbing} against {level}");
+    }
+
+    #[test]
+    fn a_face_steeper_than_the_environment_allows_stays_a_wall() {
+        let world = flat_world();
+        let steep = ramp(1.9);
+        let env = Climbable(WorldEnvironment::new(&world, [(LodKey { level: 1, coord: I64Vec3::ZERO }, Vec3::ZERO, &steep)]), 0.5);
+        let (mut state, mut at) = (CharacterState::new(Movement::Walk), Vec3::new(2.0, 2.0, 8.0));
+        let right = MovementInput { across: Vec2::new(1.0, 0.0), sprint: true, jump: true, ..default() };
+        for _ in 0..240 {
+            step_character(&mut state, &mut at, &right, &env, DT);
+            assert!(at.y < 2.0 + 1.6, "climbed to {at}");
+        }
     }
 
     #[test]
