@@ -224,6 +224,26 @@ impl World {
         stirred
     }
 
+    /// Every block changed so far that isn't water, in a fixed order, for a game to save and give back with `restore_change`.
+    pub fn changes(&self) -> Vec<(I64Vec3, BlockType)> {
+        let size = CHUNK_SIZE as i64;
+        let mut changes: Vec<_> = self
+            .changed
+            .iter()
+            .flat_map(|(chunk, blocks)| blocks.iter().filter(|(_, (block, _))| *block != BlockType::Water).map(move |(local, (block, _))| (chunk.0 * size + local.as_i64vec3(), *block)))
+            .collect();
+        changes.sort_unstable_by_key(|(block, _)| block.to_array());
+        changes
+    }
+
+    /// Sets the block at `block` to `to` whether or not its chunk is generated: now if it is, and over the chunk whenever it is.
+    pub fn restore_change(&mut self, block: I64Vec3, to: BlockType) {
+        if !self.set_block_at(block, to) {
+            let local = block.rem_euclid(I64Vec3::splat(CHUNK_SIZE as i64)).as_u16vec3();
+            self.remember(block, local, (to, None));
+        }
+    }
+
     /// Breaks the block, leaving air, unless it can't be broken; returns what was broken.
     pub fn break_block(&mut self, block: I64Vec3) -> Option<BlockType> {
         let broken = self.get_block_at(block);
@@ -249,6 +269,28 @@ mod tests {
     use super::World;
     use crate::chunk::{ChunkCoordinate, ChunkData, CHUNK_SIZE};
     use ochre_base::block::BlockType;
+
+    #[test]
+    fn changes_read_out_go_back_over_chunks_generated_later() {
+        let mut world = World::with_terrain(1, 16, ochre_world::worldmap::test_terrain(1));
+        let loaded = ChunkCoordinate(I64Vec3::new(3, 40, 5));
+        world.insert_chunk(loaded, ChunkData::default());
+        let size = CHUNK_SIZE as i64;
+        let (here, there) = (loaded.0 * size + I64Vec3::new(1, 2, 3), I64Vec3::new(-40, 7 * size + 1, 9));
+        assert!(world.set_block_at(here, BlockType::Marble));
+        let saved = world.changes();
+        assert_eq!(saved, vec![(here, BlockType::Marble)]);
+        let mut later = world.sharing();
+        for (block, to) in saved {
+            later.restore_change(block, to);
+        }
+        later.restore_change(there, BlockType::Granite);
+        later.insert_chunk(loaded, ChunkData::default());
+        later.insert_chunk(ChunkCoordinate::containing(there), ChunkData::default());
+        assert_eq!(later.get_block_at(here), BlockType::Marble);
+        assert_eq!(later.get_block_at(there), BlockType::Granite);
+        assert_eq!(later.changes().len(), 2);
+    }
 
     #[test]
     fn a_sharing_world_has_the_same_map_and_region_cache_but_none_of_the_chunks() {

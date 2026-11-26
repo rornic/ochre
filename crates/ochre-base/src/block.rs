@@ -1,4 +1,4 @@
-#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum BlockType {
     #[default]
