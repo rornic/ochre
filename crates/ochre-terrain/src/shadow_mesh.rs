@@ -15,7 +15,7 @@ pub(crate) fn split(mesh: Mesh) -> (Mesh, Option<Mesh>) {
         panic!("split terrain before packing");
     };
     let leaf = Tile::Leaves.atlas_cell();
-    let flora = Tile::FIRST_FLORA.atlas_cell();
+    let (flora, game) = (Tile::FIRST_FLORA.atlas_cell(), Tile::FIRST_GAME.atlas_cell());
     let flags = match mesh.attribute(Mesh::ATTRIBUTE_UV_1) {
         Some(VertexAttributeValues::Float32x2(flags)) => Some(flags),
         _ => None,
@@ -25,7 +25,7 @@ pub(crate) fn split(mesh: Mesh) -> (Mesh, Option<Mesh>) {
         .enumerate()
         .map(|(i, c)| {
             let solid_leaf = flags.is_some_and(|flags| flags[i][1] > 0.5);
-            ((c[3] - leaf).abs() < 0.5 && !solid_leaf) || c[3] > flora - 0.5
+            ((c[3] - leaf).abs() < 0.5 && !solid_leaf) || (c[3] > flora - 0.5 && c[3] < game - 0.5)
         })
         .collect();
     if !cutout.iter().any(|c| *c) {

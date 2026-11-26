@@ -17,14 +17,14 @@ fn foliage_layer(vertex_alpha: f32) -> i32 {
     if cell == i32(constants::LEAF_CELL) {
         return i32(constants::LEAVES_LAYER);
     }
-    if cell >= i32(constants::FIRST_FLORA_CELL) {
+    if cell >= i32(constants::FIRST_FLORA_CELL) && cell < i32(constants::FIRST_GAME_CELL) {
         return i32(constants::FIRST_FLORA_LAYER) + cell - i32(constants::FIRST_FLORA_CELL);
     }
     return -1;
 }
 
 fn is_flora_cell(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5;
+    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5;
 }
 
 const FOLIAGE_TEXELS: f32 = 512.0;
@@ -66,7 +66,7 @@ const BIG_FLORA_MAX_LEVEL: f32 = 5.0;
 const BIG_FLORA_CUT_FAR: f32 = 0.3;
 
 fn is_big_flora_cell(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5;
+    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5;
 }
 
 // A leaf or plant's alpha from mip `level`, which averages away holes under the footprint; scaled by `foliage_cut`.
@@ -153,8 +153,12 @@ const MATERIAL_LAYER_TABLE: array<i32, 40> = array<i32, 40>(
 );
 
 fn material_layer(vertex_alpha: f32) -> i32 {
+    let cell = i32(floor(vertex_alpha + 0.5));
+    if cell >= i32(constants::FIRST_GAME_CELL) {
+        return i32(constants::FIRST_GAME_LAYER) + cell - i32(constants::FIRST_GAME_CELL);
+    }
     var table = MATERIAL_LAYER_TABLE;
-    return table[u32(floor(vertex_alpha + 0.5))];
+    return table[u32(cell)];
 }
 
 // Spreads `p` about the nearest block boundary along the way a face tilts, in the plane it's projected onto, by
@@ -251,6 +255,10 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 // What a tile averages to: the mean linear colour of each atlas cell's opaque texels, in atlas
 // order. The block-textures skill's `materials.py` rewrites them; `material.rs`'s tests check them.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
+    // a game's block averages to its layer's last mip, one texel
+    if vertex_alpha > f32(constants::FIRST_GAME_CELL) - 0.5 {
+        return material_color * vec4<f32>(textureSampleLevel(materials, materials_sampler, vec2<f32>(0.5), material_layer(vertex_alpha), 9.0).rgb, 1.0);
+    }
     var means = array<vec3<f32>, 40>(
         vec3<f32>(0.1612, 0.1542, 0.1649), // stone
         vec3<f32>(0.4989, 0.4989, 0.4989), // grass top

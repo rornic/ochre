@@ -167,6 +167,8 @@ fn block_colour(b: BlockType) -> Option<Rgb> {
         Gravel => [150.0, 145.0, 140.0],
         Log => [100.0, 70.0, 40.0],
         Leaves => [30.0, 110.0, 40.0],
+        // a game's own block, whose colour the engine doesn't know
+        _ => [255.0, 0.0, 255.0],
     })
 }
 

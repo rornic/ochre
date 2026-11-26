@@ -22,7 +22,7 @@ use bevy::{
 use crate::fade::FULLY_VISIBLE;
 use crate::generate::generator::{INNER_LEAVES_BAND, INNER_LEAVES_REACH};
 use crate::settings::DebugSettings;
-use ochre_base::block::{Tile, MATERIAL_FILES, MATERIAL_LAYERS};
+use ochre_base::block::{game_materials, Tile, MATERIAL_FILES, MATERIAL_LAYERS};
 use ochre_base::WATER_LEVEL;
 
 // Sea level, where `fog.wesl` turns from fog across the land to murk all round.
@@ -41,11 +41,14 @@ pub fn push_shader_defs(descriptor: &mut RenderPipelineDescriptor, defs: &[Shade
 /// Each painted material's square side in texels, see `material_array`.
 pub(crate) const MATERIAL_SIZE: u32 = 512;
 
-/// The painted materials as a 2D array: a layer per `MATERIAL_FILES` entry from `<dir>/<name>.png`, repeating, mipped.
+/// The painted materials as a 2D array: a layer per `MATERIAL_FILES` entry from `<dir>/<name>.png`, then one per game block slot to the last registered (`game_materials`), repeating, mipped.
 pub(crate) fn material_array(dir: &str, anisotropy: u16) -> Image {
     let levels = MATERIAL_SIZE.ilog2() + 1;
     let mut data = Vec::new();
-    for name in MATERIAL_FILES {
+    // a slot with no block between registered ones draws the placeholder rock's layer, as it is never drawn
+    let games = game_materials().into_iter().map(|m| m.unwrap_or("shale"));
+    let names: Vec<&str> = MATERIAL_FILES.into_iter().chain(games).collect();
+    for &name in &names {
         let path = format!("{dir}/{name}.png");
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("could not read {path}: {e}"));
         let mut layer = Image::from_buffer(
@@ -69,7 +72,7 @@ pub(crate) fn material_array(dir: &str, anisotropy: u16) -> Image {
     image.texture_descriptor.size = Extent3d {
         width: MATERIAL_SIZE,
         height: MATERIAL_SIZE,
-        depth_or_array_layers: MATERIAL_LAYERS as u32,
+        depth_or_array_layers: names.len() as u32,
     };
     image.texture_descriptor.dimension = TextureDimension::D2;
     image.texture_descriptor.format = TextureFormat::Rgba8UnormSrgb;
@@ -259,6 +262,9 @@ impl Material for ChunkMaterial {
             "FIRST_BIG_FLORA_CELL".into(),
             Tile::Shrub.atlas_cell() as u32,
         );
+        // a game's blocks come after the flora and draw their own layers past the engine's, see `Tile::material_layer`
+        let first_game_cell = ShaderDefVal::UInt("FIRST_GAME_CELL".into(), Tile::FIRST_GAME.atlas_cell() as u32);
+        let first_game_layer = ShaderDefVal::UInt("FIRST_GAME_LAYER".into(), MATERIAL_LAYERS as u32);
         // leaves' holes fill in with the shade of the leaves behind them past this reach
         let inner_leaves_reach =
             ShaderDefVal::UInt("INNER_LEAVES_REACH".into(), INNER_LEAVES_REACH as u32);
@@ -284,6 +290,8 @@ impl Material for ChunkMaterial {
             inner_leaves_band,
             first_flora_cell,
             first_big_flora_cell,
+            first_game_cell,
+            first_game_layer,
             water_level(),
             ShaderDefVal::UInt("MATERIAL_PERIOD".into(), key.bind_group_data.period),
             ShaderDefVal::UInt("FLORA_FADE_START".into(), key.bind_group_data.flora_fade[0]),

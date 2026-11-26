@@ -47,6 +47,8 @@ pub enum BlockType {
     // the jungle's tall ferns and the savanna's long grass, drawn at a larger size: last again
     BigFern,
     LongGrass,
+    // blocks a game names and paints itself, see `GameBlock`: last so no stored block's number moves
+    Game0, Game1, Game2, Game3, Game4, Game5, Game6, Game7, Game8, Game9, Game10, Game11, Game12, Game13, Game14, Game15,
 }
 
 impl BlockType {
@@ -160,6 +162,7 @@ impl BlockType {
             BlockType::Shale => "shale",
             BlockType::CompactedGranite => "compacted granite",
             BlockType::CompactedShale => "compacted shale",
+            game => game.game_slot().and_then(game_block).map_or("game block", |b| b.name),
         }
     }
 
@@ -246,6 +249,8 @@ pub enum Tile {
     SteppeFlower,
     Shrub,
     Heath,
+    // one per game block, drawing its game's material, after the flora so no engine tile moves
+    Game0, Game1, Game2, Game3, Game4, Game5, Game6, Game7, Game8, Game9, Game10, Game11, Game12, Game13, Game14, Game15,
 }
 
 pub const TILE_COUNT: usize = 40;
@@ -320,6 +325,7 @@ impl Tile {
             Tile::CompactedGranite => Some(20),
             Tile::CompactedShale | Tile::CompactedStone => Some(21),
             Tile::SteppeTop => Some(33),
+            game if game as u8 >= Tile::Game0 as u8 => Some(MATERIAL_LAYERS as u8 + game as u8 - Tile::Game0 as u8),
             _ => None,
         }
     }
@@ -328,7 +334,7 @@ impl Tile {
     pub fn foliage_layer(self) -> Option<u8> {
         match self {
             Tile::Leaves => Some(Self::LEAVES_LAYER),
-            flora if flora as u8 >= Self::FIRST_FLORA as u8 => {
+            flora if (Self::FIRST_FLORA as u8..Self::FIRST_GAME as u8).contains(&(flora as u8)) => {
                 Some(Self::FIRST_FLORA_LAYER + flora as u8 - Self::FIRST_FLORA as u8)
             }
             _ => None,
@@ -360,8 +366,9 @@ impl Tile {
         )
     }
 
-    // The first of the flora sprites, which are the atlas's last tiles, see `BlockType::is_flora`.
+    // The first of the flora sprites, which run up to the game blocks' tiles, see `BlockType::is_flora`.
     pub const FIRST_FLORA: Tile = Tile::TallGrass;
+    pub const FIRST_GAME: Tile = Tile::Game0;
 }
 
 impl BlockType {
@@ -410,6 +417,7 @@ impl BlockType {
             (BlockType::Heath, _) => Tile::Heath,
             (BlockType::BigFern, _) => Tile::Fern,
             (BlockType::LongGrass, _) => Tile::TallGrass,
+            (game, _) => GAME_TILES[game.game_slot().expect("every other block has its tile") as usize],
         }
     }
 
@@ -422,9 +430,69 @@ impl BlockType {
     }
 }
 
+
+/// How many blocks a game may add.
+pub const GAME_BLOCKS: usize = 16;
+const GAME_SLOTS: [BlockType; GAME_BLOCKS] = [BlockType::Game0, BlockType::Game1, BlockType::Game2, BlockType::Game3, BlockType::Game4, BlockType::Game5, BlockType::Game6, BlockType::Game7, BlockType::Game8, BlockType::Game9, BlockType::Game10, BlockType::Game11, BlockType::Game12, BlockType::Game13, BlockType::Game14, BlockType::Game15];
+const GAME_TILES: [Tile; GAME_BLOCKS] = [Tile::Game0, Tile::Game1, Tile::Game2, Tile::Game3, Tile::Game4, Tile::Game5, Tile::Game6, Tile::Game7, Tile::Game8, Tile::Game9, Tile::Game10, Tile::Game11, Tile::Game12, Tile::Game13, Tile::Game14, Tile::Game15];
+
+/// A block a game adds: solid and opaque as stone, drawn with the painted material `assets/textures/materials/<material>.png`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameBlock {
+    pub name: &'static str,
+    pub material: &'static str,
+}
+
+static GAME_BLOCK_TABLE: std::sync::RwLock<[Option<GameBlock>; GAME_BLOCKS]> = std::sync::RwLock::new([None; GAME_BLOCKS]);
+
+/// The game's block in `slot`, if it has registered one.
+pub fn game_block(slot: u8) -> Option<GameBlock> {
+    GAME_BLOCK_TABLE.read().unwrap().get(slot as usize).copied().flatten()
+}
+
+impl BlockType {
+    /// The block a game adds in `slot`, 0 to `GAME_BLOCKS - 1`.
+    pub const fn game(slot: u8) -> BlockType {
+        GAME_SLOTS[slot as usize]
+    }
+
+    /// Which game slot this block is, if it is a game's.
+    pub fn game_slot(self) -> Option<u8> {
+        (self as u8).checked_sub(BlockType::Game0 as u8)
+    }
+
+    /// Names and paints this game block; register every one before the world's materials load, the same on every peer.
+    pub fn register(self, block: GameBlock) {
+        let slot = self.game_slot().expect("only a game block can be registered");
+        GAME_BLOCK_TABLE.write().unwrap()[slot as usize] = Some(block);
+    }
+}
+
+/// The materials the game blocks draw, in slot order to the last registered, `None` for a slot in between with none.
+pub fn game_materials() -> Vec<Option<&'static str>> {
+    let table = GAME_BLOCK_TABLE.read().unwrap();
+    let last = table.iter().rposition(Option::is_some).map_or(0, |i| i + 1);
+    table[..last].iter().map(|b| b.map(|b| b.material)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BlockType, Face, Tile, MATERIAL_FILES, MATERIAL_LAYERS, TILE_COUNT};
+
+    #[test]
+    fn a_registered_game_block_is_named_and_draws_its_own_layer_after_the_engines() {
+        let block = BlockType::game(15);
+        assert_eq!(block.game_slot(), Some(15));
+        assert_eq!(BlockType::Marble.game_slot(), None);
+        block.register(super::GameBlock { name: "chert", material: "chert" });
+        assert_eq!(block.name(), "chert");
+        assert!(block.is_solid() && block.is_opaque() && block.is_breakable() && !block.is_flora());
+        let tile = block.tile(Face::Top);
+        assert_eq!(tile.material_layer(), Some(MATERIAL_LAYERS as u8 + 15));
+        assert_eq!(tile.foliage_layer(), None);
+        assert_eq!(super::game_materials().last(), Some(&Some("chert")));
+        assert_eq!(super::game_materials().len(), 16);
+    }
 
     #[test]
     fn test_tile_count_matches_the_last_tile() {

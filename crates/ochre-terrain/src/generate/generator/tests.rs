@@ -4253,7 +4253,7 @@ fn level_one_draws_the_tall_plants_full_detail_grows() {
             }
             let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key, Some(fade)) else { continue };
             let Some(VertexAttributeValues::Float32x4(colors)) = meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { continue };
-            for alpha in colors.iter().map(|c| c[3]).filter(|&a| a > Tile::FIRST_FLORA.atlas_cell() - 0.5) {
+            for alpha in colors.iter().map(|c| c[3]).filter(|&a| a > Tile::FIRST_FLORA.atlas_cell() - 0.5 && a < Tile::FIRST_GAME.atlas_cell() - 0.5) {
                 let code = alpha - alpha.round();
                 let height = (code / super::FLORA_HEIGHT_CODE * 0.5 + 0.5) * super::FLORA_HEIGHT_SPAN;
                 assert!(fade.gone_at(height + super::FLORA_HEIGHT_STEP + 0.01) > fade.mid, "a {height} block tuft is gone before {}", fade.mid);
