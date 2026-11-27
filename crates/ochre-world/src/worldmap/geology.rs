@@ -325,7 +325,7 @@ impl WorldMap {
             },
             |&soft| soft as f64,
         );
-        self.rock_in(i, y, self.strata_offset[i], soft)
+        self.rock_in(i, y, self.strata_offset[i], self.facies[i] as f64, soft)
     }
 
     /// `rock_at_cell`, remembering the bed found in `span`: beds are 100+ blocks thick, so bed noise runs once a cell.
@@ -360,7 +360,7 @@ impl WorldMap {
     }
 
     // The rock at `y` in cell `i`'s province, its beds `phase` blocks up.
-    fn rock_in(&self, i: usize, y: f32, phase: f32, soft: f64) -> Rock {
+    fn rock_in(&self, i: usize, y: f32, phase: f32, facies: f64, soft: f64) -> Rock {
         match self.geology[i] {
             VOLCANIC => Rock::Basalt,
             METAMORPHIC => Rock::Marble,
@@ -368,7 +368,7 @@ impl WorldMap {
             SEDIMENTARY => {
                 bed(
                     self.seed,
-                    self.facies[i] as f64,
+                    facies,
                     (y - phase) as f64,
                     phase as f64,
                     soft,
@@ -406,28 +406,32 @@ impl WorldMap {
 
     /// Rock at world coordinates: the province of the nearest map cell, its beds drifting with the map's stack offset.
     pub fn rock_at(&self, x: f64, y: f32, z: f64) -> Rock {
-        let (i, phase) = self.rock_cell(x, z);
-        self.rock_in(i, y, phase, base_soft(self.seed, x, z))
+        let phase = self.bilinear(&self.strata_offset, x, z);
+        let facies = self.bilinear(&self.facies, x, z) as f64;
+        self.rock_in(self.rock_cell(x, z), y, phase, facies, base_soft(self.seed, x, z))
     }
 
-    // The nearest map cell to a point, and the offset of its beds there.
-    fn rock_cell(&self, x: f64, z: f64) -> (usize, f32) {
+    // The nearest map cell to a point.
+    fn rock_cell(&self, x: f64, z: f64) -> usize {
         let (u, v) = self.to_cell(x, z);
         let max = (self.dim() - 1) as f64;
-        let i = self.index(
+        self.index(
             u.round().clamp(0.0, max) as usize,
             v.round().clamp(0.0, max) as usize,
-        );
-        (i, self.bilinear(&self.strata_offset, x, z))
+        )
     }
 
-    pub fn rock_column(&self, x: f64, z: f64) -> RockColumn<'_> {
-        let (i, phase) = self.rock_cell(x, z);
+    /// The rocks down the column at (`x`, `z`), in the province of the map cell nearest `province`.
+    pub fn rock_column(&self, x: f64, z: f64, province: (f64, f64)) -> RockColumn<'_> {
+        // only the province is moved: a bed's rock is a threshold on smooth fields, so moving them flips it in patches
+        let i = self.rock_cell(province.0, province.1);
+        let phase = self.bilinear(&self.strata_offset, x, z);
+        let facies = self.bilinear(&self.facies, x, z) as f64;
         let soft = base_soft(self.seed, x, z);
-        let fixed = (self.geology[i] != SEDIMENTARY).then(|| self.rock_in(i, 0.0, phase, soft));
+        let fixed = (self.geology[i] != SEDIMENTARY).then(|| self.rock_in(i, 0.0, phase, facies, soft));
         RockColumn {
             map: self,
-            i,
+            facies,
             soft,
             phase: phase as f64,
             bed: (f64::NAN, f64::NAN, fixed.unwrap_or(Rock::Stone)),
@@ -439,7 +443,7 @@ impl WorldMap {
 /// A column's rocks, remembering the bed last asked for, as ground is read up or down a column in runs.
 pub struct RockColumn<'a> {
     map: &'a WorldMap,
-    i: usize,
+    facies: f64,
     soft: f64,
     phase: f64,
     bed: (f64, f64, Rock),
@@ -467,7 +471,7 @@ impl RockColumn<'_> {
         if !self.fixed && !(self.bed.0 <= y - self.phase && y - self.phase < self.bed.1) {
             let b = bed(
                 self.map.seed,
-                self.map.facies[self.i] as f64,
+                self.facies,
                 y - self.phase,
                 self.phase,
                 self.soft,
@@ -558,7 +562,7 @@ mod tests {
                 unit(3, k, 2) * 60000.0 - 30000.0,
             );
             let y = unit(3, k, 3) * 600.0;
-            if map.rock_at(x, y as f32, z) != map.rock_column(x, z).rock(y) {
+            if map.rock_at(x, y as f32, z) != map.rock_column(x, z, (x, z)).rock(y) {
                 disagree += 1;
             }
         }

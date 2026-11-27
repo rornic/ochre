@@ -1239,8 +1239,8 @@ impl TerrainSource for WorldTerrain {
     }
 
     fn rock_column(&self, x: i64, z: i64) -> Box<dyn RockColumn + '_> {
-        let (x, z) = self.wandered(x as f64, z as f64);
-        Box::new(self.map.rock_column(x, z))
+        let (x, z) = (x as f64, z as f64);
+        Box::new(self.map.rock_column(x, z, self.wandered(x, z)))
     }
 
     fn climate(&self, x: f64, z: f64) -> Climate {
@@ -1411,6 +1411,29 @@ mod sea_level_tests {
             terrain.sample_for_cell(0.0, 16.0, 512.0).water_kind,
             WaterKind::None
         );
+    }
+
+    #[test]
+    fn a_beds_rock_changes_along_a_line_once_not_in_patches() {
+        let mut map = WorldMap::empty(
+            1,
+            super::super::WorldConfig {
+                size: 4096,
+                ..Default::default()
+            },
+        );
+        map.geology.fill(super::super::geology::SEDIMENTARY);
+        // sandstone to limestone across the middle, as the facies noise sways over thousands of blocks
+        let dim = map.dim();
+        for i in 0..map.facies.len() {
+            map.facies[i] = ((i % dim) as f32 - dim as f32 / 2.0) * 0.004;
+        }
+        let terrain = WorldTerrain::new(Arc::new(map));
+        for y in (-3000..3000).step_by(37) {
+            let rocks: Vec<ochre_base::block::BlockType> = (-1500..1500).map(|x| terrain.rock_column(x, 40).at(y)).collect();
+            let changes = rocks.windows(2).filter(|w| w[0] != w[1]).count();
+            assert!(changes <= 1, "{changes} changes along the line at y {y}");
+        }
     }
 }
 
