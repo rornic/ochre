@@ -1,5 +1,7 @@
 // ChunkMaterial's bindings and foliage lookups, shared by its main and shadow passes.
 
+import super::foliage::{is_flora, is_game_flora};
+
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material_color: vec4<f32>;
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> material_fade: vec4<f32>;
@@ -20,11 +22,10 @@ fn foliage_layer(vertex_alpha: f32) -> i32 {
     if cell >= i32(constants::FIRST_FLORA_CELL) && cell < i32(constants::FIRST_GAME_CELL) {
         return i32(constants::FIRST_FLORA_LAYER) + cell - i32(constants::FIRST_FLORA_CELL);
     }
+    if is_game_flora(vertex_alpha) {
+        return i32(constants::FIRST_GAME_LAYER) + cell - i32(constants::FIRST_GAME_CELL);
+    }
     return -1;
-}
-
-fn is_flora_cell(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5;
 }
 
 const FOLIAGE_TEXELS: f32 = 512.0;
@@ -77,7 +78,7 @@ fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, blurred: f32) -> f32 {
     let level = select(blurred, min(blurred, BIG_FLORA_MAX_LEVEL), big);
     if layer >= 0 {
         var p = uv;
-        if is_flora_cell(vertex_alpha) {
+        if is_flora(vertex_alpha) {
             let inset = max(TILE_INSET, 0.5 * exp2(level) / FOLIAGE_TEXELS);
             p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
         }
@@ -102,7 +103,7 @@ fn block_footprint(uv: vec2<f32>) -> BlockFootprint {
 fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> vec4<f32> {
     let layer = foliage_layer(vertex_alpha);
     if layer >= 0 {
-        return foliage_sample(uv, layer, is_flora_cell(vertex_alpha), footprint.dx, footprint.dy);
+        return foliage_sample(uv, layer, is_flora(vertex_alpha), footprint.dx, footprint.dy);
     }
     return block_mean(vertex_alpha);
 }
@@ -154,6 +155,10 @@ const MATERIAL_LAYER_TABLE: array<i32, 40> = array<i32, 40>(
 
 fn material_layer(vertex_alpha: f32) -> i32 {
     let cell = i32(floor(vertex_alpha + 0.5));
+    // a game's plant draws its layer as a sprite, see `foliage_layer`
+    if is_game_flora(vertex_alpha) {
+        return -1;
+    }
     if cell >= i32(constants::FIRST_GAME_CELL) {
         return i32(constants::FIRST_GAME_LAYER) + cell - i32(constants::FIRST_GAME_CELL);
     }

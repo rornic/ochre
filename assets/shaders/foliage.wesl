@@ -45,9 +45,15 @@ fn leaf_holes_filled(world_position: vec3<f32>, eye: vec3<f32>) -> f32 {
 }
 
 // Whether it's ground flora's, whose sprites run from `FIRST_FLORA_CELL` up to the game blocks' `FIRST_GAME_CELL`,
-// both from `ChunkMaterial::specialize`.
+// both from `ChunkMaterial::specialize`, or a game block's its game made flora.
 fn is_flora(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5;
+    return (vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5) || is_game_flora(vertex_alpha);
+}
+
+// Whether it's a game block its game made flora, by its slot's bit in `FLORA_GAME_SLOTS`.
+fn is_game_flora(vertex_alpha: f32) -> bool {
+    let slot = i32(floor(vertex_alpha + 0.5)) - i32(constants::FIRST_GAME_CELL);
+    return slot >= 0 && slot < 32 && ((u32(constants::FLORA_GAME_SLOTS) >> u32(slot)) & 1u) == 1u;
 }
 
 // A plant's height in blocks, which `push_tuft` codes in its vertex alpha's fraction about the atlas cell.

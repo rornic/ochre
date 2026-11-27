@@ -4,7 +4,7 @@ use bevy::{
     mesh::{Indices, VertexAttributeValues},
     prelude::Mesh,
 };
-use ochre_base::block::Tile;
+use ochre_base::block::{game_flora_slots, Tile};
 
 pub(crate) fn split(mesh: Mesh) -> (Mesh, Option<Mesh>) {
     if mesh.count_vertices() == 0 {
@@ -16,6 +16,8 @@ pub(crate) fn split(mesh: Mesh) -> (Mesh, Option<Mesh>) {
     };
     let leaf = Tile::Leaves.atlas_cell();
     let (flora, game) = (Tile::FIRST_FLORA.atlas_cell(), Tile::FIRST_GAME.atlas_cell());
+    let game_flora = game_flora_slots();
+    let game_plant = |cell: f32| cell > game - 0.5 && (game_flora >> ((cell + 0.5) as u32).saturating_sub(game as u32)) & 1 == 1;
     let flags = match mesh.attribute(Mesh::ATTRIBUTE_UV_1) {
         Some(VertexAttributeValues::Float32x2(flags)) => Some(flags),
         _ => None,
@@ -25,7 +27,7 @@ pub(crate) fn split(mesh: Mesh) -> (Mesh, Option<Mesh>) {
         .enumerate()
         .map(|(i, c)| {
             let solid_leaf = flags.is_some_and(|flags| flags[i][1] > 0.5);
-            ((c[3] - leaf).abs() < 0.5 && !solid_leaf) || (c[3] > flora - 0.5 && c[3] < game - 0.5)
+            ((c[3] - leaf).abs() < 0.5 && !solid_leaf) || (c[3] > flora - 0.5 && c[3] < game - 0.5) || game_plant(c[3])
         })
         .collect();
     if !cutout.iter().any(|c| *c) {

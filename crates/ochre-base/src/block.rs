@@ -182,7 +182,7 @@ impl BlockType {
                 | BlockType::Heath
                 | BlockType::BigFern
                 | BlockType::LongGrass
-        )
+        ) || self.game_slot().and_then(game_block).is_some_and(|b| b.flora)
     }
 }
 
@@ -325,6 +325,8 @@ impl Tile {
             Tile::CompactedGranite => Some(20),
             Tile::CompactedShale | Tile::CompactedStone => Some(21),
             Tile::SteppeTop => Some(33),
+            // a game's plant draws its layer as a sprite, see `foliage_layer`
+            game if game.game_flora() => None,
             game if game as u8 >= Tile::Game0 as u8 => Some(MATERIAL_LAYERS as u8 + game as u8 - Tile::Game0 as u8),
             _ => None,
         }
@@ -337,8 +339,14 @@ impl Tile {
             flora if (Self::FIRST_FLORA as u8..Self::FIRST_GAME as u8).contains(&(flora as u8)) => {
                 Some(Self::FIRST_FLORA_LAYER + flora as u8 - Self::FIRST_FLORA as u8)
             }
+            game if game.game_flora() => Some(MATERIAL_LAYERS as u8 + game as u8 - Self::FIRST_GAME as u8),
             _ => None,
         }
+    }
+
+    // Whether it is a game block's tile its game made flora.
+    fn game_flora(self) -> bool {
+        self as u8 >= Self::FIRST_GAME as u8 && (game_flora_slots() >> (self as u8 - Self::FIRST_GAME as u8)) & 1 == 1
     }
 
     pub const LEAVES_LAYER: u8 = 22;
@@ -437,11 +445,13 @@ const GAME_SLOTS: [BlockType; GAME_BLOCKS] = [BlockType::Game0, BlockType::Game1
 const GAME_TILES: [Tile; GAME_BLOCKS] = [Tile::Game0, Tile::Game1, Tile::Game2, Tile::Game3, Tile::Game4, Tile::Game5, Tile::Game6, Tile::Game7, Tile::Game8, Tile::Game9, Tile::Game10, Tile::Game11, Tile::Game12, Tile::Game13, Tile::Game14, Tile::Game15];
 
 /// A block a game adds: solid and opaque as stone, drawn with the painted material `assets/textures/materials/<material>.png`, and glinting in the sun and mirroring the sky if `glossy`.
+/// With `flora` it is a plant instead, walked through and drawn as the ground flora are: crossed cards cut out of its RGBA material, lit, swayed and faded with distance as they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameBlock {
     pub name: &'static str,
     pub material: &'static str,
     pub glossy: bool,
+    pub flora: bool,
 }
 
 static GAME_BLOCK_TABLE: std::sync::RwLock<[Option<GameBlock>; GAME_BLOCKS]> = std::sync::RwLock::new([None; GAME_BLOCKS]);
@@ -474,6 +484,11 @@ pub fn game_glossy_slots() -> u32 {
     GAME_BLOCK_TABLE.read().unwrap().iter().enumerate().filter(|(_, b)| b.is_some_and(|b| b.glossy)).fold(0, |mask, (i, _)| mask | 1 << i)
 }
 
+/// Which game slots are flora, a bit each from slot 0 up.
+pub fn game_flora_slots() -> u32 {
+    GAME_BLOCK_TABLE.read().unwrap().iter().enumerate().filter(|(_, b)| b.is_some_and(|b| b.flora)).fold(0, |mask, (i, _)| mask | 1 << i)
+}
+
 /// The materials the game blocks draw, in slot order to the last registered, `None` for a slot in between with none.
 pub fn game_materials() -> Vec<Option<&'static str>> {
     let table = GAME_BLOCK_TABLE.read().unwrap();
@@ -490,7 +505,7 @@ mod tests {
         let block = BlockType::game(15);
         assert_eq!(block.game_slot(), Some(15));
         assert_eq!(BlockType::Marble.game_slot(), None);
-        block.register(super::GameBlock { name: "chert", material: "chert", glossy: true });
+        block.register(super::GameBlock { name: "chert", material: "chert", glossy: true, flora: false });
         assert_eq!(super::game_glossy_slots() & (1 << 15), 1 << 15);
         assert_eq!(block.name(), "chert");
         assert!(block.is_solid() && block.is_opaque() && block.is_breakable() && !block.is_flora());
@@ -499,6 +514,18 @@ mod tests {
         assert_eq!(tile.foliage_layer(), None);
         assert_eq!(super::game_materials().last(), Some(&Some("chert")));
         assert_eq!(super::game_materials().len(), 16);
+    }
+
+    #[test]
+    fn a_game_flora_block_is_a_plant_drawing_its_own_layer_as_foliage() {
+        let block = BlockType::game(14);
+        block.register(super::GameBlock { name: "reed", material: "reed", glossy: false, flora: true });
+        assert!(block.is_flora() && !block.is_solid() && !block.is_opaque() && block.is_breakable());
+        assert_eq!((block.light_opacity(), block.occlusion_weight()), (0, 0.0));
+        assert_eq!(super::game_flora_slots() & (1 << 14), 1 << 14);
+        assert_eq!(block.tile(Face::Side).foliage_layer(), Some(MATERIAL_LAYERS as u8 + 14));
+        assert_eq!(block.tile(Face::Side).material_layer(), None);
+        assert_eq!(BlockType::game(13).tile(Face::Side).foliage_layer(), None);
     }
 
     #[test]
