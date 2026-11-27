@@ -777,6 +777,13 @@ fn plant_stamp(regions: &RegionStore, cells: &mut [BlockType], base: I64Vec3, ce
             *at = block;
         }
     });
+    let inside = -1..size + 1;
+    let changes = regions.run_inlay(base, cell, (IVec3::splat(-1), IVec3::splat(size)), &|coord| {
+        (inside.contains(&coord.x) && inside.contains(&coord.y) && inside.contains(&coord.z)).then(|| cells[LodBlocks::index(size, coord)])
+    });
+    for (coord, block) in changes {
+        cells[LodBlocks::index(size, coord)] = block;
+    }
 }
 
 // A lone tree in a node with lowest block `base` and `cell`-block cells: a trunk prism (to 8) and crown cards.

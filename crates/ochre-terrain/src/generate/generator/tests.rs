@@ -4400,3 +4400,35 @@ fn test_a_games_stamp_stands_in_chunks_and_lods() {
     let lod = LodBlocks::sample(&regions, LodKey::containing(chunk, 1));
     assert!(lod.cells.contains(&BlockType::Marble), "the pillar isn't in the LOD node");
 }
+
+// A game's inlay: marble through every block of one column it reaches, but only where something solid is already.
+struct Vein(I64Vec3);
+
+impl crate::generate::region_store::Stamp for Vein {
+    fn stamp(&self, _: &RegionStore, _: I64Vec3, _: i64, _: (IVec3, IVec3), _: &mut dyn FnMut(IVec3, BlockType)) {}
+
+    fn inlay(&self, _: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), blocks: &dyn Fn(IVec3) -> Option<BlockType>) -> Vec<(IVec3, BlockType)> {
+        if scale != 1 {
+            return Vec::new();
+        }
+        (cells.0.y..=cells.1.y)
+            .map(|y| (I64Vec3::new(self.0.x, origin.y + y as i64, self.0.z) - origin).as_ivec3())
+            .filter(|cell| blocks(*cell).is_some_and(|b| b.is_solid()))
+            .map(|cell| (cell, BlockType::Marble))
+            .collect()
+    }
+}
+
+#[test]
+fn test_a_games_inlay_takes_only_what_is_there() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(3)));
+    let (x, z, _) = regions.terrain().find_spawn();
+    let top = regions.sampler().ground_top(x, z);
+    regions.set_stamp(Arc::new(Vein(I64Vec3::new(x, 0, z))));
+    let block = |y: i64| {
+        let at = I64Vec3::new(x, y, z);
+        generate_chunk(regions.clone(), ChunkCoordinate::containing(at)).get_block_at(at.rem_euclid(I64Vec3::splat(CHUNK_SIZE as i64)).as_u16vec3())
+    };
+    assert_eq!(block(top - 2), BlockType::Marble, "the vein isn't in the ground");
+    assert_eq!(block(top + 3), BlockType::Air, "the vein stands in the air");
+}

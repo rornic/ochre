@@ -72,6 +72,11 @@ pub(crate) fn stamp_fits(existing: BlockType) -> bool {
 pub trait Stamp: Send + Sync {
     /// Calls `set` with each of the game's cells in `cells` (local, inclusive) of a chunk or LOD node whose lowest corner is `origin`, each `scale` blocks across.
     fn stamp(&self, regions: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), set: &mut dyn FnMut(IVec3, BlockType));
+
+    /// After `stamp`, the cells to change by what is already there, as a vein runs only through rock: `blocks` reads any cell in `cells` as generated, and gives nothing outside them.
+    fn inlay(&self, _regions: &RegionStore, _origin: I64Vec3, _scale: i64, _cells: (IVec3, IVec3), _blocks: &dyn Fn(IVec3) -> Option<BlockType>) -> Vec<(IVec3, BlockType)> {
+        Vec::new()
+    }
 }
 
 pub struct RegionStore {
@@ -106,6 +111,14 @@ impl RegionStore {
         if let Some(stamp) = self.stamp.get() {
             stamp.stamp(self, origin, scale, cells, set);
         }
+    }
+
+    /// The game's inlay, if any, over a chunk or LOD node, whose changes go in only where `stamp_fits`.
+    pub(crate) fn run_inlay(&self, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), blocks: &dyn Fn(IVec3) -> Option<BlockType>) -> Vec<(IVec3, BlockType)> {
+        let Some(stamp) = self.stamp.get() else { return Vec::new() };
+        let mut changes = stamp.inlay(self, origin, scale, cells, blocks);
+        changes.retain(|(cell, _)| blocks(*cell).is_some_and(stamp_fits));
+        changes
     }
 
     /// The ground under a coarse LOD node's cells (`columns::COARSE_CELL`); blocks while sampled: call from a task.

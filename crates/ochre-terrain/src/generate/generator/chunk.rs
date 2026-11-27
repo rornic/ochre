@@ -287,6 +287,13 @@ pub fn generate_chunk_with(
                 chunk_data.set_block_at(coord, block);
             }
         });
+        let inside = 0..size as i32;
+        let changes = regions.run_inlay(origin, 1, (IVec3::ZERO, IVec3::splat(size as i32 - 1)), &|coord| {
+            (inside.contains(&coord.x) && inside.contains(&coord.y) && inside.contains(&coord.z)).then(|| chunk_data.get_block_at(coord.as_u16vec3()))
+        });
+        for (coord, block) in changes {
+            chunk_data.set_block_at(coord.as_u16vec3(), block);
+        }
     }
 
     // plants on the grass, in the air just over it, after the trees, so trunks keep their place
