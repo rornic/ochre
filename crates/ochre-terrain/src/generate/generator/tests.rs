@@ -4003,6 +4003,57 @@ fn test_the_wall_against_an_empty_chunk_is_drawn_by_the_rock() {
     assert!(from_rock > 100, "the rock drew only {from_rock} triangles of its wall");
 }
 
+// Two blocks touching along an edge are bridged by a filled block, which can lie in a chunk of nothing else: that chunk is never meshed, so a neighbour that has ground must draw the bridge.
+#[test]
+fn test_a_bridge_between_edge_touching_blocks_in_an_empty_chunk_is_drawn() {
+    let regions = test_regions();
+    let size = CHUNK_SIZE as i64;
+    let base = I64Vec3::new(0, 40, 0);
+    let mut chunks: HashMap<I64Vec3, ChunkData> = HashMap::new();
+    for (block, at) in [(BlockType::Rock, I64Vec3::new(0, -1, 5)), (BlockType::Rock, I64Vec3::new(-1, 0, 5))] {
+        let world = base * size + at;
+        chunks
+            .entry(world.div_euclid(I64Vec3::splat(size)))
+            .or_default()
+            .set_block_at(world.rem_euclid(I64Vec3::splat(size)).as_u16vec3(), block);
+    }
+    let chunk_at = |c: I64Vec3| Arc::new(chunks.get(&c).cloned().unwrap_or_default());
+    let (mut positions, mut indices) = (Vec::<[f32; 3]>::new(), Vec::<u32>::new());
+    for d in cube_of(-2..=2) {
+        let c = base + d;
+        let data = chunk_at(c);
+        if data.empty() {
+            continue;
+        }
+        let adjacent = ChunkCoordinate(c).neighbors_26().iter().map(|n| Some(chunk_at(n.0))).collect();
+        let meshes = generate_chunk_mesh_with(data, adjacent, ChunkCoordinate(c), &regions, false);
+        let (Some(VertexAttributeValues::Float32x3(p)), Some(Indices::U32(i))) = (meshes.opaque.attribute(Mesh::ATTRIBUTE_POSITION), meshes.opaque.indices()) else {
+            continue;
+        };
+        let offset = Vec3::new(d.x as f32, d.y as f32, d.z as f32) * size as f32;
+        let first = positions.len() as u32;
+        positions.extend(p.iter().map(|&p| (Vec3::from(p) + offset).to_array()));
+        indices.extend(i.iter().map(|&i| i + first));
+    }
+    let mut joined = Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::all());
+    joined.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions));
+    joined.insert_indices(Indices::U32(indices));
+    let open = open_edges(&joined);
+    assert!(open.is_empty(), "{} open edges round two blocks and their bridge, first: {:?}", open.len(), &open[..open.len().min(4)]);
+}
+
+fn cube_of(range: std::ops::RangeInclusive<i64>) -> Vec<I64Vec3> {
+    let mut cube = Vec::new();
+    for x in range.clone() {
+        for y in range.clone() {
+            for z in range.clone() {
+                cube.push(I64Vec3::new(x, y, z));
+            }
+        }
+    }
+    cube
+}
+
 #[test]
 fn test_no_tree_roots_on_a_banks_sand() {
     use crate::generate::trees::trees_near;
@@ -4253,7 +4304,7 @@ fn level_one_draws_the_tall_plants_full_detail_grows() {
             }
             let Some(meshes) = super::lod::generate_lod_mesh(regions.clone(), key, Some(fade)) else { continue };
             let Some(VertexAttributeValues::Float32x4(colors)) = meshes.opaque.attribute(Mesh::ATTRIBUTE_COLOR) else { continue };
-            for alpha in colors.iter().map(|c| c[3]).filter(|&a| a > Tile::FIRST_FLORA.atlas_cell() - 0.5) {
+            for alpha in colors.iter().map(|c| c[3]).filter(|&a| a > Tile::FIRST_FLORA.atlas_cell() - 0.5 && a < Tile::FIRST_GAME.atlas_cell() - 0.5) {
                 let code = alpha - alpha.round();
                 let height = (code / super::FLORA_HEIGHT_CODE * 0.5 + 0.5) * super::FLORA_HEIGHT_SPAN;
                 assert!(fade.gone_at(height + super::FLORA_HEIGHT_STEP + 0.01) > fade.mid, "a {height} block tuft is gone before {}", fade.mid);
@@ -4313,4 +4364,71 @@ fn test_a_rapid_is_a_sloped_surface_with_no_walls_of_water_in_it() {
         })
         .count();
     assert_eq!(0, walls, "{walls} triangles of water walls in a rapid");
+}
+
+// A game's stamp: a marble pillar 4 high on the ground at one column.
+struct Pillar(I64Vec3);
+
+impl crate::generate::region_store::Stamp for Pillar {
+    fn stamp(&self, _: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), set: &mut dyn FnMut(IVec3, BlockType)) {
+        for y in cells.0.y..=cells.1.y {
+            for z in cells.0.z..=cells.1.z {
+                for x in cells.0.x..=cells.1.x {
+                    let low = origin + I64Vec3::new(x as i64, y as i64, z as i64) * scale;
+                    let holds = |a: i64, p: i64| (a..a + scale).contains(&p);
+                    let tall = (low.y..low.y + scale).any(|b| (self.0.y..self.0.y + 4).contains(&b));
+                    if holds(low.x, self.0.x) && holds(low.z, self.0.z) && tall {
+                        set(IVec3::new(x, y, z), BlockType::Marble);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_a_games_stamp_stands_in_chunks_and_lods() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(3)));
+    let (x, z, _) = regions.terrain().find_spawn();
+    let ground = regions.terrain().sample(x as f64, z as f64).height.floor() as i64 + 1;
+    let at = I64Vec3::new(x, ground, z);
+    regions.set_stamp(Arc::new(Pillar(at)));
+    let chunk = ChunkCoordinate::containing(at + I64Vec3::Y * 2);
+    let data = generate_chunk(regions.clone(), chunk);
+    let local = (at + I64Vec3::Y * 2).rem_euclid(I64Vec3::splat(CHUNK_SIZE as i64)).as_u16vec3();
+    assert_eq!(data.get_block_at(local), BlockType::Marble);
+    let lod = LodBlocks::sample(&regions, LodKey::containing(chunk, 1));
+    assert!(lod.cells.contains(&BlockType::Marble), "the pillar isn't in the LOD node");
+}
+
+// A game's inlay: marble through every block of one column it reaches, but only where something solid is already.
+struct Vein(I64Vec3);
+
+impl crate::generate::region_store::Stamp for Vein {
+    fn stamp(&self, _: &RegionStore, _: I64Vec3, _: i64, _: (IVec3, IVec3), _: &mut dyn FnMut(IVec3, BlockType)) {}
+
+    fn inlay(&self, _: &RegionStore, origin: I64Vec3, scale: i64, cells: (IVec3, IVec3), blocks: &dyn Fn(IVec3) -> Option<BlockType>) -> Vec<(IVec3, BlockType)> {
+        if scale != 1 {
+            return Vec::new();
+        }
+        (cells.0.y..=cells.1.y)
+            .map(|y| (I64Vec3::new(self.0.x, origin.y + y as i64, self.0.z) - origin).as_ivec3())
+            .filter(|cell| blocks(*cell).is_some_and(|b| b.is_solid()))
+            .map(|cell| (cell, BlockType::Marble))
+            .collect()
+    }
+}
+
+#[test]
+fn test_a_games_inlay_takes_only_what_is_there() {
+    let regions = Arc::new(RegionStore::new(ochre_world::worldmap::test_terrain(3)));
+    let (x, z, _) = regions.terrain().find_spawn();
+    let top = regions.sampler().ground_top(x, z);
+    regions.set_stamp(Arc::new(Vein(I64Vec3::new(x, 0, z))));
+    let block = |y: i64| {
+        let at = I64Vec3::new(x, y, z);
+        generate_chunk(regions.clone(), ChunkCoordinate::containing(at)).get_block_at(at.rem_euclid(I64Vec3::splat(CHUNK_SIZE as i64)).as_u16vec3())
+    };
+    assert_eq!(block(top - 2), BlockType::Marble, "the vein isn't in the ground");
+    assert_eq!(block(top + 3), BlockType::Air, "the vein stands in the air");
 }

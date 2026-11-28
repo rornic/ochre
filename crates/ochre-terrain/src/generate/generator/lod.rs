@@ -28,7 +28,7 @@ use bevy::math::IVec3;
 use bevy::math::Vec3;
 use ochre_base::biome::{BiomeId, Biomes};
 use ochre_base::block::BlockType;
-use crate::generate::region_store::{bed_top, water_block_top};
+use crate::generate::region_store::{bed_top, stamp_fits, water_block_top};
 use ochre_base::terrain_source::{TerrainSample, TerrainSource, WaterKind};
 use ochre_base::WATER_LEVEL;
 use std::cell::LazyCell;
@@ -256,6 +256,7 @@ impl LodBlocks {
                         plant_rock(&mut cells, base, cell, &rock);
                     }
                 }
+                plant_stamp(regions, &mut cells, base, cell);
                 let canopy = (cell >= CANOPY_CELL).then(|| Canopy::new(&trees, base, cell, size));
                 if let Some(canopy) = &canopy {
                     forest = canopy.cover.clone();
@@ -400,6 +401,7 @@ impl LodBlocks {
                     plant_rock(&mut cells, base, cell, rock);
                 }
             }
+            plant_stamp(regions, &mut cells, base, cell);
         }
 
         // each tree is drawn by the node its base is in, as the planted cells it stands in draw nothing
@@ -765,6 +767,23 @@ fn plant_rock(cells: &mut [BlockType], base: I64Vec3, cell: i64, rock: &Rock) {
             *at = block;
         }
     });
+}
+
+fn plant_stamp(regions: &RegionStore, cells: &mut [BlockType], base: I64Vec3, cell: i64) {
+    let size = CHUNK_SIZE as i32;
+    regions.run_stamp(base, cell, (IVec3::splat(-1), IVec3::splat(size)), &mut |coord, block| {
+        let at = &mut cells[LodBlocks::index(size, coord)];
+        if stamp_fits(*at) {
+            *at = block;
+        }
+    });
+    let inside = -1..size + 1;
+    let changes = regions.run_inlay(base, cell, (IVec3::splat(-1), IVec3::splat(size)), &|coord| {
+        (inside.contains(&coord.x) && inside.contains(&coord.y) && inside.contains(&coord.z)).then(|| cells[LodBlocks::index(size, coord)])
+    });
+    for (coord, block) in changes {
+        cells[LodBlocks::index(size, coord)] = block;
+    }
 }
 
 // A lone tree in a node with lowest block `base` and `cell`-block cells: a trunk prism (to 8) and crown cards.

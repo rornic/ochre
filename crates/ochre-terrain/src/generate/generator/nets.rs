@@ -440,20 +440,25 @@ fn sculpt<const MARGIN: i32>(
     let look = |m: BlockType| if soft(m) { k.soft } else { k.rock };
     let between = |from: usize, to: u32, offsets: &[Vec3]| (homes[to as usize] - homes[from]).as_vec3() + offsets[to as usize];
 
-    // which of this chunk and the six beside it hold ground before the gap fill; a face goes to its solid block's chunk
+    // which of the chunks round this one hold ground before the gap fill; a face goes to its solid block's chunk
     let slot = |c: usize| (c as i32 - margin).div_euclid(SIZE) + 1;
     let has_ground = {
         let mut has = [[[true; 3]; 3]; 3];
         if !lod {
-            for (x, y, z) in [(1, 1, 1), (0, 1, 1), (2, 1, 1), (1, 0, 1), (1, 2, 1), (1, 1, 0), (1, 1, 2)] {
-                let start = |s: i32| (margin + (s - 1) * SIZE) as usize;
-                let (si, sj, sk) = (start(x), start(y), start(z));
-                has[x as usize][y as usize][z as usize] = (si..si + SIZE as usize)
-                    .any(|i| (sj..sj + SIZE as usize).any(|j| (sk..sk + SIZE as usize).any(|kk| touching[index(i, j, kk)])));
+            for x in 0..3 {
+                for y in 0..3 {
+                    for z in 0..3 {
+                        let start = |s: i32| (margin + (s - 1) * SIZE) as usize;
+                        let (si, sj, sk) = (start(x), start(y), start(z));
+                        has[x as usize][y as usize][z as usize] = (si..si + SIZE as usize)
+                            .any(|i| (sj..sj + SIZE as usize).any(|j| (sk..sk + SIZE as usize).any(|kk| touching[index(i, j, kk)])));
+                    }
+                }
             }
         }
         has
     };
+    let ground_in = |c: (usize, usize, usize)| has_ground[slot(c.0) as usize][slot(c.1) as usize][slot(c.2) as usize];
     // quads across every crossing between block centres, of the four cells round it, and whether the chunk owns it
     let mut quads: Vec<([u32; 4], bool)> = Vec::new();
     // in step with `quads`, whether a node's quad is in the row past its bottom
@@ -485,10 +490,17 @@ fn sculpt<const MARGIN: i32>(
                     let (sol, other) = if here { ((i, j, kk), (i + a, j + b, kk + c)) } else { ((i + a, j + b, kk + c), (i, j, kk)) };
                     let (oi, oj, ok) = if lod {
                         (i, j, kk)
-                    } else if has_ground[slot(sol.0) as usize][slot(sol.1) as usize][slot(sol.2) as usize] {
+                    } else if ground_in(sol) {
                         sol
-                    } else {
+                    } else if ground_in(other) {
                         other
+                    } else {
+                        // a bridge between edge-touching blocks lying in a chunk of nothing else: the first real block round it draws it
+                        let (low, high) = ((sol.0.min(other.0) - 1, sol.1.min(other.1) - 1, sol.2.min(other.2) - 1), (sol.0.max(other.0) + 1, sol.1.max(other.1) + 1, sol.2.max(other.2) + 1));
+                        (low.0..=high.0)
+                            .flat_map(|a| (low.1..=high.1).flat_map(move |b| (low.2..=high.2).map(move |c| (a, b, c))))
+                            .find(|&(a, b, c)| touching[index(a, b, c)])
+                            .unwrap_or(sol)
                     };
                     let owned = own.contains(&oi) && own_y.contains(&oj) && own.contains(&ok);
                     quads.push((quad, owned));

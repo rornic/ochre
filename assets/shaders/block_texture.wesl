@@ -1,5 +1,7 @@
 // ChunkMaterial's bindings and foliage lookups, shared by its main and shadow passes.
 
+import super::foliage::{is_flora, is_game_flora};
+
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material_color: vec4<f32>;
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> material_fade: vec4<f32>;
@@ -17,14 +19,13 @@ fn foliage_layer(vertex_alpha: f32) -> i32 {
     if cell == i32(constants::LEAF_CELL) {
         return i32(constants::LEAVES_LAYER);
     }
-    if cell >= i32(constants::FIRST_FLORA_CELL) {
+    if cell >= i32(constants::FIRST_FLORA_CELL) && cell < i32(constants::FIRST_GAME_CELL) {
         return i32(constants::FIRST_FLORA_LAYER) + cell - i32(constants::FIRST_FLORA_CELL);
     }
+    if is_game_flora(vertex_alpha) {
+        return i32(constants::FIRST_GAME_LAYER) + cell - i32(constants::FIRST_GAME_CELL);
+    }
     return -1;
-}
-
-fn is_flora_cell(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_FLORA_CELL) - 0.5;
 }
 
 const FOLIAGE_TEXELS: f32 = 512.0;
@@ -66,7 +67,7 @@ const BIG_FLORA_MAX_LEVEL: f32 = 5.0;
 const BIG_FLORA_CUT_FAR: f32 = 0.3;
 
 fn is_big_flora_cell(vertex_alpha: f32) -> bool {
-    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5;
+    return vertex_alpha > f32(constants::FIRST_BIG_FLORA_CELL) - 0.5 && vertex_alpha < f32(constants::FIRST_GAME_CELL) - 0.5;
 }
 
 // A leaf or plant's alpha from mip `level`, which averages away holes under the footprint; scaled by `foliage_cut`.
@@ -77,7 +78,7 @@ fn block_alpha_at(uv: vec2<f32>, vertex_alpha: f32, blurred: f32) -> f32 {
     let level = select(blurred, min(blurred, BIG_FLORA_MAX_LEVEL), big);
     if layer >= 0 {
         var p = uv;
-        if is_flora_cell(vertex_alpha) {
+        if is_flora(vertex_alpha) {
             let inset = max(TILE_INSET, 0.5 * exp2(level) / FOLIAGE_TEXELS);
             p = clamp(uv, vec2<f32>(inset), vec2<f32>(1.0 - inset));
         }
@@ -102,7 +103,7 @@ fn block_footprint(uv: vec2<f32>) -> BlockFootprint {
 fn block_sample(uv: vec2<f32>, vertex_alpha: f32, footprint: BlockFootprint) -> vec4<f32> {
     let layer = foliage_layer(vertex_alpha);
     if layer >= 0 {
-        return foliage_sample(uv, layer, is_flora_cell(vertex_alpha), footprint.dx, footprint.dy);
+        return foliage_sample(uv, layer, is_flora(vertex_alpha), footprint.dx, footprint.dy);
     }
     return block_mean(vertex_alpha);
 }
@@ -153,8 +154,16 @@ const MATERIAL_LAYER_TABLE: array<i32, 40> = array<i32, 40>(
 );
 
 fn material_layer(vertex_alpha: f32) -> i32 {
+    let cell = i32(floor(vertex_alpha + 0.5));
+    // a game's plant draws its layer as a sprite, see `foliage_layer`
+    if is_game_flora(vertex_alpha) {
+        return -1;
+    }
+    if cell >= i32(constants::FIRST_GAME_CELL) {
+        return i32(constants::FIRST_GAME_LAYER) + cell - i32(constants::FIRST_GAME_CELL);
+    }
     var table = MATERIAL_LAYER_TABLE;
-    return table[u32(floor(vertex_alpha + 0.5))];
+    return table[u32(cell)];
 }
 
 // Spreads `p` about the nearest block boundary along the way a face tilts, in the plane it's projected onto, by
@@ -251,8 +260,12 @@ fn material_sample(uv: vec2<f32>, layer: i32, footprint: MaterialFootprint) -> v
 // What a tile averages to: the mean linear colour of each atlas cell's opaque texels, in atlas
 // order. The block-textures skill's `materials.py` rewrites them; `material.rs`'s tests check them.
 fn block_mean(vertex_alpha: f32) -> vec4<f32> {
+    // a game's block averages to its layer's last mip, one texel
+    if vertex_alpha > f32(constants::FIRST_GAME_CELL) - 0.5 {
+        return material_color * vec4<f32>(textureSampleLevel(materials, materials_sampler, vec2<f32>(0.5), material_layer(vertex_alpha), 9.0).rgb, 1.0);
+    }
     var means = array<vec3<f32>, 40>(
-        vec3<f32>(0.1612, 0.1542, 0.1649), // stone
+        vec3<f32>(0.0794, 0.0919, 0.1288), // stone
         vec3<f32>(0.4989, 0.4989, 0.4989), // grass top
         vec3<f32>(0.7134, 0.4024, 0.2341), // sand
         vec3<f32>(0.0665, 0.1023, 0.9149), // water
@@ -267,7 +280,7 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.6178, 0.4855, 0.2738), // sandstone side
         vec3<f32>(0.8332, 0.3810, 0.2250), // sandstone top
         vec3<f32>(0.4256, 0.3341, 0.2906), // snow side
-        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted stone
+        vec3<f32>(0.0572, 0.0660, 0.0918), // compacted stone
         vec3<f32>(0.5822, 0.4646, 0.3619), // limestone
         vec3<f32>(0.4313, 0.1646, 0.0943), // clay
         vec3<f32>(0.0618, 0.0582, 0.0596), // basalt
@@ -278,9 +291,9 @@ fn block_mean(vertex_alpha: f32) -> vec4<f32> {
         vec3<f32>(0.5001, 0.4827, 0.4945), // compacted marble
         vec3<f32>(0.5776, 0.2663, 0.1587), // compacted sandstone
         vec3<f32>(0.3406, 0.3244, 0.3538), // granite
-        vec3<f32>(0.1612, 0.1542, 0.1649), // shale
+        vec3<f32>(0.0794, 0.0919, 0.1288), // shale
         vec3<f32>(0.2386, 0.2275, 0.2477), // compacted granite
-        vec3<f32>(0.1143, 0.1095, 0.1169), // compacted shale
+        vec3<f32>(0.0572, 0.0660, 0.0918), // compacted shale
         vec3<f32>(0.4925, 0.4896, 0.5003), // steppe top
         vec3<f32>(0.4945, 0.4945, 0.4945), // tall grass
         vec3<f32>(0.3000, 0.3000, 0.3000), // fern

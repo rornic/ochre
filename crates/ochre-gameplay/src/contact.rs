@@ -51,14 +51,16 @@ pub(crate) struct Moved {
     pub(crate) bumped: bool,
     // the outward normal of a face too steep to stand on that it came to rest on, else zero
     pub(crate) slope: Vec3,
+    // how far up the face it stands on looks when grounded, 1 on level ground
+    pub(crate) facing: f32,
 }
 
 // How the body moves over sculpted ground: walls and ground kept apart, so neither undoes the other.
 pub(crate) struct Walker<'a> {
     pub(crate) body: &'a Body,
     pub(crate) triangles: &'a [[Vec3; 3]],
-    // the least a face's normal points up to walk on; steeper faces are walls
-    pub(crate) walkable: f32,
+    // the least a face's normal points up to walk on, at a point; steeper faces are walls
+    pub(crate) walkable: &'a dyn Fn(Vec3) -> f32,
     // the tallest rise walked up without a jump, and how far down standing feet follow the ground
     pub(crate) step: f32,
     pub(crate) snap: f32,
@@ -79,23 +81,23 @@ impl Walker<'_> {
             for &height in &self.body.heights {
                 for &[a, b, c] in self.triangles {
                     let outward = (c - a).cross(b - a).normalize_or_zero();
-                    if outward.y >= self.walkable || outward.y < -0.5 {
+                    if outward.y < -0.5 {
                         continue;
                     }
                     let centre = feet + Vec3::Y * height;
                     let touch = nearest_on_triangle(centre, a, b, c);
                     let off = centre - touch;
                     let level = Vec3::new(off.x, 0.0, off.z);
+                    let distance = level.length();
+                    if off.length() >= self.body.radius || distance < 1e-6 || outward.y >= (self.walkable)((a + b + c) / 3.0) {
+                        continue;
+                    }
                     // a face lower than a step, with walkable ground on top of it within a step, is a step and not a wall
-                    if touch.y < feet.y + self.step + 0.05 && level.length() > 1e-6 {
+                    if touch.y < feet.y + self.step + 0.05 {
                         let past = touch - level.normalize() * 0.1;
                         if (self.ground)(past.with_y(feet.y), 0.05, self.step + 0.05).is_some() {
                             continue;
                         }
-                    }
-                    let distance = level.length();
-                    if off.length() >= self.body.radius || distance < 1e-6 {
-                        continue;
                     }
                     let side = level / distance;
                     feet += side * (self.body.radius - off.length()).max(0.0);
@@ -158,6 +160,11 @@ impl Walker<'_> {
         })
     }
 
+    // How far up the face under the footprint's highest point looks, 1 where none is found.
+    fn facing_under(&self, feet: Vec3) -> f32 {
+        FOOTPRINT.iter().find_map(|&(x, z)| self.face_at(feet + Vec3::new(x, 0.0, z) * self.body.radius, feet.y)).map_or(1.0, |n| n.y)
+    }
+
     // The highest walkable ground under the body's footprint, from `below` the feet to a step over them.
     pub(crate) fn ground_under(&self, feet: Vec3, below: f32) -> Option<f32> {
         FOOTPRINT
@@ -168,7 +175,7 @@ impl Walker<'_> {
 
     // Moves the body by `delta`: across in small steps against walls, then up or down onto the ground.
     pub(crate) fn walk(&self, feet: Vec3, delta: Vec3, standing: bool, across_blocks: &dyn Fn(Vec3, Vec3) -> Vec3) -> Moved {
-        let mut moved = Moved { feet, ..Default::default() };
+        let mut moved = Moved { feet, facing: 1.0, ..Default::default() };
         let across = Vec3::new(delta.x, 0.0, delta.z);
         let steps = (across.length() / SUBSTEP).ceil().max(1.0) as usize;
         let stand = |p: Vec3| p.with_y(self.ground_under(p, self.snap).unwrap_or(p.y).max(p.y));
@@ -204,6 +211,7 @@ impl Walker<'_> {
                     let Some(height) = self.ground_under(out, self.snap) else { break };
                     moved.feet = out.with_y(height.min(moved.feet.y + (self.headroom(out) - self.height()).max(0.0)));
                 }
+                moved.facing = self.facing_under(moved.feet);
             }
             // off walkable ground a fall still lands on whatever looks up, steep or not, so it can't pass into the ground
             _ => {
@@ -273,7 +281,7 @@ mod tests {
     }
 
     fn walker<'a>(triangles: &'a [[Vec3; 3]], ground: &'a dyn Fn(Vec3, f32, f32) -> Option<f32>) -> Walker<'a> {
-        Walker { body: &BODY, triangles, walkable: 0.4, step: 1.0, snap: 0.6, ground, support: ground }
+        Walker { body: &BODY, triangles, walkable: &|_| 0.4, step: 1.0, snap: 0.6, ground, support: ground }
     }
 
     fn stepped_ground(rise: f32) -> impl Fn(Vec3, f32, f32) -> Option<f32> {
@@ -365,7 +373,7 @@ mod tests {
     #[test]
     fn test_a_slope_too_steep_and_too_tall_walls_the_body_out_of_it() {
         let (triangles, walkable, any) = cliff();
-        let w = Walker { body: &BODY, triangles: &triangles, walkable: 0.4, step: 1.0, snap: 0.6, ground: &walkable, support: &any };
+        let w = Walker { body: &BODY, triangles: &triangles, walkable: &|_| 0.4, step: 1.0, snap: 0.6, ground: &walkable, support: &any };
         let mut feet = Vec3::ZERO;
         for _ in 0..60 {
             feet = w.walk(feet, Vec3::new(4.0 / 60.0, -0.1, 0.0), true, &|f, d| f + d).feet;
@@ -376,7 +384,7 @@ mod tests {
     #[test]
     fn test_a_fall_onto_a_steep_face_lands_on_it() {
         let (triangles, walkable, any) = cliff();
-        let w = Walker { body: &BODY, triangles: &triangles, walkable: 0.4, step: 1.0, snap: 0.6, ground: &walkable, support: &any };
+        let w = Walker { body: &BODY, triangles: &triangles, walkable: &|_| 0.4, step: 1.0, snap: 0.6, ground: &walkable, support: &any };
         let landed = w.walk(Vec3::new(2.0, 3.2, 0.0), Vec3::new(0.0, -0.5, 0.0), false, &|f, d| f + d);
         assert!(landed.feet.y >= 3.0 - 1e-4 - 0.3 * 0.7 * 3.0, "fell into the slope: {:?}", landed.feet);
     }

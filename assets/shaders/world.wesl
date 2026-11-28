@@ -19,7 +19,7 @@ import super::point_lights::point_light_glow;
 import super::dither::dither_threshold;
 import super::curvature::{curved, eye, uncurved};
 import super::frost::{frost_at, frost_receives, frosted};
-import super::ice::{ice_albedo, ice_shine, is_ice};
+import super::ice::{glossy_shine, ice_albedo, ice_shine, is_glossy, is_ice};
 // `nets::FACET_SPAN`: a sculpted vertex's facet, 0 to 1, is its mode over this.
 const SCULPT_FACET_SPAN: f32 = 0.45;
 // `nets::AO_MID` and `AO_SPREAD`: a sculpted vertex's occlusion, from its cell's fraction.
@@ -347,6 +347,13 @@ fn fragment(
             to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
         }
         color = vec4<f32>(color.rgb + ice_shine(world_position, smooth_normal, sky, to_sun, lighting.lit, block_rate, across, down, rise), color.a);
+    } else if is_glossy(in.color.a) {
+        var to_sun = vec3<f32>(0.0, 1.0, 0.0);
+        if view_bindings::lights.n_directional_lights > 0u {
+            to_sun = view_bindings::lights.directional_lights[SUN_LIGHT].direction_to_light;
+        }
+        let paint = dot(tinted, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = vec4<f32>(color.rgb + glossy_shine(world_position, smooth_normal, sky, to_sun, lighting.lit, block_rate, across, down, rise, paint), color.a);
     }
 
     // so distant chunks fade into the sky instead of popping in and out
