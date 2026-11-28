@@ -20,8 +20,6 @@ struct Bends {
     // last frame's, for motion vectors
     last: Bend,
     cold: Cold,
-    // the colour the sky's light is pushed toward in shadow, and how far, see `painterly.wesl`
-    shadow: vec4<f32>,
     // the haze toward 16 compass points, four vec4s of tint and density each: the camera's and three rings out
     haze: array<vec4<f32>, 64>,
     // how much of its sway the foliage keeps in x, see `foliage.wesl`
@@ -54,11 +52,6 @@ fn uncurved(world_position: vec3<f32>) -> vec3<f32> {
 // Where the camera is, in every pass: the sun's shadow passes' view is the light's.
 fn eye() -> vec3<f32> {
     return curvature.now.eye;
-}
-
-// The colour of the shadows where the camera is, and how far the sky's light is pushed to it.
-fn shadow_tint() -> vec4<f32> {
-    return curvature.shadow;
 }
 
 // How much sway the foliage keeps at the camera, 0..1: less in a sheltered hollow, where the wind is quiet.

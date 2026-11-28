@@ -84,29 +84,23 @@ struct Row {
     haze_density: f32,
     // how much deeper a storm dims the light
     storm: f32,
-    // the colour the sky's light is pushed toward in shadow, and how much more or less far
-    shadow_tint: [f32; 3],
-    shadow_amount: f32,
 }
 
 const SUN: [f32; 3] = [1.0, 0.9, 0.75]; // `sky::SUN_COLOR`, which a test checks
-// what painterly lighting pushes the sky's light toward in shadow, and how far; `SHADOW_TINT` in `painterly.wesl`
-pub const SHADOW: [f32; 3] = [0.55, 0.63, 1.0];
-pub const SHADOW_AMOUNT: f32 = 0.3;
-const COLD: Row = Row { sun: 0.0, sun_colour: SUN, temperature: 0.0, saturation: 0.0, contrast: 0.0, haze_tint: [0.88, 0.95, 1.08], haze_density: 0.45, storm: 0.0, shadow_tint: SHADOW, shadow_amount: 0.0 };
+const COLD: Row = Row { sun: 0.0, sun_colour: SUN, temperature: 0.0, saturation: 0.0, contrast: 0.0, haze_tint: [0.88, 0.95, 1.08], haze_density: 0.45, storm: 0.0 };
 // a hard, hot sun on bleached land, in a thick warm haze
-const HOT: Row = Row { sun: 0.5, sun_colour: [1.0, 0.86, 0.66], temperature: 0.03, saturation: 0.04, contrast: 0.06, haze_tint: [1.0, 0.86, 0.64], haze_density: 1.2, storm: 0.0, shadow_tint: [0.80, 0.60, 0.55], shadow_amount: 0.10 };
+const HOT: Row = Row { sun: 0.5, sun_colour: [1.0, 0.86, 0.66], temperature: 0.03, saturation: 0.04, contrast: 0.06, haze_tint: [1.0, 0.86, 0.64], haze_density: 1.2, storm: 0.0 };
 // hot, sticky and wet: vibrant colour in a thick, green haze that closes in past a kilometre, the sun filtered
-const JUNGLE: Row = Row { sun: -0.12, sun_colour: [1.0, 0.92, 0.70], temperature: 0.015, saturation: 0.20, contrast: -0.04, haze_tint: [0.92, 1.0, 0.90], haze_density: 3.0, storm: 0.0, shadow_tint: [0.40, 0.65, 0.55], shadow_amount: 0.15 };
+const JUNGLE: Row = Row { sun: -0.12, sun_colour: [1.0, 0.92, 0.70], temperature: 0.015, saturation: 0.20, contrast: -0.04, haze_tint: [0.92, 1.0, 0.90], haze_density: 3.0, storm: 0.0 };
 // sheltered, cosy and gloomier: a dimmer, warmer sun and a soft close haze. A taiga is this with the cold over it
-const FOREST: Row = Row { sun: -0.2, sun_colour: [1.0, 0.89, 0.72], temperature: 0.01, saturation: 0.04, contrast: -0.03, haze_tint: [0.95, 0.95, 0.90], haze_density: 0.8, storm: 0.0, shadow_tint: [0.62, 0.55, 0.70], shadow_amount: 0.10 };
+const FOREST: Row = Row { sun: -0.2, sun_colour: [1.0, 0.89, 0.72], temperature: 0.01, saturation: 0.04, contrast: -0.03, haze_tint: [0.95, 0.95, 0.90], haze_density: 0.8, storm: 0.0 };
 // vast, desolate and exposed: drained colour, a hard clear light, far views, and a sky that turns on you
-const STEPPE: Row = Row { sun: 0.1, sun_colour: [0.99, 0.93, 0.82], temperature: -0.004, saturation: -0.10, contrast: 0.10, haze_tint: [0.92, 0.95, 1.0], haze_density: -0.35, storm: 0.5, shadow_tint: [0.62, 0.68, 0.85], shadow_amount: -0.10 };
+const STEPPE: Row = Row { sun: 0.1, sun_colour: [0.99, 0.93, 0.82], temperature: -0.004, saturation: -0.10, contrast: 0.10, haze_tint: [0.92, 0.95, 1.0], haze_density: -0.35, storm: 0.5 };
 
 // high, thin, crisp air: a clear hard light and far views, and weather that comes up fast
-const MOUNTAIN: Row = Row { sun: 0.15, sun_colour: [0.99, 0.93, 0.82], temperature: -0.01, saturation: -0.04, contrast: 0.08, haze_tint: [0.92, 0.96, 1.04], haze_density: -0.4, storm: 0.3, shadow_tint: [0.50, 0.60, 1.0], shadow_amount: 0.05 };
+const MOUNTAIN: Row = Row { sun: 0.15, sun_colour: [0.99, 0.93, 0.82], temperature: -0.01, saturation: -0.04, contrast: 0.08, haze_tint: [0.92, 0.96, 1.04], haze_density: -0.4, storm: 0.3 };
 // ashen and ominous: a dim red sun through a grey-brown veil, drained colour, maroon shadows
-const VOLCANIC: Row = Row { sun: -0.2, sun_colour: [1.0, 0.78, 0.6], temperature: 0.01, saturation: -0.12, contrast: 0.1, haze_tint: [0.85, 0.78, 0.75], haze_density: 1.2, storm: 0.3, shadow_tint: [0.70, 0.50, 0.50], shadow_amount: 0.15 };
+const VOLCANIC: Row = Row { sun: -0.2, sun_colour: [1.0, 0.78, 0.6], temperature: 0.01, saturation: -0.12, contrast: 0.1, haze_tint: [0.85, 0.78, 0.75], haze_density: 1.2, storm: 0.3 };
 
 /// What the country's feel makes of the light: multipliers on a neutral look, exactly neutral at no feel.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -119,8 +113,6 @@ pub struct Atmosphere {
     pub haze_tint: [f32; 3],
     pub haze_density: f32,
     pub storm: f32,
-    pub shadow_tint: [f32; 3],
-    pub shadow_amount: f32,
 }
 
 impl Atmosphere {
@@ -134,8 +126,6 @@ impl Atmosphere {
             haze_tint: [1.0; 3],
             haze_density: 1.0,
             storm: 1.0,
-            shadow_tint: SHADOW,
-            shadow_amount: SHADOW_AMOUNT,
         };
         // the jungle's haze goes by the fourth power of its weight, so a jungle's edge isn't 3x hazy
         for (weight, haze_power, row) in [(feel.cold, 1, &COLD), (feel.hot, 1, &HOT), (feel.jungle, 4, &JUNGLE), (feel.forest, 1, &FOREST), (feel.steppe, 1, &STEPPE), (feel.mountain, 1, &MOUNTAIN), (feel.volcanic, 1, &VOLCANIC)] {
@@ -145,17 +135,14 @@ impl Atmosphere {
             a.contrast += weight * row.contrast;
             a.haze_density += weight.powi(haze_power) * row.haze_density;
             a.storm += weight * row.storm;
-            a.shadow_amount += weight * row.shadow_amount;
             for (i, base) in SUN.into_iter().enumerate() {
                 a.sun_colour[i] += weight * (row.sun_colour[i] - base);
                 a.haze_tint[i] += weight * (row.haze_tint[i] - 1.0);
-                a.shadow_tint[i] += weight * (row.shadow_tint[i] - SHADOW[i]);
             }
         }
         a.sun = a.sun.max(0.4);
         a.saturation = a.saturation.max(0.6);
         a.haze_density = a.haze_density.max(0.3);
-        a.shadow_amount = a.shadow_amount.clamp(0.05, 0.6);
         a
     }
 
@@ -189,7 +176,6 @@ mod tests {
         assert_eq!(SUN_COLOR, none.sun_color());
         assert_eq!([1.0; 3], none.haze_tint);
         assert_eq!(1.0, none.haze_density);
-        assert_eq!((SHADOW, SHADOW_AMOUNT), (none.shadow_tint, none.shadow_amount));
         let dry = dry_color_grading();
         assert_eq!(dry, none.grade(&dry));
     }
@@ -215,9 +201,6 @@ mod tests {
         assert!(jungle.saturation > hot.saturation && steppe.saturation < 1.0);
         assert!(jungle.haze_density > forest.haze_density && forest.haze_density > 1.0 && steppe.haze_density < 1.0);
         assert!(steppe.storm > 1.0 && forest.storm == 1.0);
-        // the shadows take their country's colour: warm where it is hot, green in the jungle, and bluer on a peak
-        assert!(hot.shadow_tint[0] > SHADOW[0] && jungle.shadow_tint[1] > jungle.shadow_tint[0]);
-        assert!(steppe.shadow_amount < SHADOW_AMOUNT && jungle.shadow_amount > SHADOW_AMOUNT);
         // the cold's haze is bluer than the hot's
         let cold = at(0.1, 0.1);
         assert!(cold.haze_tint[2] > cold.haze_tint[0] && hot.haze_tint[0] > hot.haze_tint[2]);
@@ -234,6 +217,5 @@ mod tests {
         // the weights add where the kinds overlap, and stay inside what the light can take
         let both = Atmosphere::of(&Feel { cold: 1.0, hot: 1.0, jungle: 1.0, forest: 1.0, steppe: 1.0, mountain: 1.0, volcanic: 1.0 });
         assert!(both.sun >= 0.4 && both.saturation >= 0.6 && both.haze_density >= 0.3);
-        assert!((0.05..=0.6).contains(&both.shadow_amount));
     }
 }

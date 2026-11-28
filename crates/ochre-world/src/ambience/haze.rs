@@ -63,9 +63,6 @@ pub(super) fn sense_haze(
     let step = 1.0 - (-time.delta_secs() / EASE_SECONDS).exp();
     let atmosphere = Atmosphere::of(&eased.0);
     let here = haze_of(&atmosphere);
-    // the camera's own country sets the colour of the shadows
-    let [r, g, b] = atmosphere.shadow_tint;
-    curvature.shadow = [r, g, b, atmosphere.shadow_amount];
     for point in 0..POINTS {
         for ring in 0..3 {
             let target = rings.target[point][ring];
