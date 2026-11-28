@@ -8,7 +8,7 @@
 
 ## Overview
 
-Distant ground looked the same everywhere, and every biome but the tundra felt alike. This design makes ground colour follow the lie of the land, so a player on a ridge can tell where water and sheltered, fertile ground lie, and gives each kind of country its own sun, grade, haze, shadow colour and storms, so a hot savanna, a damp jungle and a cold tundra feel different before a block is read.
+Distant ground looked the same everywhere, and every biome but the tundra felt alike. This design makes ground colour follow the lie of the land, so a player on a ridge can tell where water and sheltered, fertile ground lie, and gives each kind of country its own sun, grade, haze and storms, so a hot savanna, a damp jungle and a cold tundra feel different before a block is read.
 
 It was built in two parts that share a way of working: smooth fields of the climate and the map are turned into colour and light on the CPU, and the shaders are handed a few numbers, not a new map to sample.
 
@@ -67,12 +67,12 @@ It was built in two parts that share a way of working: smooth fields of the clim
 
 ### The feel of each country
 
-`atmosphere.rs` holds `Feel`, seven weights (cold, hot, jungle, forest, steppe, mountain, volcanic), each 0 to 1. Climate sets the first five smoothly (`Feel::of`), `TerrainSource::mountain_cover` the mountain, and a biome's volcanic modifier the last. A row of knobs per kind gives what it does at full weight: the sun's strength and colour, the grade's white balance, saturation and contrast, the haze's tint and density, the shadow colour and strength, and how deep a storm dims the light. `Atmosphere::of` sums the rows, exactly neutral at no feel.
+`atmosphere.rs` holds `Feel`, seven weights (cold, hot, jungle, forest, steppe, mountain, volcanic), each 0 to 1. Climate sets the first five smoothly (`Feel::of`), `TerrainSource::mountain_cover` the mountain, and a biome's volcanic modifier the last. A row of knobs per kind gives what it does at full weight: the sun's strength and colour, the grade's white balance, saturation and contrast, the haze's tint and density, and how deep a storm dims the light. `Atmosphere::of` sums the rows, exactly neutral at no feel.
 
 *   **Hot:** a hard, bright, warm sun, a harder grade, a thick warm haze. **Jungle:** the most colour, a filtered sun, a thick green haze (15 times the density, since the fog's end is tens of kilometres off, and 6 times left the trees clear at a kilometre). **Forest:** a dimmer, warmer sun and a soft close haze. **Taiga** is the forest's weight under the cold. **Steppe:** drained colour, a hard clear light, thin haze, deeper storms. **Mountain:** crisp thin air and far views. **Volcanic:** a dim red sun through grey-brown ash.
 *   **Cold** keeps its own grade (`cold_color_grading`, unchanged) and its row adds a bluer, denser haze, so cold country far off shows.
-*   The camera's feel is sensed four times a second and eased over 2 s (`EasedFeel`). The grade (`view.rs`), the sun and its colour (`darken_sky`), and the shadow colour follow it.
-*   **Distant haze:** `ambience/haze.rs` senses the feel on 16 compass points at 1, 3 and 8 km and packs each point's haze tint and density into the shared curvature buffer. `fogged` multiplies the haze by them. The shadow colour rides in the same buffer. No binding or material changed.
+*   The camera's feel is sensed four times a second and eased over 2 s (`EasedFeel`). The grade (`view.rs`), and the sun and its colour (`darken_sky`) follow it.
+*   **Distant haze:** `ambience/haze.rs` senses the feel on 16 compass points at 1, 3 and 8 km and packs each point's haze tint and density into the shared curvature buffer. `fogged` multiplies the haze by them. No binding or material changed.
 
 ### The steppe's storms
 
@@ -96,7 +96,7 @@ River wetting is cut from 14 to 8 cells (`MOISTURE_REACH`), swamps and valleys k
 ## Not done
 
 *   **Volcanic** is covered by unit tests only. No volcano was found to look at.
-*   Shadow tint and the new feel rows for the forest, steppe, mountain and volcanic country are the author's picks, not yet judged in play.
+*   The new feel rows for the forest, steppe, mountain and volcanic country are the author's picks, not yet judged in play.
 *   **Far country's shadows** are the camera's own. The sky and cloud edge against tinted haze is not tinted, so a seam can show.
 *   **The marble fix** (only grass bares to dirt) was not confirmed by a close-up of a marble side.
 *   **Frame times** were not measured for the feel, shadow, haze and storm changes.

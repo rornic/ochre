@@ -51,10 +51,10 @@ Each kind of country has a feel (`atmosphere.rs`): `Feel` weights cold, hot, jun
 - Forest: sheltered, cosy, gloomier: a dimmer, warmer sun and a soft close haze. Taiga is this under the cold.
 - Steppe: vast, desolate, exposed: drained colour, a hard clear light, thin haze so views run far, and storms dim the light half as deep again.
 - Mountain (`TerrainSource::mountain_cover`, smooth across its edge): crisp, thin air, a clear hard light, far views, bluer shadows, and weather that comes up faster.
-- Volcanic (a biome's modifier, a step at its edge that easing smooths for the camera): a dim red sun through a grey-brown ash haze, drained colour, maroon shadows.
+- Volcanic (a biome's modifier, a step at its edge that easing smooths for the camera): a dim red sun through a grey-brown ash haze, drained colour.
 - Cold: the grade is its own (`tonemap::cold_color_grading`, unchanged, so the tundra's look is as it was), and its row adds a bluer, denser haze, so cold country far off shows in the distance.
 
-`Surroundings::feel` is sensed at the camera and eased over 2 s (`EasedFeel`). The grade (`view.rs`), the sun (`darken_sky` in `weather.rs`) and the camera's haze follow it. Far country shows in the haze: `ambience/haze.rs` senses the feel on 16 compass points at 1, 3 and 8 km and gives the shader each point's tint and density in the curvature buffer, and `fogged` multiplies the haze by them. The haze's edge against the sky and clouds is not tinted, so a seam can show. The shadows take their country's colour too: the camera's feel sets what painterly lighting pushes the sky's light toward in shadow, and how far (`shadow` in the curvature buffer, `painterly.wesl`), warm over hot country, green in the jungle, cooler and plainer on the steppe, with the cold's left as it was. This is camera-local only, so far country's shadows are not its own.
+`Surroundings::feel` is sensed at the camera and eased over 2 s (`EasedFeel`). The grade (`view.rs`), the sun (`darken_sky` in `weather.rs`) and the camera's haze follow it. Far country shows in the haze: `ambience/haze.rs` senses the feel on 16 compass points at 1, 3 and 8 km and gives the shader each point's tint and density in the curvature buffer, and `fogged` multiplies the haze by them. The haze's edge against the sky and clouds is not tinted, so a seam can show. Shadows take no colour of their own anywhere, since any tint turned a surface's hue rather than darkening it (`painterly.wesl`).
 
 ## Steppe
 
